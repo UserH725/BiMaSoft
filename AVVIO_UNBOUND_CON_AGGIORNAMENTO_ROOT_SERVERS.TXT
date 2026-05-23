@@ -14,12 +14,12 @@ set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.38"
-set "REMOTE_VER=In attesa..."
+set "SCRIPT_VERSION=26.39"
+set "REMOTE_VER=0.0"
 set "UB_DIR=C:\Program Files\Unbound"
 title UNBOUND BUNKER - v%SCRIPT_VERSION% (Status-Monitor Core)
 
-:: Inizializzazione Fasi
+:: Inizializzazione Fasi pulita
 for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i..."
 set "D1=CLOUD >> Verifica versionamento..."
 set "D2=TASK  >> Inizializzazione Task..."
@@ -36,16 +36,20 @@ set "D12=FILT >> Aggiornamento liste blocco..."
 set "D13=SECU >> DNSSEC Trust Anchor..."
 set "D14=ACL  >> Blindatura NTFS..."
 
-:: Disegno iniziale
 cls
 call :RENDER 0 0
 
-:: === FASE 1: VERSION-LOCK ===
+:: === FASE 1: VERSIONAMENTO PULITO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
+set "REMOTE_VER=N/A"
 curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%" > "%TEMP%\v.txt" 2>nul
-set /p REMOTE_VER=<"%TEMP%\v.txt" & del "%TEMP%\v.txt"
+if exist "%TEMP%\v.txt" (
+    set /p "REMOTE_VER=" < "%TEMP%\v.txt"
+    del "%TEMP%\v.txt"
+)
+
 if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
-    set "F1=[  OK  ] !D1! (Locale: %SCRIPT_VERSION% vs Cloud: !REMOTE_VER!)"
+    set "F1=[  OK  ] !D1! (Loc: %SCRIPT_VERSION% / Cloud: !REMOTE_VER!)"
 ) else (
     set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
     call :RENDER 5 1
@@ -55,12 +59,12 @@ if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
 )
 call :RENDER 5 1
 
-:: === FASE 2: TASK SCHEDULER ===
+:: === FASE 2: TASK ===
 set "F2=[ 2 .. ] !D2!" & call :RENDER 10 2
 schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
 set "F2=[  OK  ] !D2!" & call :RENDER 15 2
 
-:: === FASE 3-7: HARDENING INIZIALE ===
+:: === FASE 3-7: HARDENING ===
 set "F3=[ 3 .. ] !D3!" & call :RENDER 20 3
 ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
 set "F3=[  OK  ] !D3!" & call :RENDER 25 3
@@ -83,10 +87,10 @@ set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
 set "F7=[  OK  ] !D7!" & call :RENDER 65 7
 
-:: === FASE 8: AGGIORNAMENTO ORARIO ===
+:: === FASE 8: ORARIO ===
 set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
 w32tm /resync /force /nowait >nul 2>&1
-set "F8=[  OK  ] !D8! (Sincronizzato)" & call :RENDER 75 8
+set "F8=[  OK  ] !D8! (Aggiornato)" & call :RENDER 75 8
 
 :: === FASE 9-10: LOG/CORE ===
 set "F9=[ 9 .. ] !D9!" & call :RENDER 77 9
@@ -99,14 +103,14 @@ set "F10=[10 ..] !D10!" & call :RENDER 81 10
 net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
 set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 
-:: === FASE 11: AGGIORNAMENTO ROOT SERVERS ===
+:: === FASE 11: ROOT SERVERS ===
 set "F11=[11 ..] !D11!" & call :RENDER 85 11
 curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
 set "F11=[  OK  ] !D11! (Aggiornati)" & call :RENDER 88 11
 
-:: === FASE 12: AGGIORNAMENTO LISTE BLOCCO ===
+:: === FASE 12: LISTE BLOCCO ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
-curl -s -f -k -o "%UB_DIR%\blocklisthageziscelta.conf" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
+curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
 set "F12=[  OK  ] !D12! (Aggiornate)" & call :RENDER 93 12
 
 :: === FASE 13-14: FINALIZZAZIONE ===
@@ -115,6 +119,7 @@ set "F13=[13 ..] !D13!" & call :RENDER 95 13
 set "F13=[  OK  ] !D13!" & call :RENDER 97 13
 
 set "F14=[14 ..] !D14!" & call :RENDER 98 14
+icacls "%UB_DIR%\*.*" /grant:r unbound:(R) /inheritance:r >nul 2>&1
 net start unbound >nul 2>&1
 set "F14=[  OK  ] !D14!" & call :RENDER 100 0
 
