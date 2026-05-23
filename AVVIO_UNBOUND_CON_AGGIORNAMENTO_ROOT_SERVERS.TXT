@@ -11,137 +11,139 @@ for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 set "GREEN=%ESC%[92m"
 set "YELLOW_BLINK=%ESC%[5;93m"
 set "RESET=%ESC%[0m"
+set "GOTO_TOP=%ESC%[5;1H"
 
-:: --- CONFIGURAZIONE GLOBALE ---
+:: --- CONFIGURAZIONE ---
+set "SCRIPT_VERSION=26.37"
 set "UB_DIR=C:\Program Files\Unbound"
-set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
 set "LOG_FILE=%UB_DIR%\logfile.log"
-set "SCRIPT_VERSION=26.36"
-set "WEB_DOMAIN=raw.githubusercontent.com"
-set "URL_VERSIONE=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%"
-set "URL_SCRIPT=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT?nocache=%RANDOM%"
-
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
-set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
-set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-title UNBOUND BUNKER - v26.36 (Kinetic-Neon Core)
+title UNBOUND BUNKER - v26.37 (Smooth-Transition)
 
-:: Inizializzazione Fasi
-for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i in inizializzazione..."
-set "D1=CLOUD >> Verifica versionamento cloud..."
-set "D2=TASK  >> Inizializzazione Task Scheduler..."
-set "D3=NET   >> Test connettività WAN e Gateway..."
-set "D4=FS    >> Integrità directory Unbound..."
-set "D5=REG   >> Ottimizzazione Kernel Windows..."
-set "D6=REG   >> Hardening Browser (DoH/SmartDNS)..."
-set "D7=SECU  >> Process Mitigation e NetBIOS..."
-set "D8=TIME  >> Sincronizzazione NTP DNSSEC..."
-set "D9=FS    >> Rotazione Log e Snapshot..."
-set "D10=CORE >> Arresto servizio Unbound..."
-set "D11=NET  >> Download Root Hints..."
-set "D12=FILT >> Aggiornamento filtri HaGeZi..."
-set "D13=SECU >> Validazione Trust Anchor..."
-set "D14=ACL  >> Blindatura NTFS e riavvio..."
+:: Inizializzazione Testi Fasi
+set "D1=CLOUD >> Verifica versionamento..."
+set "D2=TASK  >> Inizializzazione Task..."
+set "D3=NET   >> Connettività WAN..."
+set "D4=FS    >> Directory Unbound..."
+set "D5=REG   >> Kernel & Performance..."
+set "D6=REG   >> Hardening Browser..."
+set "D7=SECU  >> Exploit & NetBIOS..."
+set "D8=TIME  >> Sincronizzazione NTP..."
+set "D9=FS    >> Snapshot e Log..."
+set "D10=CORE >> Stop servizio Unbound..."
+set "D11=NET  >> Root Hints & Hyperlocal..."
+set "D12=FILT >> HaGeZi RPZ..."
+set "D13=SECU >> DNSSEC Anchor..."
+set "D14=ACL  >> Blindatura NTFS..."
 
-:: === FASE 1: VERSION-LOCK E PATCHING ===
-call :RENDER 0 0
-set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
+for /L %%i in (1,1,14) do set "F%%i=[     ] !D%%i!                                 "
 
-powershell -Command "$d=Resolve-DnsName %WEB_DOMAIN% -Server 1.1.1.1 -Type A -ErrorAction SilentlyContinue; if($d){ [io.file]::WriteAllText('%TEMP%\ip.txt', $d[0].IPAddress) }" >nul 2>&1
-set /p IP_SERVER=<"%TEMP%\ip.txt" 2>nul & del "%TEMP%\ip.txt" 2>nul
-set "RES=--resolve %WEB_DOMAIN%:443:!IP_SERVER! --resolve %WEB_DOMAIN%:80:!IP_SERVER!"
-
-curl -s -f -k !RES! "%URL_VERSIONE%" > "%TEMP%\v.txt" 2>nul
-set /p REMOTE_VER=<"%TEMP%\v.txt" 2>nul & del "%TEMP%\v.txt" 2>nul
-
-if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
-    set "F1=[ SKIPPATO ] !D1! (v%SCRIPT_VERSION%)"
-) else (
-    set "F1=[ AGGIORNATO ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
-    call :RENDER 5 1
-    curl -s -f -k !RES! -o "%TEMP%\new.txt" "%URL_SCRIPT%"
-    copy /y "%TEMP%\new.txt" "%~f0" >nul & del "%TEMP%\new.txt"
-    start "" "%~f0" & exit
-)
-call :RENDER 5 1
-
-:: === FASE 2: TASK SCHEDULER ===
-set "F2=[ 2 .. ] !D2!" & call :RENDER 7 2
-schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
-set "F2=[  OK  ] !D2!" & call :RENDER 10 2
-
-:: === FASE 3-14: HARDENING ===
-set "F3=[ 3 .. ] !D3!" & call :RENDER 12 3
-ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
-set "F3=[  OK  ] !D3!" & call :RENDER 15 3
-
-set "F4=[ 4 .. ] !D4!" & call :RENDER 18 4
-if not exist "%UB_DIR%" (pause & exit)
-set "F4=[  OK  ] !D4!" & call :RENDER 20 4
-
-set "F5=[ 5 .. ] !D5!" & call :RENDER 25 5
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
-set "F5=[  OK  ] !D5!" & call :RENDER 30 5
-
-set "F6=[ 6 .. ] !D6!" & call :RENDER 35 6
-for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do (
-    reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-)
-set "F6=[  OK  ] !D6!" & call :RENDER 45 6
-
-set "F7=[ 7 .. ] !D7!" & call :RENDER 50 7
-powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
-set "F7=[  OK  ] !D7!" & call :RENDER 55 7
-
-set "F8=[ 8 .. ] !D8!" & call :RENDER 60 8
-w32tm /resync /force /nowait >nul 2>&1
-set "F8=[  OK  ] !D8!" & call :RENDER 65 8
-
-set "F9=[ 9 .. ] !D9!" & call :RENDER 68 9
-for %%f in (named.cache root.zone blocklisthageziscelta.conf hagezi-normal.conf hagezi-pro.conf) do (
-    if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1
-)
-set "F9=[  OK  ] !D9!" & call :RENDER 70 9
-
-set "F10=[10 ..] !D10!" & call :RENDER 72 10
-net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
-set "F10=[  OK  ] !D10!" & call :RENDER 75 10
-
-set "F11=[11 ..] !D11!" & call :RENDER 77 11
-curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
-set "F11=[  OK  ] !D11!" & call :RENDER 80 11
-
-set "F12=[12 ..] !D12!" & call :RENDER 82 12
-curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
-set "F12=[  OK  ] !D12!" & call :RENDER 90 12
-
-set "F13=[13 ..] !D13!" & call :RENDER 93 13
-"%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
-set "F13=[  OK  ] !D13!" & call :RENDER 95 13
-
-set "F14=[14 ..] !D14!" & call :RENDER 97 14
-icacls "%UB_DIR%\*.*" /grant:r unbound:(R) /inheritance:r >nul 2>&1
-net start unbound >nul 2>&1
-set "F14=[  OK  ] !D14!" & call :RENDER 100 14
-
-echo ------------------------------------------------------------------
-echo   PROCESSO CONCLUSO. Powered by Mauro Bigoni
-echo ------------------------------------------------------------------
-timeout /t 5 >nul & exit
-
-:RENDER
+:: Disegno iniziale fisso
 cls
 echo %GREEN%==================================================================
 echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
 echo ==================================================================%RESET%
-echo   PROGRESSO: [%~1%%]
+echo   PROGRESSO: [                    ] 0%%
 echo ------------------------------------------------------------------
+for /L %%i in (1,1,14) do echo.
+
+:: === FASE 1: VERSIONAMENTO ===
+set "F1=[ 1 .. ] !D1!" & call :UPDATE_UI 1 1
+curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%" > "%TEMP%\v.txt" 2>nul
+set /p REMOTE_VER=<"%TEMP%\v.txt" & del "%TEMP%\v.txt"
+if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
+    set "F1=[  OK  ] !D1! (v%SCRIPT_VERSION%)"
+) else (
+    set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
+    call :UPDATE_UI 5 1
+    curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT" -o "%TEMP%\new.txt"
+    copy /y "%TEMP%\new.txt" "%~f0" >nul & del "%TEMP%\new.txt"
+    start "" "%~f0" & exit
+)
+call :UPDATE_UI 5 1
+
+:: === FASE 2: TASK SCHEDULER ===
+set "F2=[ 2 .. ] !D2!" & call :UPDATE_UI 10 2
+schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
+set "F2=[  OK  ] !D2!" & call :UPDATE_UI 15 2
+
+:: === FASE 3: WAN ===
+set "F3=[ 3 .. ] !D3!" & call :UPDATE_UI 20 3
+ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
+set "F3=[  OK  ] !D3!" & call :UPDATE_UI 25 3
+
+:: === FASE 4: FS ===
+set "F4=[ 4 .. ] !D4!" & call :UPDATE_UI 30 4
+if not exist "%UB_DIR%" (pause & exit)
+set "F4=[  OK  ] !D4!" & call :UPDATE_UI 35 4
+
+:: === FASE 5: REGISTRY PERFORMANCE ===
+set "F5=[ 5 .. ] !D5!" & call :UPDATE_UI 40 5
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
+set "F5=[  OK  ] !D5!" & call :UPDATE_UI 45 5
+
+:: === FASE 6: BROWSER HARDENING ===
+set "F6=[ 6 .. ] !D6!" & call :UPDATE_UI 50 6
+for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do (
+    reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
+)
+set "F6=[  OK  ] !D6!" & call :UPDATE_UI 55 6
+
+:: === FASE 7-14: COMPLETAMENTO HARDENING ===
+set "F7=[ 7 .. ] !D7!" & call :UPDATE_UI 60 7
+powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
+set "F7=[  OK  ] !D7!" & call :UPDATE_UI 65 7
+
+set "F8=[ 8 .. ] !D8!" & call :UPDATE_UI 70 8
+w32tm /resync /force /nowait >nul 2>&1
+set "F8=[  OK  ] !D8!" & call :UPDATE_UI 75 8
+
+set "F9=[ 9 .. ] !D9!" & call :UPDATE_UI 80 9
+if exist "%LOG_FILE%" type nul > "%LOG_FILE%"
+set "F9=[  OK  ] !D9!" & call :UPDATE_UI 85 9
+
+set "F10=[10 ..] !D10!" & call :UPDATE_UI 88 10
+net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
+set "F10=[  OK  ] !D10!" & call :UPDATE_UI 90 10
+
+set "F11=[11 ..] !D11!" & call :UPDATE_UI 92 11
+curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
+set "F11=[  OK  ] !D11!" & call :UPDATE_UI 94 11
+
+set "F12=[12 ..] !D12!" & call :UPDATE_UI 95 12
+curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
+set "F12=[  OK  ] !D12!" & call :UPDATE_UI 96 12
+
+set "F13=[13 ..] !D13!" & call :UPDATE_UI 97 13
+"%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
+set "F13=[  OK  ] !D13!" & call :UPDATE_UI 98 13
+
+set "F14=[14 ..] !D14!" & call :UPDATE_UI 99 14
+icacls "%UB_DIR%\*.*" /grant:r unbound:(R) /inheritance:r >nul 2>&1
+net start unbound >nul 2>&1
+set "F14=[  OK  ] !D14!" & call :UPDATE_UI 100 0
+
+echo ------------------------------------------------------------------
+echo   PROCESSO CONCLUSO. Powered by Mauro Bigoni
+timeout /t 5 >nul & exit
+
+:UPDATE_UI
+set "P_VAL=%~1"
+set "ACTIVE_INDEX=%~2"
+set /a "BLOCKS=P_VAL / 5"
+set "BARRA="
+for /L %%b in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
+set /a "EMPTY=20 - BLOCKS"
+for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
+
+echo %GOTO_TOP%%GREEN%  PROGRESSO: [%BARRA%] %P_VAL%%%
+echo ------------------------------------------------------------------%RESET%
 for /L %%i in (1,1,14) do (
-    if "%%i"=="%~2" (
-        echo  %YELLOW_BLINK% --^> !F%%i! %RESET%
+    if "%%i"=="%ACTIVE_INDEX%" (
+        echo  %YELLOW_BLINK% --^> !F%%i! %RESET%      
     ) else (
-        echo      %GREEN%!F%%i!%RESET%
+        echo      %GREEN%!F%%i!%RESET%      
     )
 )
 exit /b
