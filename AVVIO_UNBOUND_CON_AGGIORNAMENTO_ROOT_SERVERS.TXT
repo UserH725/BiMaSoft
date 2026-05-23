@@ -14,8 +14,8 @@ set "RED=%ESC%[91m"
 set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
-:: --- CONFIGURAZIONE DEFINITIVA ---
-set "SCRIPT_VERSION=26.41"
+:: --- CONFIGURAZIONE ---
+set "SCRIPT_VERSION=26.42"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "LOG_FILE=%UB_DIR%\logfile.log"
@@ -42,14 +42,20 @@ set "D14=ACL  >> Blindatura NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: VERSIONAMENTO ===
+:: === FASE 1: VERSIONAMENTO PULITO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
+set "REMOTE_VER=N/A"
 curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%" > "%TEMP%\v.txt" 2>nul
-set /p "REMOTE_VER=" < "%TEMP%\v.txt" 2>nul & del "%TEMP%\v.txt" 2>nul
-set "REMOTE_VER=!REMOTE_VER: =!"
+:: Ciclo for per leggere solo la prima stringa utile e ignorare caratteri sporchi
+for /f "usebackq tokens=*" %%a in ("%TEMP%\v.txt") do set "REMOTE_VER=%%a"
+del "%TEMP%\v.txt" 2>nul
+:: Rimuove spazi accidentali
+set "REMOTE_VER=%REMOTE_VER: =%"
 
-if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
-    set "F1=[  OK  ] !D1! (Locale: %SCRIPT_VERSION% / Cloud: !REMOTE_VER!)"
+if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
+    set "F1=[  OK  ] !D1! (Allineato: %SCRIPT_VERSION%)"
+) else if "%SCRIPT_VERSION%" GTR "!REMOTE_VER!" (
+    set "F1=[ %RED%OLD%RESET% ] !D1! (Locale: %SCRIPT_VERSION% ^> Cloud: !REMOTE_VER!)"
 ) else (
     set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
     call :RENDER 5 1
@@ -70,7 +76,7 @@ ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
 set "F3=[  OK  ] !D3!" & call :RENDER 25 3
 
 set "F4=[ 4 .. ] !D4!" & call :RENDER 30 4
-if not exist "%UB_DIR%" (echo %RED% ERRORE: Percorso %UB_DIR% non trovato! %RESET% & pause & exit)
+if not exist "%UB_DIR%" (pause & exit)
 set "F4=[  OK  ] !D4!" & call :RENDER 35 4
 
 set "F5=[ 5 .. ] !D5!" & call :RENDER 40 5
@@ -103,15 +109,13 @@ set "F10=[10 ..] !D10!" & call :RENDER 81 10
 net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
 set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 
-:: === FASE 11: ROOT SERVERS (SAFE) ===
+:: === FASE 11: ROOT SERVERS ===
 set "F11=[11 ..] !D11!" & call :RENDER 85 11
-if "%UB_DIR%"=="" (echo ERRORE PATH & pause & exit)
 curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
 set "F11=[  OK  ] !D11! (Aggiornati)" & call :RENDER 88 11
 
-:: === FASE 12: LISTE BLOCCO (SAFE) ===
+:: === FASE 12: LISTE BLOCCO ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
-if "%HZ_MAIN%"=="" (echo ERRORE PATH & pause & exit)
 curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
 set "F12=[  OK  ] !D12! (Aggiornate)" & call :RENDER 93 12
 
