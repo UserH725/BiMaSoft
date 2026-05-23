@@ -22,7 +22,7 @@ set "GOTO_TOP=%ESC%[1;1H"
 title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
 :: --- INIZIALIZZAZIONE ---
-for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i..."
+for /L %%i in (1,1,14) do set "F%%i=[       ] Fase %%i..."
 set "D1=CLOUD >> Verifica aggiornamenti..."
 set "D2=TASK  >> Inizializzazione Task..."
 set "D3=NET   >> Connettività WAN..."
@@ -41,7 +41,7 @@ set "D14=ACL  >> Permessi NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: CHECK (SENZA BLOCCARE) ===
+:: === FASE 1: CHECK ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
 curl -s -f -k -m 2 "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt" > "%TEMP%\v.txt" 2>nul
 if exist "%TEMP%\v.txt" ( set /p REMOTE_VER=<"%TEMP%\v.txt" & del "%TEMP%\v.txt" )
@@ -77,7 +77,7 @@ set "F6=[  OK  ] !D6!" & call :RENDER 55 6
 
 :: === FASE 7-8: SECU/TIME ===
 set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
-powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
+powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUp,HighEntropy,CFG" >nul 2>&1
 set "F7=[  OK  ] !D7!" & call :RENDER 65 7
 
 set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
@@ -93,14 +93,21 @@ set "F10=[10 ..] !D10!" & call :RENDER 81 10
 net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
 set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 
-:: === FASE 11-12: DOWNLOADS (DEBUGGATI) ===
-set "F11=[11 ..] !D11!" & call :RENDER 85 11
-if exist "%UB_DIR%" (curl -s -f -k -z "%UB_DIR%\named.cache" -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache)
-set "F11=[  OK  ] !D11!" & call :RENDER 88 11
+:: === FASE 11: DOWNLOAD ROOT ===
+set "FILE_ROOT=%UB_DIR%\named.cache"
+for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T1=%%a"
+curl -s -f -k -z "%FILE_ROOT%" -o "%FILE_ROOT%" https://www.internic.net/domain/named.cache >nul 2>&1
+for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T2=%%a"
+if %T1% LSS %T2% (set "F11=[AGGIORNATO] !D11!") else (set "F11=[CONTROLLATO] !D11!")
+call :RENDER 88 11
 
-set "F12=[12 ..] !D12!" & call :RENDER 90 12
-if exist "%HZ_MAIN%" (curl -s -f -k -z "%HZ_MAIN%" -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt)
-set "F12=[  OK  ] !D12!" & call :RENDER 93 12
+:: === FASE 12: DOWNLOAD LISTE ===
+set "FILE_LIST=%HZ_MAIN%"
+for /f %%a in ('powershell -Command "(Get-Item '%FILE_LIST%').LastWriteTime.Ticks"') do set "T3=%%a"
+curl -s -f -k -z "%FILE_LIST%" -o "%FILE_LIST%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
+for /f %%a in ('powershell -Command "(Get-Item '%FILE_LIST%').LastWriteTime.Ticks"') do set "T4=%%a"
+if %T3% LSS %T4% (set "F12=[AGGIORNATO] !D12!") else (set "F12=[CONTROLLATO] !D12!")
+call :RENDER 93 12
 
 :: === FASE 13-14: FINE ===
 set "F13=[13 ..] !D13!" & call :RENDER 95 13
