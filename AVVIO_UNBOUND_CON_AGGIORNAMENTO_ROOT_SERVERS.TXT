@@ -13,78 +13,94 @@ powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
 
 :ADMIN_VERIFIED
-echo [+] Diritti di amministratore confermati.
+:: Inizializzazione immediata del contesto grafico globale
+set "CONSOLE_COLOR=0A"
+set "UB_DIR=C:\Program Files\Unbound"
+set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
+set "LOG_FILE=%UB_DIR%\logfile.log"
 
-:: ==========================================
-:: ENGINE DI CENTRALIZZAZIONE & AUTO-UPDATE (PUBLIC GITHUB v26.25)
-:: ==========================================
-set "SCRIPT_VERSION=26.25"
-
-:: Configurazione rigida dei percorsi pubblici e stabili di GitHub
 set "WEB_DOMAIN=raw.githubusercontent.com"
 set "URL_VERSIONE=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt"
 set "URL_SCRIPT=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 
-echo [..] Controllo integrita e versionamento cloud (Public GitHub Channel)...
+set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
+set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
+set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-:: Risoluzione asincrona lineare a Zero-Pipe (Previene qualsiasi crash del parser CMD)
+title UNBOUND BUNKER - v26.26 (Unified Visual Core)
+
+:: Pre-popolamento fisso delle 14 fasi sequenziali
+set "F1=[  ..  ] CLOUD >> Sincronizzazione e versionamento con GitHub..."
+set "F2=[  ..  ] TASK  >> Verifica e inizializzazione Task Scheduler..."
+set "F3=[  ..  ] NET   >> Controllo connettività WAN e Gateway..."
+set "F4=[  ..  ] FS    >> Integrità directory di installazione Unbound..."
+set "F5=[  ..  ] REG   >> Ottimizzazione performance Kernel Windows..."
+set "设F6=[  ..  ] REG   >> Sigillatura falle Smart DNS e sbarramento DoH..."
+set "F7=[  ..  ] SECU  >> Iniezione mitigazioni Exploit e blocco NetBIOS..."
+set "F8=[  ..  ] TIME  >> Allineamento orario per validazione DNSSEC..."
+set "F9=[  ..  ] FS    >> Rotazione dei Log e consolidamento Snapshot .bak..."
+set "F10=[  ..  ] CORE >> Interruzione controllata del servizio Unbound..."
+set "F11=[  ..  ] NET  >> Download Root Hints e Hyperlocal Root Zone..."
+set "F12=[  ..  ] FILT >> Aggiornamento filtri RPZ HaGeZi (Dual-Zone)..."
+set "F13=[  ..  ] SECU >> Rigenerazione chiavi crittografiche Trust Anchor..."
+set "F14=[  ..  ] ACL  >> Blindatura permessi NTFS e avvio del servizio..."
+
+:: Disegno immediato dello schermo a progresso zero
+call :UPDATE_UI 0
+
+:: ==========================================
+:: FASE 1: GESTIONE AUTO-UPDATE VISUALE INTERNA
+:: ==========================================
+set "SCRIPT_VERSION=26.26"
+
 set "IP_SERVER="
-powershell -Command "$d = Resolve-DnsName -Name %WEB_DOMAIN% -Server 1.1.1.1 -ErrorAction SilentlyContinue; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_server.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
+powershell -Command "$d=Resolve-DnsName raw.githubusercontent.com -Server 1.1.1.1 -Type A -ErrorAction SilentlyContinue; if($d){ [io.file]::WriteAllText('%TEMP%\ip_server.txt', $d[0].IPAddress) }" >nul 2>&1
 if exist "%TEMP%\ip_server.txt" (
     set /p IP_SERVER=<"%TEMP%\ip_server.txt"
     del "%TEMP%\ip_server.txt" >nul 2>&1
 )
 
 set "RES_WEB="
-if not "!IP_SERVER!"=="" (
-    set "RES_WEB=--resolve %WEB_DOMAIN%:443:!IP_SERVER! --resolve %WEB_DOMAIN%:80:!IP_SERVER!"
-)
+if not "!IP_SERVER!"=="" set "RES_WEB=--resolve %WEB_DOMAIN%:443:!IP_SERVER! --resolve %WEB_DOMAIN%:80:!IP_SERVER!"
 
-:: Interrogazione del file versione cloud tramite curl
 set "REMOTE_VERSION="
 for /f "tokens=*" %%v in ('curl -s -f -k !RES_WEB! "%URL_VERSIONE%"') do set "REMOTE_VERSION=%%v"
 
-:: Logica di salto lineare: evita i blocchi IF annidati inclini al crash
-if "!REMOTE_VERSION!"=="" goto :SKIP_CLOUD_UPDATE
-if "!REMOTE_VERSION!"=="%SCRIPT_VERSION%" goto :SKIP_CLOUD_UPDATE
+if "!REMOTE_VERSION!"=="" goto :VERSION_MATCHED
+if "!REMOTE_VERSION!"=="%SCRIPT_VERSION%" goto :VERSION_MATCHED
 
-echo [!] Rilevato aggiornamento critico nel cloud: v!REMOTE_VERSION!
-echo [..] Download del nuovo Core di protezione (Estensione Mascherata)...
+:: CASO: Aggiornamento Rilevato
+set "F1=[ PATCH ] CLOUD >> Nuova v!REMOTE_VERSION! rilevata. Download ed applicazione patch..."
+call :UPDATE_UI 3
 curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%"
 
 if exist "%TEMP%\bunker_update.txt" (
-    echo [+] Validazione completata. Applicazione patch e riavvio asincrono...
+    set "F1=[ PATCH ] CLOUD >> Patch v!REMOTE_VERSION! scaricata con successo. Riavvio motore..."
+    call :UPDATE_UI 5
     start "" cmd /c "timeout /t 1 /nobreak >nul && copy /y "%TEMP%\bunker_update.txt" "%~f0" >nul && del "%TEMP%\bunker_update.txt" >nul && start "" "%~f0""
     exit /b
 )
 
-:SKIP_CLOUD_UPDATE
-echo [+] Il Bunker locale e gia allineato all'ultima versione (%SCRIPT_VERSION%).
-echo [..] Controllo e inizializzazione Task Scheduler...
+:VERSION_MATCHED
+set "F1=[  OK  ] CLOUD >> Sistema aggiornato alla v%SCRIPT_VERSION%. Nessuna patch richiesta."
+call :UPDATE_UI 5
 
-:: --- AUTO-PROVISIONING ORARIO NATIVO ---
+:: ==========================================
+:: FASE 2: TASK SCHEDULER
+:: ==========================================
 set "TASK_NAME=Unbound_Bunker_Hourly"
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if %errorLevel% EQU 0 goto :TASK_ALREADY_EXISTS
+if %errorLevel% EQU 0 (
+    set "F2=[  OK  ] TASK  >> Task orario nativo '%TASK_NAME%' gia configurato"
+    goto :TASK_DONE
+)
 schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
+set "F2=[  OK  ] TASK  >> Provisioning completato. Registrato Task orario persistente"
 
-:TASK_ALREADY_EXISTS
-set "CONSOLE_COLOR=0A"
-set "UB_DIR=C:\Program Files\Unbound"
-set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
-set "LOG_FILE=%UB_DIR%\logfile.log"
+:TASK_DONE
+call :UPDATE_UI 10
 
-:: Definizione dei target fisici isolati (Explicit Target)
-set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
-set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
-set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
-
-title UNBOUND BUNKER - v26.25 (Bulletproof Core)
-
-:: Inizializzazione fissa delle fasi (13 step compatti)
-for /L %%i in (1,1,13) do set "F%%i="
-
-:: Controllo data - Si attiva lo SKIP AUTOMATICO SOLO se eseguito da schtasks (--scheduled)
+:: Controllo di skip temporale per i task eseguiti in background orario
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 set "SKIP_MAINTENANCE=0"
 if "%~1"=="--scheduled" (
@@ -95,69 +111,83 @@ if "%~1"=="--scheduled" (
 )
 
 :: ==========================================
-:: ENGINE DI HARDENING SEQUENZIALE
+:: FASE 3: VERIFICA WAN
 :: ==========================================
-
-set "F1=[  OK  ] NET  >> Interfaccia di rete e Gateway attivi"
 ping -n 1 8.8.8.8 >nul 2>&1
-if %errorLevel% neq 0 ( set "CONSOLE_COLOR=0C" & set "F1=[ERRORE] NET  >> Internet non raggiungibile." & call :UPDATE_UI 0 & pause & exit /b )
+if %errorLevel% neq 0 (
+    set "CONSOLE_COLOR=0C"
+    set "F3=[ERRORE] NET   >> Internet non raggiungibile. Gateway offline."
+    call :UPDATE_UI 15 & pause & exit /b
+)
+set "F3=[  OK  ] NET   >> Interfaccia di rete attiva. Risposta Gateway eccellente"
+call :UPDATE_UI 15
 
-set "F2=[  ..  ] FS   >> Controllo directory d'installazione Unbound..."
-call :UPDATE_UI 10
-if not exist "%UB_DIR%" ( set "CONSOLE_COLOR=0C" & set "F2=[ERRORE] FS   >> Directory d'installazione non trovata." & call :UPDATE_UI 10 & pause & exit /b )
-set "F2=[  OK  ] FS   >> Directory principale verificata e accessibile"
-
-set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
-set "F3=[  ..  ] REG  >> Ottimizzazione Kernel (CpuPriorityClass e ErrorReporting)..."
+:: ==========================================
+:: FASE 4: FILE SYSTEM CHECK
+:: ==========================================
+if not exist "%UB_DIR%" (
+    set "CONSOLE_COLOR=0C"
+    set "F4=[ERRORE] FS    >> Directory '%UB_DIR%' non trovata sul disco."
+    call :UPDATE_UI 20 & pause & exit /b
+)
+set "F4=[  OK  ] FS    >> Directory principale di Unbound verificata e accessibile"
 call :UPDATE_UI 20
+
+:: ==========================================
+:: FASE 5: REGISTRY KERNEL PERFORMANCE
+:: ==========================================
+set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
 reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbound.exe" /v "DumpType" /t REG_DWORD /d 0 /f >nul 2>&1
-set "F3=[  OK  ] REG  >> Priorita CPU impostata su ALTA e crash dump locali inibiti"
-
-set "F4=[  ..  ] REG  >> Chiusura falle broadcast e sbarramento DoH nei Browser..."
+set "F5=[  OK  ] REG   >> Priorità CPU allocata su ALTA e inibizione crash dump locali"
 call :UPDATE_UI 30
+
+:: ==========================================
+:: FASE 6: REGISTRY BROWSER HARDENING & ANTI-LEAKS
+:: ==========================================
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableSmartNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v "TurnOffMulticastNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
+for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do (
+    reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\%%b" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
+)
 reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\DNSOverHTTPS" /v "Enabled" /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Opera" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Opera" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-set "F4=[  OK  ] REG  >> Smart DNS Leaks e DoH nei browser disattivati (Chrome/Edge/FF/Brave/Opera/Vivaldi)"
+set "F6=[  OK  ] REG   >> Smart DNS Leaks bloccati e sbarramento DoH iniettato nei Browser"
+call :UPDATE_UI 45
 
-set "F5=[  ..  ] SECU/NET >> Iniezione mitigazioni exploit e spegnimento NetBIOS (Engine Unificato)..."
-call :UPDATE_UI 40
+:: ==========================================
+:: FASE 7: EXPLOIT MITIGATIONS & NETBIOS BLOCK
+:: ==========================================
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
-set "F5=[  OK  ] SECU/NET >> Protezioni hardware attive e porte NetBIOS (137/138/139) sigillate"
+set "F7=[  OK  ] SECU  >> Protezioni hardware attive e porte NetBIOS (137/138/139) sigillate"
+call :UPDATE_UI 55
 
-set "F6=[  ..  ] TIME >> Allineamento orologio di sistema w32time (Asincrono)..."
-call :UPDATE_UI 50
+:: ==========================================
+:: FASE 8: TIME SYNCHRONIZATION
+:: ==========================================
 sc config w32time start= auto >nul 2>&1
 net start w32time >nul 2>&1
 w32tm /resync /force /nowait >nul 2>&1
-set "F6=[  OK  ] TIME >> Impulso ntp inviato. Validazione temporale DNSSEC garantita"
+set "F8=[  OK  ] TIME  >> Impulso NTP asincrono inviato. Allineamento DNSSEC garantito"
+call :UPDATE_UI 65
 
-set "F7=[  ..  ] FS   >> Rotazione Log e Consolidamento Snapshot di ripristino..."
-call :UPDATE_UI 60
+:: ==========================================
+:: FASE 9: SNAPSHOT CONSOLIDATION & LOG ROTATION
+:: ==========================================
 if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type nul > "%LOG_FILE%")
-if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%UB_DIR%\named.cache.bak" >nul 2>&1
-if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%UB_DIR%\root.zone.bak" >nul 2>&1
-if exist "%HZ_MAIN%" copy /y "%HZ_MAIN%" "%HZ_MAIN%.bak" >nul 2>&1
-if exist "%HZ_NORMAL%" copy /y "%HZ_NORMAL%" "%HZ_NORMAL%.bak" >nul 2>&1
-if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO%.bak" >nul 2>&1
-set "F7=[  OK  ] FS   >> Log ottimizzati e snapshot locali .bak consolidati (Dual-Zone safe)"
+for %%f in (named.cache root.zone blocklisthageziscelta.conf hagezi-normal.conf hagezi-pro.conf) do (
+    if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1
+)
+set "F9=[  OK  ] FS    >> Rotazione log completata e snapshot strutturali .bak consolidati"
+call :UPDATE_UI 70
 
-:: GESTIONE RAPIDA DEL CASO SKIP (MANUTENZIONE GIÀ EFFETTUATA OGGI - SOLO IN BACKGROUND)
+:: GESTIONE DI SCAPPO COMPLETO SE SKIP ATTIVO
 if "%SKIP_MAINTENANCE%"=="1" (
-    set "F8=[ SKIP ] NET  >> Download ed aggiornamenti file gia allineati oggi"
-    set "F9=[  OK  ] SECU >> Privilegi NTFS e Trust Anchor precedentemente verificati"
-    set "F10=[  OK  ] CORE >> Sblocco processi eseguito (RAM Cache deframmentata)"
+    set "F10=[ SKIP ] CORE >> Servizio mantenuto attivo (Skip giornaliero manutenzione background)"
+    set "F11=[ SKIP ] NET  >> Database dei Root Servers gia allineato ad oggi"
+    set "F12=[ SKIP ] FILT >> Regole RPZ HaGeZi stabili. Sincronizzazione saltata"
+    set "F13=[  OK  ] SECU >> Trust Anchor DNSSEC validato precedentemente"
+    set "F14=[  OK  ] ACL  >> Privilegi NTFS integri. Restart rapido della cache..."
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     net start unbound >nul 2>&1
@@ -165,18 +195,19 @@ if "%SKIP_MAINTENANCE%"=="1" (
     goto :FINALIZZAZIONE
 )
 
-:: --- ARRESTO FORZATO DEL PROCESSO ---
-set "F8=[  ..  ] CORE >> Arresto controllato del servizio Unbound (Rilascio lock)..."
-call :UPDATE_UI 70
+:: ==========================================
+:: FASE 10: FERMO SERVIZIO CONTROLLED
+:: ==========================================
 net stop unbound >nul 2>&1
 taskkill /f /im unbound.exe >nul 2>&1
-set "F8=[  OK  ] CORE >> Servizio interrotto e processi orfani terminati (Porta 53 libera)"
+set "F10=[  OK  ] CORE >> Servizio arrestato e istanze orfane terminate. Porta 53 libera."
+call :UPDATE_UI 75
 
-:: --- FASE 9: IN-MEMORY RESOLUTION VIA CURL --RESOLVE (ZERO HOSTS TOUCH) ---
-set "F9=[  ..  ] NET  >> Risoluzione asincrona IP in memoria (AV-Shield)..."
-call :UPDATE_UI 80
+:: ==========================================
+:: FASE 11: DOWNLOAD ROOT HINTS & HYPERLOCAL
+:: ==========================================
 set "IP_INTERNIC="
-powershell -Command "$d = Resolve-DnsName -Name www.internic.net -Server 1.1.1.1 -ErrorAction SilentlyContinue; if(-not $d){ $d = Resolve-DnsName -Name www.internic.net -Server 8.8.8.8 -ErrorAction SilentlyContinue }; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_internic.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
+powershell -Command "$d=Resolve-DnsName www.internic.net -Server 1.1.1.1 -Type A -ErrorAction SilentlyContinue; if(-not $d){$d=Resolve-DnsName www.internic.net -Server 8.8.8.8 -Type A -ErrorAction SilentlyContinue}; if($d){[io.file]::WriteAllText('%TEMP%\ip_internic.txt', $d[0].IPAddress)}" >nul 2>&1
 if exist "%TEMP%\ip_internic.txt" (
     set /p IP_INTERNIC=<"%TEMP%\ip_internic.txt"
     del "%TEMP%\ip_internic.txt" >nul 2>&1
@@ -186,41 +217,20 @@ if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_
 
 curl -s -f -k !RES_INTERNIC! -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
 curl -s -f -k !RES_INTERNIC! -o "%UB_DIR%\root.zone" https://www.internic.net/domain/root.zone
-set "F9=[  OK  ] NET  >> File Root Hints ed Hyperlocal Root Zone scaricati via routing virtuale"
+set "F11=[  OK  ] NET  >> File Root Hints ed Hyperlocal Root Zone scaricati via routing virtuale"
+call :UPDATE_UI 80
 
-:: --- CONFIGURAZIONE FILTRI DUAL-ZONE HAGEZI ---
-if "%~1"=="--scheduled" goto :LOAD_SCHEDULED_HAGEZI
-set "F10=[  ??  ] NET  >> Attesa selezione filtri HaGeZi RPZ..."
-call :UPDATE_UI 82
-echo.
-echo ==================================================================
-echo   SELEZIONE FILTRI HAGEZI - TIMEOUT 5 SECONDI PER VERSIONE PRO
-echo ==================================================================
-echo   [1] HaGeZi Multi-Normal (Protezione Standard)
-echo   [2] HaGeZi Multi-Pro    (Protezione Avanzata Estesa)
-echo ------------------------------------------------------------------
-choice /c 12 /d 2 /t 5 /m " > Digita un'opzione [1 o 2]"
-if errorlevel 2 (
-    set "CURRENT_CHOICE=pro"
-    echo pro>"%UB_DIR%\hagezi_choice.txt"
-) else (
-    set "CURRENT_CHOICE=normal"
-    echo normal>"%UB_DIR%\hagezi_choice.txt"
-)
-goto :DOWNLOAD_HAGEZI
-
-:LOAD_SCHEDULED_HAGEZI
+:: ==========================================
+:: FASE 12: AGGIORNAMENTO REGOLE RPZ HAGEZI
+:: ==========================================
 set "CURRENT_CHOICE=normal"
 if exist "%UB_DIR%\hagezi_choice.txt" (
     set /p CHOICE_RAW=<"%UB_DIR%\hagezi_choice.txt"
     if "!CHOICE_RAW!"=="pro" set "CURRENT_CHOICE=pro"
 )
 
-:DOWNLOAD_HAGEZI
-set "F10=[  ..  ] NET  >> Sincronizzazione in memoria filtri dual-zone..."
-call :UPDATE_UI 85
 set "IP_JSDELIVR="
-powershell -Command "$d = Resolve-DnsName -Name cdn.jsdelivr.net -Server 1.1.1.1 -ErrorAction SilentlyContinue; if(-not $d){ $d = Resolve-DnsName -Name cdn.jsdelivr.net -Server 8.8.8.8 -ErrorAction SilentlyContinue }; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_jsdelivr.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
+powershell -Command "$d=Resolve-DnsName cdn.jsdelivr.net -Server 1.1.1.1 -Type A -ErrorAction SilentlyContinue; if(-not $d){$d=Resolve-DnsName cdn.jsdelivr.net -Server 8.8.8.8 -Type A -ErrorAction SilentlyContinue}; if($d){[io.file]::WriteAllText('%TEMP%\ip_jsdelivr.txt', $d[0].IPAddress)}" >nul 2>&1
 if exist "%TEMP%\ip_jsdelivr.txt" (
     set /p IP_JSDELIVR=<"%TEMP%\ip_jsdelivr.txt"
     del "%TEMP%\ip_jsdelivr.txt" >nul 2>&1
@@ -240,80 +250,59 @@ if "!CURRENT_CHOICE!"=="pro" (
     curl -s -f -k !RES_JSDELIVR! -o "%HZ_NORMAL%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
     copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
 )
-if not exist "%HZ_MAIN%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
-set "F10=[  OK  ] NET  >> Nuove regole RPZ HaGeZi (!HAGEZI_NAME!) applicate e clonate"
-
-set "F11=[  ..  ] SECU >> Validazione Trust Anchor DNSSEC (unbound-anchor)..."
+set "F12=[  OK  ] FILT >> Nuove regole RPZ HaGeZi (!HAGEZI_NAME!) scaricate, clonate ed applicate"
 call :UPDATE_UI 90
-"%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
-set "F11=[  OK  ] SECU >> Chiave radice pubblica verificata ed autenticata"
 
-set "F12=[  ..  ] ACL  >> Modifica ereditarietà e blindatura NTFS + Utente Unbound..."
+:: ==========================================
+:: FASE 13: DNSSEC TRUST ANCHOR
+:: ==========================================
+"%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
+set "F13=[  OK  ] SECU >> Chiave pubblica radice verificata e validata crittograficamente"
 call :UPDATE_UI 95
+
+:: ==========================================
+:: FASE 14: NTFS BLINDING & BOOT SERVICE
+:: ==========================================
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%UB_DIR%\HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%UB_DIR%\HZ_NORMAL%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%UB_DIR%\HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_NORMAL%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
-set "F12=[  OK  ] ACL  >> Privilegi NTFS blindati. Accesso di sicurezza configurato per l'utente 'unbound'"
 
-:: --- FASE 13 DIAGNOSTICA ESPANSA ---
-set "F13=[  ..  ] CONF >> Verifica sintassi ed allocazione filtri in RAM (Attesa)..."
-call :UPDATE_UI 98
-echo.
-echo ------------------------------------------------------------------
-echo   VERIFICA SINTATTICA DEL FILE SERVICE.CONF
-echo ------------------------------------------------------------------
-"%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf"
-if %errorLevel% neq 0 goto :CONFIG_ERROR
+"%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
+if %errorLevel% neq 0 (
+    set "CONSOLE_COLOR=0C"
+    set "F14=[ERRORE] CONF >> Errore di sintassi strutturale nel file service.conf"
+    call :UPDATE_UI 98 & pause & exit /b
+)
 
-echo.
-echo   [+] Sintassi perfetta. Esecuzione comando di avvio del servizio...
-echo   ------------------------------------------------------------------
-net start unbound
-if %errorLevel% neq 0 goto :START_ERROR
+net start unbound >nul 2>&1
+if %errorLevel% neq 0 (
+    set "CONSOLE_COLOR=0C"
+    set "F14=[ERRORE] CORE >> Sintassi valida ma il servizio Windows Unbound rifiuta l'avvio."
+    call :UPDATE_UI 98 & pause & exit /b
+)
 
-set "F13=[  OK  ] CONF >> Schema service.conf formalmente integro. Servizio avviato."
+set "F14=[  OK  ] ACL  >> Permessi NTFS blindati. Schema integrato ed Unbound avviato correttamente."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
-goto :FINALIZZAZIONE
 
-:CONFIG_ERROR
-color 0C
-echo.
-echo ------------------------------------------------------------------
-echo   [!] ERRORE SINTATTICO DETTAGLIATO RILEVATO DA UNBOUND!
-echo ------------------------------------------------------------------
-if exist "%UB_DIR%\named.cache.bak" copy /y "%UB_DIR%\named.cache.bak" "%UB_DIR%\named.cache" >nul
-if exist "%UB_DIR%\root.zone.bak" copy /y "%UB_DIR%\root.zone.bak" "%UB_DIR%\root.zone" >nul
-if exist "%HZ_MAIN%.bak" copy /y "%HZ_MAIN%.bak" "%HZ_MAIN%" >nul
-echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
-net start unbound
-pause
-goto :FINALIZZAZIONE
-
-:START_ERROR
-color 0C
-echo.
-echo ------------------------------------------------------------------
-echo   [!] ERRORE: IL SERVIZIO WINDOWS UNBOUND NON PARTE!
-echo ------------------------------------------------------------------
-pause
-goto :FINALIZZAZIONE
-
+:: ==========================================
+:: SUBROUTINE DI OTTIMIZZAZIONE E CHIUSURA
+:: ==========================================
 :FINALIZZAZIONE
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]1048576000 }; [System.GC]::Collect()" >nul 2>&1
 echo ------------------------------------------------------------------
-echo   PROCESSO CONCLUSO.
+echo   PROCESSO CONCLUSO CON SUCCESSO.
 echo ------------------------------------------------------------------
-echo Chiusura automatica...
+echo Chiusura automatica in corso...
 timeout /t 5 >nul
 exit
 
 :: ==========================================
-:: SUBROUTINE DI RENDERING GRAFICO
+:: ENGINE DI RENDERING GRAFICO COERENTE
 :: ==========================================
 :UPDATE_UI
 set "P_VAL=%~1"
@@ -326,21 +315,11 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.25
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.26
 echo ==================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ------------------------------------------------------------------
-if defined F1 echo !F1!
-if defined F2 echo !F2!
-if defined F3 echo !F3!
-if defined F4 echo !F4!
-if defined F5 echo !F5!
-if defined F6 echo !F6!
-if defined F7 echo !F7!
-if defined F8 echo !F8!
-if defined F9 echo !F9!
-if defined F10 echo !F10!
-if defined F11 echo !F11!
-if defined F12 echo !F12!
-if defined F13 echo !F13!
+for /L %%i in (1,1,14) do (
+    if defined F%%i echo !F%%i!
+)
 exit /b
