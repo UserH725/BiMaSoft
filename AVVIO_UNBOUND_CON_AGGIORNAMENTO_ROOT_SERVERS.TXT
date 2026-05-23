@@ -27,7 +27,7 @@ set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-title UNBOUND BUNKER - v26.26 (Unified Visual Core)
+title UNBOUND BUNKER - v26.27 (Live-Patch Core)
 
 :: Pre-popolamento fisso delle 14 fasi sequenziali
 set "F1=[  ..  ] CLOUD >> Sincronizzazione e versionamento con GitHub..."
@@ -35,9 +35,9 @@ set "F2=[  ..  ] TASK  >> Verifica e inizializzazione Task Scheduler..."
 set "F3=[  ..  ] NET   >> Controllo connettività WAN e Gateway..."
 set "F4=[  ..  ] FS    >> Integrità directory di installazione Unbound..."
 set "F5=[  ..  ] REG   >> Ottimizzazione performance Kernel Windows..."
-set "设F6=[  ..  ] REG   >> Sigillatura falle Smart DNS e sbarramento DoH..."
+set "F6=[  ..  ] REG   >> Sigillatura falle Smart DNS e sbarramento DoH..."
 set "F7=[  ..  ] SECU  >> Iniezione mitigazioni Exploit e blocco NetBIOS..."
-set "F8=[  ..  ] TIME  >> Allineamento orario per validazione DNSSEC..."
+set "F8=[  ..  ] TIME  >> Allineamento orologio per validazione DNSSEC..."
 set "F9=[  ..  ] FS    >> Rotazione dei Log e consolidamento Snapshot .bak..."
 set "F10=[  ..  ] CORE >> Interruzione controllata del servizio Unbound..."
 set "F11=[  ..  ] NET  >> Download Root Hints e Hyperlocal Root Zone..."
@@ -49,9 +49,9 @@ set "F14=[  ..  ] ACL  >> Blindatura permessi NTFS e avvio del servizio..."
 call :UPDATE_UI 0
 
 :: ==========================================
-:: FASE 1: GESTIONE AUTO-UPDATE VISUALE INTERNA
+:: FASE 1: APPLICAZIONE PATCH E RILANCIO DINAMICO
 :: ==========================================
-set "SCRIPT_VERSION=26.26"
+set "SCRIPT_VERSION=26.27"
 
 set "IP_SERVER="
 powershell -Command "$d=Resolve-DnsName raw.githubusercontent.com -Server 1.1.1.1 -Type A -ErrorAction SilentlyContinue; if($d){ [io.file]::WriteAllText('%TEMP%\ip_server.txt', $d[0].IPAddress) }" >nul 2>&1
@@ -69,14 +69,15 @@ for /f "tokens=*" %%v in ('curl -s -f -k !RES_WEB! "%URL_VERSIONE%"') do set "RE
 if "!REMOTE_VERSION!"=="" goto :VERSION_MATCHED
 if "!REMOTE_VERSION!"=="%SCRIPT_VERSION%" goto :VERSION_MATCHED
 
-:: CASO: Aggiornamento Rilevato
+:: CASO: Aggiornamento Rilevato -> Scarica, Sovrascrive e Rilancia la nuova build
 set "F1=[ PATCH ] CLOUD >> Nuova v!REMOTE_VERSION! rilevata. Download ed applicazione patch..."
 call :UPDATE_UI 3
 curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%"
 
 if exist "%TEMP%\bunker_update.txt" (
-    set "F1=[ PATCH ] CLOUD >> Patch v!REMOTE_VERSION! scaricata con successo. Riavvio motore..."
+    set "F1=[ PATCH ] CLOUD >> Patch v!REMOTE_VERSION! scaricata. Rilancio del nuovo Core..."
     call :UPDATE_UI 5
+    :: Esegue lo spawn del processo parallelo asincrono, sovrascrive ed esegue il nuovo .BAT
     start "" cmd /c "timeout /t 1 /nobreak >nul && copy /y "%TEMP%\bunker_update.txt" "%~f0" >nul && del "%TEMP%\bunker_update.txt" >nul && start "" "%~f0""
     exit /b
 )
@@ -315,7 +316,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.26
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.27
 echo ==================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ------------------------------------------------------------------
