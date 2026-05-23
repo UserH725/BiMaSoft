@@ -15,15 +15,23 @@ set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.44"
+set "SCRIPT_VERSION=26.45"
+set "URL_REMOTE=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
+
+:: --- LOGICA AUTO-UPDATE ---
+if "%~1"=="--update" (
+    copy /y "%~f0" "%~dp0AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT" >nul
+    start "" "%~dp0AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
+    exit
+)
 
 title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
 :: Inizializzazione Fasi
 for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i..."
-set "D1=CLOUD >> Verifica versionamento..."
+set "D1=CLOUD >> Verifica versione (Self-Check)..."
 set "D2=TASK  >> Inizializzazione Task..."
 set "D3=NET   >> Connettività WAN..."
 set "D4=FS    >> Directory Unbound..."
@@ -41,31 +49,32 @@ set "D14=ACL  >> Blindatura NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: VERSIONAMENTO (POWER-CLEAN) ===
+:: === FASE 1: AUTO-UPDATE (SELF-CHECK) ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-:: PowerShell pulisce tutto (spazi, a capo, ritorni carrello)
-for /f "usebackq tokens=*" %%a in (`powershell -Command "(Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%' -UseBasicParsing).Content.Trim()"`) do (
-    set "REMOTE_VER=%%a"
+curl -s -f -k "%URL_REMOTE%?nocache=%RANDOM%" -o "%TEMP%\remote_script.txt"
+set "REMOTE_VER=0"
+for /f "tokens=2 delims==" %%a in ('findstr /C:"set \"SCRIPT_VERSION=" "%TEMP%\remote_script.txt"') do (
+    set "REMOTE_VER=%%~a"
+    set "REMOTE_VER=!REMOTE_VER:"=!"
 )
 
 if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
     set "F1=[  OK  ] !D1! (Allineato: %SCRIPT_VERSION%)"
-) else if "%SCRIPT_VERSION%" GTR "!REMOTE_VER!" (
-    set "F1=[ %RED%OLD%RESET% ] !D1! (Locale: %SCRIPT_VERSION% ^> Cloud: !REMOTE_VER!)"
 ) else (
-    set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
+    set "F1=[ PATCH ] !D1! (Aggiornamento a v!REMOTE_VER!)"
     call :RENDER 5 1
-    curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT" -o "%TEMP%\new.txt"
-    copy /y "%TEMP%\new.txt" "%~f0" >nul & del "%TEMP%\new.txt"
-    start "" "%~f0" & exit
+    copy /y "%TEMP%\remote_script.txt" "%TEMP%\update.bat" >nul
+    start "" "%TEMP%\update.bat" --update
+    exit
 )
 call :RENDER 5 1
 
-:: === FASE 2-14 (RESTO DEL CODICE INVARIATO) ===
+:: === FASE 2: TASK ===
 set "F2=[ 2 .. ] !D2!" & call :RENDER 10 2
 schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
 set "F2=[  OK  ] !D2!" & call :RENDER 15 2
 
+:: === FASE 3-7: HARDENING ===
 set "F3=[ 3 .. ] !D3!" & call :RENDER 20 3
 ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
 set "F3=[  OK  ] !D3!" & call :RENDER 25 3
@@ -88,10 +97,12 @@ set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
 set "F7=[  OK  ] !D7!" & call :RENDER 65 7
 
+:: === FASE 8: ORARIO ===
 set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
 w32tm /resync /force /nowait >nul 2>&1
 set "F8=[  OK  ] !D8! (Aggiornato)" & call :RENDER 75 8
 
+:: === FASE 9-10: LOG/CORE ===
 set "F9=[ 9 .. ] !D9!" & call :RENDER 77 9
 for %%f in (named.cache root.zone blocklisthageziscelta.conf hagezi-normal.conf hagezi-pro.conf) do (
     if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1
@@ -102,14 +113,17 @@ set "F10=[10 ..] !D10!" & call :RENDER 81 10
 net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
 set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 
+:: === FASE 11: ROOT SERVERS ===
 set "F11=[11 ..] !D11!" & call :RENDER 85 11
 curl -s -f -k -z "%UB_DIR%\named.cache" -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
 set "F11=[  OK  ] !D11! (Controllati)" & call :RENDER 88 11
 
+:: === FASE 12: LISTE BLOCCO ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
 curl -s -f -k -z "%HZ_MAIN%" -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
 set "F12=[  OK  ] !D12! (Controllate)" & call :RENDER 93 12
 
+:: === FASE 13-14: FINALIZZAZIONE ===
 set "F13=[13 ..] !D13!" & call :RENDER 95 13
 "%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
 set "F13=[  OK  ] !D13!" & call :RENDER 97 13
