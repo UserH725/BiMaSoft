@@ -23,7 +23,7 @@ set "SCRIPT_VERSION=26.17"
 :: Configurazione rigida del dominio e dei percorsi RAW di GitHub
 set "WEB_DOMAIN=raw.githubusercontent.com"
 set "URL_VERSIONE=https://raw.githubusercontent.com/TuoUsername/TuoRepository/main/version.txt"
-set "URL_SCRIPT=https://raw.githubusercontent.com/TuoUsername/TuoRepository/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
+set "URL_SCRIPT=https://raw.githubusercontent.com/TuoUsername/TuoRepository/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 
 echo [..] Controllo integrita e versionamento cloud tramite GitHub Infrastructure...
 
