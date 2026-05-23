@@ -15,7 +15,7 @@ set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.45"
+set "SCRIPT_VERSION=26.46"
 set "URL_REMOTE=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
@@ -31,7 +31,8 @@ title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
 :: Inizializzazione Fasi
 for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i..."
-set "D1=CLOUD >> Verifica versione (Self-Check)..."
+set "D1=CLOUD >> Verifica versione (Robust-Check)..."
+:: ... (resto delle fasi invariato) ...
 set "D2=TASK  >> Inizializzazione Task..."
 set "D3=NET   >> Connettività WAN..."
 set "D4=FS    >> Directory Unbound..."
@@ -49,19 +50,28 @@ set "D14=ACL  >> Blindatura NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: AUTO-UPDATE (SELF-CHECK) ===
+:: === FASE 1: AUTO-UPDATE ROBUSTO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-curl -s -f -k "%URL_REMOTE%?nocache=%RANDOM%" -o "%TEMP%\remote_script.txt"
 set "REMOTE_VER=0"
-for /f "tokens=2 delims==" %%a in ('findstr /C:"set \"SCRIPT_VERSION=" "%TEMP%\remote_script.txt"') do (
-    set "REMOTE_VER=%%~a"
-    set "REMOTE_VER=!REMOTE_VER:"=!"
+
+:: Scarica con timeout di 5 secondi
+curl -s -f -k --connect-timeout 5 "%URL_REMOTE%?nocache=%RANDOM%" -o "%TEMP%\remote_script.txt" 2>nul
+
+:: Verifica se il file esiste ed è valido
+if exist "%TEMP%\remote_script.txt" (
+    for /f "tokens=2 delims==" %%a in ('findstr /C:"set \"SCRIPT_VERSION=" "%TEMP%\remote_script.txt"') do (
+        set "REMOTE_VER=%%~a"
+        set "REMOTE_VER=!REMOTE_VER:"=!"
+    )
 )
 
-if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
+:: Logica di confronto
+if "%REMOTE_VER%"=="0" (
+    set "F1=[ %RED%WARN%RESET% ] !D1! (Check Cloud Fallito, continuo in locale)"
+) else if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
     set "F1=[  OK  ] !D1! (Allineato: %SCRIPT_VERSION%)"
 ) else (
-    set "F1=[ PATCH ] !D1! (Aggiornamento a v!REMOTE_VER!)"
+    set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
     call :RENDER 5 1
     copy /y "%TEMP%\remote_script.txt" "%TEMP%\update.bat" >nul
     start "" "%TEMP%\update.bat" --update
@@ -69,6 +79,7 @@ if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
 )
 call :RENDER 5 1
 
+:: ... (resto dello script invariato) ...
 :: === FASE 2: TASK ===
 set "F2=[ 2 .. ] !D2!" & call :RENDER 10 2
 schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
