@@ -7,11 +7,12 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.54"
+set "SCRIPT_VERSION=26.55"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "REMOTE_VERSION_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt"
 set "REMOTE_SCRIPT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
+set "TARGET_FILE=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 
 :: --- GRAFICA (ANSI) ---
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
@@ -50,7 +51,6 @@ set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
 set "REMOTE_VER="
 curl -s -f -k -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
 if exist "%TEMP%\v.txt" (
-    :: Lettura forzata pulita tramite for
     for /f "tokens=*" %%a in ('type "%TEMP%\v.txt"') do set "REMOTE_VER=%%a"
     del "%TEMP%\v.txt"
 )
@@ -62,11 +62,9 @@ set "COLOR_F1=%GREEN%"
 set "UPDATE_PENDING=0"
 
 :: SE CLOUD < LOCALE: Segnala OLD (Rosso)
-if "!REMOTE_VER!" lss "%SCRIPT_VERSION%" (
-    if "!REMOTE_VER!" neq "Non rilevata" (
-        set "STATUS_F1=[ OLD ]"
-        set "COLOR_F1=%RED%"
-    )
+if "!REMOTE_VER!" lss "%SCRIPT_VERSION%" if "!REMOTE_VER!" neq "Non rilevata" (
+    set "STATUS_F1=[ OLD ]"
+    set "COLOR_F1=%RED%"
 )
 :: SE CLOUD > LOCALE: Segnala NEW (Giallo/Blink) e abilita aggiornamento
 if "!REMOTE_VER!" gtr "%SCRIPT_VERSION%" (
@@ -83,11 +81,13 @@ if "!UPDATE_PENDING!"=="1" (
     echo %YELLOW_BLINK%[!] NUOVA VERSIONE DISPONIBILE: !REMOTE_VER!%RESET%
     choice /c YN /t 5 /d N /n /m "Aggiornare ora? (Y/N - Timeout 5s): "
     if !errorlevel! EQU 1 (
-        echo [!] Download aggiornamento...
-        curl -s -f -k -o "%UB_DIR%\aggiornaBAT.BAT" "%REMOTE_SCRIPT_URL%"
-        if exist "%UB_DIR%\aggiornaBAT.BAT" (
-            echo [!] Aggiornamento scaricato. Riavvio...
-            start "" "%UB_DIR%\aggiornaBAT.BAT"
+        echo [!] Creazione backup di "%TARGET_FILE%"...
+        if exist "%TARGET_FILE%" copy /y "%TARGET_FILE%" "%TARGET_FILE%.BKP" >nul
+        echo [!] Download nuovo script...
+        curl -s -f -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
+        if exist "%TARGET_FILE%" (
+            echo [!] Aggiornamento scaricato e backup creato. Riavvio...
+            start "" "%TARGET_FILE%"
             exit
         )
     )
