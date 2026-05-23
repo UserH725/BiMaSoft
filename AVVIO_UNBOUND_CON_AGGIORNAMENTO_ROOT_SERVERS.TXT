@@ -27,7 +27,7 @@ set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-title UNBOUND BUNKER - v26.29 (Loop-Breaker Engine)
+title UNBOUND BUNKER - v26.30 (Signature Edition)
 
 :: Pre-popolamento fisso delle descrizioni statiche delle fasi
 set "D1=CLOUD >> Sincronizzazione e versionamento con GitHub..."
@@ -53,9 +53,9 @@ for /L %%i in (2,1,14) do set "F%%i=[     ] !D%%i!"
 call :UPDATE_UI 0 1
 
 :: ==========================================
-:: FASE 1: APPLICAZIONE PATCH CON ANTI-LOOP INTEGRATO
+:: FASE 1: APPLICAZIONE PATCH E RILANCIO DINAMICO
 :: ==========================================
-set "SCRIPT_VERSION=26.29"
+set "SCRIPT_VERSION=26.30"
 
 set "F1=[ 1 .. ] !D1!" & call :UPDATE_UI 1 1
 set "IP_SERVER="
@@ -68,25 +68,16 @@ if exist "%TEMP%\ip_server.txt" (
 set "RES_WEB="
 if not "!IP_SERVER!"=="" set "RES_WEB=--resolve %WEB_DOMAIN%:443:!IP_SERVER! --resolve %WEB_DOMAIN%:80:!IP_SERVER!"
 
-:: Generazione di un token casuale numerico per distruggere la cache di GitHub ad ogni avvio
-set "CACHE_BUSTER=%RANDOM%%RANDOM%"
-
 set "REMOTE_VERSION="
-for /f "tokens=*" %%v in ('curl -s -f -k !RES_WEB! "%URL_VERSIONE%?nocache=%CACHE_BUSTER%"') do set "REMOTE_VERSION=%%v"
+for /f "tokens=*" %%v in ('curl -s -f -k !RES_WEB! "%URL_VERSIONE%"') do set "REMOTE_VERSION=%%v"
 
-:: Se non rileva la versione online o se coincide al 100% con quella locale, spezza il loop e va avanti
 if "!REMOTE_VERSION!"=="" goto :VERSION_MATCHED
 if "!REMOTE_VERSION!"=="%SCRIPT_VERSION%" goto :VERSION_MATCHED
 
-:: Controllo di sicurezza aggiuntivo: evita il crash o il loop se il dato remoto è corrotto
-set "VALID_CHECK="
-echo !REMOTE_VERSION! | findstr /r "^[0-9][0-9]*\.[0-9][0-9]*$" >nul 2>&1
-if %errorLevel% neq 0 goto :VERSION_MATCHED
-
-:: CASO: Aggiornamento Reale e Convalidato -> Scarica, Sovrascrive e Rilancia la nuova build
+:: CASO: Aggiornamento Rilevato -> Scarica, Sovrascrive e Rilancia la nuova build
 set "F1=[ PATCH ] CLOUD >> Nuova v!REMOTE_VERSION! rilevata. Download ed applicazione patch..."
 call :UPDATE_UI 3 1
-curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%?nocache=%CACHE_BUSTER%"
+curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%"
 
 if exist "%TEMP%\bunker_update.txt" (
     set "F1=[ PATCH ] CLOUD >> Patch v!REMOTE_VERSION! scaricata. Rilancio del nuovo Core..."
@@ -97,7 +88,6 @@ if exist "%TEMP%\bunker_update.txt" (
 
 :VERSION_MATCHED
 set "F1=[  OK  ] !D1!"
-:: Passa il testimone alla fase 2
 set "F2=[ 2 . ] !D2!"
 call :UPDATE_UI 5 2
 
@@ -345,7 +335,7 @@ timeout /t 5 >nul
 exit
 
 :: ==========================================
-:: ENGINE DI RENDERING GRAFICO DINAMICO E KINETICO
+:: ENGINE DI RENDERING GRAFICO DINAMICO
 :: ==========================================
 :UPDATE_UI
 set "P_VAL=%~1"
@@ -359,7 +349,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.29
+echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
 echo ==================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ------------------------------------------------------------------
