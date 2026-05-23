@@ -15,10 +15,9 @@ set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.42"
+set "SCRIPT_VERSION=26.43"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
-set "LOG_FILE=%UB_DIR%\logfile.log"
 
 title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
@@ -42,15 +41,11 @@ set "D14=ACL  >> Blindatura NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: VERSIONAMENTO PULITO ===
+:: === FASE 1: VERSIONAMENTO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-set "REMOTE_VER=N/A"
 curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%" > "%TEMP%\v.txt" 2>nul
-:: Ciclo for per leggere solo la prima stringa utile e ignorare caratteri sporchi
-for /f "usebackq tokens=*" %%a in ("%TEMP%\v.txt") do set "REMOTE_VER=%%a"
-del "%TEMP%\v.txt" 2>nul
-:: Rimuove spazi accidentali
-set "REMOTE_VER=%REMOTE_VER: =%"
+set /p "REMOTE_VER=" < "%TEMP%\v.txt" 2>nul & del "%TEMP%\v.txt" 2>nul
+set "REMOTE_VER=!REMOTE_VER: =!"
 
 if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
     set "F1=[  OK  ] !D1! (Allineato: %SCRIPT_VERSION%)"
@@ -70,7 +65,7 @@ set "F2=[ 2 .. ] !D2!" & call :RENDER 10 2
 schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
 set "F2=[  OK  ] !D2!" & call :RENDER 15 2
 
-:: === FASE 3-7: HARDENING ===
+:: === FASE 3-10: HARDENING ===
 set "F3=[ 3 .. ] !D3!" & call :RENDER 20 3
 ping -n 1 8.8.8.8 >nul 2>&1 || (pause & exit)
 set "F3=[  OK  ] !D3!" & call :RENDER 25 3
@@ -93,12 +88,10 @@ set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
 set "F7=[  OK  ] !D7!" & call :RENDER 65 7
 
-:: === FASE 8: ORARIO ===
 set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
 w32tm /resync /force /nowait >nul 2>&1
 set "F8=[  OK  ] !D8! (Aggiornato)" & call :RENDER 75 8
 
-:: === FASE 9-10: LOG/CORE ===
 set "F9=[ 9 .. ] !D9!" & call :RENDER 77 9
 for %%f in (named.cache root.zone blocklisthageziscelta.conf hagezi-normal.conf hagezi-pro.conf) do (
     if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1
@@ -109,15 +102,15 @@ set "F10=[10 ..] !D10!" & call :RENDER 81 10
 net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
 set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 
-:: === FASE 11: ROOT SERVERS ===
+:: === FASE 11: ROOT SERVERS (INTELLIGENT UPDATE) ===
 set "F11=[11 ..] !D11!" & call :RENDER 85 11
-curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
-set "F11=[  OK  ] !D11! (Aggiornati)" & call :RENDER 88 11
+curl -s -f -k -z "%UB_DIR%\named.cache" -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
+set "F11=[  OK  ] !D11! (Controllati)" & call :RENDER 88 11
 
-:: === FASE 12: LISTE BLOCCO ===
+:: === FASE 12: LISTE BLOCCO (INTELLIGENT UPDATE) ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
-curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
-set "F12=[  OK  ] !D12! (Aggiornate)" & call :RENDER 93 12
+curl -s -f -k -z "%HZ_MAIN%" -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
+set "F12=[  OK  ] !D12! (Controllate)" & call :RENDER 93 12
 
 :: === FASE 13-14: FINALIZZAZIONE ===
 set "F13=[13 ..] !D13!" & call :RENDER 95 13
