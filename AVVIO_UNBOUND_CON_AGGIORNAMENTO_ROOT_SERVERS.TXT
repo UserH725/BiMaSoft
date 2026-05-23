@@ -10,16 +10,16 @@ if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 set "GREEN=%ESC%[92m"
 set "YELLOW_BLINK=%ESC%[5;93m"
+set "RED=%ESC%[91m"
 set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.39"
-set "REMOTE_VER=0.0"
+set "SCRIPT_VERSION=26.40"
 set "UB_DIR=C:\Program Files\Unbound"
-title UNBOUND BUNKER - v%SCRIPT_VERSION% (Status-Monitor Core)
+title UNBOUND BUNKER - v%SCRIPT_VERSION% (Diagnostic-Version Core)
 
-:: Inizializzazione Fasi pulita
+:: Inizializzazione Fasi
 for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i..."
 set "D1=CLOUD >> Verifica versionamento..."
 set "D2=TASK  >> Inizializzazione Task..."
@@ -39,17 +39,17 @@ set "D14=ACL  >> Blindatura NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: VERSIONAMENTO PULITO ===
+:: === FASE 1: LOGICA VERSIONAMENTO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-set "REMOTE_VER=N/A"
 curl -s -f -k "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%" > "%TEMP%\v.txt" 2>nul
-if exist "%TEMP%\v.txt" (
-    set /p "REMOTE_VER=" < "%TEMP%\v.txt"
-    del "%TEMP%\v.txt"
-)
+set /p "REMOTE_VER=" < "%TEMP%\v.txt" 2>nul & del "%TEMP%\v.txt" 2>nul
+:: Pulisce la variabile da eventuali spazi
+set "REMOTE_VER=!REMOTE_VER: =!"
 
-if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
-    set "F1=[  OK  ] !D1! (Loc: %SCRIPT_VERSION% / Cloud: !REMOTE_VER!)"
+if "%SCRIPT_VERSION%"=="!REMOTE_VER!" (
+    set "F1=[  OK  ] !D1! (Allineato: %SCRIPT_VERSION%)"
+) else if "%SCRIPT_VERSION%" GTR "!REMOTE_VER!" (
+    set "F1=[ %RED%OLD%RESET% ] !D1! (Locale: %SCRIPT_VERSION% ^> Cloud: !REMOTE_VER!)"
 ) else (
     set "F1=[ PATCH ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
     call :RENDER 5 1
@@ -87,10 +87,10 @@ set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
 set "F7=[  OK  ] !D7!" & call :RENDER 65 7
 
-:: === FASE 8: ORARIO ===
+:: === FASE 8: ORARIO (NTP) ===
 set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
 w32tm /resync /force /nowait >nul 2>&1
-set "F8=[  OK  ] !D8! (Aggiornato)" & call :RENDER 75 8
+set "F8=[  OK  ] !D8! (Aggiornato via NTP)" & call :RENDER 75 8
 
 :: === FASE 9-10: LOG/CORE ===
 set "F9=[ 9 .. ] !D9!" & call :RENDER 77 9
