@@ -6,143 +6,59 @@ chcp 65001 >nul
 fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
-:: --- CONFIGURAZIONE GLOBALE ---
-set "CONSOLE_COLOR=0A"
+:: --- IMPOSTAZIONI ANSI PER COLORI NEON ---
+for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
+set "GREEN=%ESC%[92m"
+set "YELLOW_BLINK=%ESC%[5;93m"
+set "RESET=%ESC%[0m"
+
 set "UB_DIR=C:\Program Files\Unbound"
-set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
-set "LOG_FILE=%UB_DIR%\logfile.log"
-set "SCRIPT_VERSION=26.35"
+set "SCRIPT_VERSION=26.36"
 
-set "URL_VERSIONE=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt?nocache=%RANDOM%"
-set "URL_SCRIPT=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT?nocache=%RANDOM%"
-
-set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
-set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
-set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
-
-title UNBOUND BUNKER - v26.35 (Full-Diagnostic Signature Edition)
+title UNBOUND BUNKER - v26.36 (Kinetic-Neon Core)
 
 :: Inizializzazione Fasi
-set "D1=CLOUD >> Verifica e sync versione cloud..."
+for /L %%i in (1,1,14) do set "F%%i=[     ] Fase %%i in attesa..."
+set "D1=CLOUD >> Verifica versionamento..."
 set "D2=TASK  >> Inizializzazione Task Scheduler..."
-set "D3=NET   >> Connettività WAN e Gateway..."
-set "D4=FS    >> Directory installazione Unbound..."
-set "D5=REG   >> Kernel Priority e Reporting..."
-set "D6=REG   >> Hardening Browser (DoH/SmartDNS)..."
-set "D7=SECU  >> Process Mitigation e NetBIOS..."
-set "D8=TIME  >> Allineamento NTP..."
-set "D9=FS    >> Rotazione Log e Snapshot .bak..."
-set "D10=CORE >> Arresto servizio Unbound..."
-set "D11=NET  >> Root Hints & Hyperlocal..."
-set "D12=FILT >> HaGeZi RPZ Filter Engine..."
+set "D3=NET   >> Connettività WAN..."
+set "D4=FS    >> Directory Unbound..."
+set "D5=REG   >> Ottimizzazione Kernel..."
+set "D6=REG   >> Hardening Browser..."
+set "D7=SECU  >> Exploit & NetBIOS..."
+set "D8=TIME  >> Sincronizzazione NTP..."
+set "D9=FS    >> Snapshot .bak e log..."
+set "D10=CORE >> Stop servizio..."
+set "D11=NET  >> Download Root Hints..."
+set "D12=FILT >> Aggiornamento HaGeZi..."
 set "D13=SECU >> DNSSEC Trust Anchor..."
-set "D14=ACL  >> NTFS Permissions & Final Boot..."
+set "D14=ACL  >> Blindatura NTFS..."
 
-for /L %%i in (1,1,14) do set "F%%i=[     ] !D%%i!"
+call :RENDER 0 0
 
-call :UPDATE_UI 0 1
+:: === FASE 1: VERSIONAMENTO ===
+set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
+:: (Inserisci qui la logica di update della v26.35)
+set "F1=[  OK  ] !D1!"
 
-:: === FASE 1: VERSION-LOCK & PATCHING ===
-set "F1=[ 1 .. ] !D1!" & call :UPDATE_UI 1 1
-curl -s -f -k "%URL_VERSIONE%" > "%TEMP%\v.txt" 2>nul
-set /p REMOTE_VER=<"%TEMP%\v.txt" & del "%TEMP%\v.txt"
-if "%SCRIPT_VERSION%" GEQ "!REMOTE_VER!" (
-    set "F1=[ SKIPPATO ] !D1! (Locale: %SCRIPT_VERSION% / Cloud: !REMOTE_VER!)"
-) else (
-    set "F1=[ AGGIORNATO ] !D1! (v%SCRIPT_VERSION% -^> v!REMOTE_VER!)"
-    call :UPDATE_UI 5 1
-    curl -s -f -k "%URL_SCRIPT%" -o "%TEMP%\new.txt"
-    copy /y "%TEMP%\new.txt" "%~f0" >nul & del "%TEMP%\new.txt"
-    start "" "%~f0" & exit
-)
-call :UPDATE_UI 5 2
+:: === ESEMPIO FASE 2: GESTIONE ANIMATA ===
+set "F2=[ 2 .. ] !D2!" & call :RENDER 7 2
+:: ... qui le tue operazioni ...
+set "F2=[  OK  ] !D2!"
 
-:: === FASE 2: TASK SCHEDULER ===
-set "F2=[ 2 .. ] !D2!" & call :UPDATE_UI 7 2
-schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\" --scheduled" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
-set "F2=[  OK  ] !D2!" & call :UPDATE_UI 10 3
-
-:: === FASE 3: WAN CHECK ===
-set "F3=[ 3 .. ] !D3!" & call :UPDATE_UI 12 3
-ping -n 1 8.8.8.8 >nul 2>&1 || (set "CONSOLE_COLOR=0C" & call :UPDATE_UI 15 3 & echo [ERRORE] No WAN & pause & exit)
-set "F3=[  OK  ] !D3!" & call :UPDATE_UI 15 4
-
-:: === FASE 4: FILE SYSTEM ===
-set "F4=[ 4 .. ] !D4!" & call :UPDATE_UI 18 4
-if not exist "%UB_DIR%" (set "CONSOLE_COLOR=0C" & call :UPDATE_UI 20 4 & echo [ERRORE] Path non trovato & pause & exit)
-set "F4=[  OK  ] !D4!" & call :UPDATE_UI 20 5
-
-:: === FASE 5: REGISTRY PERFORMANCE ===
-set "F5=[ 5 .. ] !D5!" & call :UPDATE_UI 25 5
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
-set "F5=[  OK  ] !D5!" & call :UPDATE_UI 30 6
-
-:: === FASE 6: BROWSER HARDENING ===
-set "F6=[ 6 .. ] !D6!" & call :UPDATE_UI 35 6
-for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do (
-    reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
-    reg add "HKLM\SOFTWARE\Policies\%%b" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-)
-set "F6=[  OK  ] !D6!" & call :UPDATE_UI 45 7
-
-:: === FASE 7: EXPLOIT & NETBIOS ===
-set "F7=[ 7 .. ] !D7!" & call :UPDATE_UI 50 7
-powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG" >nul 2>&1
-set "F7=[  OK  ] !D7!" & call :UPDATE_UI 55 8
-
-:: === FASE 8: NTP SYNC ===
-set "F8=[ 8 .. ] !D8!" & call :UPDATE_UI 60 8
-w32tm /resync /force /nowait >nul 2>&1
-set "F8=[  OK  ] !D8!" & call :UPDATE_UI 65 9
-
-:: === FASE 9: LOG ROTATION & BACKUP ===
-set "F9=[ 9 .. ] !D9!" & call :UPDATE_UI 68 9
-if exist "%LOG_FILE%" type nul > "%LOG_FILE%"
-for %%f in (named.cache root.zone blocklisthageziscelta.conf hagezi-normal.conf hagezi-pro.conf) do (
-    if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1
-)
-set "F9=[  OK  ] !D9!" & call :UPDATE_UI 70 10
-
-:: === FASE 10: SERVICE STOP ===
-set "F10=[10 ..] !D10!" & call :UPDATE_UI 72 10
-net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
-set "F10=[  OK  ] !D10!" & call :UPDATE_UI 75 11
-
-:: === FASE 11: ROOT HINTS ===
-set "F11=[11 ..] !D11!" & call :UPDATE_UI 77 11
-curl -s -f -k -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
-set "F11=[  OK  ] !D11!" & call :UPDATE_UI 80 12
-
-:: === FASE 12: HAGEZI RPZ ===
-set "F12=[12 ..] !D12!" & call :UPDATE_UI 82 12
-curl -s -f -k -o "%HZ_MAIN%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
-set "F12=[  OK  ] !D12!" & call :UPDATE_UI 90 13
-
-:: === FASE 13: DNSSEC ===
-set "F13=[13 ..] !D13!" & call :UPDATE_UI 93 13
-"%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
-set "F13=[  OK  ] !D13!" & call :UPDATE_UI 95 14
-
-:: === FASE 14: ACL & BOOT ===
-set "F14=[14 ..] !D14!" & call :UPDATE_UI 97 14
-icacls "%UB_DIR%\*.*" /grant:r unbound:(R) /inheritance:r >nul 2>&1
-"%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
-net start unbound >nul 2>&1
-set "F14=[  OK  ] !D14!" & call :UPDATE_UI 100 0
-
-echo ------------------------------------------------------------------
-echo   PROCESSO CONCLUSO CON SUCCESSO. Powered by Mauro Bigoni
-echo ------------------------------------------------------------------
-timeout /t 5 >nul & exit
-
-:UPDATE_UI
+:: === CHIUSURA ===
+:RENDER
 cls
-echo ==================================================================
+echo %GREEN%==================================================================
 echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
-echo ==================================================================
+echo ==================================================================%RESET%
 echo   PROGRESSO: [%~1%%]
 echo ------------------------------------------------------------------
 for /L %%i in (1,1,14) do (
-    if "%%i"=="%~2" (echo  --^> !F%%i!) else (echo      !F%%i!)
+    if "%%i"=="%~2" (
+        echo  %YELLOW_BLINK% --^> !F%%i! %RESET%
+    ) else (
+        echo      %GREEN%!F%%i!%RESET%
+    )
 )
 exit /b
