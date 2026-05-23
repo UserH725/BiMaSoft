@@ -16,9 +16,9 @@ exit /b
 echo [+] Diritti di amministratore confermati.
 
 :: ==========================================
-:: ENGINE DI CENTRALIZZAZIONE & AUTO-UPDATE (PUBLIC GITHUB v26.24)
+:: ENGINE DI CENTRALIZZAZIONE & AUTO-UPDATE (PUBLIC GITHUB v26.25)
 :: ==========================================
-set "SCRIPT_VERSION=26.24"
+set "SCRIPT_VERSION=26.25"
 
 :: Configurazione rigida dei percorsi pubblici e stabili di GitHub
 set "WEB_DOMAIN=raw.githubusercontent.com"
@@ -27,9 +27,9 @@ set "URL_SCRIPT=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_U
 
 echo [..] Controllo integrita e versionamento cloud (Public GitHub Channel)...
 
-:: Risoluzione asincrona via File-Bridge (Immune ai crash del parser CMD)
+:: Risoluzione asincrona lineare a Zero-Pipe (Previene qualsiasi crash del parser CMD)
 set "IP_SERVER="
-powershell -Command "$ip = (Resolve-DnsName -Name %WEB_DOMAIN% -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'} | Select-Object -First 1).IPAddress; if ($ip) { $ip | Out-File -FilePath '%TEMP%\ip_server.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+powershell -Command "$d = Resolve-DnsName -Name %WEB_DOMAIN% -Server 1.1.1.1 -ErrorAction SilentlyContinue; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_server.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
 if exist "%TEMP%\ip_server.txt" (
     set /p IP_SERVER=<"%TEMP%\ip_server.txt"
     del "%TEMP%\ip_server.txt" >nul 2>&1
@@ -40,26 +40,25 @@ if not "!IP_SERVER!"=="" (
     set "RES_WEB=--resolve %WEB_DOMAIN%:443:!IP_SERVER! --resolve %WEB_DOMAIN%:80:!IP_SERVER!"
 )
 
-:: Interrogazione immediata del file versione cloud tramite curl
+:: Interrogazione del file versione cloud tramite curl
 set "REMOTE_VERSION="
 for /f "tokens=*" %%v in ('curl -s -f -k !RES_WEB! "%URL_VERSIONE%"') do set "REMOTE_VERSION=%%v"
 
-:: Se GitHub risponde ed è presente una nuova release sul server
-if not "!REMOTE_VERSION!"="" (
-    if "!REMOTE_VERSION!" neq "%SCRIPT_VERSION%" (
-        echo [!] Rilevato aggiornamento critico nel cloud: v!REMOTE_VERSION!
-        echo [..] Download del nuovo Core di protezione (Estensione Mascherata)...
-        
-        :: Scarica lo script remoto salvandolo come .txt temporaneo
-        curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%"
-        
-        if exist "%TEMP%\bunker_update.txt" (
-            echo [+] Validazione completata. Applicazione patch e riavvio asincrono...
-            start "" cmd /c "timeout /t 1 /nobreak >nul && copy /y "%TEMP%\bunker_update.txt" "%~f0" >nul && del "%TEMP%\bunker_update.txt" >nul && start "" "%~f0""
-            exit /b
-        )
-    )
+:: Logica di salto lineare: evita i blocchi IF annidati inclini al crash
+if "!REMOTE_VERSION!"=="" goto :SKIP_CLOUD_UPDATE
+if "!REMOTE_VERSION!"=="%SCRIPT_VERSION%" goto :SKIP_CLOUD_UPDATE
+
+echo [!] Rilevato aggiornamento critico nel cloud: v!REMOTE_VERSION!
+echo [..] Download del nuovo Core di protezione (Estensione Mascherata)...
+curl -s -f -k !RES_WEB! -o "%TEMP%\bunker_update.txt" "%URL_SCRIPT%"
+
+if exist "%TEMP%\bunker_update.txt" (
+    echo [+] Validazione completata. Applicazione patch e riavvio asincrono...
+    start "" cmd /c "timeout /t 1 /nobreak >nul && copy /y "%TEMP%\bunker_update.txt" "%~f0" >nul && del "%TEMP%\bunker_update.txt" >nul && start "" "%~f0""
+    exit /b
 )
+
+:SKIP_CLOUD_UPDATE
 echo [+] Il Bunker locale e gia allineato all'ultima versione (%SCRIPT_VERSION%).
 echo [..] Controllo e inizializzazione Task Scheduler...
 
@@ -80,7 +79,7 @@ set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-title UNBOUND BUNKER - v26.24 (File-Bridge Core)
+title UNBOUND BUNKER - v26.25 (Bulletproof Core)
 
 :: Inizializzazione fissa delle fasi (13 step compatti)
 for /L %%i in (1,1,13) do set "F%%i="
@@ -177,7 +176,7 @@ set "F8=[  OK  ] CORE >> Servizio interrotto e processi orfani terminati (Porta 
 set "F9=[  ..  ] NET  >> Risoluzione asincrona IP in memoria (AV-Shield)..."
 call :UPDATE_UI 80
 set "IP_INTERNIC="
-powershell -Command "$ip = (Resolve-DnsName -Name www.internic.net -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'} | Select-Object -First 1).IPAddress; if (-not $ip) { $ip = (Resolve-DnsName -Name www.internic.net -Server 8.8.8.8 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'} | Select-Object -First 1).IPAddress }; if ($ip) { $ip | Out-File -FilePath '%TEMP%\ip_internic.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+powershell -Command "$d = Resolve-DnsName -Name www.internic.net -Server 1.1.1.1 -ErrorAction SilentlyContinue; if(-not $d){ $d = Resolve-DnsName -Name www.internic.net -Server 8.8.8.8 -ErrorAction SilentlyContinue }; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_internic.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
 if exist "%TEMP%\ip_internic.txt" (
     set /p IP_INTERNIC=<"%TEMP%\ip_internic.txt"
     del "%TEMP%\ip_internic.txt" >nul 2>&1
@@ -221,7 +220,7 @@ if exist "%UB_DIR%\hagezi_choice.txt" (
 set "F10=[  ..  ] NET  >> Sincronizzazione in memoria filtri dual-zone..."
 call :UPDATE_UI 85
 set "IP_JSDELIVR="
-powershell -Command "$ip = (Resolve-DnsName -Name cdn.jsdelivr.net -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'} | Select-Object -First 1).IPAddress; if (-not $ip) { $ip = (Resolve-DnsName -Name cdn.jsdelivr.net -Server 8.8.8.8 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'} | Select-Object -First 1).IPAddress }; if ($ip) { $ip | Out-File -FilePath '%TEMP%\ip_jsdelivr.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+powershell -Command "$d = Resolve-DnsName -Name cdn.jsdelivr.net -Server 1.1.1.1 -ErrorAction SilentlyContinue; if(-not $d){ $d = Resolve-DnsName -Name cdn.jsdelivr.net -Server 8.8.8.8 -ErrorAction SilentlyContinue }; foreach($r in $d){ if($r.Type -eq 'A'){ $r.IPAddress | Out-File -FilePath '%TEMP%\ip_jsdelivr.txt' -Encoding ascii -NoNewline; break } }" >nul 2>&1
 if exist "%TEMP%\ip_jsdelivr.txt" (
     set /p IP_JSDELIVR=<"%TEMP%\ip_jsdelivr.txt"
     del "%TEMP%\ip_jsdelivr.txt" >nul 2>&1
@@ -253,9 +252,9 @@ set "F12=[  ..  ] ACL  >> Modifica ereditarietà e blindatura NTFS + Utente Unbo
 call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_NORMAL%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%UB_DIR%\HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%UB_DIR%\HZ_NORMAL%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%UB_DIR%\HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12=[  OK  ] ACL  >> Privilegi NTFS blindati. Accesso di sicurezza configurato per l'utente 'unbound'"
@@ -327,7 +326,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.24
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.25
 echo ==================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ------------------------------------------------------------------
