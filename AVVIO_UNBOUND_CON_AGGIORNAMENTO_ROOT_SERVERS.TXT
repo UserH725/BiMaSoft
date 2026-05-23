@@ -16,9 +16,9 @@ exit /b
 echo [+] Diritti di amministratore confermati.
 
 :: ==========================================
-:: ENGINE DI CENTRALIZZAZIONE & AUTO-UPDATE (PUBLIC GITHUB v26.22)
+:: ENGINE DI CENTRALIZZAZIONE & AUTO-UPDATE (PUBLIC GITHUB v26.23)
 :: ==========================================
-set "SCRIPT_VERSION=26.22"
+set "SCRIPT_VERSION=26.23"
 
 :: Configurazione rigida dei percorsi pubblici e stabili di GitHub
 set "WEB_DOMAIN=raw.githubusercontent.com"
@@ -27,9 +27,9 @@ set "URL_SCRIPT=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_U
 
 echo [..] Controllo integrita e versionamento cloud (Public GitHub Channel)...
 
-:: Risoluzione asincrona in RAM senza parentesi tonde per evitare il crash del parser CMD
+:: Risoluzione asincrona in RAM - Sanificata al 100% senza apici singoli nidificati
 set "REMOTE_VERSION="
-for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name %WEB_DOMAIN% -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object {$_.Type -eq 'A'} ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_SERVER=%%a"
+for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name %WEB_DOMAIN% -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object Type -eq A ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_SERVER=%%a"
 
 set "RES_WEB="
 if not "!IP_SERVER!"=="" (
@@ -76,7 +76,7 @@ set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\hagezi-normal.conf"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
 
-title UNBOUND BUNKER - v26.22 (Anti-Bug Core)
+title UNBOUND BUNKER - v26.23 (Zero-Quote Core)
 
 :: Inizializzazione fissa delle fasi (13 step compatti)
 for /L %%i in (1,1,13) do set "F%%i="
@@ -173,8 +173,8 @@ set "F8=[  OK  ] CORE >> Servizio interrotto e processi orfani terminati (Porta 
 set "F9=[  ..  ] NET  >> Risoluzione asincrona IP in memoria (AV-Shield)..."
 call :UPDATE_UI 80
 set "RES_INTERNIC="
-for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name www.internic.net -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object {$_.Type -eq 'A'} ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_INTERNIC=%%a"
-if "%IP_INTERNIC%"=="" for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name www.internic.net -Server 8.8.8.8 -ErrorAction SilentlyContinue ^| Where-Object {$_.Type -eq 'A'} ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_INTERNIC=%%a"
+for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name www.internic.net -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object Type -eq A ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_INTERNIC=%%a"
+if "%IP_INTERNIC%"=="" for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name www.internic.net -Server 8.8.8.8 -ErrorAction SilentlyContinue ^| Where-Object Type -eq A ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_INTERNIC=%%a"
 if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_INTERNIC! --resolve www.internic.net:80:!IP_INTERNIC!"
 
 curl -s -f -k !RES_INTERNIC! -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache
@@ -213,8 +213,8 @@ if exist "%UB_DIR%\hagezi_choice.txt" (
 set "F10=[  ..  ] NET  >> Sincronizzazione in memoria filtri dual-zone..."
 call :UPDATE_UI 85
 set "RES_JSDELIVR="
-for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name cdn.jsdelivr.net -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object {$_.Type -eq 'A'} ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_JSDELIVR=%%a"
-if "%IP_JSDELIVR%"=="" for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name cdn.jsdelivr.net -Server 8.8.8.8 -ErrorAction SilentlyContinue ^| Where-Object {$_.Type -eq 'A'} ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_JSDELIVR=%%a"
+for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name cdn.jsdelivr.net -Server 1.1.1.1 -ErrorAction SilentlyContinue ^| Where-Object Type -eq A ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_JSDELIVR=%%a"
+if "%IP_JSDELIVR%"=="" for /f "tokens=*" %%a in ('powershell -Command "Resolve-DnsName -Name cdn.jsdelivr.net -Server 8.8.8.8 -ErrorAction SilentlyContinue ^| Where-Object Type -eq A ^| Select-Object -ExpandProperty IPAddress -First 1"') do set "IP_JSDELIVR=%%a"
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 if not exist "%HZ_NORMAL%" curl -s -f -k !RES_JSDELIVR! -o "%HZ_NORMAL%" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt
@@ -315,7 +315,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.21
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.23
 echo ==================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ------------------------------------------------------------------
