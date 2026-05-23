@@ -10,6 +10,10 @@ if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb
 set "SCRIPT_VERSION=26.53"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
+set "REMOTE_VERSION_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt"
+set "REMOTE_SCRIPT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
+:: Inizializzazione vuota per evitare residui
+set "REMOTE_VER="
 
 :: --- GRAFICA (ANSI) ---
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
@@ -41,10 +45,31 @@ set "D14=ACL  >> Permessi NTFS..."
 cls
 call :RENDER 0 0
 
-:: === FASE 1: CHECK ===
+:: === FASE 1: CHECK AGGIORNAMENTO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-curl -s -f -k -m 2 "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt" > "%TEMP%\v.txt" 2>nul
-if exist "%TEMP%\v.txt" ( set /p REMOTE_VER=<"%TEMP%\v.txt" & del "%TEMP%\v.txt" )
+curl -s -f -k -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
+if exist "%TEMP%\v.txt" (
+    :: Legge il file ignorando spazi o residui
+    set /p "REMOTE_VER=" < "%TEMP%\v.txt"
+    del "%TEMP%\v.txt"
+    
+    if "!REMOTE_VER!" neq "%SCRIPT_VERSION%" (
+        if "!REMOTE_VER!" neq "" (
+            echo.
+            echo %RED%[!] NUOVA VERSIONE DISPONIBILE: !REMOTE_VER!%RESET%
+            choice /c YN /t 5 /d N /n /m "Aggiornare ora? (Y/N - Timeout 5s): "
+            if !errorlevel! EQU 1 (
+                echo [!] Download aggiornamento...
+                curl -s -f -k -o "%UB_DIR%\aggiornaBAT.BAT" "%REMOTE_SCRIPT_URL%"
+                if exist "%UB_DIR%\aggiornaBAT.BAT" (
+                    echo [!] Aggiornamento scaricato. Riavvio...
+                    start "" "%UB_DIR%\aggiornaBAT.BAT"
+                    exit
+                )
+            )
+        )
+    )
+)
 set "F1=[  OK  ] !D1! (Locale: %SCRIPT_VERSION%)"
 call :RENDER 5 1
 
@@ -125,7 +150,9 @@ timeout /t 5 >nul & exit
 :RENDER
 echo %GOTO_TOP%%GREEN%==================================================================
 echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
-echo   VERSIONE: %SCRIPT_VERSION%
+echo   VERSIONE LOCALE: %SCRIPT_VERSION%
+echo   VERSIONE CLOUD : !REMOTE_VER!
+if "!REMOTE_VER!"=="" echo   VERSIONE CLOUD : Non rilevata
 echo ==================================================================%RESET%
 echo   PROGRESSO: [%~1%%]
 echo ------------------------------------------------------------------
