@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=27.03"
+set "SCRIPT_VERSION=27.07"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -85,24 +85,17 @@ call :RENDER 5 0
 set "F1=[ 1 .. ] !D1!" & call :RENDER 5 1
 if "!REMOTE_VER!" gtr "%SCRIPT_VERSION%" (
     set "F1=[AGGIORNAMENTO] Script v!REMOTE_VER! (Locale: %SCRIPT_VERSION%)"
-    set "UPDATE_PENDING=1"
+    call :RENDER 5 1
+    echo %ESC%[6;45H%YELLOW%Aggiornare ora? (Y/N):%RESET%
+    choice /c YN /n >nul
+    if !errorlevel! EQU 1 (
+        powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('%REMOTE_SCRIPT_URL%', '%TEMP%\NEW_SCRIPT.BAT')"
+        move /y "%TEMP%\NEW_SCRIPT.BAT" "%TARGET_FILE%"
+        start "" "%TARGET_FILE%" & exit
+    )
 ) else (
     set "F1=[NON NECESSARIO] Script v%SCRIPT_VERSION%"
-)
-call :RENDER 5 1
-
-if "!UPDATE_PENDING!"=="1" (
-    choice /c YN /t 5 /d N /n /m "Aggiornare script alla versione !REMOTE_VER!? (Y/N): "
-    if !errorlevel! EQU 1 (
-        echo [!] Scaricamento nuovo script...
-        powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('%REMOTE_SCRIPT_URL%', '%TEMP%\NEW_SCRIPT.BAT')"
-        echo [!] Sostituzione file...
-        timeout /t 2 >nul
-        move /y "%TEMP%\NEW_SCRIPT.BAT" "%TARGET_FILE%"
-        echo [!] Riavvio in corso...
-        start "" "%TARGET_FILE%"
-        exit
-    )
+    call :RENDER 5 1
 )
 
 :: === FASE 2-10 ===
@@ -130,25 +123,25 @@ call :RENDER 5 11
 
 :: === FASE 12: LISTE HAGEZI ===
 set "F12=[ 12 .. ] !D12!" & call :RENDER 5 12
-echo %ESC%[20;45H%YELLOW%[Scegli 1:Norm/2:Pro]: %RESET%
+echo %ESC%[16;45H%YELLOW%[Scegli 1:Norm/2:Pro]: %RESET%
 choice /c 12 /t 5 /d 2 /n >nul
 set "CHOICE_VAL=%errorlevel%"
-echo %ESC%[20;45H                                                                        
+echo %ESC%[16;45H                                                                        
 if !CHOICE_VAL! EQU 1 (set "T_D=%HZ_NORMAL%" & set "SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/multi.txt" & set "NAME=NORMAL") else (set "T_D=%HZ_PRO%" & set "SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/pro.txt" & set "NAME=PRO")
 
 for /f %%a in ('powershell -Command "(Get-Item '!T_D!' -ErrorAction SilentlyContinue).LastWriteTime.Ticks"') do set "T3=%%a"
 powershell -Command "$wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('!SRC!', '!T_D!')" >nul 2>&1
 for /f %%a in ('powershell -Command "(Get-Item '!T_D!').LastWriteTime.Ticks"') do set "T4=%%a"
 
-if "%T3%" neq "%T4%" (
-    if exist "!T_D!" (
+if exist "!T_D!" (
+    if "%T3%" neq "%T4%" (
         copy /y "!T_D!" "%HZ_MAIN%" >nul 2>&1
         set "F12=[AGGIORNATO    ] Liste !NAME!"
     ) else (
-        set "F12=[ERRORE        ] Liste !NAME!"
+        set "F12=[NON NECESSARIO] Liste !NAME!"
     )
 ) else (
-    set "F12=[NON NECESSARIO] Liste !NAME!"
+    set "F12=[ERRORE        ] Liste !NAME!"
 )
 call :RENDER 5 12
 
