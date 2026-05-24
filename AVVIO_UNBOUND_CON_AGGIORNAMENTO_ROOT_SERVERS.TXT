@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.67"
+set "SCRIPT_VERSION=26.80"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -53,8 +53,7 @@ call :RENDER 0 0
 
 :: === FASE 1: CHECK AGGIORNAMENTO ===
 set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-set "REMOTE_VER="
-curl -s -f -k -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
+curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
 if exist "%TEMP%\v.txt" (
     for /f "tokens=*" %%a in ('type "%TEMP%\v.txt"') do set "REMOTE_VER=%%a"
     del "%TEMP%\v.txt"
@@ -79,7 +78,7 @@ if "!UPDATE_PENDING!"=="1" (
         echo @echo off
         echo timeout /t 3 ^>nul
         echo if exist "%TARGET_FILE%" copy /y "%TARGET_FILE%" "%TARGET_FILE%.%SCRIPT_VERSION%.BKP" ^>nul
-        echo curl -s -f -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
+        echo curl -s -f -k --ssl-no-revoke -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
         echo start "" "%TARGET_FILE%"
         echo del "%%%%~f0"
         echo exit
@@ -131,45 +130,42 @@ set "F10=[  OK  ] !D10!" & call :RENDER 83 10
 set "F11=[11 ..] !D11!" & call :RENDER 85 11
 set "FILE_ROOT=%UB_DIR%\named.cache"
 for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T1=%%a"
-curl -s -f -k -z "%FILE_ROOT%" -o "%FILE_ROOT%" https://www.internic.net/domain/named.cache >nul 2>&1
+curl -s -f -k --ssl-no-revoke -z "%FILE_ROOT%" -o "%FILE_ROOT%" https://www.internic.net/domain/named.cache >nul 2>&1
 for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T2=%%a"
 if %T1% LSS %T2% (set "F11=[AGGIORNATO] !D11!") else (set "F11=[NON AGGIORNATO] !D11!")
 call :RENDER 88 11
 
 :: === FASE 12: SCELTA E DOWNLOAD LISTE ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
-echo.
-echo %YELLOW%[!] FASE 12 - Selezione Liste Hagezi%RESET%
-echo %YELLOW%Scegli lista: 1:Normal / 2:Pro (Default Pro in 5s): %RESET%
+
+echo %ESC%[19;45H%YELLOW%[Scegli 1:Norm/2:Pro (Default 2 in 5s)]: %RESET%
 choice /c 12 /t 5 /d 2 /n >nul
 set "CHOICE_VAL=%errorlevel%"
+echo %ESC%[19;45H                                                                        
 
 if !CHOICE_VAL! EQU 1 (
-    set "SRC_FILE=%HZ_NORMAL%"
-    set "LIST_SRC=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/normal.txt"
+    set "TARGET_DEST=%HZ_NORMAL%"
+    set "LIST_SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/tags/37522026.144.37614/rpz/multi.txt"
     set "LIST_NAME=NORMAL"
 ) else (
-    set "SRC_FILE=%HZ_PRO%"
-    set "LIST_SRC=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt"
+    set "TARGET_DEST=%HZ_PRO%"
+    set "LIST_SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/tags/37522026.144.37614/rpz/pro.txt"
     set "LIST_NAME=PRO"
 )
 
-if not exist "!SRC_FILE!" (
-    curl -s -f -k -o "!SRC_FILE!" "!LIST_SRC!" >nul 2>&1
+:: RIMOZIONE FORZATA
+if exist "!TARGET_DEST!" del /f /q "!TARGET_DEST!" >nul 2>&1
+
+:: Download robusto via PowerShell
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('!LIST_SRC!', '!TARGET_DEST!')" >nul 2>&1
+
+if exist "!TARGET_DEST!" (
+    copy /y "!TARGET_DEST!" "%HZ_MAIN%" >nul 2>&1
     set "STATUS_LIST=[AGGIORNATO - !LIST_NAME!]"
 ) else (
-    for /f %%a in ('powershell -Command "(Get-Item '!SRC_FILE!').LastWriteTime.Ticks"') do set "T3=%%a"
-    curl -s -f -k -z "!SRC_FILE!" -o "!SRC_FILE!" "!LIST_SRC!" >nul 2>&1
-    for /f %%a in ('powershell -Command "(Get-Item '!SRC_FILE!').LastWriteTime.Ticks"') do set "T4=%%a"
-    
-    if !T3! LSS !T4! (
-        set "STATUS_LIST=[AGGIORNATO - !LIST_NAME!]"
-    ) else (
-        set "STATUS_LIST=[NON AGGIORNATO - !LIST_NAME!]"
-    )
+    set "STATUS_LIST=[ERRORE DL - !LIST_NAME!]"
 )
 
-copy /y "!SRC_FILE!" "%HZ_MAIN%" >nul
 set "F12=!STATUS_LIST! !D12!"
 call :RENDER 93 12
 
