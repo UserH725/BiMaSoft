@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=27.00"
+set "SCRIPT_VERSION=27.01"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -94,8 +94,17 @@ call :RENDER 5 1
 if "!UPDATE_PENDING!"=="1" (
     choice /c YN /t 5 /d N /n /m "Aggiornare script ora? (Y/N): "
     if !errorlevel! EQU 1 (
-        (echo @echo off & echo curl -s -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%" & echo start "" "%TARGET_FILE%" & echo exit) > "%TEMP_UPDATE%"
-        start /min "" "%TEMP_UPDATE%" & exit
+        (
+        echo @echo off
+        echo timeout /t 2 ^>nul
+        echo ren "%TARGET_FILE%" "update_temp.old"
+        echo curl -s -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
+        echo del "update_temp.old"
+        echo start "" "%TARGET_FILE%"
+        echo exit
+        ) > "%TEMP%\UPDATE_SCRIPT.BAT"
+        start /min "" "%TEMP%\UPDATE_SCRIPT.BAT"
+        exit
     )
 )
 
@@ -160,7 +169,7 @@ echo. & echo %GREEN%PROCESSO CONCLUSO%RESET% & timeout /t 3 >nul & exit
 echo %GOTO_TOP%%GREEN%==================================================================
 echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
 echo   VERS. SCRIPT : %SCRIPT_VERSION%  (Cloud: !REMOTE_VER!)
-echo   VERS. SERVICE: !LOCAL_SERVICE_VER_VAL% (Cloud: !REMOTE_SERVICE_VER!)
+echo   VERS. SERVICE: !LOCAL_SERVICE_VER_VAL! (Cloud: !REMOTE_SERVICE_VER!)
 echo ==================================================================%RESET%
 echo   PROGRESSO: [%~1%%]
 echo ------------------------------------------------------------------
