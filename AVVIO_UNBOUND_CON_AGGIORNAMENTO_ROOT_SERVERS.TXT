@@ -10,15 +10,30 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.80"
+set "SCRIPT_VERSION=27.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
 set "HZ_PRO=%UB_DIR%\Hagezi_Pro.txt"
+set "SERVICE_CONF=%UB_DIR%\service.conf"
+set "LOCAL_SERVICE_VER=%UB_DIR%\local_service_version.txt"
+
 set "REMOTE_VERSION_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version.txt"
 set "REMOTE_SCRIPT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
+set "REMOTE_SERVICE_VERSION_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/version_service.txt"
+set "REMOTE_SERVICE_CONF_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf"
 set "TARGET_FILE=%~f0"
-set "TEMP_UPDATE=%TEMP%\UPDATE_TEMP.BAT"
+
+:: --- RECUPERO VERSIONI ---
+curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
+set /p REMOTE_VER=<"%TEMP%\v.txt" 2>nul
+curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_SERVICE_VERSION_URL%" > "%TEMP%\sv.txt" 2>nul
+set /p REMOTE_SERVICE_VER=<"%TEMP%\sv.txt" 2>nul
+if not exist "%LOCAL_SERVICE_VER%" echo 0 > "%LOCAL_SERVICE_VER%"
+set /p LOCAL_SERVICE_VER_VAL=<"%LOCAL_SERVICE_VER%"
+
+set "REMOTE_SERVICE_VER=!REMOTE_SERVICE_VER: =!"
+set "LOCAL_SERVICE_VER_VAL=!LOCAL_SERVICE_VER_VAL: =!"
 
 :: --- GRAFICA (ANSI) ---
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
@@ -28,176 +43,128 @@ set "YELLOW_BLINK=%ESC%[5;93m"
 set "RED=%ESC%[91m"
 set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
+set "CLEAR_LINE=%ESC%[K"
 
 title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
 :: --- INIZIALIZZAZIONE ---
-for /L %%i in (1,1,14) do set "F%%i=[        ] Fase %%i..."
-set "D1=CLOUD >> Verifica aggiornamenti..."
-set "D2=TASK  >> Inizializzazione Task..."
-set "D3=NET   >> Connettività WAN..."
-set "D4=FS    >> Directory Unbound..."
-set "D5=REG   >> Performance & Tuning..."
-set "D6=REG   >> Browser Hardening..."
-set "D7=SECU  >> Sicurezza Sistema..."
-set "D8=TIME  >> Sincronizzazione..."
-set "D9=FS    >> Log & Backup..."
-set "D10=CORE >> Riavvio Servizio..."
-set "D11=NET  >> Aggiornamento Root..."
-set "D12=FILT >> Aggiornamento Liste..."
-set "D13=SECU >> DNSSEC..."
-set "D14=ACL  >> Permessi NTFS..."
+for /L %%i in (0,1,14) do set "F%%i=[        ] Fase %%i..."
+set "D0=CONF  >> service.conf v!REMOTE_SERVICE_VER!"
+set "D1=CLOUD >> Verifica aggiornamenti"
+set "D2=TASK  >> Inizializzazione Task"
+set "D3=NET   >> Connettività WAN"
+set "D4=FS    >> Directory Unbound"
+set "D5=REG   >> Performance & Tuning"
+set "D6=REG   >> Browser Hardening"
+set "D7=SECU  >> Sicurezza Sistema"
+set "D8=TIME  >> Sincronizzazione"
+set "D9=FS    >> Log & Backup"
+set "D10=CORE >> Riavvio Servizio"
+set "D11=NET  >> Aggiornamento Root"
+set "D12=FILT >> Aggiornamento Liste"
+set "D13=SECU >> DNSSEC"
+set "D14=ACL  >> Permessi NTFS"
 
 cls
-call :RENDER 0 0
+call :RENDER 0 99
 
-:: === FASE 1: CHECK AGGIORNAMENTO ===
-set "F1=[ 1 .. ] !D1!" & call :RENDER 1 1
-curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
-if exist "%TEMP%\v.txt" (
-    for /f "tokens=*" %%a in ('type "%TEMP%\v.txt"') do set "REMOTE_VER=%%a"
-    del "%TEMP%\v.txt"
+:: === FASE 0: AGGIORNAMENTO SERVICE.CONF ===
+set "F0=[ 0 .. ] !D0!" & call :RENDER 5 0
+if "!REMOTE_SERVICE_VER!" neq "!LOCAL_SERVICE_VER_VAL!" (
+    set "F0=[AGGIORNAMENTO] service.conf (!LOCAL_SERVICE_VER_VAL! -^> !REMOTE_SERVICE_VER!)"
+    if exist "%SERVICE_CONF%" copy /y "%SERVICE_CONF%" "%SERVICE_CONF%.BKP" >nul
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('%REMOTE_SERVICE_CONF_URL%', '%SERVICE_CONF%')" >nul 2>&1
+    echo !REMOTE_SERVICE_VER! > "%LOCAL_SERVICE_VER%"
+    net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1 & net start unbound >nul 2>&1
+) else (
+    set "F0=[NON NECESSARIO] service.conf v!LOCAL_SERVICE_VER_VAL!"
 )
-if "!REMOTE_VER!"=="" set "REMOTE_VER=Non rilevata"
+call :RENDER 5 0
 
-set "STATUS_F1=[  OK  ]"
-set "COLOR_F1=%GREEN%"
-set "UPDATE_PENDING=0"
-if "!REMOTE_VER!" lss "%SCRIPT_VERSION%" if "!REMOTE_VER!" neq "Non rilevata" (set "STATUS_F1=[ OLD ]" & set "COLOR_F1=%RED%")
-if "!REMOTE_VER!" gtr "%SCRIPT_VERSION%" (set "STATUS_F1=[ NEW ]" & set "COLOR_F1=%YELLOW_BLINK%" & set "UPDATE_PENDING=1")
-set "F1=!COLOR_F1!!STATUS_F1!%RESET% !D1! (Locale: %SCRIPT_VERSION% - Cloud: !REMOTE_VER!)"
+:: === FASE 1: CHECK AGGIORNAMENTO SCRIPT ===
+set "F1=[ 1 .. ] !D1!" & call :RENDER 5 1
+if "!REMOTE_VER!" gtr "%SCRIPT_VERSION%" (
+    set "F1=[AGGIORNAMENTO] Script v!REMOTE_VER! (Locale: %SCRIPT_VERSION%)"
+    set "UPDATE_PENDING=1"
+) else (
+    set "F1=[NON NECESSARIO] Script v%SCRIPT_VERSION%"
+)
 call :RENDER 5 1
 
 if "!UPDATE_PENDING!"=="1" (
-    echo.
-    echo %YELLOW%[!] NUOVA VERSIONE DISPONIBILE: !REMOTE_VER!%RESET%
-    choice /c YN /t 5 /d N /n /m "Aggiornare ora? (Y/N - Timeout 5s): "
+    choice /c YN /t 5 /d N /n /m "Aggiornare script ora? (Y/N): "
     if !errorlevel! EQU 1 (
-        echo [!] Preparazione aggiornamento...
-        (
-        echo @echo off
-        echo timeout /t 3 ^>nul
-        echo if exist "%TARGET_FILE%" copy /y "%TARGET_FILE%" "%TARGET_FILE%.%SCRIPT_VERSION%.BKP" ^>nul
-        echo curl -s -f -k --ssl-no-revoke -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
-        echo start "" "%TARGET_FILE%"
-        echo del "%%%%~f0"
-        echo exit
-        ) > "%TEMP_UPDATE%"
-        echo [!] Riavvio in corso...
-        start /min "" "%TEMP_UPDATE%"
-        exit
+        (echo @echo off & echo curl -s -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%" & echo start "" "%TARGET_FILE%" & echo exit) > "%TEMP_UPDATE%"
+        start /min "" "%TEMP_UPDATE%" & exit
     )
 )
 
-:: === FASE 2-10: ESECUZIONE NORMALE ===
-set "F2=[ 2 .. ] !D2!" & call :RENDER 10 2
-schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\"" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1
-set "F2=[  OK  ] !D2!" & call :RENDER 15 2
+:: === FASE 2-10 ===
+for %%a in (2 3 4 5 6 7 8 9 10) do (
+    set "F%%a=[ %%a .. ] !D%%a!" & call :RENDER 5 %%a
+    if %%a==2 (schtasks /create /tn "Unbound_Bunker_Hourly" /tr "cmd.exe /c \"%~f0\"" /sc hourly /mo 1 /ru "SYSTEM" /rl highest /f >nul 2>&1)
+    if %%a==3 (ping -n 1 8.8.8.8 >nul 2>&1)
+    if %%a==4 (if not exist "%UB_DIR%" set "F4=[ ERRO ] Percorso non trovato")
+    if %%a==5 (reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1)
+    if %%a==6 (for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1)
+    if %%a==7 (powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUp,HighEntropy,CFG" >nul 2>&1)
+    if %%a==8 (w32tm /resync /force /nowait >nul 2>&1)
+    if %%a==9 (if exist "%UB_DIR%" for %%f in (named.cache root.zone blocklisthageziscelta.conf) do if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1)
+    if %%a==10 (net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1)
+    set "F%%a=[  OK      ] !D%%a!" & call :RENDER 5 %%a
+)
 
-set "F3=[ 3 .. ] !D3!" & call :RENDER 20 3
-ping -n 1 8.8.8.8 >nul 2>&1
-set "F3=[  OK  ] !D3!" & call :RENDER 25 3
+:: === FASE 11: ROOT ===
+set "F11=[ 11 .. ] !D11!" & call :RENDER 5 11
+for /f %%a in ('powershell -Command "(Get-Item '%UB_DIR%\named.cache' -ErrorAction SilentlyContinue).LastWriteTime.Ticks"') do set "T1=%%a"
+curl -s -f -k --ssl-no-revoke -z "%UB_DIR%\named.cache" -o "%UB_DIR%\named.cache" https://www.internic.net/domain/named.cache >nul 2>&1
+for /f %%a in ('powershell -Command "(Get-Item '%UB_DIR%\named.cache' -ErrorAction SilentlyContinue).LastWriteTime.Ticks"') do set "T2=%%a"
+if "%T1%" neq "%T2%" (set "F11=[AGGIORNATO    ] !D11!") else (set "F11=[NON NECESSARIO] !D11!")
+call :RENDER 5 11
 
-set "F4=[ 4 .. ] !D4!" & call :RENDER 30 4
-if exist "%UB_DIR%" (set "F4=[  OK  ] !D4!") else (set "F4=[ ERRO ] Percorso non trovato")
-call :RENDER 35 4
-
-set "F5=[ 5 .. ] !D5!" & call :RENDER 40 5
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
-set "F5=[  OK  ] !D5!" & call :RENDER 45 5
-
-set "F6=[ 6 .. ] !D6!" & call :RENDER 50 6
-for %%b in (Google\Chrome Microsoft\Edge BraveSoftware\Brave Opera Vivaldi) do (reg add "HKLM\SOFTWARE\Policies\%%b" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1)
-set "F6=[  OK  ] !D6!" & call :RENDER 55 6
-
-set "F7=[ 7 .. ] !D7!" & call :RENDER 60 7
-powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUp,HighEntropy,CFG" >nul 2>&1
-set "F7=[  OK  ] !D7!" & call :RENDER 65 7
-
-set "F8=[ 8 .. ] !D8!" & call :RENDER 70 8
-w32tm /resync /force /nowait >nul 2>&1
-set "F8=[  OK  ] !D8!" & call :RENDER 75 8
-
-set "F9=[ 9 .. ] !D9!" & call :RENDER 77 9
-if exist "%UB_DIR%" (for %%f in (named.cache root.zone blocklisthageziscelta.conf) do (if exist "%UB_DIR%\%%f" copy /y "%UB_DIR%\%%f" "%UB_DIR%\%%f.bak" >nul 2>&1))
-set "F9=[  OK  ] !D9!" & call :RENDER 79 9
-
-set "F10=[10 ..] !D10!" & call :RENDER 81 10
-net stop unbound >nul 2>&1 & taskkill /f /im unbound.exe >nul 2>&1
-set "F10=[  OK  ] !D10!" & call :RENDER 83 10
-
-:: === FASE 11: DOWNLOAD ROOT ===
-set "F11=[11 ..] !D11!" & call :RENDER 85 11
-set "FILE_ROOT=%UB_DIR%\named.cache"
-for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T1=%%a"
-curl -s -f -k --ssl-no-revoke -z "%FILE_ROOT%" -o "%FILE_ROOT%" https://www.internic.net/domain/named.cache >nul 2>&1
-for /f %%a in ('powershell -Command "(Get-Item '%FILE_ROOT%').LastWriteTime.Ticks"') do set "T2=%%a"
-if %T1% LSS %T2% (set "F11=[AGGIORNATO] !D11!") else (set "F11=[NON AGGIORNATO] !D11!")
-call :RENDER 88 11
-
-:: === FASE 12: SCELTA E DOWNLOAD LISTE ===
-set "F12=[12 ..] !D12!" & call :RENDER 90 12
-
-echo %ESC%[19;45H%YELLOW%[Scegli 1:Norm/2:Pro (Default 2 in 5s)]: %RESET%
+:: === FASE 12: LISTE HAGEZI ===
+set "F12=[ 12 .. ] !D12!" & call :RENDER 5 12
+echo %ESC%[20;45H%YELLOW%[Scegli 1:Norm/2:Pro]: %RESET%
 choice /c 12 /t 5 /d 2 /n >nul
 set "CHOICE_VAL=%errorlevel%"
-echo %ESC%[19;45H                                                                        
+echo %ESC%[20;45H                                                                        
+if !CHOICE_VAL! EQU 1 (set "T_D=%HZ_NORMAL%" & set "SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/normal.txt" & set "NAME=NORMAL") else (set "T_D=%HZ_PRO%" & set "SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/main/rpz/pro.txt" & set "NAME=PRO")
 
-if !CHOICE_VAL! EQU 1 (
-    set "TARGET_DEST=%HZ_NORMAL%"
-    set "LIST_SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/tags/37522026.144.37614/rpz/multi.txt"
-    set "LIST_NAME=NORMAL"
+for /f %%a in ('powershell -Command "(Get-Item '!T_D!' -ErrorAction SilentlyContinue).LastWriteTime.Ticks"') do set "T3=%%a"
+powershell -Command "$wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('!SRC!', '!T_D!')" >nul 2>&1
+for /f %%a in ('powershell -Command "(Get-Item '!T_D!').LastWriteTime.Ticks"') do set "T4=%%a"
+
+if "%T3%" neq "%T4%" (
+    if exist "!T_D!" (
+        copy /y "!T_D!" "%HZ_MAIN%" >nul 2>&1
+        set "F12=[AGGIORNATO    ] Liste !NAME!"
+    ) else (
+        set "F12=[ERRORE        ] Liste !NAME!"
+    )
 ) else (
-    set "TARGET_DEST=%HZ_PRO%"
-    set "LIST_SRC=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/tags/37522026.144.37614/rpz/pro.txt"
-    set "LIST_NAME=PRO"
+    set "F12=[NON NECESSARIO] Liste !NAME!"
 )
+call :RENDER 5 12
 
-:: RIMOZIONE FORZATA
-if exist "!TARGET_DEST!" del /f /q "!TARGET_DEST!" >nul 2>&1
-
-:: Download robusto via PowerShell
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $wc.Headers.Add('User-Agent', 'Mozilla/5.0'); $wc.DownloadFile('!LIST_SRC!', '!TARGET_DEST!')" >nul 2>&1
-
-if exist "!TARGET_DEST!" (
-    copy /y "!TARGET_DEST!" "%HZ_MAIN%" >nul 2>&1
-    set "STATUS_LIST=[AGGIORNATO - !LIST_NAME!]"
-) else (
-    set "STATUS_LIST=[ERRORE DL - !LIST_NAME!]"
-)
-
-set "F12=!STATUS_LIST! !D12!"
-call :RENDER 93 12
-
-:: === FASE 13-14: FINE ===
-set "F13=[13 ..] !D13!" & call :RENDER 95 13
+:: === FASE 13-14 ===
+set "F13=[ 13 .. ] !D13!" & call :RENDER 5 13
 if exist "%UB_DIR%" ("%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1)
-set "F13=[  OK  ] !D13!" & call :RENDER 97 13
-
-set "F14=[14 ..] !D14!" & call :RENDER 98 14
+set "F13=[  OK      ] !D13!" & call :RENDER 5 13
+set "F14=[ 14 .. ] !D14!" & call :RENDER 100 99
 net start unbound >nul 2>&1
-set "F14=[  OK  ] !D14!" & call :RENDER 100 0
+set "F14=[  OK      ] !D14!" & call :RENDER 100 99
 
-:: --- FINE PROCESSO ---
-echo.
-echo %GREEN%==================================================================%RESET%
-echo %GREEN%  PROCESSO CONCLUSO CON SUCCESSO%RESET%
-echo %GREEN%==================================================================%RESET%
-timeout /t 5 >nul & exit
+echo. & echo %GREEN%PROCESSO CONCLUSO%RESET% & timeout /t 3 >nul & exit
 
 :RENDER
 echo %GOTO_TOP%%GREEN%==================================================================
 echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
-echo   VERSIONE LOCALE: %SCRIPT_VERSION%
-echo   VERSIONE CLOUD : !REMOTE_VER!
+echo   VERS. SCRIPT : %SCRIPT_VERSION%  (Cloud: !REMOTE_VER!)
+echo   VERS. SERVICE: !LOCAL_SERVICE_VER_VAL% (Cloud: !REMOTE_SERVICE_VER!)
 echo ==================================================================%RESET%
 echo   PROGRESSO: [%~1%%]
 echo ------------------------------------------------------------------
-for /L %%i in (1,1,14) do (
-    if "%%i"=="%~2" (
-        echo  %YELLOW_BLINK% --^> !F%%i! %RESET%      
-    ) else (
-        echo      %GREEN%!F%%i!%RESET%      
-    )
+for /L %%i in (0,1,14) do (
+    if "%%i"=="%~2" (echo  %YELLOW_BLINK% --^> !F%%i! %RESET% %CLEAR_LINE%) else (echo      %GREEN%!F%%i!%RESET% %CLEAR_LINE%)
 )
 exit /b
