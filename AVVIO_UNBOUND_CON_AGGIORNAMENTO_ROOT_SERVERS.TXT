@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.64"
+set "SCRIPT_VERSION=26.65"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -90,7 +90,7 @@ if "!UPDATE_PENDING!"=="1" (
         (
         echo @echo off
         echo timeout /t 3 ^>nul
-        echo if exist "%TARGET_FILE%" copy /y "%TARGET_FILE%" "%TARGET_FILE%.BKP" ^>nul
+        echo if exist "%TARGET_FILE%" copy /y "%TARGET_FILE%" "%TARGET_FILE%.%SCRIPT_VERSION%.BKP" ^>nul
         echo curl -s -f -k -o "%TARGET_FILE%" "%REMOTE_SCRIPT_URL%"
         echo start "" "%TARGET_FILE%"
         echo del "%%%%~f0"
