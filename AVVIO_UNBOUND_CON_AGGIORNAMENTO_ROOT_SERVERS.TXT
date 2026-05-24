@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=26.63"
+set "SCRIPT_VERSION=26.64"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -28,9 +28,20 @@ set "YELLOW_BLINK=%ESC%[5;93m"
 set "RED=%ESC%[91m"
 set "RESET=%ESC%[0m"
 set "GOTO_TOP=%ESC%[1;1H"
-set "CLEAR_BELOW=%ESC%[16;1H%ESC%[J"
 
 title UNBOUND BUNKER - v%SCRIPT_VERSION%
+
+:: --- SCELTA PRO PROGRESSIVA (FASE 0) ---
+cls
+echo %GREEN%==================================================================%RESET%
+echo   SISTEMA DI PROTEZIONE DNS - Powered by Mauro Bigoni
+echo   VERSIONE: %SCRIPT_VERSION%
+echo ==================================================================%RESET%
+echo.
+echo %YELLOW%Aggiornamento lista Hagezi, scegli tra 1:Normal / 2:Pro%RESET%
+echo %YELLOW%Scegli lista (Default Pro in 3s): %RESET%
+choice /c 12 /t 3 /d 2 /n >nul
+set "CHOICE_VAL=%errorlevel%"
 
 :: --- INIZIALIZZAZIONE ---
 for /L %%i in (1,1,14) do set "F%%i=[        ] Fase %%i..."
@@ -139,13 +150,8 @@ call :RENDER 88 11
 
 :: === FASE 12: SCELTA E DOWNLOAD LISTE ===
 set "F12=[12 ..] !D12!" & call :RENDER 90 12
-echo.
-echo %YELLOW%Aggiornamento lista Hagezi, scegli tra 1:Normal / 2:Pro%RESET%
-echo %YELLOW%Scegli lista (Default Pro in 3s): %RESET%
-choice /c 12 /t 3 /d 2 /n >nul
-echo %CLEAR_BELOW%
 
-if !errorlevel! EQU 1 (
+if !CHOICE_VAL! EQU 1 (
     set "SRC_FILE=%HZ_NORMAL%"
     set "LIST_SRC=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/normal.txt"
     set "LIST_NAME=NORMAL"
