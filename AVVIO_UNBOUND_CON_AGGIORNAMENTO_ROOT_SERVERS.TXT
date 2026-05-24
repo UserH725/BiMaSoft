@@ -10,7 +10,7 @@ fltmc >nul 2>&1
 if %errorLevel% neq 0 (powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs" & exit /b)
 
 :: --- CONFIGURAZIONE ---
-set "SCRIPT_VERSION=27.09"
+set "SCRIPT_VERSION=27.10"
 set "UB_DIR=C:\Program Files\Unbound"
 set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_NORMAL=%UB_DIR%\Hagezi_Normal.txt"
@@ -27,7 +27,6 @@ set "TARGET_FILE=%~f0"
 :: --- RECUPERO VERSIONI ---
 curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_VERSION_URL%" > "%TEMP%\v.txt" 2>nul
 set /p REMOTE_VER=<"%TEMP%\v.txt" 2>nul
-set "REMOTE_VER=!REMOTE_VER: =!"
 curl -s -f -k --ssl-no-revoke -m 2 "%REMOTE_SERVICE_VERSION_URL%" > "%TEMP%\sv.txt" 2>nul
 set /p REMOTE_SERVICE_VER=<"%TEMP%\sv.txt" 2>nul
 if not exist "%LOCAL_SERVICE_VER%" echo 0 > "%LOCAL_SERVICE_VER%"
@@ -50,21 +49,21 @@ title UNBOUND BUNKER - v%SCRIPT_VERSION%
 
 :: --- INIZIALIZZAZIONE ---
 for /L %%i in (0,1,14) do set "F%%i=[        ] Fase %%i..."
-set "D0=CONF  ^>^> service.conf v!REMOTE_SERVICE_VER!"
-set "D1=CLOUD ^>^> Verifica aggiornamenti"
-set "D2=TASK  ^>^> Inizializzazione Task"
-set "D3=NET   ^>^> Connettività WAN"
-set "D4=FS    ^>^> Directory Unbound"
-set "D5=REG   ^>^> Performance & Tuning"
-set "D6=REG   ^>^> Browser Hardening"
-set "D7=SECU  ^>^> Sicurezza Sistema"
-set "D8=TIME  ^>^> Sincronizzazione"
-set "D9=FS    ^>^> Log & Backup"
-set "D10=CORE ^>^> Riavvio Servizio"
-set "D11=NET  ^>^> Aggiornamento Root"
-set "D12=FILT ^>^> Aggiornamento Liste"
-set "D13=SECU ^>^> DNSSEC"
-set "D14=ACL  ^>^> Permessi NTFS"
+set "D0=CONF  >> service.conf v!REMOTE_SERVICE_VER!"
+set "D1=CLOUD >> Verifica aggiornamenti"
+set "D2=TASK  >> Inizializzazione Task"
+set "D3=NET   >> Connettività WAN"
+set "D4=FS    >> Directory Unbound"
+set "D5=REG   >> Performance & Tuning"
+set "D6=REG   >> Browser Hardening"
+set "D7=SECU  >> Sicurezza Sistema"
+set "D8=TIME  >> Sincronizzazione"
+set "D9=FS    >> Log & Backup"
+set "D10=CORE >> Riavvio Servizio"
+set "D11=NET  >> Aggiornamento Root"
+set "D12=FILT >> Aggiornamento Liste"
+set "D13=SECU >> DNSSEC"
+set "D14=ACL  >> Permessi NTFS"
 
 cls
 call :RENDER 0 99
@@ -83,9 +82,9 @@ if "!REMOTE_SERVICE_VER!" neq "!LOCAL_SERVICE_VER_VAL!" (
 call :RENDER 5 0
 
 :: === FASE 1: CHECK AGGIORNAMENTO SCRIPT ===
-set "F1=[ 1 .. ] !D1!"
+set "F1=[ 1 .. ] !D1!" & call :RENDER 5 1
 if "!REMOTE_VER!" gtr "%SCRIPT_VERSION%" (
-    set "F1=[AGGIORNAMENTO] Script v!REMOTE_VER!"
+    set "F1=[AGGIORNAMENTO] Script v!REMOTE_VER! (Locale: %SCRIPT_VERSION%)"
     call :RENDER 5 1
     echo %ESC%[6;45H%YELLOW%Aggiornare ora? (Y/N):%RESET%
     choice /c YN /n >nul
