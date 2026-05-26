@@ -237,7 +237,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
-title UNBOUND BUNKER - v26.29 Secure Build - AV-Shield Core
+title UNBOUND BUNKER - by Mauro Bigoni
 
 for /L %%i in (1,1,13) do set "F%%i="
 
