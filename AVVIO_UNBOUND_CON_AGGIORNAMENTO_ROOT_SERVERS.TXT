@@ -71,7 +71,7 @@ if "!UPDATE_NEEDED!"=="1" (
         )
         if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
-        set "BAK_FILE=%TEMP%\\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
+        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
         if exist "!BAK_FILE!" (
             echo   [OK] Backup creato: !BAK_FILE!
