@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.27"
+set "LOCAL_VER=26.28"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -235,7 +235,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
-title UNBOUND BUNKER - v26.27 Secure Build - AV-Shield Core
+title UNBOUND BUNKER - v26.28 Secure Build - AV-Shield Core
 
 for /L %%i in (1,1,13) do set "F%%i="
 
@@ -652,7 +652,8 @@ cls
 color %CONSOLE_COLOR%
 echo =====================================================================
 echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE by Mauro Bigoni
-echo   Versione BAT locale: v!LOCAL_VER! * Versione BAT cloud: v!CLOUD_VER! * Versione SERVICE.CONF locale: v!LOCAL_SVC_VER! * cloud: v!SVC_VER!
+echo   Versione BAT locale: v!LOCAL_VER! * Versione BAT cloud: v!CLOUD_VER!
+echo   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER! * Versione SERVICE.CONF cloud: v!SVC_VER!
 echo =====================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ---------------------------------------------------------------------
