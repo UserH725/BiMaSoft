@@ -17,7 +17,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- SETUP VARIABILI ---
-set "LOCAL_VER=26.49"
+set "LOCAL_VER=26.50"
 set "UB_DIR=C:\Program Files\Unbound"
 set "SELF_BAT=%~f0"
 set "CLOUD_VER=N/A"
