@@ -17,7 +17,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- SETUP VARIABILI ---
-set "LOCAL_VER=26.50"
+set "LOCAL_VER=26.49"
 set "UB_DIR=C:\Program Files\Unbound"
 set "SELF_BAT=%~f0"
 set "CLOUD_VER=N/A"
@@ -63,15 +63,15 @@ echo [..] Backup del file corrente in corso...
 
 set "FILE_TO_BAK=!SELF_BAT!"
 set "VER_IN_FILE=unknown"
-set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
-powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+set "VER_TMP2=%TEMP%\\ub_ver_bak.txt"
+powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
 if exist "!VER_TMP2!" (
 set /p VER_IN_FILE=<"!VER_TMP2!"
 del /f /q "!VER_TMP2!" >nul 2>&1
 )
 if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
-set "BAK_FILE=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
+set "BAK_FILE=%UB_DIR%\\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
 copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
 if exist "!BAK_FILE!" (
 echo [OK] Backup creato: "!BAK_FILE!"
@@ -80,21 +80,34 @@ echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%"
 )
 
 echo [..] Download nuova versione v!CLOUD_VER! in corso...
-set "UPDATE_TMP=%TEMP%\UPDATE!CLOUD_VER:.=!.bat"
-set "PROXY_UPDATER=%TEMP%\proxy_updater.bat"
+set "UPDATE_TMP=%TEMP%\\UPDATE!CLOUD_VER:.=!.bat"
+
 powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
 
 if exist "!UPDATE_TMP!" (
-    echo @echo off > "!PROXY_UPDATER!"
-    echo timeout /t 3 ^>nul >> "!PROXY_UPDATER!"
-    echo copy /y "!UPDATE_TMP!" "!SELF_BAT!" ^>nul 2^>^&1 >> "!PROXY_UPDATER!"
-    echo del /f /q "!UPDATE_TMP!" >> "!PROXY_UPDATER!"
-    echo start "" "!SELF_BAT!" >> "!PROXY_UPDATER!"
-    echo del /f /q "%%~f0" >> "!PROXY_UPDATER!"
-    
-    echo [OK] Lancio procedura di aggiornamento...
-    start "" "!PROXY_UPDATER!"
-    exit
+    :: Verifica che il file scaricato non sia vuoto
+    for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 1000 (
+        echo [OK] Download completato (%%~zI bytes). Applicazione aggiornamento...
+        
+        :: Attesa breve per liberare file handle
+        timeout /t 2 /nobreak >nul
+        
+        :: Sovrascrittura DIRETTA dello script corrente (senza proxy)
+        copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
+        del /f /q "!UPDATE_TMP!" >nul 2>&1
+        
+        echo [OK] Aggiornamento completato a v!CLOUD_VER!
+        echo Lo script si riavvierà automaticamente tra 3 secondi...
+        timeout /t 3 /nobreak >nul
+        
+        :: Riavvio dello STESSO script (eredita lo stesso CMD)
+        cmd /c ""!SELF_BAT!""
+        exit /b
+    ) else (
+        echo [ERRORE] File scaricato troppo piccolo (%%~zI bytes). Aggiornamento annullato.
+        del /f /q "!UPDATE_TMP!" >nul 2>&1
+        echo Proseguo con la versione attuale...
+    )
 ) else (
 echo [ERRORE] Download fallito. Aggiornamento annullato.
 echo Proseguo con la versione attuale...
