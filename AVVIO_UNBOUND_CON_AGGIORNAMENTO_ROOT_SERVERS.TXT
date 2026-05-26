@@ -72,7 +72,7 @@ del /f /q "!VER_TMP2!" >nul 2>&1
 )
 if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
-set "BAK_FILE=!UB_DIR!\\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_PRECEDENTE.BKP"
+set "BAK_FILE=!UB_DIR!\\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
 copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
 if exist "!BAK_FILE!" (
 echo [OK] Backup creato: !BAK_FILE!
@@ -88,7 +88,7 @@ powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.Se
 if exist "!UPDATE_TMP!" (
 for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
 copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-del /f /q "!UPDATE_TMP!" >nul 2>&1
+::del /f /q "!UPDATE_TMP!" >nul 2>&1
 echo !CLOUD_VER!>"!BAT_VER_FILE!"
 echo.
 echo ==================================================================
@@ -652,7 +652,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo =========================================================================
-echo SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE by Mauro Bigoni (c)2026
+echo SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE by Mauro Bigoni (c) 2026
 echo Script BAT locale: v!LOCAL_VER!
 echo Script BAT cloud: v!CLOUD_VER!
 echo SERVICE.CONF locale: v!LOCAL_SVC_VER!
@@ -673,7 +673,4 @@ if defined F10 echo !F10!
 if defined F11 echo !F11!
 if defined F12 echo !F12!
 if defined F13 echo !F13!
-echo ---------------------------------------------------------------------
-echo Ogni fase mostra direttamente cosa sta facendo, in modo leggibile.
-echo ---------------------------------------------------------------------
 exit /b
