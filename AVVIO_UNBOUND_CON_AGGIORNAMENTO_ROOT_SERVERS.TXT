@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.24"
+set "LOCAL_VER=26.27"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -88,6 +88,7 @@ if "!UPDATE_NEEDED!"=="1" (
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
+                echo !CLOUD_VER!>"!BAT_VER_FILE!"
                 echo.
                 echo ==================================================================
                 echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO!
@@ -118,7 +119,8 @@ if "!UPDATE_NEEDED!"=="1" (
 
 :: --- SERVICE.CONF UPDATE: confronta versione locale con cloud ---
 set "SERVICE_CONF=%UB_DIR%\service.conf"
-set "LOCAL_SVC_VER_FILE=%UB_DIR%\local_service_version.txt"
+set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
+set "BAT_VER_FILE=%UB_DIR%\versione_script_bat.txt"
 set "CLOUD_SVC_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf"
 set "LOCAL_SVC_VER=N/A"
 set "SVC_UPDATE_NEEDED=0"
@@ -233,7 +235,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
-title UNBOUND BUNKER - v26.24 Secure Build - AV-Shield Core
+title UNBOUND BUNKER - v26.27 Secure Build - AV-Shield Core
 
 for /L %%i in (1,1,13) do set "F%%i="
 
