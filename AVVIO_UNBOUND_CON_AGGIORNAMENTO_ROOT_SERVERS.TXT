@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.18"
+set "LOCAL_VER=26.19"
 set "CLOUD_VER=N/A"
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
@@ -29,7 +29,6 @@ if "!CLOUD_VER!"=="" set "CLOUD_VER=N/A"
 set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVER.BAT"
 set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 set "UPDATE_NEEDED=0"
-set "LAUNCH_UPDATE=0"
 
 if not "!CLOUD_VER!"=="N/A" (
     set "LOC_INT=!LOCAL_VER:.=!"
@@ -41,35 +40,52 @@ if "!UPDATE_NEEDED!"=="1" (
     echo.
     echo ==================================================================
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
-    echo   Download e installazione automatica in corso...
     echo ==================================================================
-
-    :: 1) Backup del file corrente con numero versione nel nome
-    set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVER_v!LOCAL_VER!.BKP"
-    if exist "!SELF_BAT!" (
-        copy /y "!SELF_BAT!" "!BAK_FILE!" >nul 2>&1
-        echo [OK] Backup creato: !BAK_FILE!
-    ) else (
-        copy /y "%~f0" "!BAK_FILE!" >nul 2>&1
-        echo [OK] Backup script corrente: !BAK_FILE!
-    )
-
-    :: 2) Scarica il nuovo file con nome UPDATE<versione>.bat nella cartella Unbound
-    set "UPDATE_TMP=!UB_DIR!\UPDATE!CLOUD_VER:.=!.bat"
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
-
-    if exist "!UPDATE_TMP!" (
-        for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-            echo [OK] Nuovo script scaricato: !UPDATE_TMP!
-            copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-            echo [OK] File principale aggiornato: !SELF_BAT!
-            set "LAUNCH_UPDATE=1"
+    choice /c SN /d N /t 5 /m "   Vuoi aggiornare ora? [S=Si / N=No, default N in 5 sec]"
+    if !errorlevel! EQU 1 (
+        echo.
+        echo   [..] Backup del file corrente in corso...
+        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVER_v!LOCAL_VER!.BKP"
+        if exist "!SELF_BAT!" (
+            copy /y "!SELF_BAT!" "!BAK_FILE!" >nul 2>&1
         ) else (
-            echo [WARN] File scaricato vuoto, aggiornamento annullato.
-            del /f /q "!UPDATE_TMP!" >nul 2>&1
+            copy /y "%~f0" "!BAK_FILE!" >nul 2>&1
+        )
+        echo   [OK] Backup creato: !BAK_FILE!
+
+        echo   [..] Download nuova versione v!CLOUD_VER! in corso...
+        set "UPDATE_TMP=!UB_DIR!\UPDATE!CLOUD_VER:.=!.bat"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
+
+        if exist "!UPDATE_TMP!" (
+            for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
+                copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
+                del /f /q "!UPDATE_TMP!" >nul 2>&1
+                echo.
+                echo ==================================================================
+                echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO!
+                echo   Versione installata: v!CLOUD_VER!
+                echo   File aggiornato: !SELF_BAT!
+                echo   Backup precedente: !BAK_FILE!
+                echo   Il nuovo script sara' avviato automaticamente.
+                echo ==================================================================
+                timeout /t 4 >nul
+                start "" "!SELF_BAT!"
+                exit
+            ) else (
+                echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
+                del /f /q "!UPDATE_TMP!" >nul 2>&1
+                echo   Proseguo con la versione attuale...
+                echo.
+            )
+        ) else (
+            echo   [ERRORE] Download fallito. Aggiornamento annullato.
+            echo   Proseguo con la versione attuale...
+            echo.
         )
     ) else (
-        echo [ERRORE] Download fallito, aggiornamento annullato.
+        echo   Aggiornamento rimandato. Proseguo con la versione attuale v!LOCAL_VER!...
+        echo.
     )
 )
 
@@ -112,7 +128,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
-title UNBOUND BUNKER - v26.18 Secure Build - AV-Shield Core
+title UNBOUND BUNKER - v26.19 Secure Build - AV-Shield Core
 
 for /L %%i in (1,1,13) do set "F%%i="
 
@@ -491,14 +507,6 @@ echo ------------------------------------------------------------------
 echo   PROCESSO CONCLUSO.
 echo ------------------------------------------------------------------
 
-:: --- LANCIA IL NUOVO SCRIPT SE L'AGGIORNAMENTO E' RIUSCITO ---
-if "!LAUNCH_UPDATE!"=="1" (
-    echo   [>>] Riavvio con la nuova versione v!CLOUD_VER!...
-    timeout /t 3 >nul
-    start "" "!SELF_BAT!"
-    exit
-)
-
 echo Chiusura automatica...
 timeout /t 5 >nul
 exit
@@ -536,7 +544,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo =====================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.18 by Mauro Bigoni
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.19 by Mauro Bigoni
 echo   Versione locale: v!LOCAL_VER!   ^|   Versione cloud: v!CLOUD_VER!
 echo =====================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
