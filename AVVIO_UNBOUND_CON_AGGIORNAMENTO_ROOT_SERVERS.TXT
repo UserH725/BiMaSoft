@@ -16,7 +16,7 @@ powershell -Command "Start-Process '%~f0' -Verb RunAs"
 exit /b
 
 :ADMIN_VERIFIED
-:: --- VERSION CHECK CLOUD ---
+:: --- SETUP VARIABILI ---
 set "LOCAL_VER=26.50"
 set "UB_DIR=C:\Program Files\Unbound"
 set "SELF_BAT=%~f0"
