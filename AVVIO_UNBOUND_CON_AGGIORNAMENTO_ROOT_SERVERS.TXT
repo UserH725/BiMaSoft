@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.19"
+set "LOCAL_VER=26.20"
 set "CLOUD_VER=N/A"
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
@@ -45,12 +45,19 @@ if "!UPDATE_NEEDED!"=="1" (
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
-        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVER_v!LOCAL_VER!.BKP"
-        if exist "!SELF_BAT!" (
-            copy /y "!SELF_BAT!" "!BAK_FILE!" >nul 2>&1
-        ) else (
-            copy /y "%~f0" "!BAK_FILE!" >nul 2>&1
+
+        :: Legge la versione contenuta nel file da sostituire (cerca LOCAL_VER nel file)
+        set "FILE_TO_BAK="
+        if exist "!SELF_BAT!" (set "FILE_TO_BAK=!SELF_BAT!") else (set "FILE_TO_BAK=%~f0")
+        set "VER_IN_FILE=unknown"
+        for /f "tokens=2 delims==" %%v in ('findstr /i "LOCAL_VER" "!FILE_TO_BAK!" 2^>nul') do (
+            set "RAW_VER=%%v"
+            set "RAW_VER=!RAW_VER: =!"
+            set "RAW_VER=!RAW_VER:"=!"
+            if not "!RAW_VER!"=="" set "VER_IN_FILE=!RAW_VER!"
         )
+        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVER_v!VER_IN_FILE!.BKP"
+        copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
         echo   [OK] Backup creato: !BAK_FILE!
 
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
@@ -128,7 +135,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
-title UNBOUND BUNKER - v26.19 Secure Build - AV-Shield Core
+title UNBOUND BUNKER - v26.20 Secure Build - AV-Shield Core
 
 for /L %%i in (1,1,13) do set "F%%i="
 
@@ -544,7 +551,7 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo =====================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.19 by Mauro Bigoni
+echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE v26.20 by Mauro Bigoni
 echo   Versione locale: v!LOCAL_VER!   ^|   Versione cloud: v!CLOUD_VER!
 echo =====================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
