@@ -40,6 +40,7 @@ if "!SVC_VER!"=="" set "SVC_VER=N/A"
 :: --- SELF-UPDATE: confronta versione locale con cloud ---
 set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
+set "UPDATE_TMP=%TEMP%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 set "UPDATE_NEEDED=0"
 
 if not "!CLOUD_VER!"=="N/A" (
