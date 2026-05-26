@@ -103,7 +103,7 @@ if "!UPDATE_NEEDED!"=="1" (
                 exit
             ) else (
                 echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
-                ::del /f /q "!UPDATE_TMP!" >nul 2>&1
+                del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo   Proseguo con la versione attuale...
                 echo.
             )
