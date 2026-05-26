@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
-:: --- FISSAGGIO CONTESTO ---
+:: --- FISSAGGIO CONTESTO E PATH ---
 cd /d "%~dp0"
 
 :: --- CONTROLLO PRIVILEGI DIRETTI (LINEARE) ---
@@ -19,10 +19,10 @@ exit /b
 :: --- VERSION CHECK CLOUD ---
 set "LOCAL_VER=26.50"
 set "UB_DIR=C:\Program Files\Unbound"
+set "SELF_BAT=%~f0"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
-set "SELF_BAT=%~f0"
 
 :: Versione BAT cloud
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
@@ -60,7 +60,6 @@ choice /c SN /d N /t 5 /m " Vuoi aggiornare ora? [S=Si / N=No, default N in 5 se
 if !errorlevel! EQU 1 (
 echo.
 echo [..] Backup del file corrente in corso...
-
 set "FILE_TO_BAK=!SELF_BAT!"
 set "VER_IN_FILE=unknown"
 set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
@@ -70,14 +69,9 @@ set /p VER_IN_FILE=<"!VER_TMP2!"
 del /f /q "!VER_TMP2!" >nul 2>&1
 )
 if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
-
 set "BAK_FILE=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
 copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
-if exist "!BAK_FILE!" (
-echo [OK] Backup creato: !BAK_FILE!
-) else (
-echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%"
-)
+if exist "!BAK_FILE!" ( echo [OK] Backup creato: "!BAK_FILE!" ) else ( echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%" )
 
 echo [..] Download nuova versione v!CLOUD_VER! in corso...
 set "UPDATE_TMP=%TEMP%\UPDATE!CLOUD_VER:.=!.bat"
@@ -91,8 +85,6 @@ if exist "!UPDATE_TMP!" (
     echo del /f /q "!UPDATE_TMP!" >> "!PROXY_UPDATER!"
     echo start "" "!SELF_BAT!" >> "!PROXY_UPDATER!"
     echo del /f /q "%%~f0" >> "!PROXY_UPDATER!"
-    
-    echo [OK] Lancio procedura di aggiornamento...
     start "" "!PROXY_UPDATER!"
     exit
 ) else (
@@ -106,7 +98,7 @@ echo.
 )
 )
 
-:: --- SERVICE.CONF UPDATE: confronta versione locale con cloud ---
+:: --- SERVICE.CONF UPDATE ---
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
 set "BAT_VER_FILE=%UB_DIR%\versione_script_bat.txt"
@@ -141,19 +133,12 @@ echo [..] Backup di service.conf in corso...
 set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
 if exist "!SERVICE_CONF!" (
 copy /y "!SERVICE_CONF!" "!SVC_BAK!"
-if exist "!SVC_BAK!" (
-echo [OK] Backup creato: !SVC_BAK!
-) else (
-echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%"
-)
-) else (
-echo [INFO] service.conf non presente, nessun backup necessario.
-)
+if exist "!SVC_BAK!" ( echo [OK] Backup creato: "!SVC_BAK!" ) else ( echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%" )
+) else ( echo [INFO] service.conf non presente, nessun backup necessario. )
 
 echo [..] Download service.conf v!SVC_VER! in corso...
 set "SVC_TMP=%UB_DIR%\service.conf.tmp"
 powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
-
 if exist "!SVC_TMP!" (
 for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
 copy /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
@@ -163,9 +148,6 @@ set "LOCAL_SVC_VER=!SVC_VER!"
 echo.
 echo ==================================================================
 echo SERVICE.CONF AGGIORNATO CON SUCCESSO!
-echo Versione installata: v!SVC_VER!
-echo File aggiornato: !SERVICE_CONF!
-if exist "!SVC_BAK!" echo Backup precedente: !SVC_BAK!
 echo ==================================================================
 echo.
 ) else (
@@ -220,11 +202,7 @@ set "CURL_CA=--ssl-reqd"
 title UNBOUND BUNKER - v26.28 Secure Build - AV-Shield Core
 
 for /L %%i in (1,1,13) do set "F%%i="
-
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
-set "NOW_H=%time:~0,2%"
-set "NOW_M=%time:~3,2%"
-set /a "NOW_MINS=NOW_H*60+NOW_M"
 
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 
