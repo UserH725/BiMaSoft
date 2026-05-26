@@ -86,31 +86,33 @@ if "!UPDATE_NEEDED!"=="1" (
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
 
         if exist "!UPDATE_TMP!" (
+		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-                :: 1. Rimuovo il file di backup se esiste già per evitare errori
-                if exist "!BAK_FILE!" del /f /q "!BAK_FILE!"
-                
-                :: 2. Sovrascrittura (usiamo move per essere più atomici)
                 move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                
-                :: 3. Scrittura versione
+                timeout /t 2 >nul
+				del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo !CLOUD_VER!>"!BAT_VER_FILE!"
-                
                 echo.
                 echo ==================================================================
-                echo   AGGIORNAMENTO COMPLETATO!
-                echo   Nuovo script pronto in: !SELF_BAT!
+                echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO!
+                echo   Versione installata: v!CLOUD_VER!
+                echo   File aggiornato: !SELF_BAT!
+                echo   Backup precedente: !BAK_FILE!
+                echo   Il nuovo script sara' avviato automaticamente.
                 echo ==================================================================
-                
-                :: 4. ATTENZIONE: per evitare "Impossibile trovare file", 
-                :: chiudiamo il processo attuale prima di avviare il nuovo
-                timeout /t 3 >nul
+                timeout /t 5 >nul
                 start "" "!SELF_BAT!"
                 exit
             ) else (
-                echo   [WARN] File scaricato vuoto.
+                echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
+                echo   Proseguo con la versione attuale...
+                echo.
             )
+        ) else (
+            echo   [ERRORE] Download fallito. Aggiornamento annullato.
+            echo   Proseguo con la versione attuale...
+            echo.
         )
     ) else (
         echo   Aggiornamento rimandato. Proseguo con la versione attuale v!LOCAL_VER!...
