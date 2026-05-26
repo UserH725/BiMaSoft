@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
-:: --- FISSAGGIO CONTESTO (FIX ERRORE FILE NON TROVATO) ---
+:: --- FISSAGGIO CONTESTO ---
 cd /d "%~dp0"
 
 :: --- CONTROLLO PRIVILEGI DIRETTI (LINEARE) ---
@@ -61,7 +61,7 @@ if !errorlevel! EQU 1 (
 echo.
 echo [..] Backup del file corrente in corso...
 
-set "FILE_TO_BAK=%~f0"
+set "FILE_TO_BAK=!SELF_BAT!"
 set "VER_IN_FILE=unknown"
 set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
 powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
@@ -76,7 +76,7 @@ copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
 if exist "!BAK_FILE!" (
 echo [OK] Backup creato: !BAK_FILE!
 ) else (
-echo [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
+echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%"
 )
 
 echo [..] Download nuova versione v!CLOUD_VER! in corso...
@@ -144,7 +144,7 @@ copy /y "!SERVICE_CONF!" "!SVC_BAK!"
 if exist "!SVC_BAK!" (
 echo [OK] Backup creato: !SVC_BAK!
 ) else (
-echo [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
+echo [ERRORE] Backup fallito - verificare permessi su "%UB_DIR%"
 )
 ) else (
 echo [INFO] service.conf non presente, nessun backup necessario.
