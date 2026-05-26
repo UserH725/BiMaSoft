@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.51"
+set "LOCAL_VER=26.50"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -40,8 +40,6 @@ if "!SVC_VER!"=="" set "SVC_VER=N/A"
 :: --- SELF-UPDATE: confronta versione locale con cloud ---
 set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
-set "UPDATE_TMP=C:\TEMP\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
-if not exist "C:\TEMP" mkdir "C:\TEMP"
 set "UPDATE_NEEDED=0"
 
 if not "!CLOUD_VER!"=="N/A" (
@@ -84,13 +82,14 @@ if "!UPDATE_NEEDED!"=="1" (
 
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
-        set "UPDATE_TMP=!UB_DIR!\UPDATE!CLD_VER_CLEAN!.bat"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
+        set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '\"!UPDATE_TMP!\"') } catch { exit 1 }"
 
         if exist "!UPDATE_TMP!" (
+		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                ::del /f /q "!UPDATE_TMP!" >nul 2>&1
+                del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo !CLOUD_VER!>"!BAT_VER_FILE!"
                 echo.
                 echo ==================================================================
