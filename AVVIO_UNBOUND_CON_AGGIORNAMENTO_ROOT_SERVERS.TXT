@@ -1,29 +1,28 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal enabledelayedexpansion
 chcp 65001 >nul
 
-:: --- CONTROLLO PRIVILEGI DIRETTI ---
+:: --- CONTROLLO PRIVILEGI DIRETTI (LINEARE) ---
 net session >nul 2>&1
-if errorlevel 1 goto :ELEVATE_NOW
+if %errorLevel% neq 0 goto :ELEVATE_NOW
 goto :ADMIN_VERIFIED
 
 :ELEVATE_NOW
 echo [!] Servono privilegi di amministratore. Sto rilanciando lo script con elevazione...
-powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+powershell -Command "Start-Process '%~f0' -Verb RunAs"
 exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.53"
+set "LOCAL_VER=26.55"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
-set "BAT_VER_FILE=%UB_DIR%\versione_script_bat.txt"
 
 :: Versione BAT cloud
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
-powershell -NoProfile -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
     set /p CLOUD_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
@@ -31,15 +30,14 @@ if exist "%VER_TMP%" (
 if "!CLOUD_VER!"=="" set "CLOUD_VER=N/A"
 
 :: Versione SERVICE.CONF cloud
-if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
-powershell -NoProfile -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
     set /p SVC_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
 )
 if "!SVC_VER!"=="" set "SVC_VER=N/A"
 
-:: --- SELF-UPDATE ---
+:: --- SELF-UPDATE: confronta versione locale con cloud ---
 set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
 set "UPDATE_NEEDED=0"
@@ -56,17 +54,18 @@ if "!UPDATE_NEEDED!"=="1" (
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
     echo ==================================================================
     choice /c SN /d N /t 5 /m "   Vuoi aggiornare ora? [S=Si / N=No, default N in 5 sec]"
-    if errorlevel 2 goto :SKIP_SELF_UPDATE
-    if errorlevel 1 (
+    if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
 
+        :: Determina quale file fare il backup
         set "FILE_TO_BAK=%~f0"
         if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
 
+        :: Legge la versione contenuta nel file tramite PowerShell su file temp
         set "VER_IN_FILE=unknown"
         set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
-        powershell -NoProfile -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+        powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
         if exist "!VER_TMP2!" (
             set /p VER_IN_FILE=<"!VER_TMP2!"
             del /f /q "!VER_TMP2!" >nul 2>&1
@@ -74,7 +73,7 @@ if "!UPDATE_NEEDED!"=="1" (
         if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
         set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
-        copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
+        copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
         if exist "!BAK_FILE!" (
             echo   [OK] Backup creato: !BAK_FILE!
         ) else (
@@ -84,12 +83,14 @@ if "!UPDATE_NEEDED!"=="1" (
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
-        powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
 
         if exist "!UPDATE_TMP!" (
+		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
                 timeout /t 2 >nul
+				
                 echo !CLOUD_VER!>"!BAT_VER_FILE!"
                 echo.
                 echo ==================================================================
@@ -101,7 +102,7 @@ if "!UPDATE_NEEDED!"=="1" (
                 echo ==================================================================
                 timeout /t 5 >nul
                 start "" "!SELF_BAT!"
-                exit /b
+                exit
             ) else (
                 echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
@@ -113,28 +114,34 @@ if "!UPDATE_NEEDED!"=="1" (
             echo   Proseguo con la versione attuale...
             echo.
         )
+    ) else (
+        echo   Aggiornamento rimandato. Proseguo con la versione attuale v!LOCAL_VER!...
+        echo.
     )
 )
 
-:SKIP_SELF_UPDATE
-:: --- SERVICE.CONF UPDATE ---
+:: --- SERVICE.CONF UPDATE: confronta versione locale con cloud ---
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
+set "BAT_VER_FILE=%UB_DIR%\versione_script_bat.txt"
 set "CLOUD_SVC_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf"
 set "LOCAL_SVC_VER=N/A"
 set "SVC_UPDATE_NEEDED=0"
 
+:: Legge la versione locale del service.conf dal file di tracciamento
 if exist "!LOCAL_SVC_VER_FILE!" (
     set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
 )
 
+:: Confronto versioni service.conf (stesso metodo del BAT: rimuove il punto)
 if not "!SVC_VER!"=="N/A" (
     if not "!LOCAL_SVC_VER!"=="N/A" (
         set "LOC_SVC_INT=!LOCAL_SVC_VER:.=!"
         set "CLD_SVC_INT=!SVC_VER:.=!"
         if !CLD_SVC_INT! GTR !LOC_SVC_INT! set "SVC_UPDATE_NEEDED=1"
     ) else (
+        :: File di tracciamento assente: primo avvio, aggiorna subito
         set "SVC_UPDATE_NEEDED=1"
     )
 )
@@ -145,14 +152,14 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo ==================================================================
     choice /c SN /d N /t 5 /m "   Vuoi aggiornare service.conf ora? [S=Si / N=No, default N in 5 sec]"
-    if errorlevel 2 goto :SKIP_SERVICE_UPDATE
-    if errorlevel 1 (
+    if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup di service.conf in corso...
 
+        :: Nome backup con versione locale nel nome
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" (
-            copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
+            copy /y "!SERVICE_CONF!" "!SVC_BAK!"
             if exist "!SVC_BAK!" (
                 echo   [OK] Backup creato: !SVC_BAK!
             ) else (
@@ -164,7 +171,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 
         echo   [..] Download service.conf v!SVC_VER! in corso...
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
-        powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
 
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
@@ -187,23 +194,31 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
         ) else (
             echo   [ERRORE] Download fallito. Aggiornamento annullato.
         )
+    ) else (
+        echo   Aggiornamento service.conf rimandato. Proseguo con la versione attuale v!LOCAL_SVC_VER!...
+        echo.
     )
 )
 
-:SKIP_SERVICE_UPDATE
-:: --- AUTO-PROVISIONING TASK ---
+:: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO PER I FILE ---
 set "TASK_NAME=Unbound_Bunker_Daily"
 set "TASK_NAME_2H=Unbound_Bunker_2h"
 
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if errorlevel 1 schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c ""%~f0"" --scheduled" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
+if %errorLevel% EQU 0 goto :CHECK_2H_TASK
+schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c ""%~f0"" --scheduled" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
+:: pulizia vecchio task orario
 schtasks /query /tn "Unbound_Bunker_Hourly" >nul 2>&1
-if not errorlevel 1 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
+if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
 
+:CHECK_2H_TASK
 schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
-if errorlevel 1 schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c ""%~f0"" --refresh" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
+if %errorLevel% EQU 0 goto :TASKS_DONE
+:: Crea task biorario per aggiornare solo i file critici (HaGeZi + root hints)
+schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c ""%~f0"" --refresh" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
+:TASKS_DONE
 set "CONSOLE_COLOR=0A"
 set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
 set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
@@ -232,6 +247,10 @@ set "NOW_H=%time:~0,2%"
 set "NOW_M=%time:~3,2%"
 set /a "NOW_MINS=NOW_H*60+NOW_M"
 
+:: ==================================================================
+:: FLAG --refresh: aggiorna solo HaGeZi + root hints, poi riavvia
+:: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
+:: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 
 set "SKIP_MAINTENANCE=0"
@@ -245,7 +264,7 @@ if "%~1"=="--scheduled" (
 set "F1=[  ..  ] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
 ping -n 1 8.8.8.8 >nul 2>&1
-if errorlevel 1 (
+if %errorLevel% neq 0 (
     set "CONSOLE_COLOR=0C"
     set "F1=[ERRORE] NET  >> Internet non raggiungibile, interrompo tutto."
     call :UPDATE_UI 0
@@ -297,7 +316,7 @@ call :LOGSTEP "REG" "Policy DoH e name resolution applicate"
 
 set "F5=[  ..  ] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
-powershell -NoProfile -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
+powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
 set "F5=[  OK  ] SECU/NET >> Mitigazioni attive e NetBIOS disabilitato."
 call :LOGSTEP "SECU/NET" "Mitigazioni exploit e NetBIOS configurati"
 
@@ -309,9 +328,9 @@ w32tm /resync /force /nowait >nul 2>&1
 set "F6=[  OK  ] TIME >> Orologio sincronizzato correttamente."
 call :LOGSTEP "TIME" "w32time sincronizzato"
 
-set "F7=[  ..  ] FS   >> Faccio i backup dei file critici e ruoto il log se e' troppo grande."
+set "F7=[  ..  ] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
-if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI GTR 10485760 type nul > "%LOG_FILE%")
+if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type nul > "%LOG_FILE%")
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
@@ -322,8 +341,8 @@ set "F7=[  OK  ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti.
 call :LOGSTEP "FS" "Backup snapshot creati"
 
 if "%SKIP_MAINTENANCE%"=="1" (
-    set "F8=[ SKIP ] CORE >> Aggiornamento giornaliero gia' eseguito. Solo riavvio rapido."
-    set "F9=[  OK  ] SECU >> Trust anchor e permessi erano gia' stati gestiti in precedenza."
+    set "F8=[ SKIP ] CORE >> Aggiornamento giornaliero già eseguito. Solo riavvio rapido."
+    set "F9=[  OK  ] SECU >> Trust anchor e permessi erano già stati gestiti in precedenza."
     set "F10=[  OK  ] CORE >> Riavvio rapidamente il servizio Unbound per applicare lo stato corrente."
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -419,7 +438,7 @@ if "!CURRENT_CHOICE!"=="pro" (
     copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
 ) else (
     set "HAGEZI_NAME=Multi-Normal"
-    curl /s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_NORMAL%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
+    curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_NORMAL%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
     if errorlevel 1 (
         if exist "%HZ_NORMAL_BAK%" copy /y "%HZ_NORMAL_BAK%" "%HZ_NORMAL%" >nul 2>&1
     ) else (
@@ -446,13 +465,13 @@ call :LOGSTEP "SECU" "Trust anchor aggiornato"
 
 set "F12=[  ..  ] ACL  >> Blindo i file critici con permessi NTFS dedicati."
 call :UPDATE_UI 95
-icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(R)" >nul 2>&1
-icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(R)" >nul 2>&1
-icacls "%HZ_MAIN%" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(R)" >nul 2>&1
-icacls "%HZ_NORMAL%" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(R)" >nul 2>&1
-icacls "%HZ_PRO%" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(R)" >nul 2>&1
-icacls "%UB_DIR%\root.key" /inheritance:r /grant:r "SYSTEM:(F)" /grant:r "Administrators:(F)" /grant:r "unbound:(F)" >nul 2>&1
-if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r "unbound:(F)" >nul 2>&1
+icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_NORMAL%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
+if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12=[  OK  ] ACL  >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
 
@@ -464,24 +483,28 @@ echo   VERIFICA SINTATTICA DEL FILE SERVICE.CONF
 echo ------------------------------------------------------------------
 if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 "%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
-if errorlevel 1 goto :CONFIG_ERROR
+if %errorLevel% neq 0 goto :CONFIG_ERROR
 
 echo.
 echo   [+] Configurazione valida. Avvio del servizio...
 echo   ------------------------------------------------------------------
 net start unbound
-if errorlevel 1 goto :START_ERROR
+if %errorLevel% neq 0 goto :START_ERROR
 
 set "F13=[  OK  ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 goto :FINALIZZAZIONE
 
+:: ==================================================================
+:: REFRESH BIORARIO: solo HaGeZi + named.cache + root.zone + riavvio
+:: Non tocca registry, mitigazioni, time sync, permessi, checkconf.
+:: ==================================================================
 :REFRESH_FILES_ONLY
 title UNBOUND BUNKER - REFRESH BIORARIO
 
 ping -n 1 8.8.8.8 >nul 2>&1
-if errorlevel 1 (
+if %errorLevel% neq 0 (
     call :LOGFAIL "REFRESH" "Rete non raggiungibile, refresh saltato"
     exit /b
 )
@@ -491,32 +514,34 @@ if not exist "%UB_DIR%" (
     exit /b
 )
 
-set "REFRESH_CHANGED=0"
+:: Backup prima di sovrascrivere
+if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
+if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
+if exist "%HZ_MAIN%"            copy /y "%HZ_MAIN%"            "%HZ_MAIN_BAK%" >nul 2>&1
+if exist "%HZ_NORMAL%"          copy /y "%HZ_NORMAL%"          "%HZ_NORMAL_BAK%" >nul 2>&1
+if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%" >nul 2>&1
 
-:: --- NAMED.CACHE ---
+:: Risoluzione IP per internic
 call :RESOLVE_HOST www.internic.net IP_INTERNIC
 set "RES_INTERNIC="
 if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_INTERNIC! --resolve www.internic.net:80:!IP_INTERNIC!"
 
+:: named.cache
 curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\named.cache.tmp" https://www.internic.net/domain/named.cache >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
-        call :DIFF_AND_REPLACE "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" "%NCACHE_BAK%" REFRESH_CHANGED "named.cache"
-    )
+    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1
 )
 if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
 
-:: --- ROOT.ZONE ---
+:: root.zone
 curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\root.zone.tmp" https://www.internic.net/domain/root.zone >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
-        call :DIFF_AND_REPLACE "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" "%RZONE_BAK%" REFRESH_CHANGED "root.zone"
-    )
+    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1
 )
 if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
-call :LOGSTEP "REFRESH" "named.cache e root.zone: verifica differenze completata"
+call :LOGSTEP "REFRESH" "named.cache e root.zone aggiornati"
 
-:: --- HAGEZI ---
+:: HaGeZi - legge la scelta salvata
 set "CURRENT_CHOICE=normal"
 if exist "%UB_DIR%\hagezi_choice.txt" (
     set /p CHOICE_RAW=<"%UB_DIR%\hagezi_choice.txt"
@@ -531,8 +556,8 @@ if "!CURRENT_CHOICE!"=="pro" (
     curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt >nul 2>&1
     if not errorlevel 1 (
         for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 (
-            call :DIFF_AND_REPLACE "%HZ_PRO%.tmp" "%HZ_PRO%" "%HZ_PRO_BAK%" REFRESH_CHANGED "hagezi-pro"
-            if "!REFRESH_CHANGED!"=="1" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+            move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
+            copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
         )
     ) else (
         if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
@@ -542,59 +567,24 @@ if "!CURRENT_CHOICE!"=="pro" (
     curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_NORMAL%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
     if not errorlevel 1 (
         for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 (
-            call :DIFF_AND_REPLACE "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" "%HZ_NORMAL_BAK%" REFRESH_CHANGED "hagezi-normal"
-            if "!REFRESH_CHANGED!"=="1" copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+            move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
+            copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
         )
     ) else (
         if exist "%HZ_NORMAL_BAK%" copy /y "%HZ_NORMAL_BAK%" "%HZ_NORMAL%" >nul 2>&1
     )
     if exist "%HZ_NORMAL%.tmp" del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
 )
-call :LOGSTEP "REFRESH" "HaGeZi !CURRENT_CHOICE!: verifica differenze completata"
+call :LOGSTEP "REFRESH" "HaGeZi !CURRENT_CHOICE! aggiornato"
 
-:: Riavvia Unbound solo se almeno un file e' stato realmente aggiornato
-if "!REFRESH_CHANGED!"=="1" (
-    net stop unbound >nul 2>&1
-    taskkill /f /im unbound.exe >nul 2>&1
-    net start unbound >nul 2>&1
-    call :LOGSTEP "REFRESH" "Servizio riavviato: almeno un file e' cambiato"
-) else (
-    call :LOGSTEP "REFRESH" "Nessun file modificato - riavvio Unbound non necessario"
-)
+:: Riavvio silenzioso del servizio
+net stop unbound >nul 2>&1
+taskkill /f /im unbound.exe >nul 2>&1
+net start unbound >nul 2>&1
+call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 
+:: Salva timestamp del refresh
 echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
-exit /b
-
-:: -----------------------------------------------------------------------
-:: :DIFF_AND_REPLACE  <tmp>  <dest>  <bak>  <changed_var>  <label>
-::   Confronta gli hash SHA256 di <tmp> e <dest>.
-::   Se diversi (o <dest> non esiste): backup di <dest> in <bak>,
-::   sovrascrive <dest> con <tmp> e imposta <changed_var>=1.
-::   In ogni caso cancella <tmp>.
-:: -----------------------------------------------------------------------
-:DIFF_AND_REPLACE
-set "_TMP=%~1"
-set "_DST=%~2"
-set "_BAK=%~3"
-set "_VAR=%~4"
-set "_LBL=%~5"
-set "_EQUAL=0"
-
-if exist "!_DST!" (
-    powershell -NoProfile -Command ^
-        "$h1=(Get-FileHash -LiteralPath '!_TMP!' -Algorithm SHA256).Hash; $h2=(Get-FileHash -LiteralPath '!_DST!' -Algorithm SHA256).Hash; if($h1 -eq $h2){exit 0}else{exit 1}" >nul 2>&1
-    if not errorlevel 1 set "_EQUAL=1"
-)
-
-if "!_EQUAL!"=="1" (
-    del /f /q "!_TMP!" >nul 2>&1
-    call :LOGSTEP "REFRESH" "!_LBL! invariato - sovrascrittura saltata"
-) else (
-    if exist "!_DST!" copy /y "!_DST!" "!_BAK!" >nul 2>&1
-    move /y "!_TMP!" "!_DST!" >nul 2>&1
-    set "!_VAR!=1"
-    call :LOGSTEP "REFRESH" "!_LBL! aggiornato (hash diverso)"
-)
 exit /b
 
 :CONFIG_ERROR
@@ -622,19 +612,24 @@ pause
 goto :FINALIZZAZIONE
 
 :FINALIZZAZIONE
-powershell -NoProfile -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]1048576000 }; [System.GC]::Collect()" >nul 2>&1
+powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]1048576000 }; [System.GC]::Collect()" >nul 2>&1
 echo ------------------------------------------------------------------
 echo   PROCESSO CONCLUSO.
 echo ------------------------------------------------------------------
+
 echo Chiusura automatica...
 timeout /t 5 >nul
-exit /b
+exit
 
+:: ==================================================================
+:: SUBROUTINE: risolve un hostname via DNS esterno
+:: Uso: call :RESOLVE_HOST <hostname> <variabile_risultato>
+:: ==================================================================
 :RESOLVE_HOST
 set "%~2="
-for /f "tokens=*" %%a in ('powershell -NoProfile -Command "(Resolve-DnsName -Name '%~1' -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
+for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
 if "!%~2!"=="" (
-    for /f "tokens=*" %%a in ('powershell -NoProfile -Command "(Resolve-DnsName -Name '%~1' -Server 8.8.8.8 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
+    for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 8.8.8.8 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
 )
 exit /b
 
