@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.50"
+set "LOCAL_VER=26.49"
 set "UB_DIR=C:\\Program Files\\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -63,61 +63,33 @@ if "!UPDATE_NEEDED!"=="1" (
 
         :: Legge la versione contenuta nel file tramite PowerShell su file temp
         set "VER_IN_FILE=unknown"
-        set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
-        if exist "!VER_TMP2%" del /f /q "!VER_TMP2%" >nul 2>&1
-        
-        powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set\s+LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
-        
+        set "VER_TMP2=%TEMP%\\ub_ver_bak.txt"
+        powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
         if exist "!VER_TMP2!" (
             set /p VER_IN_FILE=<"!VER_TMP2!"
             del /f /q "!VER_TMP2!" >nul 2>&1
         )
         if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
-        
-        echo   [INFO] Versione rilevata nel file: !VER_IN_FILE!
 
-        :: Backup nella cartella Unbound (UN SOLO \ dopo !UB_DIR!)
-        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
-        
-        copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
+        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_PRECEDENTE.BKP"
+        copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
         if exist "!BAK_FILE!" (
             echo   [OK] Backup creato: !BAK_FILE!
         ) else (
-            echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
+            echo   [ERRORE] Backup fallito - verificare permessi
         )
 
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         
-        :: UPDATE_TMP usa %TEMP% per evitare problemi con \\
-        set "UPDATE_TMP=%TEMP%\UPDATE!CLD_VER_CLEAN!.bat"
+        :: CORREZIONE: uso %TEMP% invece di !UB_DIR! per evitare problemi con \\
+        set "UPDATE_TMP=%TEMP%\\UPDATE!CLD_VER_CLEAN!.bat"
         
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
 
         if exist "!UPDATE_TMP!" (
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-                :: Backup nella cartella Unbound - usa unknown se non legge la versione
-                set "VER_IN_FILE=unknown"
-                set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
-                if exist "!VER_TMP2%" del /f /q "!VER_TMP2%" >nul 2>&1
-                
-                powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9.]+)' } | Select-Object -First 1; if ($line -match '([0-9.]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
-                
-                if exist "!VER_TMP2!" (
-                    set /p VER_IN_FILE=<"!VER_TMP2!"
-                    del /f /q "!VER_TMP2!" >nul 2>&1
-                )
-                if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
-
-                set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
-                
-                copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
-                if exist "!BAK_FILE!" (
-                    echo   [OK] Backup creato: !BAK_FILE!
-                ) else (
-                    echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
-                )
-                
+                :: Copia nel percorso corretto (self-bat che è già lo script corrente)
                 copy /y "!UPDATE_TMP!" "!FILE_TO_BAK!" >nul 2>&1
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
                 
