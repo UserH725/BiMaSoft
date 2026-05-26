@@ -83,7 +83,7 @@ if "!UPDATE_NEEDED!"=="1" (
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE!CLD_VER_CLEAN!.bat"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '\"!UPDATE_TMP!\"') } catch { exit 1 }" >nul 2>&1
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }" >nul 2>&1
 
         if exist "!UPDATE_TMP!" (
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
@@ -98,7 +98,7 @@ if "!UPDATE_NEEDED!"=="1" (
                 echo   Backup precedente: !BAK_FILE!
                 echo   Il nuovo script sara' avviato automaticamente.
                 echo ==================================================================
-                timeout /t 4 >nul
+                timeout /t 5 >nul
                 start "" "!SELF_BAT!"
                 exit
             ) else (
