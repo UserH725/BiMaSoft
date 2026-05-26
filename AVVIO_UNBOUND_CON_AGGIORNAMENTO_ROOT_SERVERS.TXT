@@ -90,7 +90,7 @@ if "!UPDATE_NEEDED!"=="1" (
         if exist "!UPDATE_TMP!" (
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 copy /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                del /f /q "!UPDATE_TMP!" >nul 2>&1
+                ::del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo !CLOUD_VER!>"!BAT_VER_FILE!"
                 echo.
                 echo ==================================================================
