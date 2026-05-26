@@ -89,10 +89,8 @@ if "!UPDATE_NEEDED!"=="1" (
 		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                timeout /t 2 >nul
-				
-                echo !CLOUD_VER!>"!BAT_VER_FILE!"
-                echo.
+                timeout /t 5 >nul
+                
                 echo ==================================================================
                 echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO!
                 echo   Versione installata: v!CLOUD_VER!
