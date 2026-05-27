@@ -15,7 +15,7 @@ exit /b
 :ADMIN_VERIFIED
 set "START_TIME=%time%"
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.95"
+set "LOCAL_VER=26.96"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -576,9 +576,12 @@ echo.
 echo   [+] Configurazione valida. Avvio del servizio...
 echo   ------------------------------------------------------------------
 net start unbound
+:: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
+timeout /t 2 >nul
+sc query unbound | find "RUNNING" >nul 2>&1
+if %errorLevel% neq 0 goto :START_ERROR
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
-
 set "F13=[  OK  ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
