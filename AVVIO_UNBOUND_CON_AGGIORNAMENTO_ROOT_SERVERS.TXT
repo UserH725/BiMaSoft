@@ -53,7 +53,7 @@ if "!UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
     echo ==================================================================
-    choice /c SN /d N /t 5 /m "   Vuoi aggiornare ora? [S=Si / N=No, default N in 5 sec]"
+    choice /c SN /d S /t 5 /m "   Vuoi aggiornare ora? [S=Si / N=No, default S in 3 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
