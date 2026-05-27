@@ -410,7 +410,7 @@ echo ==================================================================
 echo   [1] HaGeZi Multi-Normal (protezione standard)
 echo   [2] HaGeZi Multi-Pro    (protezione estesa)
 echo ------------------------------------------------------------------
-choice /c 12 /d 2 /t 5 /m " > Digita un'opzione [1 o 2]"
+choice /c 12 /d 2 /t 0 /m " > Digita un'opzione [1 o 2]"
 if errorlevel 2 (
     set "CURRENT_CHOICE=pro"
     echo pro>"%UB_DIR%\hagezi_choice.txt"
