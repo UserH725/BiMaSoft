@@ -358,47 +358,6 @@ taskkill /f /im unbound.exe >nul 2>&1
 set "F8=[  OK  ] CORE >> Servizio fermato e porta 53 liberata."
 call :LOGSTEP "CORE" "Unbound fermato"
 
-set "F9=[  ..  ] NET  >> Scarico named.cache e root.zone usando una risoluzione temporanea."
-call :UPDATE_UI 80
-call :RESOLVE_HOST www.internic.net IP_INTERNIC
-set "RES_INTERNIC="
-if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_INTERNIC! --resolve www.internic.net:80:!IP_INTERNIC!"
-
-curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\named.cache.tmp" https://www.internic.net/domain/named.cache >nul 2>&1
-if errorlevel 1 (
-    set "F9=[WARN] NET  >> named.cache non scaricato, provo a usare il backup."
-    if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
-) else (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_NC=0"
-        if exist "%UB_DIR%\named.cache" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\named.cache.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
-            )
-        )
-        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1) else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
-    )
-)
-if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
-
-curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\root.zone.tmp" https://www.internic.net/domain/root.zone >nul 2>&1
-if errorlevel 1 (
-    if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
-) else (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
-        set "SKIP_RZ=0"
-        if exist "%UB_DIR%\root.zone" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\root.zone.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
-            )
-        )
-        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1) else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
-    )
-)
-if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
-
-call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-call :FILE_DATE "%UB_DIR%\root.zone"   DT_RZ
 set "F9=[  ..  ] NET  >> Scarico named.cache, root.zone e HaGeZi in parallelo."
 call :UPDATE_UI 80
 call :RESOLVE_HOST www.internic.net IP_INTERNIC
