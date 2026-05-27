@@ -14,7 +14,7 @@ exit /b
 
 :ADMIN_VERIFIED
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.55"
+set "LOCAL_VER=26.60"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -323,8 +323,9 @@ call :UPDATE_UI 50
 sc config w32time start= auto >nul 2>&1
 net start w32time >nul 2>&1
 w32tm /resync /force /nowait >nul 2>&1
-set "F6=[  OK  ] TIME >> Orologio sincronizzato correttamente."
-call :LOGSTEP "TIME" "w32time sincronizzato"
+set "NOW_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
+set "F6=[  OK  ] TIME >> Orologio sincronizzato - ora sistema: %NOW_TIME%"
+call :LOGSTEP "TIME" "w32time sincronizzato - ora: %NOW_TIME%"
 
 set "F7=[  ..  ] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
@@ -367,7 +368,15 @@ if errorlevel 1 (
     set "F9=[WARN] NET  >> named.cache non scaricato, provo a usare il backup."
     if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
 ) else (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1
+    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_NC=0"
+        if exist "%UB_DIR%\named.cache" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\named.cache.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
+            )
+        )
+        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1) else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
+    )
 )
 if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
 
@@ -375,10 +384,21 @@ curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\root.zone.tmp" https://www.inte
 if errorlevel 1 (
     if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
 ) else (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1
+    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
+        set "SKIP_RZ=0"
+        if exist "%UB_DIR%\root.zone" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\root.zone.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
+            )
+        )
+        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1) else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
+    )
 )
 if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
-set "F9=[  OK  ] NET  >> Root hints e root.zone scaricati con verifica TLS."
+
+call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+call :FILE_DATE "%UB_DIR%\root.zone"   DT_RZ
+set "F9=[  OK  ] NET  >> named.cache: !DT_NC! ^| root.zone: !DT_RZ!"
 call :LOGSTEP "NET" "Root hints e root.zone aggiornati"
 
 if "%~1"=="--scheduled" goto :LOAD_SCHEDULED_HAGEZI
@@ -430,25 +450,52 @@ if "!CURRENT_CHOICE!"=="pro" (
     if errorlevel 1 (
         if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
     ) else (
-        for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
+        for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 (
+            set "SKIP_HZ=0"
+            if exist "%HZ_PRO%" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO%\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+                )
+            )
+            if "!SKIP_HZ!"=="0" (
+                move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
+                copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+            ) else (
+                del /f /q "%HZ_PRO%.tmp" >nul 2>&1
+            )
+        )
     )
     if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-    copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+    if not exist "%HZ_MAIN%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
 ) else (
     set "HAGEZI_NAME=Multi-Normal"
     curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_NORMAL%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
     if errorlevel 1 (
         if exist "%HZ_NORMAL_BAK%" copy /y "%HZ_NORMAL_BAK%" "%HZ_NORMAL%" >nul 2>&1
     ) else (
-        for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
+        for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 (
+            set "SKIP_HZ=0"
+            if exist "%HZ_NORMAL%" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_NORMAL%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_NORMAL%\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+                )
+            )
+            if "!SKIP_HZ!"=="0" (
+                move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
+                copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+            ) else (
+                del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
+            )
+        )
     )
     if exist "%HZ_NORMAL%.tmp" del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
-    copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+    if not exist "%HZ_MAIN%" copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
 )
 
 if not exist "%HZ_MAIN%" if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
 if not exist "%HZ_MAIN%" if exist "%HZ_MAIN_BAK%" copy /y "%HZ_MAIN_BAK%" "%HZ_MAIN%" >nul 2>&1
-set "F10=[  OK  ] NET  >> Lista HaGeZi !HAGEZI_NAME! applicata nel file RPZ attivo."
+call :FILE_DATE "%HZ_MAIN%" DT_HZ
+set "F10=[  OK  ] NET  >> HaGeZi !HAGEZI_NAME! - RPZ attivo: !DT_HZ!"
 call :LOGSTEP "NET" "HaGeZi aggiornato"
 
 set "F11=[  ..  ] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -527,17 +574,35 @@ if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_
 :: named.cache
 curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\named.cache.tmp" https://www.internic.net/domain/named.cache >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1
+    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_NC=0"
+        if exist "%UB_DIR%\named.cache" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\named.cache.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
+            )
+        )
+        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1) else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
+    )
 )
 if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
 
 :: root.zone
 curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\root.zone.tmp" https://www.internic.net/domain/root.zone >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1
+    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
+        set "SKIP_RZ=0"
+        if exist "%UB_DIR%\root.zone" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\root.zone.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
+            )
+        )
+        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1) else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
+    )
 )
 if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
-call :LOGSTEP "REFRESH" "named.cache e root.zone aggiornati"
+call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+call :FILE_DATE "%UB_DIR%\root.zone"   DT_RZ
+call :LOGSTEP "REFRESH" "named.cache: !DT_NC! | root.zone: !DT_RZ!"
 
 :: HaGeZi - legge la scelta salvata
 set "CURRENT_CHOICE=normal"
@@ -554,8 +619,18 @@ if "!CURRENT_CHOICE!"=="pro" (
     curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt >nul 2>&1
     if not errorlevel 1 (
         for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 (
-            move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-            copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+            set "SKIP_HZ=0"
+            if exist "%HZ_PRO%" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO%\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+                )
+            )
+            if "!SKIP_HZ!"=="0" (
+                move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
+                copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+            ) else (
+                del /f /q "%HZ_PRO%.tmp" >nul 2>&1
+            )
         )
     ) else (
         if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
@@ -565,15 +640,26 @@ if "!CURRENT_CHOICE!"=="pro" (
     curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_NORMAL%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1
     if not errorlevel 1 (
         for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 (
-            move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
-            copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+            set "SKIP_HZ=0"
+            if exist "%HZ_NORMAL%" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_NORMAL%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_NORMAL%\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+                )
+            )
+            if "!SKIP_HZ!"=="0" (
+                move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
+                copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+            ) else (
+                del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
+            )
         )
     ) else (
         if exist "%HZ_NORMAL_BAK%" copy /y "%HZ_NORMAL_BAK%" "%HZ_NORMAL%" >nul 2>&1
     )
     if exist "%HZ_NORMAL%.tmp" del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
 )
-call :LOGSTEP "REFRESH" "HaGeZi !CURRENT_CHOICE! aggiornato"
+call :FILE_DATE "%HZ_MAIN%" DT_HZ
+call :LOGSTEP "REFRESH" "HaGeZi !CURRENT_CHOICE! aggiornato - RPZ: !DT_HZ!"
 
 :: Riavvio silenzioso del servizio
 net stop unbound >nul 2>&1
@@ -673,4 +759,19 @@ if defined F10 echo !F10!
 if defined F11 echo !F11!
 if defined F12 echo !F12!
 if defined F13 echo !F13!
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: legge data/ora ultima modifica di un file
+:: Uso: call :FILE_DATE <percorso_file> <variabile_risultato>
+:: ==================================================================
+:FILE_DATE
+set "%~2=N/A"
+set "FD_TMP=%TEMP%\ub_filedate.txt"
+set "FD_PATH=%~1"
+powershell -Command "if (Test-Path -LiteralPath '%FD_PATH%') { (Get-Item -LiteralPath '%FD_PATH%').LastWriteTime.ToString('dd.MM.yyyy HH:mm:ss') | Out-File -FilePath '%FD_TMP%' -Encoding ascii -NoNewline }" >nul 2>&1
+if exist "%FD_TMP%" (
+    set /p %~2=<"%FD_TMP%"
+    del /f /q "%FD_TMP%" >nul 2>&1
+)
 exit /b
