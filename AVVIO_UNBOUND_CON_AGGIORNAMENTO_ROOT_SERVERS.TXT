@@ -619,7 +619,6 @@ echo   ------------------------------------------------------------------
 net start unbound
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 wmic process where name="unbound.exe" CALL setpriority "high priority" >nul 2>&1
-if %errorLevel% neq 0 goto :START_ERROR
 
 set "F13=[  OK  ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
