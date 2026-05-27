@@ -149,7 +149,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo ==================================================================
-    choice /c SN /d N /t 5 /m "   Vuoi aggiornare service.conf ora? [S=Si / N=No, default N in 5 sec]"
+    choice /c SN /d S /t 5 /m "   Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 5 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup di service.conf in corso...
