@@ -37,8 +37,11 @@ exit
 mode con: cols=100 lines=40
 
 set "START_TIME=%time%"
+set "START_TIME=%START_TIME: =0%"
+
+
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.99"
+set "LOCAL_VER=27.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -382,7 +385,7 @@ taskkill /f /im unbound.exe >nul 2>&1
 set "F8=[  OK  ] CORE >> Servizio fermato e porta 53 liberata."
 call :LOGSTEP "CORE" "Unbound fermato"
 
-set "F9=[  ..  ] NET  >> Scarico named.cache, root.zone e HaGeZi in parallelo."
+set "F9=[  ..  ] NET  >> Scarico named.cache e root.zone in parallelo."
 call :UPDATE_UI 80
 call :RESOLVE_HOST www.internic.net IP_INTERNIC
 set "RES_INTERNIC="
@@ -395,24 +398,21 @@ if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_
 :: Pulisce sentinel rimasti da run precedenti
 if exist "%TEMP%\ub_done_nc.flag" del /f /q "%TEMP%\ub_done_nc.flag" >nul 2>&1
 if exist "%TEMP%\ub_done_rz.flag" del /f /q "%TEMP%\ub_done_rz.flag" >nul 2>&1
-if exist "%TEMP%\ub_done_hz.flag" del /f /q "%TEMP%\ub_done_hz.flag" >nul 2>&1
 if exist "%TEMP%\ub_err_nc.flag"  del /f /q "%TEMP%\ub_err_nc.flag"  >nul 2>&1
 if exist "%TEMP%\ub_err_rz.flag"  del /f /q "%TEMP%\ub_err_rz.flag"  >nul 2>&1
-if exist "%TEMP%\ub_err_hz.flag"  del /f /q "%TEMP%\ub_err_hz.flag"  >nul 2>&1
 
 :: Lancia i 3 download in parallelo
 start /b "" cmd /c "curl -s -f %CURL_CA% !RES_INTERNIC! -o ""%UB_DIR%\named.cache.tmp"" https://www.internic.net/domain/named.cache >nul 2>&1 || echo.>"%TEMP%\ub_err_nc.flag" & echo.>"%TEMP%\ub_done_nc.flag""
 start /b "" cmd /c "curl -s -f %CURL_CA% !RES_INTERNIC! -o ""%UB_DIR%\root.zone.tmp"" https://www.internic.net/domain/root.zone >nul 2>&1 || echo.>"%TEMP%\ub_err_rz.flag" & echo.>"%TEMP%\ub_done_rz.flag""
-start /b "" cmd /c "curl -s -f %CURL_CA% !RES_JSDELIVR! -o ""%HZ_NORMAL%.tmp"" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/multi.txt >nul 2>&1 || echo.>"%TEMP%\ub_err_hz.flag" & echo.>"%TEMP%\ub_done_hz.flag""
 
 :: Attende che tutti e 3 i download siano terminati
 :WAIT_PARALLEL_DL
 if not exist "%TEMP%\ub_done_nc.flag" ( timeout /t 1 >nul & goto :WAIT_PARALLEL_DL )
 if not exist "%TEMP%\ub_done_rz.flag" ( timeout /t 1 >nul & goto :WAIT_PARALLEL_DL )
-if not exist "%TEMP%\ub_done_hz.flag" ( timeout /t 1 >nul & goto :WAIT_PARALLEL_DL )
+
 
 :: Pulisce i sentinel
-del /f /q "%TEMP%\ub_done_nc.flag" "%TEMP%\ub_done_rz.flag" "%TEMP%\ub_done_hz.flag" >nul 2>&1
+del /f /q "%TEMP%\ub_done_nc.flag" "%TEMP%\ub_done_rz.flag" >nul 2>&1
 
 :: --- named.cache: verifica, hash check, move o fallback ---
 if exist "%TEMP%\ub_err_nc.flag" (
@@ -488,27 +488,6 @@ call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
-:: HZ_NORMAL: gestisce risultato download parallelo
-if exist "%TEMP%\ub_err_hz.flag" (
-    del /f /q "%TEMP%\ub_err_hz.flag" >nul 2>&1
-    if exist "%HZ_NORMAL_BAK%" copy /y "%HZ_NORMAL_BAK%" "%HZ_NORMAL%" >nul 2>&1
-) else (
-    for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 (
-        move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
-    )
-    if exist "%HZ_NORMAL%.tmp" del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
-)
-:: HZ_PRO: se non esiste ancora lo scarica ora (non era nel parallelo)
-if not exist "%HZ_PRO%" curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt >nul 2>&1
-if exist "%HZ_PRO%.tmp" for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-
-if exist "%HZ_NORMAL%.tmp" for %%I in ("%HZ_NORMAL%.tmp") do if %%~zI GEQ 10240 move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
-if exist "%HZ_NORMAL%.tmp" del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
-
-if exist "%HZ_PRO%.tmp" for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
 
 if "!CURRENT_CHOICE!"=="pro" (
     set "HAGEZI_NAME=Multi-Pro"
@@ -772,6 +751,8 @@ goto :FINALIZZAZIONE
 :FINALIZZAZIONE
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]1048576000 }; [System.GC]::Collect()" >nul 2>&1
 set "END_TIME=%time%"
+set "START_TIME=%START_TIME: =0%"
+set "END_TIME=%END_TIME: =0%"
 set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME:~6,2%-100"
 set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
