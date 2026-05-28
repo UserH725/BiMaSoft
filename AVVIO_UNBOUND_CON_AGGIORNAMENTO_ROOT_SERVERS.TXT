@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.74"
+set "LOCAL_VER=27.75"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -231,28 +231,36 @@ set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
 
 :: 1. CONTROLLO E CREAZIONE TASK GIORNALIERO
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if %errorLevel% NEQ 0 (
-    echo [+] Creazione del task pianificato giornaliero...
-    schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c ""%~f0"" --scheduled" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
-)
+if %errorLevel% NEQ 0 goto :MAKE_DAILY_TASK
+goto :CHECK_OLD_HOURLY
 
-:: Pulizia vecchio task orario se rimasto
+:MAKE_DAILY_TASK
+echo [+] Creazione del task pianificato giornaliero...
+schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
+
+:CHECK_OLD_HOURLY
+:: Pulizia vecchio task orario se rimasto [cite: 101]
 schtasks /query /tn "Unbound_Bunker_Hourly" >nul 2>&1
-if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
+if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1 [cite: 101]
 
 :: 2. CONTROLLO E CREAZIONE TASK BIORARIO
 schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
-if %errorLevel% NEQ 0 (
-    echo [+] Creazione del task pianificato ogni 2 ore...
-    schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c ""%~f0"" --refresh" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
-)
+if %errorLevel% NEQ 0 goto :MAKE_2H_TASK
+goto :CHECK_BOOT_TASK
 
+:MAKE_2H_TASK
+echo [+] Creazione del task pianificato ogni 2 ore...
+schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c \"\"%~f0\" --refresh\"" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
+
+:CHECK_BOOT_TASK
 :: 3. CONTROLLO E CREAZIONE TASK DI AVVIO A VIDEO AL LOGON
 schtasks /query /tn "%TASK_NAME_BOOT%" >nul 2>&1
-if %errorLevel% NEQ 0 (
-    echo [+] Creazione del task pianificato all'accesso utente (A VIDEO)...
-    schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c ""%~f0""" /sc onlogon /rl highest /f >nul 2>&1
-)
+if %errorLevel% NEQ 0 goto :MAKE_BOOT_TASK
+goto :TASKS_DONE
+
+:MAKE_BOOT_TASK
+echo [+] Creazione del task pianificato all'accesso utente (A VIDEO)...
+schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /rl highest /f >nul 2>&1
 
 :TASKS_DONE
 
