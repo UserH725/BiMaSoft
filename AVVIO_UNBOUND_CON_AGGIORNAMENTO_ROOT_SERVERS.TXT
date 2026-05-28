@@ -788,10 +788,10 @@ exit /b
 
 :UPDATE_UI
 set "P_VAL=%~1"
-set /a "BLOCKS=P_VAL / 5"
+set /a "BLOCKS=P_VAL * 58 / 100"
 set "BARRA="
 for /L %%b in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
-set /a "EMPTY=20 - BLOCKS"
+set /a "EMPTY=58 - BLOCKS"
 for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 
 cls
