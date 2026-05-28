@@ -288,6 +288,10 @@ if "%~1"=="--scheduled" (
 set "F1=[  ..  ] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
 ping -n 1 8.8.8.8 >nul 2>&1
+if %errorLevel% neq 0 ping -n 1 1.1.1.1 >nul 2>&1
+if %errorLevel% neq 0 (
+    :: rete davvero assente
+)
 if %errorLevel% neq 0 (
     set "CONSOLE_COLOR=0C"
     set "F1=[ERRORE] NET  >> Internet non raggiungibile, interrompo tutto."
