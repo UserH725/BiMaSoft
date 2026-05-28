@@ -626,10 +626,10 @@ echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 goto :FINALIZZAZIONE
 
-:: ==================================================================
-:: REFRESH BIORARIO: solo HaGeZi + named.cache + root.zone + riavvio
+:: ============================================================================
+:: REFRESH BIORARIO: BAT, SERVICE.CONF, HaGeZi, named.cache, root.zone, riavvio
 :: Non tocca registry, mitigazioni, time sync, permessi, checkconf.
-:: ==================================================================
+:: ============================================================================
 :REFRESH_FILES_ONLY
 title UNBOUND BUNKER - REFRESH BIORARIO
 
@@ -640,11 +640,92 @@ if %errorLevel% neq 0 (
 )
 
 if not exist "%UB_DIR%" (
-    call :LOGFAIL "REFRESH" "Directory Unbound non trovata"
+    call :LOGFAIL "REFRESH" "Directory Unbound non trouvata"
     exit /b
 )
-set "CHANGED=0"
 
+:: --- SILENT UPDATE CONTROLLO (BAT) VIA REFRESH ---
+set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
+if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+if exist "%VER_TMP%" (
+    set /p CLOUD_VER=<"%VER_TMP%"
+    del /f /q "%VER_TMP%" >nul 2>&1
+)
+if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
+    set "LOC_INT=!LOCAL_VER:.=!"
+    set "CLD_INT=!CLOUD_VER:.=!"
+    if !CLD_INT! GTR !LOC_INT! (
+        call :LOGSTEP "REFRESH" "Aggiornamento BAT rilevato: v!LOCAL_VER! -> v!CLOUD_VER!"
+        set "FILE_TO_BAK=%~f0"
+        if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
+        
+        set "VER_IN_FILE=unknown"
+        set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
+        powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
+        if exist "!VER_TMP2!" (
+            set /p VER_IN_FILE=<"!VER_TMP2!"
+            del /f /q "!VER_TMP2!" >nul 2>&1
+        )
+        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
+        copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
+        
+        set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
+        set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
+        
+        if exist "!UPDATE_TMP!" (
+            for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
+                move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
+                call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER!. Riavvio script..."
+                start "" "!SELF_BAT!" --refresh
+                exit
+            )
+        )
+    )
+)
+
+:: --- SILENT UPDATE CONTROLLO (SERVICE.CONF) VIA REFRESH ---
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+if exist "%VER_TMP%" (
+    set /p SVC_VER=<"%VER_TMP%"
+    del /f /q "%VER_TMP%" >nul 2>&1
+)
+if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
+    set "LOCAL_SVC_VER=N/A"
+    if exist "!LOCAL_SVC_VER_FILE!" set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
+    set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
+    
+    set "SVC_UPDATE_NEEDED=0"
+    if not "!LOCAL_SVC_VER!"=="N/A" (
+        set "LOC_SVC_INT=!LOCAL_SVC_VER:.=!"
+        set "CLD_SVC_INT=!SVC_VER:.=!"
+        if !CLD_SVC_INT! GTR !LOC_SVC_INT! set "SVC_UPDATE_NEEDED=1"
+    ) else (
+        set "SVC_UPDATE_NEEDED=1"
+    )
+    
+    if "!SVC_UPDATE_NEEDED!"=="1" (
+        call :LOGSTEP "REFRESH" "Aggiornamento service.conf rilevato: v!LOCAL_SVC_VER! -> v!SVC_VER!"
+        set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
+        if exist "!SERVICE_CONF!" copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
+        
+        set "SVC_TMP=%UB_DIR%\service.conf.tmp"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        
+        if exist "!SVC_TMP!" (
+            for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
+                move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
+                echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
+                set "LOCAL_SVC_VER=!SVC_VER!"
+                set "CHANGED=1"
+                call :LOGSTEP "REFRESH" "service.conf aggiornato con successo a v!SVC_VER!"
+            )
+        )
+    )
+)
+
+set "CHANGED=0"
 :: Backup prima di sovrascrivere
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
