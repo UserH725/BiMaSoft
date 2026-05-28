@@ -297,7 +297,6 @@ if errorlevel 1 (
     pause
     exit /b
 )
-
 set "F1=[  OK  ] NET  >> Rete attiva, posso continuare."
 call :LOGSTEP "NET" "Connettivita verificata"
 
