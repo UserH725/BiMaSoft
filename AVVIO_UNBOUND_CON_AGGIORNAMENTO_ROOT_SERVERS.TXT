@@ -34,14 +34,14 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
-mode con: cols=120 lines=50
+mode con: cols=120 lines=60
 
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.75"
+set "LOCAL_VER=27.80"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -117,7 +117,7 @@ if "!UPDATE_NEEDED!"=="1" (
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
                 echo ==================================================================
-                echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!!
+                echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!
                 echo ==================================================================
                 echo   Versione installata: v!CLOUD_VER!
                 echo   File aggiornato: !SELF_BAT!
@@ -845,7 +845,8 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 cls
 color %CONSOLE_COLOR%
 echo ==========================================================================================
-echo          A T T E N D E R E     O P E R A Z I O N I     I N    C O R S O
+echo                                     A T T E N D E R E
+echo                          O P E R A Z I O N I     I N    C O R S O
 echo   SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
 echo ==========================================================================================
 echo   Versione BAT locale: v!LOCAL_VER!
