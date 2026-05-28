@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.73"
+set "LOCAL_VER=27.74"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -232,6 +232,7 @@ set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
 :: 1. CONTROLLO E CREAZIONE TASK GIORNALIERO
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
 if %errorLevel% NEQ 0 (
+    echo [+] Creazione del task pianificato giornaliero...
     schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c ""%~f0"" --scheduled" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
 )
 
@@ -242,16 +243,19 @@ if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
 :: 2. CONTROLLO E CREAZIONE TASK BIORARIO
 schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
 if %errorLevel% NEQ 0 (
+    echo [+] Creazione del task pianificato ogni 2 ore...
     schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c ""%~f0"" --refresh" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
 )
 
 :: 3. CONTROLLO E CREAZIONE TASK DI AVVIO A VIDEO AL LOGON
 schtasks /query /tn "%TASK_NAME_BOOT%" >nul 2>&1
 if %errorLevel% NEQ 0 (
+    echo [+] Creazione del task pianificato all'accesso utente (A VIDEO)...
     schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c ""%~f0""" /sc onlogon /rl highest /f >nul 2>&1
 )
 
 :TASKS_DONE
+
 set "CONSOLE_COLOR=0A"
 set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
 set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
