@@ -813,7 +813,7 @@ cls
 color %CONSOLE_COLOR%
 echo ==========================================================================================
 echo          A T T E N D E R E     O P E R A Z I O N I     I N    C O R S O
-echo
+echo.
 echo   SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
 echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 echo   Versione BAT locale: v!LOCAL_VER!
