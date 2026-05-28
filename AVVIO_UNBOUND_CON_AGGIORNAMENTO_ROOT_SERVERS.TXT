@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.11"
+set "LOCAL_VER=27.15"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -119,7 +119,7 @@ if "!UPDATE_NEEDED!"=="1" (
                 echo 
                 echo ==================================================================
                 echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!!
-                echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                echo ==================================================================
                 echo   Versione installata: v!CLOUD_VER!
                 echo   File aggiornato: !SELF_BAT!
                 echo   Backup precedente: !BAK_FILE!
@@ -206,7 +206,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
                 echo.
                 echo ==============================================================================
                 echo   SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
-                echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                echo ==============================================================================
                 echo   Versione installata: v!SVC_VER!
                 echo   File aggiornato: !SERVICE_CONF!
                 if exist "!SVC_BAK!" echo   Backup precedente: !SVC_BAK!
@@ -463,7 +463,7 @@ set "F10=[  ??  ] NET  >> Scelgo quale filtro HaGeZi applicare al servizio DNS."
 call :UPDATE_UI 82
 echo.
 echo ==========================================================================================
-echo       SELEZIONE FILTRI HAGEZI - SE NON SCEGLI ENTRO 2 SECONDI VERSIONE PRO
+echo          SELEZIONE FILTRI HAGEZI - SE NON SCEGLI ENTRO 2 SECONDI VERSIONE PRO
 echo ==========================================================================================
 echo   [1] HaGeZi Multi-Normal (protezione standard)
 echo   [2] HaGeZi Multi-Pro    (protezione estesa) (CONSIGLIATA)
@@ -803,26 +803,25 @@ exit /b
 
 :UPDATE_UI
 set "P_VAL=%~1"
-set /a "BLOCKS=P_VAL * 58 / 100"
+set /a "BLOCKS=P_VAL * 70 / 100"
 set "BARRA="
 for /L %%b in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
-set /a "EMPTY=58 - BLOCKS"
+set /a "EMPTY=70 - BLOCKS"
 for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 
 cls
 color %CONSOLE_COLOR%
 echo ==========================================================================================
 echo          A T T E N D E R E     O P E R A Z I O N I     I N    C O R S O
-echo.
 echo   SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
-echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+echo ==========================================================================================
 echo   Versione BAT locale: v!LOCAL_VER!
 echo   Versione BAT cloud: v!CLOUD_VER!
 echo   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER!
 echo   Versione SERVICE.CONF cloud: v!SVC_VER!
 echo ==========================================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
-echo ------------------------------------------------------------------------------------------
+echo ==========================================================================================
 if defined F1 echo !F1!
 if defined F2 echo !F2!
 if defined F3 echo !F3!
