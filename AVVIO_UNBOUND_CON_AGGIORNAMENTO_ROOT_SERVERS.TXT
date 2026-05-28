@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.80"
+set "LOCAL_VER=27.81"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -758,10 +758,6 @@ if "!CHANGED!"=="1" (
 ) else (
     call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
 )
-
-:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
-powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
-call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 
 :: Salva timestamp del refresh
 echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
