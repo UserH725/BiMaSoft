@@ -13,9 +13,32 @@ powershell -Command "Start-Process '%~f0' -Verb RunAs"
 exit /b
 
 :ADMIN_VERIFIED
+
+:: Applica font nel registro e rilancia in nuova finestra se non già fatto
+set "FLAG_FILE=%TEMP%\unbound_relaunched.flag"
+
+if exist "%FLAG_FILE%" (
+    del /f /q "%FLAG_FILE%" >nul 2>&1
+    goto :FONT_OK
+)
+
+reg add "HKCU\Console" /v "FaceName" /t REG_SZ /d "Consolas" /f >nul 2>&1
+reg add "HKCU\Console" /v "FontSize" /t REG_DWORD /d 0x00100000 /f >nul 2>&1
+reg add "HKCU\Console" /v "FontWeight" /t REG_DWORD /d 400 /f >nul 2>&1
+reg add "HKCU\Console\UNBOUND BUNKER" /v "FaceName" /t REG_SZ /d "Consolas" /f >nul 2>&1
+reg add "HKCU\Console\UNBOUND BUNKER" /v "FontSize" /t REG_DWORD /d 0x00100000 /f >nul 2>&1
+reg add "HKCU\Console\UNBOUND BUNKER" /v "FontWeight" /t REG_DWORD /d 400 /f >nul 2>&1
+
+echo.> "%FLAG_FILE%"
+start "UNBOUND BUNKER" cmd /k ""%~f0""
+exit
+
+:FONT_OK
+mode con: cols=100 lines=40
+
 set "START_TIME=%time%"
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=26.96"
+set "LOCAL_VER=26.99"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -236,7 +259,8 @@ set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ssl-reqd"
 title UNBOUND BUNKER - by Mauro Bigoni
-
+:: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
+powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 for /L %%i in (1,1,13) do set "F%%i="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
