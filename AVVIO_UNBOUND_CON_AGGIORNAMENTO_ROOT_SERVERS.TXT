@@ -34,14 +34,14 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
-mode con: cols=100 lines=40
+mode con: cols=120 lines=50
 
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.08"
+set "LOCAL_VER=27.09"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
