@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.71"
+set "LOCAL_VER=27.72"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -244,10 +244,11 @@ schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c ""%~f0"" --refresh" /sc ho
 
 :TASKS_DONE
 :: Crea task per l'avvio all'accensione del PC
+:: Crea task per l'avvio a video al logon dell'utente
 set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
 schtasks /query /tn "%TASK_NAME_BOOT%" >nul 2>&1
 if %errorLevel% NEQ 0 (
-    schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c ""%~f0"" --scheduled" /sc onstart /ru "SYSTEM" /rl highest /f >nul 2>&1
+    schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c ""%~f0""" /sc onlogon /rl highest /f >nul 2>&1
 )
 set "CONSOLE_COLOR=0A"
 set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
