@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.09"
+set "LOCAL_VER=27.10"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -80,7 +80,7 @@ if "!UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
     echo ==================================================================
-    choice /c SN /d S /t 5 /m "   Vuoi aggiornare ora? [S=Si / N=No, default S in 3 sec]"
+    choice /c SN /d S /t 5 /m "     Vuoi aggiornare ora? [S=Si / N=No, default S in 3 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
@@ -175,7 +175,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo ==================================================================
-    choice /c SN /d S /t 3 /m "   Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 3 sec]"
+    choice /c SN /d S /t 3 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 3 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup di service.conf in corso...
@@ -461,7 +461,7 @@ set "F10=[  ??  ] NET  >> Scelgo quale filtro HaGeZi applicare al servizio DNS."
 call :UPDATE_UI 82
 echo.
 echo ==================================================================
-echo   SELEZIONE FILTRI HAGEZI - TIMEOUT 5 SECONDI PER VERSIONE PRO
+echo    SELEZIONE FILTRI HAGEZI - TIMEOUT 2 SECONDI PER VERSIONE PRO
 echo ==================================================================
 echo   [1] HaGeZi Multi-Normal (protezione standard)
 echo   [2] HaGeZi Multi-Pro    (protezione estesa)
@@ -577,8 +577,8 @@ if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 if %errorLevel% neq 0 goto :CONFIG_ERROR
 
 echo.
-echo   [+] Configurazione valida. Avvio del servizio...
-echo   ------------------------------------------------------------------
+echo   [+] Configurazione valida. Avvio del servizio........
+echo ------------------------------------------------------------------
 net start unbound
 :: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
 timeout /t 2 >nul
