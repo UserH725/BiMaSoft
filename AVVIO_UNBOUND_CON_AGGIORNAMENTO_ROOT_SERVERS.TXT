@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.10"
+set "LOCAL_VER=27.11"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -116,9 +116,10 @@ if "!UPDATE_NEEDED!"=="1" (
 		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
                 move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-
+                echo 
                 echo ==================================================================
                 echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!!
+                echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 echo   Versione installata: v!CLOUD_VER!
                 echo   File aggiornato: !SELF_BAT!
                 echo   Backup precedente: !BAK_FILE!
@@ -172,9 +173,9 @@ if not "!SVC_VER!"=="N/A" (
 
 if "!SVC_UPDATE_NEEDED!"=="1" (
     echo.
-    echo ==================================================================
+    echo =======================================================================
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
-    echo ==================================================================
+    echo =======================================================================
     choice /c SN /d S /t 3 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 3 sec]"
     if !errorlevel! EQU 1 (
         echo.
@@ -203,12 +204,13 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
                 echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
                 set "LOCAL_SVC_VER=!SVC_VER!"
                 echo.
-                echo ==================================================================
-                echo   SERVICE.CONF AGGIORNATO CON SUCCESSO!
+                echo ==============================================================================
+                echo   SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
+                echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 echo   Versione installata: v!SVC_VER!
                 echo   File aggiornato: !SERVICE_CONF!
                 if exist "!SVC_BAK!" echo   Backup precedente: !SVC_BAK!
-                echo ==================================================================
+                echo ==============================================================================
                 echo.
             ) else (
                 echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
@@ -460,12 +462,12 @@ if "%~1"=="--scheduled" goto :LOAD_SCHEDULED_HAGEZI
 set "F10=[  ??  ] NET  >> Scelgo quale filtro HaGeZi applicare al servizio DNS."
 call :UPDATE_UI 82
 echo.
-echo ==================================================================
-echo    SELEZIONE FILTRI HAGEZI - TIMEOUT 2 SECONDI PER VERSIONE PRO
-echo ==================================================================
+echo ==========================================================================================
+echo       SELEZIONE FILTRI HAGEZI - SE NON SCEGLI ENTRO 2 SECONDI VERSIONE PRO
+echo ==========================================================================================
 echo   [1] HaGeZi Multi-Normal (protezione standard)
-echo   [2] HaGeZi Multi-Pro    (protezione estesa)
-echo ------------------------------------------------------------------
+echo   [2] HaGeZi Multi-Pro    (protezione estesa) (CONSIGLIATA)
+echo ------------------------------------------------------------------------------------------
 choice /c 12 /d 2 /t 2 /m " > Digita un'opzione [1 o 2]"
 if errorlevel 2 (
     set "CURRENT_CHOICE=pro"
@@ -569,16 +571,16 @@ call :LOGSTEP "ACL" "Permessi NTFS applicati"
 set "F13=[  ..  ] CONF >> Controllo la sintassi del servizio e poi avvio Unbound."
 call :UPDATE_UI 98
 echo.
-echo ------------------------------------------------------------------
-echo   VERIFICA SINTATTICA DEL FILE SERVICE.CONF
-echo ------------------------------------------------------------------
+echo ------------------------------------------------------------------------------------------
+echo                    VERIFICA SINTATTICA DEL FILE SERVICE.CONF
+echo ------------------------------------------------------------------------------------------
 if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 "%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
 if %errorLevel% neq 0 goto :CONFIG_ERROR
 
 echo.
-echo   [+] Configurazione valida. Avvio del servizio........
-echo ------------------------------------------------------------------
+echo             [+] Configurazione valida. Avvio del servizio in corso ........
+echo ------------------------------------------------------------------------------------------
 net start unbound
 :: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
 timeout /t 2 >nul
@@ -767,11 +769,11 @@ set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME
 set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
 if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
-echo ------------------------------------------------------------------
-echo   PROCESSO CONCLUSO in !ELAPSED! secondi.
-echo ------------------------------------------------------------------
-echo Chiusura automatica...
-timeout /t 5 >nul
+echo ------------------------------------------------------------------------------------------
+echo                        PROCESSO CONCLUSO in !ELAPSED! secondi.
+echo ------------------------------------------------------------------------------------------
+echo                              Chiusura automatica...
+timeout /t 3 >nul
 exit
 
 :: ==================================================================
@@ -809,15 +811,18 @@ for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 
 cls
 color %CONSOLE_COLOR%
-echo =========================================================================
-echo   SISTEMA DI PROTEZIONE DNS - HARDENING ENGINE AutoUpdate by Mauro Bigoni
+echo ==========================================================================================
+echo          A T T E N D E R E     O P E R A Z I O N I     I N    C O R S O
+echo
+echo   SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
+echo   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 echo   Versione BAT locale: v!LOCAL_VER!
 echo   Versione BAT cloud: v!CLOUD_VER!
 echo   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER!
 echo   Versione SERVICE.CONF cloud: v!SVC_VER!
-echo =========================================================================
+echo ==========================================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
-echo -------------------------------------------------------------------------
+echo ------------------------------------------------------------------------------------------
 if defined F1 echo !F1!
 if defined F2 echo !F2!
 if defined F3 echo !F3!
