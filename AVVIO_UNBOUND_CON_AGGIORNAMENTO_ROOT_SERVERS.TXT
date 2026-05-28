@@ -34,7 +34,7 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
-mode con: cols=100 lines=40
+mode con: cols=110 lines=50
 
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
