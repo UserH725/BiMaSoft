@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.15"
+set "LOCAL_VER=27.50"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -322,10 +322,12 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbo
 set "F3=[  OK  ] REG  >> Priorità CPU impostata e dump locali disattivati."
 call :LOGSTEP "REG" "Priorita CPU e dump configurati"
 
-set "F4=[  ..  ] REG  >> Spengo Smart Name Resolution, multicast e DoH nei browser."
+set "F4=[  ..  ] REG  >> Policy DNS: Spengo Smart Name Res, multicast, DoH e forzo Punycode anti-omografo."
 call :UPDATE_UI 30
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableSmartNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v "TurnOffMulticastNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
+
+:: --- DISATTIVAZIONE DoH NEI BROWSER ---
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
@@ -337,8 +339,19 @@ reg add "HKLM\SOFTWARE\Policies\Opera" /v "DnsOverHttpsMode" /t REG_SZ /d "off" 
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
-set "F4=[  OK  ] REG  >> Le policy DNS sono attive e i browser non possono bypassare Unbound."
-call :LOGSTEP "REG" "Policy DoH e name resolution applicate"
+
+:: --- HARDENING ANTI-OMOGRAFO IDN (FORZA VISUALIZZAZIONE PUNYCODE) ---
+reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Opera" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+
+:: Iniezione dinamica per forzare il Punycode su tutti i profili Firefox esistenti
+powershell -Command "$appData = [Environment]::GetFolderPath('AppData'); if (Test-Path \"$appData\Mozilla\Firefox\Profiles\") { Get-ChildItem \"$appData\Mozilla\Firefox\Profiles\" -Filter prefs.js -Recurse | ForEach-Object { $content = Get-Content $_.FullName; if ($content -notmatch 'network.IDN_show_punycode') { Add-Content $_.FullName 'user_pref(\"network.IDN_show_punycode\", true);'; } } }" >nul 2>&1
+
+set "F4=[  OK  ] REG  >> Policy attive: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
+call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
 
 set "F5=[  ..  ] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
