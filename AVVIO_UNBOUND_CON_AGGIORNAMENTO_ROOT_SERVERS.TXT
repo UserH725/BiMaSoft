@@ -41,15 +41,17 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.51"
+set "LOCAL_VER=27.52"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 
 :: Versione BAT cloud
+:: Versione BAT cloud
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
-powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+certutil -urlcache -f "https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt" "%VER_TMP%" >nul 2>&1
+certutil -urlcache * delete >nul 2>&1
 if exist "%VER_TMP%" (
     set /p CLOUD_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
@@ -57,7 +59,8 @@ if exist "%VER_TMP%" (
 if "!CLOUD_VER!"=="" set "CLOUD_VER=N/A"
 
 :: Versione SERVICE.CONF cloud
-powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+certutil -urlcache -f "https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt" "%VER_TMP%" >nul 2>&1
+certutil -urlcache * delete >nul 2>&1
 if exist "%VER_TMP%" (
     set /p SVC_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
@@ -89,13 +92,12 @@ if "!UPDATE_NEEDED!"=="1" (
         set "FILE_TO_BAK=%~f0"
         if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
 
-        :: Legge la versione contenuta nel file tramite PowerShell su file temp
+:: Legge la versione contenuta nel file tramite findstr nativo
         set "VER_IN_FILE=unknown"
-        set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
-        powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
-        if exist "!VER_TMP2!" (
-            set /p VER_IN_FILE=<"!VER_TMP2!"
-            del /f /q "!VER_TMP2!" >nul 2>&1
+        for /f "tokens=2 delims==" %%I in ('findstr /i "set LOCAL_VER=" "!FILE_TO_BAK!"') do (
+            set "TMP_V=%%I"
+            set "TMP_V=!TMP_V:"=!"
+            set "VER_IN_FILE=!TMP_V: =!"
         )
         if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
@@ -107,11 +109,11 @@ if "!UPDATE_NEEDED!"=="1" (
             echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
         )
 
-        echo   [..] Download nuova versione v!CLOUD_VER! in corso...
+echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
-
+        certutil -urlcache -f "!CLOUD_BAT_URL!" "!UPDATE_TMP!" >nul 2>&1
+        certutil -urlcache * delete >nul 2>&1
         if exist "!UPDATE_TMP!" (
 		    echo   [OK] Download completato.
             for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
@@ -195,7 +197,8 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 
         echo   [..] Download service.conf v!SVC_VER! in corso...
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        certutil -urlcache -f "!CLOUD_SVC_URL!" "!SVC_TMP!" >nul 2>&1
+        certutil -urlcache * delete >nul 2>&1
 
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
