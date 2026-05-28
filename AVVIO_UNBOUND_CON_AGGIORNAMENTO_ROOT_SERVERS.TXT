@@ -611,6 +611,7 @@ if not exist "%UB_DIR%" (
     call :LOGFAIL "REFRESH" "Directory Unbound non trovata"
     exit /b
 )
+set "CHANGED=0"
 
 :: Backup prima di sovrascrivere
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
@@ -634,7 +635,7 @@ if not errorlevel 1 (
                 for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
             )
         )
-        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1) else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
+        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1  set "CHANGED=1") else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
     )
 )
 if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
@@ -649,7 +650,7 @@ if not errorlevel 1 (
                 for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
             )
         )
-        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1) else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
+        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1 set "CHANGED=1") else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
     )
 )
 if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
@@ -681,6 +682,7 @@ if "!CURRENT_CHOICE!"=="pro" (
             if "!SKIP_HZ!"=="0" (
                 move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
                 copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
+                set "CHANGED=1" 
             ) else (
                 del /f /q "%HZ_PRO%.tmp" >nul 2>&1
             )
@@ -714,10 +716,17 @@ if "!CURRENT_CHOICE!"=="pro" (
 call :FILE_DATE "%HZ_MAIN%" DT_HZ
 call :LOGSTEP "REFRESH" "HaGeZi !CURRENT_CHOICE! aggiornato - RPZ: !DT_HZ!"
 
-:: Riavvio silenzioso del servizio
-net stop unbound >nul 2>&1
-taskkill /f /im unbound.exe >nul 2>&1
-net start unbound >nul 2>&1
+:: Riavvio silenzioso del servizio SOLO se qualcosa è cambiato
+if "!CHANGED!"=="1" (
+    net stop unbound >nul 2>&1
+    taskkill /f /im unbound.exe >nul 2>&1
+    net start unbound >nul 2>&1
+    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
+) else (
+    call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
+)
+
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
 call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
