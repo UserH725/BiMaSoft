@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.81"
+set "LOCAL_VER=27.82"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -367,9 +367,6 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "IDNPolicy" /t REG_DWORD /d 1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
-
-:: Iniezione dinamica per forzare il Punycode su tutti i profili Firefox esistenti
-powershell -Command "$appData = [Environment]::GetFolderPath('AppData'); if (Test-Path \"$appData\Mozilla\Firefox\Profiles\") { Get-ChildItem \"$appData\Mozilla\Firefox\Profiles\" -Filter prefs.js -Recurse | ForEach-Object { $content = Get-Content $_.FullName; if ($content -notmatch 'network.IDN_show_punycode') { Add-Content $_.FullName 'user_pref(\"network.IDN_show_punycode\", true);'; } } }" >nul 2>&1
 
 set "F4=[  OK  ] REG  >> Policy attive: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
 call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
