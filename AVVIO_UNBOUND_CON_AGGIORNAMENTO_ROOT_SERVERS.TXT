@@ -399,16 +399,6 @@ powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomU
 :: --- DNS IPV6 SU ::1 (esclude WireGuard/WARP) ---
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 
-:: --- FIREWALL: BLOCCA DNS PORTA 53 TRANNE UNBOUND ---
-netsh advfirewall firewall delete rule name="BLOCK DNS out UDP" >nul 2>&1
-netsh advfirewall firewall delete rule name="BLOCK DNS out TCP" >nul 2>&1
-netsh advfirewall firewall delete rule name="ALLOW DNS unbound UDP" >nul 2>&1
-netsh advfirewall firewall delete rule name="ALLOW DNS unbound TCP" >nul 2>&1
-netsh advfirewall firewall add rule name="ALLOW DNS unbound UDP" dir=out action=allow protocol=udp remoteport=53 program="%UB_DIR%\unbound.exe" >nul 2>&1
-netsh advfirewall firewall add rule name="ALLOW DNS unbound TCP" dir=out action=allow protocol=tcp remoteport=53 program="%UB_DIR%\unbound.exe" >nul 2>&1
-netsh advfirewall firewall add rule name="BLOCK DNS out UDP" dir=out action=block protocol=udp remoteport=53 >nul 2>&1
-netsh advfirewall firewall add rule name="BLOCK DNS out TCP" dir=out action=block protocol=tcp remoteport=53 >nul 2>&1
-
 set "F5=[  OK  ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati."
 call :LOGSTEP "SECU/NET" "Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati"
 
@@ -430,10 +420,6 @@ if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>
 if exist "%HZ_MAIN%" copy /y "%HZ_MAIN%" "%HZ_MAIN_BAK%" >nul 2>&1
 if exist "%HZ_NORMAL%" copy /y "%HZ_NORMAL%" "%HZ_NORMAL_BAK%" >nul 2>&1
 if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
-
-:: --- BLOCCO WPAD NEL FILE HOSTS ---
-findstr /i "wpad" "%SystemRoot%\System32\drivers\etc\hosts" >nul 2>&1
-if errorlevel 1 echo 0.0.0.0 wpad >> "%SystemRoot%\System32\drivers\etc\hosts"
 
 set "F7=[  OK  ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
