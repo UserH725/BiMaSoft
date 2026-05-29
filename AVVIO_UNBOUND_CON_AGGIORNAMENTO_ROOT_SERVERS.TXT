@@ -781,6 +781,7 @@ if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >n
 if exist "%HZ_MAIN%"            copy /y "%HZ_MAIN%"            "%HZ_MAIN_BAK%" >nul 2>&1
 if exist "%HZ_NORMAL%"          copy /y "%HZ_NORMAL%"          "%HZ_NORMAL_BAK%" >nul 2>&1
 if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%" >nul 2>&1
+if exist "%HZ_TYPO%"            copy /y "%HZ_TYPO%"            "%HZ_TYPO_BAK%" >nul 2>&1
 
 :: Risoluzione IP per internic
 call :RESOLVE_HOST www.internic.net IP_INTERNIC
