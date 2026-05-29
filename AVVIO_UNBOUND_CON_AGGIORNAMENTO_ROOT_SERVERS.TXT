@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=27.86"
+set "LOCAL_VER=27.87"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -635,7 +635,7 @@ if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 if %errorLevel% neq 0 goto :CONFIG_ERROR
 
 echo.
-echo             [+] Configurazione valida. Avvio del servizio in corso ........
+echo            Verifiche effettuate con successo. Avvio del servizio in corso ........
 echo ------------------------------------------------------------------------------------------
 net start unbound
 :: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
@@ -906,7 +906,7 @@ echo ---------------------------------------------------------------------------
 echo                        PROCESSO CONCLUSO in !ELAPSED! secondi.
 echo ------------------------------------------------------------------------------------------
 echo                              Chiusura automatica...
-timeout /t 3 >nul
+timeout /t 2 >nul
 exit
 
 :: ==================================================================
