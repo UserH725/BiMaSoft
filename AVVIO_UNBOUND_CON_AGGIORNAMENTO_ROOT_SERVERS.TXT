@@ -410,7 +410,7 @@ netsh advfirewall firewall add rule name="BLOCK DNS out UDP" dir=out action=bloc
 netsh advfirewall firewall add rule name="BLOCK DNS out TCP" dir=out action=block protocol=tcp remoteport=53 >nul 2>&1
 
 set "F5=[  OK  ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati."
-call :LOGSTEP "SECU/NET" "Mitigazioni exploit e NetBIOS configurati"
+call :LOGSTEP "SECU/NET" "Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati"
 
 set "F6=[  ..  ] TIME >> Sincronizzo l'orologio di sistema per evitare problemi con DNSSEC."
 call :UPDATE_UI 50
