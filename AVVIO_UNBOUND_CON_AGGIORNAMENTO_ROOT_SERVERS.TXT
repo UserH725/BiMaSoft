@@ -603,7 +603,7 @@ if "!CURRENT_CHOICE!"=="pro" (
 if not exist "%HZ_MAIN%" if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
 if not exist "%HZ_MAIN%" if exist "%HZ_MAIN_BAK%" copy /y "%HZ_MAIN_BAK%" "%HZ_MAIN%" >nul 2>&1
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TYPO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/typosquatting.txt >nul 2>&1
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TYPO%.tmp" https://github.com/hagezi/dns-blocklists/tree/37522026.149.11117/rpz/typosquatting.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_TYPO%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TY=0"
