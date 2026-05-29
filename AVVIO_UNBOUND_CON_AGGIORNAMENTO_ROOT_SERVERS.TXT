@@ -840,6 +840,7 @@ if "!CURRENT_CHOICE!"=="pro" (
             if "!SKIP_HZ!"=="0" (
                 move /y "%HZ_NORMAL%.tmp" "%HZ_NORMAL%" >nul 2>&1
                 copy /y "%HZ_NORMAL%" "%HZ_MAIN%" >nul 2>&1
+                set "CHANGED=1" 
             ) else (
                 del /f /q "%HZ_NORMAL%.tmp" >nul 2>&1
             )
