@@ -260,7 +260,7 @@ goto :TASKS_DONE
 
 :MAKE_BOOT_TASK
 echo [+] Creazione del task pianificato all'accesso utente (A VIDEO)...
-schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /rl highest /f >nul 2>&1
+schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /ru "%USERNAME%" /rl highest /f >nul 2>&1
 
 :TASKS_DONE
 
