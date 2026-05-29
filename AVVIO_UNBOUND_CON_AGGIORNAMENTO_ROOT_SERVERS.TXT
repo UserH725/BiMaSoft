@@ -241,7 +241,7 @@ schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc
 :CHECK_OLD_HOURLY
 :: Pulizia vecchio task orario se rimasto [cite: 101]
 schtasks /query /tn "Unbound_Bunker_Hourly" >nul 2>&1
-if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1 [cite: 101]
+if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
 
 :: 2. CONTROLLO E CREAZIONE TASK BIORARIO
 schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
