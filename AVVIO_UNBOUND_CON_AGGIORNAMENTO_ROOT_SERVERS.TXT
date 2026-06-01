@@ -41,7 +41,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.01"
+set "LOCAL_VER=28.02"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -282,11 +282,12 @@ set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
-set "CURL_CA=--ssl-reqd --ipv4"
+set "CURL_CA=--ipv4 --location --max-time 60"
 title UNBOUND BUNKER - by Mauro Bigoni
 :: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 for /L %%i in (1,1,13) do set "F%%i="
+set "F9B="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 set "NOW_H=%time:~0,2%"
@@ -444,87 +445,116 @@ taskkill /f /im unbound.exe >nul 2>&1
 set "F8=[  OK  ] CORE >> Servizio fermato e porta 53 liberata."
 call :LOGSTEP "CORE" "Unbound fermato"
 
-set "F9=[  ..  ] NET  >> Scarico named.cache e root.zone in parallelo."
+:: -------------------------------------------------------
+:: F9 — named.cache
+:: -------------------------------------------------------
+set "F9=[  ..  ] NET  >> Scarico named.cache da internic.net..."
 call :UPDATE_UI 80
-call :RESOLVE_HOST www.internic.net IP_INTERNIC
-set "RES_INTERNIC="
-if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_INTERNIC! --resolve www.internic.net:80:!IP_INTERNIC!"
 
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+set "NC_URL=https://www.internic.net/domain/named.cache"
+set "NC_TMP=%UB_DIR%\named.cache.tmp"
+if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
 
-:: Pulisce sentinel rimasti da run precedenti
-if exist "%TEMP%\ub_done_nc.flag" del /f /q "%TEMP%\ub_done_nc.flag" >nul 2>&1
-if exist "%TEMP%\ub_done_rz.flag" del /f /q "%TEMP%\ub_done_rz.flag" >nul 2>&1
-if exist "%TEMP%\ub_err_nc.flag"  del /f /q "%TEMP%\ub_err_nc.flag"  >nul 2>&1
-if exist "%TEMP%\ub_err_rz.flag"  del /f /q "%TEMP%\ub_err_rz.flag"  >nul 2>&1
-
-:: Lancia i 3 download in parallelo
-start /b "" cmd /c "curl -s -f %CURL_CA% !RES_INTERNIC! -o ""%UB_DIR%\named.cache.tmp"" https://www.internic.net/domain/named.cache >nul 2>&1 || echo.>"%TEMP%\ub_err_nc.flag" & echo.>"%TEMP%\ub_done_nc.flag""
-start /b "" cmd /c "curl -s -f %CURL_CA% !RES_INTERNIC! -o ""%UB_DIR%\root.zone.tmp"" https://www.internic.net/domain/root.zone >nul 2>&1 || echo.>"%TEMP%\ub_err_rz.flag" & echo.>"%TEMP%\ub_done_rz.flag""
-
-:: Attende che tutti e 3 i download siano terminati
-:WAIT_PARALLEL_DL
-if not exist "%TEMP%\ub_done_nc.flag" ( timeout /t 1 >nul & goto :WAIT_PARALLEL_DL )
-if not exist "%TEMP%\ub_done_rz.flag" ( timeout /t 1 >nul & goto :WAIT_PARALLEL_DL )
-
-
-:: Pulisce i sentinel
-del /f /q "%TEMP%\ub_done_nc.flag" "%TEMP%\ub_done_rz.flag" >nul 2>&1
-
-:: --- named.cache: verifica, hash check, move o fallback ---
-if exist "%TEMP%\ub_err_nc.flag" (
-    del /f /q "%TEMP%\ub_err_nc.flag" >nul 2>&1
-    set "F9=[WARN] NET  >> named.cache non scaricato, provo a usare il backup."
-    if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
+curl -s -f %CURL_CA% -o "%NC_TMP%" "%NC_URL%" >nul 2>&1
+if errorlevel 1 (
+    if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
+    if exist "%NCACHE_BAK%" (
+        copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
+        set "F9=[WARN] NET  >> named.cache non scaricato, ripristinato dal backup."
+    ) else if exist "%UB_DIR%\named.cache" (
+        set "F9=[WARN] NET  >> named.cache: download fallito, uso quello esistente."
+    ) else (
+        set "F9=[ERR ] NET  >> named.cache non scaricabile e nessun backup disponibile!"
+    )
 ) else (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_NC=0"
-        if exist "%UB_DIR%\named.cache" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\named.cache.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
-            )
+    if not exist "%NC_TMP%" (
+        set "F9=[ERR ] NET  >> named.cache: curl ok ma file assente."
+        goto :NC_DONE
+    )
+    for %%I in ("%NC_TMP%") do set "NC_SIZE=%%~zI"
+    if !NC_SIZE! LSS 1024 (
+        del /f /q "%NC_TMP%" >nul 2>&1
+        set "F9=[ERR ] NET  >> named.cache: file scaricato troppo piccolo (!NC_SIZE! bytes)."
+        goto :NC_DONE
+    )
+    set "SKIP_NC=0"
+    if exist "%UB_DIR%\named.cache" (
+        for /f %%H in ('powershell -Command "(Get-FileHash \"%NC_TMP%\" -Algorithm MD5).Hash+\",\"+(Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
+            for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
         )
-        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1) else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
+    )
+    if "!SKIP_NC!"=="1" (
+        del /f /q "%NC_TMP%" >nul 2>&1
+        call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+        set "F9=[  OK  ] NET  >> named.cache gia' aggiornato: !DT_NC!"
+    ) else (
+        move /y "%NC_TMP%" "%UB_DIR%\named.cache" >nul 2>&1
+        call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+        set "F9=[  OK  ] NET  >> named.cache scaricato e installato: !DT_NC!"
     )
 )
-if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
+:NC_DONE
+if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
+call :UPDATE_UI 82
+call :LOGSTEP "NET" "!F9!"
 
-:: --- root.zone: verifica, hash check, move o fallback ---
-if exist "%TEMP%\ub_err_rz.flag" (
-    del /f /q "%TEMP%\ub_err_rz.flag" >nul 2>&1
+:: -------------------------------------------------------
+:: F9B — root.zone (riga separata)
+:: -------------------------------------------------------
+set "F9B=[  ..  ] NET  >> Scarico root.zone da internic.net..."
+call :UPDATE_UI 82
+
+set "RZ_URL=https://www.internic.net/domain/root.zone"
+set "RZ_TMP=%UB_DIR%\root.zone.tmp"
+if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
+
+curl -s -f %CURL_CA% -o "%RZ_TMP%" "%RZ_URL%" >nul 2>&1
+if errorlevel 1 (
+    if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
     if exist "%RZONE_BAK%" (
         copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
-        set "F9=[WARN] NET  >> root.zone non scaricato, ripristinato dal backup."
+        set "F9B=[WARN] NET  >> root.zone non scaricato, ripristinato dal backup."
+    ) else if exist "%UB_DIR%\root.zone" (
+        set "F9B=[WARN] NET  >> root.zone: download fallito, uso quello esistente."
     ) else (
-        set "F9=[WARN] NET  >> root.zone non scaricato e backup assente, tentativo download diretto..."
-        curl -s -f %CURL_CA% -o "%UB_DIR%\root.zone" https://www.internic.net/domain/root.zone >nul 2>&1
-        if not exist "%UB_DIR%\root.zone" (
-            set "F9=[ERR ] NET  >> root.zone non scaricabile - Unbound potrebbe non avviarsi."
-        )
+        set "F9B=[ERR ] NET  >> root.zone non scaricabile e nessun backup disponibile!"
     )
 ) else (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
-        set "SKIP_RZ=0"
-        if exist "%UB_DIR%\root.zone" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\root.zone.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
-            )
-        )
-        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1) else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
+    if not exist "%RZ_TMP%" (
+        set "F9B=[ERR ] NET  >> root.zone: curl ok ma file assente."
+        goto :RZ_DONE
     )
-    :: Primo avvio: root.zone.tmp scaricato ma root.zone ancora assente
-    if not exist "%UB_DIR%\root.zone" (
-        if exist "%UB_DIR%\root.zone.tmp" move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1
+    for %%I in ("%RZ_TMP%") do set "RZ_SIZE=%%~zI"
+    if !RZ_SIZE! LSS 102400 (
+        if not exist "%UB_DIR%\root.zone" (
+            move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
+            set "F9B=[WARN] NET  >> root.zone piccolo ma usato (primo avvio)."
+        ) else (
+            del /f /q "%RZ_TMP%" >nul 2>&1
+            set "F9B=[WARN] NET  >> root.zone scaricato troppo piccolo (!RZ_SIZE! bytes), mantenuto esistente."
+        )
+        goto :RZ_DONE
+    )
+    set "SKIP_RZ=0"
+    if exist "%UB_DIR%\root.zone" (
+        for /f %%H in ('powershell -Command "(Get-FileHash \"%RZ_TMP%\" -Algorithm MD5).Hash+\",\"+(Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
+            for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
+        )
+    )
+    if "!SKIP_RZ!"=="1" (
+        del /f /q "%RZ_TMP%" >nul 2>&1
+        call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
+        set "F9B=[  OK  ] NET  >> root.zone gia' aggiornato: !DT_RZ!"
+    ) else (
+        move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
+        call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
+        set "F9B=[  OK  ] NET  >> root.zone scaricato e installato: !DT_RZ!"
     )
 )
-if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
-
-call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-call :FILE_DATE "%UB_DIR%\root.zone"   DT_RZ
-set "F9=[  OK  ] NET  >> named.cache: !DT_NC! ^| root.zone: !DT_RZ!"
-call :LOGSTEP "NET" "Root hints e root.zone aggiornati"
+:RZ_DONE
+if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
+call :UPDATE_UI 83
+call :LOGSTEP "NET" "!F9B!"
 
 if "%~1"=="--scheduled" goto :LOAD_SCHEDULED_HAGEZI
 
@@ -769,40 +799,49 @@ if exist "%HZ_MAIN%"            copy /y "%HZ_MAIN%"            "%HZ_MAIN_BAK%" >
 if exist "%HZ_NORMAL%"          copy /y "%HZ_NORMAL%"          "%HZ_NORMAL_BAK%" >nul 2>&1
 if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%" >nul 2>&1
 
-:: Risoluzione IP per internic
-call :RESOLVE_HOST www.internic.net IP_INTERNIC
-set "RES_INTERNIC="
-if not "!IP_INTERNIC!"=="" set "RES_INTERNIC=--resolve www.internic.net:443:!IP_INTERNIC! --resolve www.internic.net:80:!IP_INTERNIC!"
-
 :: named.cache
-curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\named.cache.tmp" https://www.internic.net/domain/named.cache >nul 2>&1
+set "NC_TMP_R=%UB_DIR%\named.cache.tmp"
+if exist "%NC_TMP_R%" del /f /q "%NC_TMP_R%" >nul 2>&1
+curl -s -f %CURL_CA% -o "%NC_TMP_R%" "https://www.internic.net/domain/named.cache" >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\named.cache.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_NC=0"
-        if exist "%UB_DIR%\named.cache" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\named.cache.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
+    if exist "%NC_TMP_R%" (
+        for %%I in ("%NC_TMP_R%") do set "NC_SZ=%%~zI"
+        if !NC_SZ! GEQ 1024 (
+            set "SKIP_NC=0"
+            if exist "%UB_DIR%\named.cache" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%NC_TMP_R%\" -Algorithm MD5).Hash+\",\"+(Get-FileHash \"%UB_DIR%\named.cache\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_NC=1"
+                )
             )
+            if "!SKIP_NC!"=="0" (move /y "%NC_TMP_R%" "%UB_DIR%\named.cache" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%NC_TMP_R%" >nul 2>&1)
+        ) else (
+            if not exist "%UB_DIR%\named.cache" (move /y "%NC_TMP_R%" "%UB_DIR%\named.cache" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%NC_TMP_R%" >nul 2>&1)
         )
-        if "!SKIP_NC!"=="0" (move /y "%UB_DIR%\named.cache.tmp" "%UB_DIR%\named.cache" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1)
     )
 )
-if exist "%UB_DIR%\named.cache.tmp" del /f /q "%UB_DIR%\named.cache.tmp" >nul 2>&1
+if exist "%NC_TMP_R%" del /f /q "%NC_TMP_R%" >nul 2>&1
 
 :: root.zone
-curl -s -f %CURL_CA% !RES_INTERNIC! -o "%UB_DIR%\root.zone.tmp" https://www.internic.net/domain/root.zone >nul 2>&1
+set "RZ_TMP_R=%UB_DIR%\root.zone.tmp"
+if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
+curl -s -f %CURL_CA% -o "%RZ_TMP_R%" "https://www.internic.net/domain/root.zone" >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%UB_DIR%\root.zone.tmp") do if %%~zI GEQ 102400 (
-        set "SKIP_RZ=0"
-        if exist "%UB_DIR%\root.zone" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%UB_DIR%\root.zone.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
+    if exist "%RZ_TMP_R%" (
+        for %%I in ("%RZ_TMP_R%") do set "RZ_SZ=%%~zI"
+        if !RZ_SZ! GEQ 102400 (
+            set "SKIP_RZ=0"
+            if exist "%UB_DIR%\root.zone" (
+                for /f %%H in ('powershell -Command "(Get-FileHash \"%RZ_TMP_R%\" -Algorithm MD5).Hash+\",\"+(Get-FileHash \"%UB_DIR%\root.zone\" -Algorithm MD5).Hash"') do (
+                    for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_RZ=1"
+                )
             )
+            if "!SKIP_RZ!"=="0" (move /y "%RZ_TMP_R%" "%UB_DIR%\root.zone" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%RZ_TMP_R%" >nul 2>&1)
+        ) else (
+            if not exist "%UB_DIR%\root.zone" (move /y "%RZ_TMP_R%" "%UB_DIR%\root.zone" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%RZ_TMP_R%" >nul 2>&1)
         )
-        if "!SKIP_RZ!"=="0" (move /y "%UB_DIR%\root.zone.tmp" "%UB_DIR%\root.zone" >nul 2>&1 & set "CHANGED=1") else (del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1)
     )
 )
-if exist "%UB_DIR%\root.zone.tmp" del /f /q "%UB_DIR%\root.zone.tmp" >nul 2>&1
+if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
 call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
 call :FILE_DATE "%UB_DIR%\root.zone"   DT_RZ
 call :LOGSTEP "REFRESH" "named.cache: !DT_NC! | root.zone: !DT_RZ!"
@@ -970,19 +1009,57 @@ echo   Versione SERVICE.CONF cloud: v!SVC_VER!
 echo ==========================================================================================
 echo   PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==========================================================================================
-if defined F1 echo !F1!
-if defined F2 echo !F2!
-if defined F3 echo !F3!
-if defined F4 echo !F4!
-if defined F5 echo !F5!
-if defined F6 echo !F6!
-if defined F7 echo !F7!
-if defined F8 echo !F8!
-if defined F9 echo !F9!
-if defined F10 echo !F10!
-if defined F11 echo !F11!
-if defined F12 echo !F12!
-if defined F13 echo !F13!
+if defined F1  ( call :PHASE_BAR  1  5 10 & echo !UI_PB! !F1! )
+if defined F2  ( call :PHASE_BAR  2 10 20 & echo !UI_PB! !F2! )
+if defined F3  ( call :PHASE_BAR  3 20 30 & echo !UI_PB! !F3! )
+if defined F4  ( call :PHASE_BAR  4 30 40 & echo !UI_PB! !F4! )
+if defined F5  ( call :PHASE_BAR  5 40 50 & echo !UI_PB! !F5! )
+if defined F6  ( call :PHASE_BAR  6 50 60 & echo !UI_PB! !F6! )
+if defined F7  ( call :PHASE_BAR  7 60 70 & echo !UI_PB! !F7! )
+if defined F8  ( call :PHASE_BAR  8 70 80 & echo !UI_PB! !F8! )
+if defined F9  ( call :PHASE_BAR  9 80 82 & echo !UI_PB! !F9! )
+if defined F9B ( call :PHASE_BAR 10 82 85 & echo !UI_PB! !F9B! )
+if defined F10 ( call :PHASE_BAR 11 85 90 & echo !UI_PB! !F10! )
+if defined F11 ( call :PHASE_BAR 12 90 95 & echo !UI_PB! !F11! )
+if defined F12 ( call :PHASE_BAR 13 95 98 & echo !UI_PB! !F12! )
+if defined F13 ( call :PHASE_BAR 14 98 100 & echo !UI_PB! !F13! )
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: calcola mini-barra di progresso per una singola fase
+:: Uso: call :PHASE_BAR <num> <start%> <end%>
+:: Risultato in variabile UI_PB (stringa [████░░░░] pp%)
+:: ==================================================================
+:PHASE_BAR
+set /a "PB_START=%~2"
+set /a "PB_END=%~3"
+set /a "PB_RANGE=PB_END - PB_START"
+if %PB_RANGE% LEQ 0 set "PB_RANGE=1"
+
+:: Calcola quanti blocchi riempire (su 10 caratteri)
+if %P_VAL% GEQ %PB_END% (
+    set /a "PB_FILL=10"
+    set /a "PB_PCT=100"
+) else if %P_VAL% LEQ %PB_START% (
+    set /a "PB_FILL=0"
+    set /a "PB_PCT=0"
+) else (
+    set /a "PB_FILL=(P_VAL - PB_START) * 10 / PB_RANGE"
+    set /a "PB_PCT=(P_VAL - PB_START) * 100 / PB_RANGE"
+)
+set /a "PB_EMPTY=10 - PB_FILL"
+
+set "PB_BAR="
+for /L %%k in (1,1,%PB_FILL%)  do set "PB_BAR=!PB_BAR!█"
+for /L %%k in (1,1,%PB_EMPTY%) do set "PB_BAR=!PB_BAR!░"
+
+:: Padding percentuale a 3 cifre
+set "PB_PCTS= %PB_PCT%%%"
+if %PB_PCT% EQU 100 set "PB_PCTS=100%%"
+if %PB_PCT% LSS 10  set "PB_PCTS=  %PB_PCT%%%"
+if %PB_PCT% LSS 100 if %PB_PCT% GEQ 10 set "PB_PCTS= %PB_PCT%%%"
+
+set "UI_PB=[!PB_BAR!]!PB_PCTS!"
 exit /b
 
 :: ==================================================================
