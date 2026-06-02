@@ -43,7 +43,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.05"
+set "LOCAL_VER=28.06"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -82,7 +82,7 @@ if "!UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
     echo ==================================================================
-    choice /c SN /d S /t 5 /m "     Vuoi aggiornare ora? [S=Si / N=No, default S in 3 sec]"
+    choice /c SN /d S /t 1 /m "     Vuoi aggiornare ora? [S=Si / N=No, default S in 1 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
@@ -177,7 +177,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
     echo =======================================================================
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo =======================================================================
-    choice /c SN /d S /t 3 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 3 sec]"
+    choice /c SN /d S /t 1 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 1 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup di service.conf in corso...
@@ -315,7 +315,7 @@ if "%~1"=="--scheduled" (
 )
 
 :: FASE 1 - Azione
-set "F1_ACT=[  ..  ] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
+set "F1_ACT=[...in corso...] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
 ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
@@ -327,13 +327,13 @@ if errorlevel 1 (
     pause
     exit /b
 )
-set "F1_RES=[  OK  ] NET  >> Rete attiva, posso continuare."
+set "F1_RES=[      OK      ] NET  >> Rete attiva, posso continuare."
 call :LOGSTEP "NET" "Connettivita verificata"
 :: Garantisce resolver esterno per tutti i download successivi
 call :DNS_FALLBACK_ON
 
 :: FASE 2 - Azione
-set "F2_ACT=[  ..  ] FS   >> Verifico che la cartella di Unbound esista e sia accessibile."
+set "F2_ACT=[...in corso...] FS   >> Verifico che la cartella di Unbound esista e sia accessibile."
 call :UPDATE_UI 10
 if not exist "%UB_DIR%" (
     set "CONSOLE_COLOR=0C"
@@ -343,20 +343,20 @@ if not exist "%UB_DIR%" (
     pause
     exit /b
 )
-set "F2_RES=[  OK  ] FS   >> Cartella trovata e accessibile."
+set "F2_RES=[      OK      ] FS   >> Cartella trovata e accessibile."
 call :LOGSTEP "FS" "Directory Unbound trovata"
 
 :: FASE 3 - Azione
-set "F3_ACT=[  ..  ] REG  >> Imposto priorità alta a unbound.exe e disattivo i dump locali."
+set "F3_ACT=[...in corso...] REG  >> Imposto priorità alta a unbound.exe e disattivo i dump locali."
 call :UPDATE_UI 20
 set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
 reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbound.exe" /v "DumpType" /t REG_DWORD /d 0 /f >nul 2>&1
-set "F3_RES=[  OK  ] REG  >> Priorità CPU impostata e dump locali disattivati."
+set "F3_RES=[      OK      ] REG  >> Priorità CPU impostata e dump locali disattivati."
 call :LOGSTEP "REG" "Priorita CPU e dump configurati"
 
 :: FASE 4 - Azione
-set "F4_ACT=[  ..  ] REG  >> Policy DNS: Spengo Smart Name Res, multicast, DoH e forzo Punycode anti-omografo."
+set "F4_ACT=[...in corso...] REG  >> Policy DNS: Spengo Smart Name Res, multicast, DoH e forzo Punycode anti-omografo."
 call :UPDATE_UI 30
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableSmartNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v "TurnOffMulticastNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
@@ -400,32 +400,32 @@ reg add "HKLM\SOFTWARE\Policies\Opera" /v "NetworkPredictionOptions" /t REG_DWOR
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
 
-set "F4_RES=[  OK  ] REG  >> Policy attive: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
+set "F4_RES=[      OK      ] REG  >> Policy attive: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
 call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
 
 :: FASE 5 - Azione
-set "F5_ACT=[  ..  ] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
+set "F5_ACT=[...in corso...] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
 
 :: --- DNS IPV6 SU ::1 (esclude WireGuard/WARP) ---
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 
-set "F5_RES=[  OK  ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati."
+set "F5_RES=[      OK      ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati."
 call :LOGSTEP "SECU/NET" "Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati"
 
 :: FASE 6 - Azione
-set "F6_ACT=[  ..  ] TIME >> Sincronizzo l'orologio di sistema per evitare problemi con DNSSEC."
+set "F6_ACT=[...in corso...] TIME >> Sincronizzo l'orologio di sistema per evitare problemi con DNSSEC."
 call :UPDATE_UI 50
 sc config w32time start= auto >nul 2>&1
 net start w32time >nul 2>&1
 w32tm /resync /force /nowait >nul 2>&1
 set "NOW_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
-set "F6_RES=[  OK  ] TIME >> Orologio sincronizzato - ora sistema: %NOW_TIME%"
+set "F6_RES=[      OK      ] TIME >> Orologio sincronizzato - ora sistema: %NOW_TIME%"
 call :LOGSTEP "TIME" "w32time sincronizzato - ora: %NOW_TIME%"
 
 :: FASE 7 - Azione
-set "F7_ACT=[  ..  ] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
+set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
 if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type nul > "%LOG_FILE%")
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
@@ -434,12 +434,12 @@ if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>
 if exist "%HZ_MAIN%" copy /y "%HZ_MAIN%" "%HZ_MAIN_BAK%" >nul 2>&1
 if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
 
-set "F7_RES=[  OK  ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
+set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
 
 if "%SKIP_MAINTENANCE%"=="1" (
     set "F8_ACT=[ SKIP ] CORE >> Aggiornamento giornaliero già eseguito. Solo riavvio rapido."
-    set "F8_RES=[  OK  ] CORE >> Riavvio rapidamente il servizio Unbound per applicare lo stato corrente."
+    set "F8_RES=[      OK      ] CORE >> Riavvio rapidamente il servizio Unbound per applicare lo stato corrente."
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     net start unbound >nul 2>&1
@@ -449,11 +449,11 @@ if "%SKIP_MAINTENANCE%"=="1" (
 )
 
 :: FASE 8 - Azione
-set "F8_ACT=[  ..  ] CORE >> Fermo Unbound e termino eventuali processi rimasti aperti."
+set "F8_ACT=[...in corso...] CORE >> Fermo Unbound e termino eventuali processi rimasti aperti."
 call :UPDATE_UI 70
 net stop unbound >nul 2>&1
 taskkill /f /im unbound.exe >nul 2>&1
-set "F8_RES=[  OK  ] CORE >> Servizio fermato e porta 53 liberata."
+set "F8_RES=[      OK      ] CORE >> Servizio fermato e porta 53 liberata."
 call :LOGSTEP "CORE" "Unbound fermato"
 :: DNS bootstrap: Unbound è fermo, serve resolver esterno per i download
 call :DNS_FALLBACK_ON
@@ -462,7 +462,7 @@ call :DNS_FALLBACK_ON
 :: -------------------------------------------------------
 :: F9 — named.cache
 :: -------------------------------------------------------
-set "F9_ACT=[  ..  ] NET  >> Scarico named.cache da internic.net..."
+set "F9_ACT=[...in corso...] NET  >> Scarico named.cache da internic.net..."
 call :UPDATE_UI 80
 
 set "NC_URL=https://www.internic.net/domain/named.cache"
@@ -501,7 +501,7 @@ if errorlevel 1 (
     )
     move /y "%NC_TMP%" "%UB_DIR%\named.cache" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[  OK  ] NET  >> named.cache scaricato e installato: !DT_NC!"
+    set "F9_RES=[      OK      ] NET  >> named.cache scaricato e installato: !DT_NC!"
 )
 :NC_DONE
 if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
@@ -511,7 +511,7 @@ call :LOGSTEP "NET" "!F9_RES!"
 :: -------------------------------------------------------
 :: F9B — root.zone
 :: -------------------------------------------------------
-set "F9B_ACT=[  ..  ] NET  >> Scarico root.zone da internic.net..."
+set "F9B_ACT=[...in corso...] NET  >> Scarico root.zone da internic.net..."
 call :UPDATE_UI 82
 
 set "RZ_URL=https://www.internic.net/domain/root.zone"
@@ -550,7 +550,7 @@ if errorlevel 1 (
     )
     move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[  OK  ] NET  >> root.zone scaricato e installato: !DT_RZ!"
+    set "F9B_RES=[      OK      ] NET  >> root.zone scaricato e installato: !DT_RZ!"
 )
 :RZ_DONE
 if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
@@ -560,7 +560,7 @@ call :LOGSTEP "NET" "!F9B_RES!"
 :: ================================================================
 :: F10 — HAGEZI PRO (SCARICA E IMPOSTA SEMPRE LA VERSIONE PRO)
 :: ================================================================
-set "F10_ACT=[  ..  ] NET  >> Scarico la lista HaGeZi Multi-Pro e la preparo come RPZ attiva."
+set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Multi-Pro e la preparo come RPZ attiva."
 call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
@@ -591,7 +591,7 @@ if errorlevel 1 (
             move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
             copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
             call :FILE_DATE "%HZ_MAIN%" DT_HZ
-            set "F10_RES=[  OK  ] NET  >> HaGeZi Multi-Pro - RPZ aggiornato: !DT_HZ!"
+            set "F10_RES=[      OK      ] NET  >> HaGeZi Multi-Pro - RPZ aggiornato: !DT_HZ!"
         ) else (
             del /f /q "%HZ_PRO%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_MAIN%" DT_HZ
@@ -611,18 +611,18 @@ if not exist "%HZ_MAIN%" if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul
 call :LOGSTEP "NET" "!F10_RES!"
 
 :: FASE 11 - Azione
-set "F11_ACT=[  ..  ] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
+set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
 call :UPDATE_UI 90
 if exist "%UB_DIR%\unbound-anchor.exe" (
     "%UB_DIR%\unbound-anchor.exe" -a "%UB_DIR%\root.key" >nul 2>&1
 ) else (
     call :LOGFAIL "SECU" "unbound-anchor.exe non trovato"
 )
-set "F11_RES=[  OK  ] SECU >> Trust anchor verificato e root.key aggiornato."
+set "F11_RES=[      OK      ] SECU >> Trust anchor verificato e root.key aggiornato."
 call :LOGSTEP "SECU" "Trust anchor aggiornato"
 
 :: FASE 12 - Azione
-set "F12_ACT=[  ..  ] ACL  >> Blindo i file critici con permessi NTFS dedicati."
+set "F12_ACT=[...in corso...] ACL  >> Blindo i file critici con permessi NTFS dedicati."
 call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
@@ -630,11 +630,11 @@ icacls "%HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F
 icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
-set "F12_RES=[  OK  ] ACL  >> Permessi applicati ai file di lavoro."
+set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
 
 :: FASE 13 - Azione
-set "F13_ACT=[  ..  ] CONF >> Controllo la sintassi del servizio e poi avvio Unbound."
+set "F13_ACT=[...in corso...] CONF >> Controllo la sintassi del servizio e poi avvio Unbound."
 call :UPDATE_UI 98
 if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 "%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
@@ -649,7 +649,7 @@ sc query unbound | find "RUNNING" >nul 2>&1
 if %errorLevel% neq 0 goto :START_ERROR
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
-set "F13_RES=[  OK  ] CONF >> Configurazione valida: servizio avviato con successo."
+set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 goto :FINALIZZAZIONE
@@ -1124,7 +1124,7 @@ set "RES_COLORED=%RES_STR%"
 :: Estrai i primi caratteri per determinare il tipo
 set "RES_PREFIX=%RES_STR:~0,7%"
 
-:: [  OK  ] = VERDE, [WARN] = GIALLO, [ERRORE]/[ERR ] = ROSSO, [ SKIP ] = CYAN
+:: [      OK      ] = VERDE, [WARN] = GIALLO, [ERRORE]/[ERR ] = ROSSO, [ SKIP ] = CYAN
 if "%RES_PREFIX%"=="[  OK  " (
     set "RES_COLORED=%ESC%[32m%RES_STR%%ESC%[0m"
 ) else if "%RES_PREFIX%"=="[WARN] " (
