@@ -36,14 +36,16 @@ exit
 :FONT_OK
 :: Abilita i codici di escape ANSI per i colori
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
-mode con: cols=130 lines=60
+:: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
+set "FLAG_LINE=%ESC%[42m                                          %ESC%[0m%ESC%[47m                                          %ESC%[0m%ESC%[41m                                          %ESC%[0m%ESC%[0m"
+mode con: cols=126 lines=60
 
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.07"
+set "LOCAL_VER=28.10"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -912,10 +914,10 @@ set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME
 set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
 if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
-echo -----------------------------------------------------------------------------------------------------------------------
-echo                                           PROCESSO CONCLUSO in !ELAPSED! secondi.
-echo -----------------------------------------------------------------------------------------------------------------------
-echo                                                  Chiusura automatica...
+echo !FLAG_LINE!
+echo !ESC![0m
+echo !ESC![92m
+echo                                             PROCESSO CONCLUSO in !ELAPSED! secondi.                     Chiusura automatica...
 timeout /t 2 >nul
 exit
 
@@ -965,28 +967,27 @@ exit /b
 
 :UPDATE_UI
 set "P_VAL=%~1"
-set /a "BLOCKS=P_VAL * 100 / 100"
+set /a "BLOCKS=P_VAL * 107 / 100"
 set "BARRA="
 for /L %%b in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
-set /a "EMPTY=100 - BLOCKS"
+set /a "EMPTY=107 - BLOCKS"
 for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
 
 cls
 color %CONSOLE_COLOR%
-powershell -Command "Write-Host ''; Write-Host '                                          ' -BackgroundColor Green -NoNewline; Write-Host '                                          ' -BackgroundColor White -NoNewline; Write-Host '                                          ' -BackgroundColor Red; Write-Host ''"
-echo =======================================================================================================================
-echo                                              A T T E N D E R E
-echo                                  O P E R A Z I O N I     I N    C O R S O
-echo            SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
-echo =======================================================================================================================
-echo   Versione BAT locale: v!LOCAL_VER!
-echo   Versione BAT cloud: v!CLOUD_VER!
-echo   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER!
-echo   Versione SERVICE.CONF cloud: v!SVC_VER!
-echo =======================================================================================================================
-echo   PROGRESSO: [%BARRA%] %P_VAL%%%
-echo =======================================================================================================================
-
+echo.
+echo !FLAG_LINE!
+echo !FLAG_LINE!
+echo !ESC![0m
+echo !ESC![92m
+echo ==============================================================================================================================
+echo                        SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
+echo ==============================================================================================================================
+echo            Versione BAT locale.........: v!LOCAL_VER!                   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER!
+echo            Versione BAT cloud..........: v!CLOUD_VER!                   Versione SERVICE.CONF cloud.: v!SVC_VER!
+echo ==============================================================================================================================
+echo  PROGRESSO: [%BARRA%] %P_VAL%%%
+echo ==============================================================================================================================
 :: Mostra ogni fase su due righe: Azione con barra (GIALLO) + Esito con frecce (VERDE/ROSSO/CYAN)
 :: Aggiunge una riga vuota tra ogni fase completata
 if defined F1_ACT  ( call :PHASE_BAR  1  5 10 & echo %ESC%[33m!UI_PB! !F1_ACT!%ESC%[0m )
