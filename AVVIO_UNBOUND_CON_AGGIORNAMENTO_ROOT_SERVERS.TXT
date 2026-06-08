@@ -39,7 +39,7 @@ exit
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 :: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
 set "FLAG_LINE=%ESC%[42m                                          %ESC%[0m%ESC%[47m                                          %ESC%[0m%ESC%[41m                                          %ESC%[0m%ESC%[0m"
-mode con: cols=126 lines=60
+mode con: cols=126 lines=65
 
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
