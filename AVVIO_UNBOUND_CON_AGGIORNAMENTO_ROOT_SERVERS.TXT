@@ -1005,46 +1005,46 @@ echo ===========================================================================
 :: Mostra ogni fase su due righe: Azione con barra (GIALLO) + Esito con frecce (VERDE/ROSSO/CYAN)
 :: Aggiunge una riga vuota tra ogni fase completata
 if defined F1_ACT  ( call :PHASE_BAR  1  5 10 & echo %ESC%[33m!UI_PB! !F1_ACT!%ESC%[0m )
-if defined F1_RES  ( call :ARROW_BAR  1  5 10 & call :RES_COLOR "!F1_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F1_RES  ( call :ARROW_BAR  1  5 10 & call :RES_COLOR "!F1_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F2_ACT  ( call :PHASE_BAR  2 10 20 & echo %ESC%[33m!UI_PB! !F2_ACT!%ESC%[0m )
-if defined F2_RES  ( call :ARROW_BAR  2 10 20 & call :RES_COLOR "!F2_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F2_RES  ( call :ARROW_BAR  2 10 20 & call :RES_COLOR "!F2_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F3_ACT  ( call :PHASE_BAR  3 20 30 & echo %ESC%[33m!UI_PB! !F3_ACT!%ESC%[0m )
-if defined F3_RES  ( call :ARROW_BAR  3 20 30 & call :RES_COLOR "!F3_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F3_RES  ( call :ARROW_BAR  3 20 30 & call :RES_COLOR "!F3_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F4_ACT  ( call :PHASE_BAR  4 30 40 & echo %ESC%[33m!UI_PB! !F4_ACT!%ESC%[0m )
-if defined F4_RES  ( call :ARROW_BAR  4 30 40 & call :RES_COLOR "!F4_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F4_RES  ( call :ARROW_BAR  4 30 40 & call :RES_COLOR "!F4_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F5_ACT  ( call :PHASE_BAR  5 40 50 & echo %ESC%[33m!UI_PB! !F5_ACT!%ESC%[0m )
-if defined F5_RES  ( call :ARROW_BAR  5 40 50 & call :RES_COLOR "!F5_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F5_RES  ( call :ARROW_BAR  5 40 50 & call :RES_COLOR "!F5_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F6_ACT  ( call :PHASE_BAR  6 50 60 & echo %ESC%[33m!UI_PB! !F6_ACT!%ESC%[0m )
-if defined F6_RES  ( call :ARROW_BAR  6 50 60 & call :RES_COLOR "!F6_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F6_RES  ( call :ARROW_BAR  6 50 60 & call :RES_COLOR "!F6_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F7_ACT  ( call :PHASE_BAR  7 60 70 & echo %ESC%[33m!UI_PB! !F7_ACT!%ESC%[0m )
-if defined F7_RES  ( call :ARROW_BAR  7 60 70 & call :RES_COLOR "!F7_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F7_RES  ( call :ARROW_BAR  7 60 70 & call :RES_COLOR "!F7_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F8_ACT  ( call :PHASE_BAR  8 70 80 & echo %ESC%[33m!UI_PB! !F8_ACT!%ESC%[0m )
-if defined F8_RES  ( call :ARROW_BAR  8 70 80 & call :RES_COLOR "!F8_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F8_RES  ( call :ARROW_BAR  8 70 80 & call :RES_COLOR "!F8_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F9_ACT  ( call :PHASE_BAR  9 80 82 & echo %ESC%[33m!UI_PB! !F9_ACT!%ESC%[0m )
-if defined F9_RES  ( call :ARROW_BAR  9 80 82 & call :RES_COLOR "!F9_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F9_RES  ( call :ARROW_BAR  9 80 82 & call :RES_COLOR "!F9_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F9B_ACT ( call :PHASE_BAR 10 82 85 & echo %ESC%[33m!UI_PB! !F9B_ACT!%ESC%[0m )
-if defined F9B_RES ( call :ARROW_BAR 10 82 85 & call :RES_COLOR "!F9B_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F9B_RES ( call :ARROW_BAR 10 82 85 & call :RES_COLOR "!F9B_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F10_ACT ( call :PHASE_BAR 11 85 90 & echo %ESC%[33m!UI_PB! !F10_ACT!%ESC%[0m )
-if defined F10_RES ( call :ARROW_BAR 11 85 90 & call :RES_COLOR "!F10_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F10_RES ( call :ARROW_BAR 11 85 90 & call :RES_COLOR "!F10_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F11_ACT ( call :PHASE_BAR 12 90 95 & echo %ESC%[33m!UI_PB! !F11_ACT!%ESC%[0m )
-if defined F11_RES ( call :ARROW_BAR 12 90 95 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F11_RES ( call :ARROW_BAR 12 90 95 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F12_ACT ( call :PHASE_BAR 13 95 98 & echo %ESC%[33m!UI_PB! !F12_ACT!%ESC%[0m )
-if defined F12_RES ( call :ARROW_BAR 13 95 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F12_RES ( call :ARROW_BAR 13 95 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
 if defined F13_ACT ( call :PHASE_BAR 14 98 100 & echo %ESC%[33m!UI_PB! !F13_ACT!%ESC%[0m )
-if defined F13_RES ( call :ARROW_BAR 14 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED! & echo. )
+if defined F13_RES ( call :ARROW_BAR 14 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
 :: ==================================================================
