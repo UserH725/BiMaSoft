@@ -1,3 +1,4 @@
+
 @echo off
 setlocal enabledelayedexpansion
 chcp 65001 >nul
@@ -313,6 +314,18 @@ if "%~1"=="--scheduled" (
     if exist "%LAST_UPD_FILE%" (
         set /p LAST_DATE=<"%LAST_UPD_FILE%"
         if "!LAST_DATE!"=="%TODAY%" set "SKIP_MAINTENANCE=1"
+    )
+)
+
+:: Lettura parametri cache dal service.conf (una volta sola all'avvio)
+set "CONF_MSG_CACHE=N/A"
+set "CONF_RRSET_CACHE=N/A"
+if exist "%UB_DIR%\service.conf" (
+    for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"msg-cache-size:" "%UB_DIR%\service.conf" ^| findstr /v /i "slabs"') do (
+        if "!CONF_MSG_CACHE!"=="N/A" set "CONF_MSG_CACHE=%%V"
+    )
+    for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"rrset-cache-size:" "%UB_DIR%\service.conf" ^| findstr /v /i "slabs"') do (
+        if "!CONF_RRSET_CACHE!"=="N/A" set "CONF_RRSET_CACHE=%%V"
     )
 )
 
@@ -983,8 +996,9 @@ echo !ESC![92m
 echo ==============================================================================================================================
 echo                        SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
 echo ==============================================================================================================================
-echo            Versione BAT locale.........: v!LOCAL_VER!                   Versione SERVICE.CONF locale: v!LOCAL_SVC_VER!
-echo            Versione BAT cloud..........: v!CLOUD_VER!                   Versione SERVICE.CONF cloud.: v!SVC_VER!
+echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
+echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
+echo       Cache risposte complete msg-cache-size.: !CONF_MSG_CACHE!                Cache singoli record DNS rrset-cache-size.: !CONF_RRSET_CACHE!
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
