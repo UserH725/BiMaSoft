@@ -1,4 +1,3 @@
-
 @echo off
 setlocal enabledelayedexpansion
 chcp 65001 >nul
@@ -46,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.20"
+set "LOCAL_VER=28.21"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1002,7 +1001,7 @@ if exist "%HZ_FAKE%.tmp" del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
 call :LOGSTEP "REFRESH" "HaGeZi Fake aggiornato"
 
 :: HaGeZi Spam -- Spamhaus DBL (refresh biorario)
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_SPAM%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam.txt >nul 2>&1
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_SPAM%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_SPAM%.tmp") do if %%~zI GEQ 1024 (
         move /y "%HZ_SPAM%.tmp" "%HZ_SPAM%" >nul 2>&1
