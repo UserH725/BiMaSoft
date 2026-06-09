@@ -45,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.21"
+set "LOCAL_VER=28.22"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -592,8 +592,8 @@ if errorlevel 1 (
         copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
         call :FILE_DATE "%HZ_PRO%" DT_HZ
         set "F10_RES=[WARN] NET  >> HaGeZi non scaricato, ripristinato dal backup: !DT_HZ!"
-    ) else if exist "%HZ_MAIN%" (
-        call :FILE_DATE "%HZ_MAIN%" DT_HZ
+    ) else if exist "%HZ_PRO%" (
+        call :FILE_DATE "%HZ_PRO%" DT_HZ
         set "F10_RES=[WARN] NET  >> HaGeZi: download fallito, uso esistente: !DT_HZ!"
     ) else (
         set "F10_RES=[ERR ] NET  >> HaGeZi non scaricabile e nessun backup disponibile!"
@@ -608,17 +608,16 @@ if errorlevel 1 (
         )
         if "!SKIP_HZ!"=="0" (
             move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-            copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
-            call :FILE_DATE "%HZ_MAIN%" DT_HZ
+            call :FILE_DATE "%HZ_PRO%" DT_HZ
             set "F10_RES=[      OK      ] NET  >> HaGeZi Pro - RPZ aggiornato: !DT_HZ!"
         ) else (
             del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_MAIN%" DT_HZ
+            call :FILE_DATE "%HZ_PRO%" DT_HZ
             set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro - RPZ gia' aggiornato: !DT_HZ!"
         )
     ) else (
-        if exist "%HZ_MAIN%" (
-            call :FILE_DATE "%HZ_MAIN%" DT_HZ
+        if exist "%HZ_PRO%" (
+            call :FILE_DATE "%HZ_PRO%" DT_HZ
             set "F10_RES=[ SKIP ] NET  >> HaGeZi - file scaricato piccolo, uso esistente: !DT_HZ!"
         ) else (
             set "F10_RES=[ERR ] NET  >> HaGeZi - file scaricato troppo piccolo e nessun backup!"
@@ -626,7 +625,6 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-if not exist "%HZ_MAIN%" if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
 call :LOGSTEP "NET" "!F10_RES!"
 
 :: ================================================================
@@ -737,7 +735,6 @@ set "F12_ACT=[...in corso...] ACL  >> Blindo i file critici con permessi NTFS de
 call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_MAIN%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_FAKE%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_SPAM%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
@@ -887,7 +884,6 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
 :: Backup prima di sovrascrivere
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
-if exist "%HZ_MAIN%"            copy /y "%HZ_MAIN%"            "%HZ_MAIN_BAK%" >nul 2>&1
 if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%"  >nul 2>&1
 if exist "%HZ_FAKE%"            copy /y "%HZ_FAKE%"            "%HZ_FAKE_BAK%" >nul 2>&1
 if exist "%HZ_SPAM%"            copy /y "%HZ_SPAM%"            "%HZ_SPAM_BAK%" >nul 2>&1
@@ -974,7 +970,6 @@ if not errorlevel 1 (
         )
         if "!SKIP_HZ!"=="0" (
             move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-            copy /y "%HZ_PRO%" "%HZ_MAIN%" >nul 2>&1
             set "CHANGED=1" 
         ) else (
             del /f /q "%HZ_PRO%.tmp" >nul 2>&1
@@ -984,7 +979,7 @@ if not errorlevel 1 (
     if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
 )
 if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-call :FILE_DATE "%HZ_MAIN%" DT_HZ
+call :FILE_DATE "%HZ_PRO%" DT_HZ
 call :LOGSTEP "REFRESH" "HaGeZi Pro aggiornato - RPZ: !DT_HZ!"
 
 :: HaGeZi Fake (refresh biorario)
@@ -1040,7 +1035,7 @@ echo   [!] ERRORE SINTATTICO RILEVATO DA UNBOUND!
 echo ------------------------------------------------------------------
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
-if exist "%HZ_MAIN_BAK%" copy /y "%HZ_MAIN_BAK%" "%HZ_MAIN%" >nul
+if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul
 if exist "%HZ_FAKE_BAK%" copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul
 if exist "%HZ_SPAM_BAK%" copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
