@@ -495,7 +495,7 @@ set "NC_TMP=%UB_DIR%\named.cache.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\named.cache" (
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[ SKIP ] NET  >> named.cache gia' presente: !DT_NC!"
+    set "F9_RES=[     SKIP     ] NET  >> named.cache gia' presente: !DT_NC!"
     goto :NC_DONE
 )
 
@@ -544,7 +544,7 @@ set "RZ_TMP=%UB_DIR%\root.zone.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\root.zone" (
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[ SKIP ] NET  >> root.zone gia' presente: !DT_RZ!"
+    set "F9B_RES=[     SKIP     ] NET  >> root.zone gia' presente: !DT_RZ!"
     goto :RZ_DONE
 )
 
@@ -623,7 +623,7 @@ if errorlevel 1 (
     ) else (
         if exist "%HZ_PRO%" (
             call :FILE_DATE "%HZ_PRO%" DT_HZ
-            set "F10_RES=[ SKIP ] NET  >> HaGeZi - file scaricato piccolo, uso esistente: !DT_HZ!"
+            set "F10_RES=[     SKIP     ] NET  >> HaGeZi - file scaricato piccolo, uso esistente: !DT_HZ!"
         ) else (
             set "F10_RES=[ERR ] NET  >> HaGeZi - file scaricato troppo piccolo e nessun backup!"
         )
@@ -669,7 +669,7 @@ if errorlevel 1 (
     ) else (
         if exist "%HZ_FAKE%" (
             call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            set "F10B_RES=[ SKIP ] NET  >> HaGeZi Fake - file scaricato piccolo, uso esistente: !DT_FAKE!"
+            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi Fake - file scaricato piccolo, uso esistente: !DT_FAKE!"
         ) else (
             set "F10B_RES=[ERR ] NET  >> HaGeZi Fake - file troppo piccolo e nessun backup!"
         )
@@ -710,12 +710,12 @@ if errorlevel 1 (
         ) else (
             del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            set "F10C_RES=[ SKIP ] NET  >> HaGeZi Spam - RPZ gia' aggiornato: !DT_SPAM!"
+            set "F10C_RES=[     SKIP     ] NET  >> HaGeZi Spam - RPZ gia' aggiornato: !DT_SPAM!"
         )
     ) else (
         if exist "%HZ_SPAM%" (
             call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            set "F10C_RES=[ SKIP ] NET  >> HaGeZi Spam - file scaricato piccolo, uso esistente: !DT_SPAM!"
+            set "F10C_RES=[     SKIP     ] NET  >> HaGeZi Spam - file scaricato piccolo, uso esistente: !DT_SPAM!"
         ) else (
             set "F10C_RES=[ERR ] NET  >> HaGeZi Spam - file troppo piccolo e nessun backup!"
         )
@@ -761,7 +761,7 @@ if errorlevel 1 (
     ) else (
         if exist "%HZ_TIF%" (
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10D_RES=[ SKIP ] NET  >> HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+            set "F10D_RES=[     SKIP     ] NET  >> HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
         ) else (
             set "F10D_RES=[ERR ] NET  >> HaGeZi TIF - file troppo piccolo e nessun backup!"
         )
