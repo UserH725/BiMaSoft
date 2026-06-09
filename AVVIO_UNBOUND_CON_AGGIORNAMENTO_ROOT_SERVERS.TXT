@@ -275,15 +275,11 @@ set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "LOG_FILE=%UB_DIR%\logfile.log"
 set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
-
-set "HZ_MAIN=%UB_DIR%\blocklisthageziscelta.conf"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
-
 set "HZ_FAKE=%UB_DIR%\hagezi-fake.conf"
 set "HZ_SPAM=%UB_DIR%\hagezi-spam.conf"
 set "HZ_FAKE_BAK=%HZ_FAKE%.bak"
 set "HZ_SPAM_BAK=%HZ_SPAM%.bak"
-set "HZ_MAIN_BAK=%HZ_MAIN%.bak"
 set "HZ_PRO_BAK=%HZ_PRO%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
@@ -454,7 +450,6 @@ if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type n
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
-if exist "%HZ_MAIN%" copy /y "%HZ_MAIN%" "%HZ_MAIN_BAK%" >nul 2>&1
 if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
 if exist "%HZ_FAKE%" copy /y "%HZ_FAKE%" "%HZ_FAKE_BAK%" >nul 2>&1
 if exist "%HZ_SPAM%" copy /y "%HZ_SPAM%" "%HZ_SPAM_BAK%" >nul 2>&1
