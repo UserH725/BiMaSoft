@@ -1,3 +1,4 @@
+
 @echo off
 setlocal enabledelayedexpansion
 chcp 65001 >nul
@@ -1128,13 +1129,21 @@ exit /b
 :UPDATE_UI
 set "P_VAL=%~1"
 set /a "BLOCKS=P_VAL * 107 / 100"
-set "BARRA="
-for /L %%b in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
 set /a "EMPTY=107 - BLOCKS"
-for /L %%b in (1,1,%EMPTY%) do set "BARRA=!BARRA!░"
+
+:: Costruisce la barra in una riga sola via PowerShell
+for /f "delims=" %%B in ('powershell -NoProfile -Command "'█' * %BLOCKS% + '░' * %EMPTY%"') do set "BARRA=%%B"
+
 
 cls
-color %CONSOLE_COLOR%
+if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
+    color !CONSOLE_COLOR!
+    set "LAST_COLOR=!CONSOLE_COLOR!"
+)
+echo.
+
+
+::color %CONSOLE_COLOR%
 echo.
 echo !FLAG_LINE!
 echo !FLAG_LINE!
