@@ -45,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.25"
+set "LOCAL_VER=28.28"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -275,10 +275,6 @@ set "LOG_FILE=%UB_DIR%\logfile.log"
 set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
 set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
-set "HZ_FAKE=%UB_DIR%\hagezi-fake.conf"
-set "HZ_SPAM=%UB_DIR%\hagezi-spam.conf"
-set "HZ_FAKE_BAK=%HZ_FAKE%.bak"
-set "HZ_SPAM_BAK=%HZ_SPAM%.bak"
 set "HZ_PRO_BAK=%HZ_PRO%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
@@ -452,8 +448,6 @@ if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >n
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
 if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
-if exist "%HZ_FAKE%" copy /y "%HZ_FAKE%" "%HZ_FAKE_BAK%" >nul 2>&1
-if exist "%HZ_SPAM%" copy /y "%HZ_SPAM%" "%HZ_SPAM_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -629,97 +623,6 @@ if errorlevel 1 (
 if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10_RES!"
 
-:: ================================================================
-:: F10B -- HAGEZI FAKE
-:: ================================================================
-set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Fake (fake shop e truffe)."
-call :UPDATE_UI 87
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_FAKE%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/fake.txt >nul 2>&1
-if errorlevel 1 (
-    if exist "%HZ_FAKE_BAK%" (
-        copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul 2>&1
-        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-        set "F10B_RES=[WARN] NET  >> HaGeZi Fake non scaricato, ripristinato dal backup: !DT_FAKE!"
-    ) else if exist "%HZ_FAKE%" (
-        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-        set "F10B_RES=[WARN] NET  >> HaGeZi Fake: download fallito, uso esistente: !DT_FAKE!"
-    ) else (
-        set "F10B_RES=[ERR ] NET  >> HaGeZi Fake non scaricabile e nessun backup disponibile!"
-    )
-) else (
-    for %%I in ("%HZ_FAKE%.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_FAKE=0"
-        if exist "%HZ_FAKE%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_FAKE%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_FAKE%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_FAKE=1"
-            )
-        )
-        if "!SKIP_FAKE!"=="0" (
-            move /y "%HZ_FAKE%.tmp" "%HZ_FAKE%" >nul 2>&1
-            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            set "F10B_RES=[      OK      ] NET  >> HaGeZi Fake - RPZ aggiornato: !DT_FAKE!"
-        ) else (
-            del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            set "F10B_RES=[ SKIP ] NET  >> HaGeZi Fake - RPZ gia' aggiornato: !DT_FAKE!"
-        )
-    ) else (
-        if exist "%HZ_FAKE%" (
-            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            set "F10B_RES=[ SKIP ] NET  >> HaGeZi Fake - file scaricato piccolo, uso esistente: !DT_FAKE!"
-        ) else (
-            set "F10B_RES=[ERR ] NET  >> HaGeZi Fake - file troppo piccolo e nessun backup!"
-        )
-    )
-)
-if exist "%HZ_FAKE%.tmp" del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
-call :LOGSTEP "NET" "!F10B_RES!"
-
-:: ================================================================
-:: F10C -- HAGEZI SPAM (Spamhaus DBL)
-:: ================================================================
-set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Spam - Spamhaus DBL."
-call :UPDATE_UI 89
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_SPAM%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt >nul 2>&1
-if errorlevel 1 (
-    if exist "%HZ_SPAM_BAK%" (
-        copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul 2>&1
-        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-        set "F10C_RES=[WARN] NET  >> HaGeZi Spam non scaricato, ripristinato dal backup: !DT_SPAM!"
-    ) else if exist "%HZ_SPAM%" (
-        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-        set "F10C_RES=[WARN] NET  >> HaGeZi Spam: download fallito, uso esistente: !DT_SPAM!"
-    ) else (
-        set "F10C_RES=[ERR ] NET  >> HaGeZi Spam non scaricabile e nessun backup disponibile!"
-    )
-) else (
-    for %%I in ("%HZ_SPAM%.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_SPAM=0"
-        if exist "%HZ_SPAM%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_SPAM%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_SPAM%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_SPAM=1"
-            )
-        )
-        if "!SKIP_SPAM!"=="0" (
-            move /y "%HZ_SPAM%.tmp" "%HZ_SPAM%" >nul 2>&1
-            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            set "F10C_RES=[      OK      ] NET  >> HaGeZi Spam - RPZ aggiornato: !DT_SPAM!"
-        ) else (
-            del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            set "F10C_RES=[ SKIP ] NET  >> HaGeZi Spam - RPZ gia' aggiornato: !DT_SPAM!"
-        )
-    ) else (
-        if exist "%HZ_SPAM%" (
-            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            set "F10C_RES=[ SKIP ] NET  >> HaGeZi Spam - file scaricato piccolo, uso esistente: !DT_SPAM!"
-        ) else (
-            set "F10C_RES=[ERR ] NET  >> HaGeZi Spam - file troppo piccolo e nessun backup!"
-        )
-    )
-)
-if exist "%HZ_SPAM%.tmp" del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
-call :LOGSTEP "NET" "!F10C_RES!"
 
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -738,26 +641,10 @@ call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_FAKE%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_SPAM%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
-
-:: Crea placeholder RPZ vuoti se i file non esistono ancora (necessario per unbound-checkconf)
-if not exist "%HZ_FAKE%" (
-    echo $ORIGIN .> "%HZ_FAKE%"
-    echo $TTL 300>> "%HZ_FAKE%"
-    echo hagezi-fake.rpz. 300 IN SOA localhost. root.localhost. 1 3600 900 86400 300>> "%HZ_FAKE%"
-    echo hagezi-fake.rpz. 300 IN NS localhost.>> "%HZ_FAKE%"
-)
-if not exist "%HZ_SPAM%" (
-    echo $ORIGIN .> "%HZ_SPAM%"
-    echo $TTL 300>> "%HZ_SPAM%"
-    echo hagezi-spam.rpz. 300 IN SOA localhost. root.localhost. 1 3600 900 86400 300>> "%HZ_SPAM%"
-    echo hagezi-spam.rpz. 300 IN NS localhost.>> "%HZ_SPAM%"
-)
 
 :: FASE 13 - Azione
 set "F13_ACT=[...in corso...] CONF >> Controllo la sintassi del servizio e poi avvio Unbound."
@@ -887,8 +774,6 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
 if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%"  >nul 2>&1
-if exist "%HZ_FAKE%"            copy /y "%HZ_FAKE%"            "%HZ_FAKE_BAK%" >nul 2>&1
-if exist "%HZ_SPAM%"            copy /y "%HZ_SPAM%"            "%HZ_SPAM_BAK%" >nul 2>&1
 
 :: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
@@ -995,76 +880,6 @@ if not errorlevel 1 (
 )
 if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
 
-:: HaGeZi Fake (refresh biorario)
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_FAKE%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/fake.txt >nul 2>&1
-if not errorlevel 1 (
-    for %%I in ("%HZ_FAKE%.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_FAKE=0"
-        if exist "%HZ_FAKE%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_FAKE%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_FAKE%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_FAKE=1"
-            )
-        )
-        if "!SKIP_FAKE!"=="0" (
-            move /y "%HZ_FAKE%.tmp" "%HZ_FAKE%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Fake - RPZ aggiornato: !DT_FAKE!"
-        ) else (
-            del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Fake - RPZ gia' aggiornato: !DT_FAKE!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Fake - file scaricato piccolo, uso esistente: !DT_FAKE!"
-    )
-) else (
-    if exist "%HZ_FAKE_BAK%" (
-        copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul 2>&1
-        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
-        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Fake non scaricato, ripristinato dal backup: !DT_FAKE!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Fake non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%HZ_FAKE%.tmp" del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
-
-:: HaGeZi Spam -- Spamhaus DBL (refresh biorario)
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_SPAM%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt >nul 2>&1
-if not errorlevel 1 (
-    for %%I in ("%HZ_SPAM%.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_SPAM=0"
-        if exist "%HZ_SPAM%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_SPAM%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_SPAM%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_SPAM=1"
-            )
-        )
-        if "!SKIP_SPAM!"=="0" (
-            move /y "%HZ_SPAM%.tmp" "%HZ_SPAM%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Spam - RPZ aggiornato: !DT_SPAM!"
-        ) else (
-            del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Spam - RPZ gia' aggiornato: !DT_SPAM!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Spam - file scaricato piccolo, uso esistente: !DT_SPAM!"
-    )
-) else (
-    if exist "%HZ_SPAM_BAK%" (
-        copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul 2>&1
-        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
-        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Spam non scaricato, ripristinato dal backup: !DT_SPAM!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Spam non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%HZ_SPAM%.tmp" del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
-
 :: Riavvio silenzioso del servizio SOLO se qualcosa è cambiato
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
@@ -1093,8 +908,6 @@ echo ------------------------------------------------------------------
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul
-if exist "%HZ_FAKE_BAK%" copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul
-if exist "%HZ_SPAM_BAK%" copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
