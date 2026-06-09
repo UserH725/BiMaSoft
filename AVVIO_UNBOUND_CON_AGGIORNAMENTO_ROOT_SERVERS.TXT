@@ -45,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.22"
+set "LOCAL_VER=28.25"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -279,6 +279,8 @@ set "HZ_FAKE=%UB_DIR%\hagezi-fake.conf"
 set "HZ_SPAM=%UB_DIR%\hagezi-spam.conf"
 set "HZ_FAKE_BAK=%HZ_FAKE%.bak"
 set "HZ_SPAM_BAK=%HZ_SPAM%.bak"
+set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
+set "HZ_TIF_BAK=%HZ_TIF%.bak"
 set "HZ_PRO_BAK=%HZ_PRO%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
@@ -300,6 +302,8 @@ set "F10B_ACT="
 set "F10B_RES="
 set "F10C_ACT="
 set "F10C_RES="
+set "F10D_ACT="
+set "F10D_RES="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 set "NOW_H=%time:~0,2%"
@@ -452,6 +456,7 @@ if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>
 if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
 if exist "%HZ_FAKE%" copy /y "%HZ_FAKE%" "%HZ_FAKE_BAK%" >nul 2>&1
 if exist "%HZ_SPAM%" copy /y "%HZ_SPAM%" "%HZ_SPAM_BAK%" >nul 2>&1
+if exist "%HZ_TIF%"  copy /y "%HZ_TIF%"  "%HZ_TIF_BAK%"  >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -719,6 +724,52 @@ if errorlevel 1 (
 if exist "%HZ_SPAM%.tmp" del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10C_RES!"
 
+:: ================================================================
+:: F10D -- HAGEZI TIF (Threat Intelligence Feed)
+:: ================================================================
+set "F10D_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (Threat Intelligence Feed)."
+call :UPDATE_UI 91
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif.txt >nul 2>&1
+if errorlevel 1 (
+    if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        set "F10D_RES=[WARN] NET  >> HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+    ) else if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        set "F10D_RES=[WARN] NET  >> HaGeZi TIF: download fallito, uso esistente: !DT_TIF!"
+    ) else (
+        set "F10D_RES=[ERR ] NET  >> HaGeZi TIF non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_TIF=0"
+        if exist "%HZ_TIF%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            )
+        )
+        if "!SKIP_TIF!"=="0" (
+            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10D_RES=[      OK      ] NET  >> HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+        ) else (
+            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10D_RES=[ SKIP ] NET  >> HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+        )
+    ) else (
+        if exist "%HZ_TIF%" (
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10D_RES=[ SKIP ] NET  >> HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+        ) else (
+            set "F10D_RES=[ERR ] NET  >> HaGeZi TIF - file troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+call :LOGSTEP "NET" "!F10D_RES!"
+
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
 call :UPDATE_UI 90
@@ -738,6 +789,7 @@ icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administ
 icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_FAKE%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_SPAM%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_TIF%"  /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
@@ -755,6 +807,12 @@ if not exist "%HZ_SPAM%" (
     echo $TTL 300>> "%HZ_SPAM%"
     echo hagezi-spam.rpz. 300 IN SOA localhost. root.localhost. 1 3600 900 86400 300>> "%HZ_SPAM%"
     echo hagezi-spam.rpz. 300 IN NS localhost.>> "%HZ_SPAM%"
+)
+if not exist "%HZ_TIF%" (
+    echo $ORIGIN .> "%HZ_TIF%"
+    echo $TTL 300>> "%HZ_TIF%"
+    echo hagezi-tif.rpz. 300 IN SOA localhost. root.localhost. 1 3600 900 86400 300>> "%HZ_TIF%"
+    echo hagezi-tif.rpz. 300 IN NS localhost.>> "%HZ_TIF%"
 )
 
 :: FASE 13 - Azione
@@ -970,43 +1028,133 @@ if not errorlevel 1 (
         )
         if "!SKIP_HZ!"=="0" (
             move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-            set "CHANGED=1" 
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_PRO%" DT_HZ
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro - RPZ aggiornato: !DT_HZ!"
         ) else (
             del /f /q "%HZ_PRO%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_PRO%" DT_HZ
+            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro - RPZ gia' aggiornato: !DT_HZ!"
         )
+    ) else (
+        call :FILE_DATE "%HZ_PRO%" DT_HZ
+        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro - file scaricato piccolo, uso esistente: !DT_HZ!"
     )
 ) else (
-    if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
+    if exist "%HZ_PRO_BAK%" (
+        copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
+        call :FILE_DATE "%HZ_PRO%" DT_HZ
+        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Pro non scaricato, ripristinato dal backup: !DT_HZ!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro non scaricabile e nessun backup disponibile!"
+    )
 )
 if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-call :FILE_DATE "%HZ_PRO%" DT_HZ
-call :LOGSTEP "REFRESH" "HaGeZi Pro aggiornato - RPZ: !DT_HZ!"
 
 :: HaGeZi Fake (refresh biorario)
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_FAKE%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/fake.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_FAKE%.tmp") do if %%~zI GEQ 1024 (
-        move /y "%HZ_FAKE%.tmp" "%HZ_FAKE%" >nul 2>&1
-        set "CHANGED=1"
+        set "SKIP_FAKE=0"
+        if exist "%HZ_FAKE%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_FAKE%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_FAKE%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_FAKE=1"
+            )
+        )
+        if "!SKIP_FAKE!"=="0" (
+            move /y "%HZ_FAKE%.tmp" "%HZ_FAKE%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Fake - RPZ aggiornato: !DT_FAKE!"
+        ) else (
+            del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_FAKE%" DT_FAKE
+            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Fake - RPZ gia' aggiornato: !DT_FAKE!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
+        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Fake - file scaricato piccolo, uso esistente: !DT_FAKE!"
     )
 ) else (
-    if exist "%HZ_FAKE_BAK%" copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul 2>&1
+    if exist "%HZ_FAKE_BAK%" (
+        copy /y "%HZ_FAKE_BAK%" "%HZ_FAKE%" >nul 2>&1
+        call :FILE_DATE "%HZ_FAKE%" DT_FAKE
+        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Fake non scaricato, ripristinato dal backup: !DT_FAKE!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Fake non scaricabile e nessun backup disponibile!"
+    )
 )
 if exist "%HZ_FAKE%.tmp" del /f /q "%HZ_FAKE%.tmp" >nul 2>&1
-call :LOGSTEP "REFRESH" "HaGeZi Fake aggiornato"
 
 :: HaGeZi Spam -- Spamhaus DBL (refresh biorario)
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_SPAM%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_SPAM%.tmp") do if %%~zI GEQ 1024 (
-        move /y "%HZ_SPAM%.tmp" "%HZ_SPAM%" >nul 2>&1
-        set "CHANGED=1"
+        set "SKIP_SPAM=0"
+        if exist "%HZ_SPAM%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_SPAM%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_SPAM%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_SPAM=1"
+            )
+        )
+        if "!SKIP_SPAM!"=="0" (
+            move /y "%HZ_SPAM%.tmp" "%HZ_SPAM%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Spam - RPZ aggiornato: !DT_SPAM!"
+        ) else (
+            del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_SPAM%" DT_SPAM
+            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Spam - RPZ gia' aggiornato: !DT_SPAM!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
+        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Spam - file scaricato piccolo, uso esistente: !DT_SPAM!"
     )
 ) else (
-    if exist "%HZ_SPAM_BAK%" copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul 2>&1
+    if exist "%HZ_SPAM_BAK%" (
+        copy /y "%HZ_SPAM_BAK%" "%HZ_SPAM%" >nul 2>&1
+        call :FILE_DATE "%HZ_SPAM%" DT_SPAM
+        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Spam non scaricato, ripristinato dal backup: !DT_SPAM!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Spam non scaricabile e nessun backup disponibile!"
+    )
 )
 if exist "%HZ_SPAM%.tmp" del /f /q "%HZ_SPAM%.tmp" >nul 2>&1
-call :LOGSTEP "REFRESH" "HaGeZi Spam (Spamhaus DBL) aggiornato"
+
+:: HaGeZi TIF -- Threat Intelligence Feed (refresh biorario)
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif.txt >nul 2>&1
+if not errorlevel 1 (
+    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_TIF=0"
+        if exist "%HZ_TIF%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            )
+        )
+        if "!SKIP_TIF!"=="0" (
+            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+        ) else (
+            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+    )
+) else (
+    if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[WARN] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 
 :: Riavvio silenzioso del servizio SOLO se qualcosa è cambiato
 if "!CHANGED!"=="1" (
@@ -1188,14 +1336,17 @@ if defined F10B_RES ( call :ARROW_BAR 12 87 89 & call :RES_COLOR "!F10B_RES!" & 
 if defined F10C_ACT ( call :PHASE_BAR 13 89 91 & echo %ESC%[33m!UI_PB! !F10C_ACT!%ESC%[0m )
 if defined F10C_RES ( call :ARROW_BAR 13 89 91 & call :RES_COLOR "!F10C_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F11_ACT  ( call :PHASE_BAR 14 91 95 & echo %ESC%[33m!UI_PB! !F11_ACT!%ESC%[0m )
-if defined F11_RES  ( call :ARROW_BAR 14 91 95 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10D_ACT ( call :PHASE_BAR 14 91 93 & echo %ESC%[33m!UI_PB! !F10D_ACT!%ESC%[0m )
+if defined F10D_RES ( call :ARROW_BAR 14 91 93 & call :RES_COLOR "!F10D_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F12_ACT  ( call :PHASE_BAR 15 95 98 & echo %ESC%[33m!UI_PB! !F12_ACT!%ESC%[0m )
-if defined F12_RES  ( call :ARROW_BAR 15 95 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F11_ACT  ( call :PHASE_BAR 15 93 96 & echo %ESC%[33m!UI_PB! !F11_ACT!%ESC%[0m )
+if defined F11_RES  ( call :ARROW_BAR 15 93 96 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F13_ACT  ( call :PHASE_BAR 16 98 100 & echo %ESC%[33m!UI_PB! !F13_ACT!%ESC%[0m )
-if defined F13_RES  ( call :ARROW_BAR 16 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F12_ACT  ( call :PHASE_BAR 16 96 98 & echo %ESC%[33m!UI_PB! !F12_ACT!%ESC%[0m )
+if defined F12_RES  ( call :ARROW_BAR 16 96 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F13_ACT  ( call :PHASE_BAR 17 98 100 & echo %ESC%[33m!UI_PB! !F13_ACT!%ESC%[0m )
+if defined F13_RES  ( call :ARROW_BAR 17 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
 :: ==================================================================
