@@ -45,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.50"
+set "LOCAL_VER=28.51"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -84,7 +84,7 @@ if "!UPDATE_NEEDED!"=="1" (
     echo ==================================================================
     echo   AGGIORNAMENTO DISPONIBILE: v!LOCAL_VER! -^> v!CLOUD_VER!
     echo ==================================================================
-    choice /c SN /d S /t 1 /m "     Vuoi aggiornare ora? [S=Si / N=No, default S in 1 sec]"
+    choice /c SN /d S /t 0 /m "     Vuoi aggiornare ora? [S=Si / N=No, default S in 0 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup del file corrente in corso...
@@ -179,7 +179,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
     echo =======================================================================
     echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo =======================================================================
-    choice /c SN /d S /t 1 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 1 sec]"
+    choice /c SN /d S /t 0 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 0 sec]"
     if !errorlevel! EQU 1 (
         echo.
         echo   [..] Backup di service.conf in corso...
@@ -684,7 +684,7 @@ if %errorLevel% neq 0 (
 )
 
 if not exist "%UB_DIR%" (
-    call :LOGFAIL "REFRESH" "Directory Unbound non trouvata"
+    call :LOGFAIL "REFRESH" "Directory Unbound non trovata"
     exit /b
 )
 
@@ -700,7 +700,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
     set "LOC_INT=!LOCAL_VER:.=!"
     set "CLD_INT=!CLOUD_VER:.=!"
     if !CLD_INT! GTR !LOC_INT! (
-        call :LOGSTEP "REFRESH" "Aggiornamento BAT rilevato: v!LOCAL_VER! -> v!CLOUD_VER!"
+        call :LOGSTEP "REFRESH" "ATTENZIONE, rilevato aggiornamento del file BAT: v!LOCAL_VER! -> v!CLOUD_VER!"
         set "FILE_TO_BAK=%~f0"
         if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
         
@@ -751,7 +751,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
     )
     
     if "!SVC_UPDATE_NEEDED!"=="1" (
-        call :LOGSTEP "REFRESH" "Aggiornamento service.conf rilevato: v!LOCAL_SVC_VER! -> v!SVC_VER!"
+        call :LOGSTEP "REFRESH" "ATTENZIONE, rilevato aggiornamento del file service.conf: v!LOCAL_SVC_VER! -> v!SVC_VER!"
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
         
@@ -770,7 +770,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
                     echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
                     set "LOCAL_SVC_VER=!SVC_VER!"
                     set "CHANGED=1"
-                    call :LOGSTEP "REFRESH" "service.conf aggiornato con successo a v!SVC_VER!"
+                    call :LOGSTEP "REFRESH" "Il file service.conf è stato aggiornato con successo alla  v!SVC_VER!"
                 )
             )
         )
@@ -944,8 +944,8 @@ if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
 echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
-echo                                             PROCESSO CONCLUSO in !ELAPSED! secondi.                     Chiusura automatica...
-timeout /t 2 >nul
+echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
+timeout /t 1 >nul
 exit
 
 :: ==================================================================
