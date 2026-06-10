@@ -952,7 +952,7 @@ exit
 :: ==================================================================
 :DNS_FALLBACK_ON
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
-call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 8.8.8.8"
+call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 9.9.9.9"
 exit /b
 
 :: ==================================================================
@@ -967,9 +967,6 @@ exit /b
 :RESOLVE_HOST
 set "%~2="
 for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
-if "!%~2!"=="" (
-    for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 8.8.8.8 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
-)
 if "!%~2!"=="" (
     for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 9.9.9.9 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
 )
