@@ -760,11 +760,18 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
         
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
-                move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
-                echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
-                set "LOCAL_SVC_VER=!SVC_VER!"
-                set "CHANGED=1"
-                call :LOGSTEP "REFRESH" "service.conf aggiornato con successo a v!SVC_VER!"
+                :: ← NUOVO: valida prima di sovrascrivere
+                "%UB_DIR%\unbound-checkconf.exe" "!SVC_TMP!" >nul 2>&1
+                if !errorlevel! neq 0 (
+                    del /f /q "!SVC_TMP!" >nul 2>&1
+                    call :LOGFAIL "REFRESH" "service.conf cloud non valido (checkconf fallito), ignorato"
+                ) else (
+                    move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
+                    echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
+                    set "LOCAL_SVC_VER=!SVC_VER!"
+                    set "CHANGED=1"
+                    call :LOGSTEP "REFRESH" "service.conf aggiornato con successo a v!SVC_VER!"
+                )
             )
         )
     )
