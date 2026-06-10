@@ -951,7 +951,7 @@ exit
 :: Uso: call :DNS_FALLBACK_ON
 :: ==================================================================
 :DNS_FALLBACK_ON
-powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','8.8.8.8'" >nul 2>&1
+powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
 call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 8.8.8.8"
 exit /b
 
