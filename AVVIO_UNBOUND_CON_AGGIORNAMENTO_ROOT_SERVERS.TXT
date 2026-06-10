@@ -53,7 +53,7 @@ set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 
 :: Versione BAT cloud
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
-powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
     set /p CLOUD_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
@@ -691,7 +691,7 @@ if not exist "%UB_DIR%" (
 :: --- SILENT UPDATE CONTROLLO (BAT) VIA REFRESH ---
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
-powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
+powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
     set /p CLOUD_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
