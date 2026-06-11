@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.55"
+set "LOCAL_VER=28.56"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1010,8 +1010,6 @@ if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
     color !CONSOLE_COLOR!
     set "LAST_COLOR=!CONSOLE_COLOR!"
 )
-echo.
-echo.
 echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
