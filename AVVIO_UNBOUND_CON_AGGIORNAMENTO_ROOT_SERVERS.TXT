@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.56"
+set "LOCAL_VER=28.57"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -490,7 +490,7 @@ set "NC_TMP=%UB_DIR%\named.cache.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\named.cache" (
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[ SKIP ] NET  >> named.cache gia' presente: !DT_NC!"
+    set "F9_RES=[     SKIP     ] NET  >> named.cache gia' presente: !DT_NC!"
     goto :NC_DONE
 )
 
@@ -539,7 +539,7 @@ set "RZ_TMP=%UB_DIR%\root.zone.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\root.zone" (
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[ SKIP ] NET  >> root.zone gia' presente: !DT_RZ!"
+    set "F9B_RES=[     SKIP     ] NET  >> root.zone gia' presente: !DT_RZ!"
     goto :RZ_DONE
 )
 
@@ -613,14 +613,14 @@ if errorlevel 1 (
         ) else (
             del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro Plus - RPZ gia' aggiornato: !DT_HZ!"
+            set "F10_RES=[     SKIP     ] NET  >> HaGeZi Pro Plus - RPZ gia' aggiornato: !DT_HZ!"
         )
     ) else (
         if exist "%HZ_PRO_PLUS%" (
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
+            set "F10_RES=[     SKIP     ] NET  >> HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
         ) else (
-            set "F10_RES=[ERR ] NET  >> HaGeZi Pro Plus - file scaricato troppo piccolo e nessun backup!"
+            set "F10_RES=[    ERRORE    ] NET  >> HaGeZi Pro Plus - file scaricato troppo piccolo e nessun backup!"
         )
     )
 )
@@ -875,11 +875,11 @@ if not errorlevel 1 (
         ) else (
             del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
         )
     ) else (
         call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
     )
 ) else (
     if exist "%HZ_PRO_PLUS_BAK%" (
