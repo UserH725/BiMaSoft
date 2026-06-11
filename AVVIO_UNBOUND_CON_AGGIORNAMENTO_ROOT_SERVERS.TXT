@@ -915,21 +915,16 @@ exit /b
 color 0C
 echo.
 echo ------------------------------------------------------------------
-echo    [    ERRORE    ] CONF >> ERRORE SINTATTICO RILEVATO DA UNBOUND!
+echo   [!] ERRORE SINTATTICO RILEVATO DA UNBOUND!
 echo ------------------------------------------------------------------
-:: Ripristina il file service.conf dall'ultimo backup funzionante tracciato
-if exist "%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP" (
-    copy /y "%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP" "%SERVICE_CONF!" >nul 2>&1
-    echo [i] Ripristinato service.conf di produzione (v!LOCAL_SVC_VER!)
-)
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
-:: Impostazione priorità alta e CPU Affinity sui Core 0 e 1 per stabilità
-powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.PriorityClass = 'High'; $p.ProcessorAffinity = [IntPtr]3 }" >nul 2>&1
+:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
+powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
 pause
 goto :FINALIZZAZIONE
 
