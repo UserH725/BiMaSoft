@@ -181,56 +181,68 @@ if not "!SVC_VER!"=="N/A" (
 if "!SVC_UPDATE_NEEDED!"=="1" (
     echo.
     echo =======================================================================
-    echo   AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
+    echo    AGGIORNAMENTO SERVICE.CONF DISPONIBILE: v!LOCAL_SVC_VER! -^> v!SVC_VER!
     echo =======================================================================
     choice /c SN /d S /t 0 /m "     Vuoi aggiornare service.conf ora? [S=Si / N=No, default S in 0 sec]"
     if !errorlevel! EQU 1 (
         echo.
-        echo   [..] Backup di service.conf in corso...
+        echo    [..] Backup di service.conf in corso...
 
         :: Nome backup con versione locale nel nome
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" (
-            copy /y "!SERVICE_CONF!" "!SVC_BAK!"
+            copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
             if exist "!SVC_BAK!" (
-                echo   [OK] Backup creato: !SVC_BAK!
+                echo    [      OK      ] Backup creato: !SVC_BAK!
             ) else (
-                echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
+                echo    [    ERRORE    ] Backup fallito - verificare permessi su !UB_DIR!
             )
         ) else (
-            echo   [INFO] service.conf non presente, nessun backup necessario.
+            echo    [INFO] service.conf non presente, nessun backup necessario.
         )
 
-        echo   [..] Download service.conf v!SVC_VER! in corso...
+        echo    [..] Download service.conf v!SVC_VER! in corso...
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
 
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
+                :: Validazione preventiva della sintassi del file scaricato
+                if exist "%UB_DIR%\unbound-checkconf.exe" (
+                    "%UB_DIR%\unbound-checkconf.exe" "!SVC_TMP!" >nul 2>&1
+                    if !errorlevel! neq 0 (
+                        del /f /q "!SVC_TMP!" >nul 2>&1
+                        echo    [    ERRORE    ] service.conf cloud non valido (checkconf fallito). Interrompo aggiornamento.
+                        call :LOGFAIL "MAIN" "service.conf cloud non valido, file scartato."
+                        goto :SVC_SKIP_APPLY
+                    )
+                )
+                
                 move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
                 echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
                 set "LOCAL_SVC_VER=!SVC_VER!"
                 echo.
                 echo ==============================================================================
-                echo   SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
+                echo    SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
                 echo ==============================================================================
-                echo   Versione installata: v!SVC_VER!
-                echo   File aggiornato: !SERVICE_CONF!
-                if exist "!SVC_BAK!" echo   Backup precedente: !SVC_BAK!
+                echo    Versione installata: v!SVC_VER!
+                echo    File aggiornato: !SERVICE_CONF!
+                if exist "!SVC_BAK!" echo    Backup precedente: !SVC_BAK!
                 echo ==============================================================================
                 echo.
             ) else (
-                echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
+                echo    [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
                 del /f /q "!SVC_TMP!" >nul 2>&1
             )
         ) else (
-            echo   [ERRORE] Download fallito. Aggiornamento annullato.
+            echo    [    ERRORE    ] Download fallito. Aggiornamento annullato.
         )
     ) else (
-        echo   Aggiornamento service.conf rimandato. Proseguo con la versione attuale v!LOCAL_SVC_VER!...
+        echo    Aggiornamento service.conf rimandato. Proseguo con la versione attuale v!LOCAL_SVC_VER!...
         echo.
     )
 )
+:SVC_SKIP_APPLY
 
 :: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO + TASK LOGON ---
 set "TASK_NAME=Unbound_Bunker_Daily"
@@ -915,16 +927,21 @@ exit /b
 color 0C
 echo.
 echo ------------------------------------------------------------------
-echo   [!] ERRORE SINTATTICO RILEVATO DA UNBOUND!
+echo    [    ERRORE    ] CONF >> ERRORE SINTATTICO RILEVATO DA UNBOUND!
 echo ------------------------------------------------------------------
+:: Ripristina il file service.conf dall'ultimo backup funzionante tracciato
+if exist "%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP" (
+    copy /y "%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP" "%SERVICE_CONF!" >nul 2>&1
+    echo [i] Ripristinato service.conf di produzione (v!LOCAL_SVC_VER!)
+)
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
-:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
-powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+:: Impostazione priorità alta e CPU Affinity sui Core 0 e 1 per stabilità
+powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.PriorityClass = 'High'; $p.ProcessorAffinity = [IntPtr]3 }" >nul 2>&1
 pause
 goto :FINALIZZAZIONE
 
