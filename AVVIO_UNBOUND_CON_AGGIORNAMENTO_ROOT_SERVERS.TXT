@@ -45,7 +45,7 @@ set "START_TIME=%START_TIME: =0%"
 
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.52"
+set "LOCAL_VER=28.53"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -274,8 +274,8 @@ set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "LOG_FILE=%UB_DIR%\logfile.log"
 set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
-set "HZ_PRO=%UB_DIR%\hagezi-pro.conf"
-set "HZ_PRO_BAK=%HZ_PRO%.bak"
+set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
+set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
@@ -447,7 +447,7 @@ if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type n
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
-if exist "%HZ_PRO%" copy /y "%HZ_PRO%" "%HZ_PRO_BAK%" >nul 2>&1
+if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -573,54 +573,54 @@ call :UPDATE_UI 83
 call :LOGSTEP "NET" "!F9B_RES!"
 
 :: ================================================================
-:: F10 — HAGEZI PRO (SCARICA E IMPOSTA SEMPRE LA VERSIONE PRO)
+:: F10 — HAGEZI PRO PLUS (SCARICA E IMPOSTA SEMPRE LA VERSIONE PRO)
 :: ================================================================
-set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro e la preparo come RPZ attiva."
+set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-:: Scarica sempre la versione Pro
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt >nul 2>&1
+:: Scarica sempre la versione Pro Plus
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
 if errorlevel 1 (
-    if exist "%HZ_PRO_BAK%" (
-        copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
-        call :FILE_DATE "%HZ_PRO%" DT_HZ
-        set "F10_RES=[WARN] NET  >> HaGeZi non scaricato, ripristinato dal backup: !DT_HZ!"
-    ) else if exist "%HZ_PRO%" (
-        call :FILE_DATE "%HZ_PRO%" DT_HZ
-        set "F10_RES=[WARN] NET  >> HaGeZi: download fallito, uso esistente: !DT_HZ!"
+    if exist "%HZ_PRO_PLUS_BAK%" (
+        copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        set "F10_RES=[WARN] NET  >> HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
+    ) else if exist "%HZ_PRO_PLUS%" (
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        set "F10_RES=[WARN] NET  >> HaGeZi Pro Plus: download fallito, uso esistente: !DT_HZ!"
     ) else (
-        set "F10_RES=[ERR ] NET  >> HaGeZi non scaricabile e nessun backup disponibile!"
+        set "F10_RES=[ERR ] NET  >> HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
     )
 ) else (
-    for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 (
+    for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
-        if exist "%HZ_PRO%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO%\" -Algorithm MD5).Hash"') do (
+        if exist "%HZ_PRO_PLUS%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO_PLUS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO_PLUS%\" -Algorithm MD5).Hash"') do (
                 for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
             )
         )
         if "!SKIP_HZ!"=="0" (
-            move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
-            call :FILE_DATE "%HZ_PRO%" DT_HZ
-            set "F10_RES=[      OK      ] NET  >> HaGeZi Pro - RPZ aggiornato: !DT_HZ!"
+            move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            set "F10_RES=[      OK      ] NET  >> HaGeZi Pro Plus - RPZ aggiornato: !DT_HZ!"
         ) else (
-            del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_PRO%" DT_HZ
-            set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro - RPZ gia' aggiornato: !DT_HZ!"
+            del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro Plus - RPZ gia' aggiornato: !DT_HZ!"
         )
     ) else (
-        if exist "%HZ_PRO%" (
-            call :FILE_DATE "%HZ_PRO%" DT_HZ
-            set "F10_RES=[ SKIP ] NET  >> HaGeZi - file scaricato piccolo, uso esistente: !DT_HZ!"
+        if exist "%HZ_PRO_PLUS%" (
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            set "F10_RES=[ SKIP ] NET  >> HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
         ) else (
-            set "F10_RES=[ERR ] NET  >> HaGeZi - file scaricato troppo piccolo e nessun backup!"
+            set "F10_RES=[ERR ] NET  >> HaGeZi Pro Plus - file scaricato troppo piccolo e nessun backup!"
         )
     )
 )
-if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
+if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10_RES!"
 
 
@@ -640,7 +640,7 @@ set "F12_ACT=[...in corso...] ACL  >> Blindo i file critici con permessi NTFS de
 call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
-icacls "%HZ_PRO%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_PRO_PLUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
@@ -780,7 +780,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
 :: Backup prima di sovrascrivere
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
-if exist "%HZ_PRO%"             copy /y "%HZ_PRO%"             "%HZ_PRO_BAK%"  >nul 2>&1
+if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
 
 :: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
@@ -848,44 +848,44 @@ if exist "%UB_DIR%\root.zone" (
     if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
 )
 
-:: HaGeZi Pro (refresh biorario)
+:: HaGeZi Pro Plus (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO%.tmp" https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.txt >nul 2>&1
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
 if not errorlevel 1 (
-    for %%I in ("%HZ_PRO%.tmp") do if %%~zI GEQ 10240 (
+    for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
-        if exist "%HZ_PRO%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO%\" -Algorithm MD5).Hash"') do (
+        if exist "%HZ_PRO_PLUS%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO_PLUS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO_PLUS%\" -Algorithm MD5).Hash"') do (
                 for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
             )
         )
         if "!SKIP_HZ!"=="0" (
-            move /y "%HZ_PRO%.tmp" "%HZ_PRO%" >nul 2>&1
+            move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
             set "CHANGED=1"
-            call :FILE_DATE "%HZ_PRO%" DT_HZ
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro - RPZ aggiornato: !DT_HZ!"
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro Plus- RPZ aggiornato: !DT_HZ!"
         ) else (
-            del /f /q "%HZ_PRO%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_PRO%" DT_HZ
-            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro - RPZ gia' aggiornato: !DT_HZ!"
+            del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
         )
     ) else (
-        call :FILE_DATE "%HZ_PRO%" DT_HZ
-        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro - file scaricato piccolo, uso esistente: !DT_HZ!"
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        call :LOGSTEP "REFRESH" "[ SKIP ] HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
     )
 ) else (
-    if exist "%HZ_PRO_BAK%" (
-        copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul 2>&1
-        call :FILE_DATE "%HZ_PRO%" DT_HZ
-        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Pro non scaricato, ripristinato dal backup: !DT_HZ!"
+    if exist "%HZ_PRO_PLUS_BAK%" (
+        copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
     ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro non scaricabile e nessun backup disponibile!"
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
     )
 )
-if exist "%HZ_PRO%.tmp" del /f /q "%HZ_PRO%.tmp" >nul 2>&1
+if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 
 :: Riavvio silenzioso del servizio SOLO se qualcosa è cambiato
 if "!CHANGED!"=="1" (
@@ -914,7 +914,7 @@ echo   [!] ERRORE SINTATTICO RILEVATO DA UNBOUND!
 echo ------------------------------------------------------------------
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
-if exist "%HZ_PRO_BAK%" copy /y "%HZ_PRO_BAK%" "%HZ_PRO%" >nul
+if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
