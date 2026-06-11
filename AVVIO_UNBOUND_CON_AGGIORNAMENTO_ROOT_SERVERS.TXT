@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.57"
+set "LOCAL_VER=28.60"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -136,7 +136,7 @@ if "!UPDATE_NEEDED!"=="1" (
                 start "" "!SELF_BAT!"
                 exit
             ) else (
-                echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
+                echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo   Proseguo con la versione attuale...
                 echo.
@@ -220,7 +220,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
                 echo ==============================================================================
                 echo.
             ) else (
-                echo   [WARN] File scaricato vuoto. Aggiornamento annullato.
+                echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
                 del /f /q "!SVC_TMP!" >nul 2>&1
             )
         ) else (
@@ -285,7 +285,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ipv4 --location --max-time 60"
-title UNBOUND BUNKER - by Mauro Bigoni
+title UNBOUND BUNKER - by Mauro Bigoni (c) 2026 All right reserved.
 :: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 
@@ -457,7 +457,7 @@ set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli ag
 call :LOGSTEP "FS" "Backup snapshot creati"
 
 if "%SKIP_MAINTENANCE%"=="1" (
-    set "F8_ACT=[ SKIP ] CORE >> Aggiornamento giornaliero già eseguito. Solo riavvio rapido."
+    set "F8_ACT=[     SKIP     ] CORE >> Aggiornamento giornaliero già eseguito. Solo riavvio rapido."
     set "F8_RES=[      OK      ] CORE >> Riavvio rapidamente il servizio Unbound per applicare lo stato corrente."
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -503,7 +503,7 @@ if errorlevel 1 (
     if exist "%NCACHE_BAK%" (
         copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
         call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-        set "F9_RES=[WARN] NET  >> named.cache non scaricato, ripristinato dal backup: !DT_NC!"
+        set "F9_RES=[     WARN     ] NET  >> named.cache non scaricato, ripristinato dal backup: !DT_NC!"
     ) else (
         set "F9_RES=[ERR ] NET  >> named.cache non scaricabile e nessun backup disponibile!"
     )
@@ -552,7 +552,7 @@ if errorlevel 1 (
     if exist "%RZONE_BAK%" (
         copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
         call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-        set "F9B_RES=[WARN] NET  >> root.zone non scaricato, ripristinato dal backup: !DT_RZ!"
+        set "F9B_RES=[     WARN     ] NET  >> root.zone non scaricato, ripristinato dal backup: !DT_RZ!"
     ) else (
         set "F9B_RES=[ERR ] NET  >> root.zone non scaricabile e nessun backup disponibile!"
     )
@@ -591,10 +591,10 @@ if errorlevel 1 (
     if exist "%HZ_PRO_PLUS_BAK%" (
         copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
         call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        set "F10_RES=[WARN] NET  >> HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
+        set "F10_RES=[     WARN     ] NET  >> HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
     ) else if exist "%HZ_PRO_PLUS%" (
         call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        set "F10_RES=[WARN] NET  >> HaGeZi Pro Plus: download fallito, uso esistente: !DT_HZ!"
+        set "F10_RES=[     WARN     ] NET  >> HaGeZi Pro Plus: download fallito, uso esistente: !DT_HZ!"
     ) else (
         set "F10_RES=[ERR ] NET  >> HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
     )
@@ -885,7 +885,7 @@ if not errorlevel 1 (
     if exist "%HZ_PRO_PLUS_BAK%" (
         copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
         call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        call :LOGSTEP "REFRESH" "[WARN] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
     ) else (
         call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
     )
@@ -946,6 +946,8 @@ set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME
 set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
 if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
+echo !FLAG_LINE!
+echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
@@ -1010,6 +1012,8 @@ if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
     color !CONSOLE_COLOR!
     set "LAST_COLOR=!CONSOLE_COLOR!"
 )
+echo !FLAG_LINE!
+echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
@@ -1103,7 +1107,7 @@ if %PB_PCT% EQU 100 set "PB_PCTS=100%%"
 if %PB_PCT% LSS 10  set "PB_PCTS=  %PB_PCT%%%"
 if %PB_PCT% LSS 100 if %PB_PCT% GEQ 10 set "PB_PCTS= %PB_PCT%%%"
 
-set "UI_PB=[!PB_BAR!]!PB_PCTS!"
+set "UI_PB=[!PB_BAR!] !PB_PCTS!"
 exit /b
 
 :ARROW_BAR
@@ -1113,13 +1117,13 @@ set /a "PB_RANGE=PB_END - PB_START"
 if %PB_RANGE% LEQ 0 set "PB_RANGE=1"
 
 if %P_VAL% GEQ %PB_END% (
-    set /a "PB_FILL=16"
+    set /a "PB_FILL=17"
 ) else if %P_VAL% LEQ %PB_START% (
     set /a "PB_FILL=0"
 ) else (
-    set /a "PB_FILL=(P_VAL - PB_START) * 16 / PB_RANGE"
+    set /a "PB_FILL=(P_VAL - PB_START) * 17 / PB_RANGE"
 )
-set /a "PB_EMPTY=16 - PB_FILL"
+set /a "PB_EMPTY=17 - PB_FILL"
 
 :: Ciclo for nativo anche per le frecce dell'esito
 set "PB_ARROW="
@@ -1153,19 +1157,19 @@ exit /b
 set "RES_STR=%~1"
 set "RES_COLORED=%RES_STR%"
 
-:: Estrai i primi caratteri per determinare il tipo
-set "RES_PREFIX=%RES_STR:~0,7%"
+:: Estrai i primi 16 caratteri per determinare il tipo esatto di tag
+set "RES_PREFIX=%RES_STR:~0,16%"
 
-:: [      OK      ] = VERDE, [WARN] = GIALLO, [ERRORE]/[ERR ] = ROSSO, [ SKIP ] = CYAN
-if "%RES_PREFIX%"=="[  OK  " (
+:: [      OK      ] = VERDE, [     WARN     ] = GIALLO, [    ERRORE    ]/[      ERR     ] = ROSSO, [     SKIP     ] = CYAN
+if "%RES_PREFIX%"=="[      OK      ]" (
     set "RES_COLORED=%ESC%[32m%RES_STR%%ESC%[0m"
-) else if "%RES_PREFIX%"=="[WARN] " (
+) else if "%RES_STR:~0,6%"=="[     WARN     ]" (
     set "RES_COLORED=%ESC%[33m%RES_STR%%ESC%[0m"
-) else if "%RES_PREFIX%"=="[ERRORE" (
+) else if "%RES_STR:~0,7%"=="[    ERRORE    ]" (
     set "RES_COLORED=%ESC%[31m%RES_STR%%ESC%[0m"
-) else if "%RES_PREFIX%"=="[ERR ] " (
+) else if "%RES_STR:~0,5%"=="[      ERR     ]" (
     set "RES_COLORED=%ESC%[31m%RES_STR%%ESC%[0m"
-) else if "%RES_PREFIX%"=="[ SKIP " (
+) else if "%RES_PREFIX%"=="[     SKIP     ]" (
     set "RES_COLORED=%ESC%[36m%RES_STR%%ESC%[0m"
 )
 exit /b
