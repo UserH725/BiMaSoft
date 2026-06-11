@@ -678,7 +678,8 @@ title UNBOUND BUNKER - REFRESH BIORARIO
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 
 ping -n 1 8.8.8.8 >nul 2>&1
-if %errorLevel% neq 0 (
+if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
+if errorlevel 1 (
     call :LOGFAIL "REFRESH" "Rete non raggiungibile, refresh saltato"
     exit /b
 )
@@ -895,7 +896,7 @@ if "!CHANGED!"=="1" (
     call :DNS_FALLBACK_ON
     :: Ripristina il DNS locale prima di riavviare Unbound
     call :DNS_FALLBACK_OFF
-	net start unbound >nul 2>&1
+    net start unbound >nul 2>&1
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 ) else (
