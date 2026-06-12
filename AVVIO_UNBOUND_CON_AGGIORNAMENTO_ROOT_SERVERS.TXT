@@ -337,17 +337,18 @@ if exist "%UB_DIR%\service.conf" (
 :: FASE 1 - Azione
 set "F1_ACT=[...in corso...] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
+:NET_RETRY
 ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
 if errorlevel 1 (
     set "CONSOLE_COLOR=0C"
-    set "F1_RES=[ERRORE] NET  >> Internet non raggiungibile, interrompo tutto."
+    set "F1_RES=[     WARN     ] NET  >> Internet non raggiungibile, nuovo tentativo tra 5 secondi... (Ctrl+C per annullare)"
     call :UPDATE_UI 0
-    call :LOGFAIL "NET" "Internet non raggiungibile"
-    pause
-    exit /b
+    timeout /t 5 /nobreak >nul
+    goto :NET_RETRY
 )
-set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza."
+set "CONSOLE_COLOR=0A"
+set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza.       "
 call :LOGSTEP "NET" "Connettivita verificata"
 :: Garantisce resolver esterno per tutti i download successivi
 call :DNS_FALLBACK_ON
@@ -1027,55 +1028,55 @@ echo       Cache risposte complete msg-cache-size.: !CONF_MSG_CACHE!            
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
-if defined F1_ACT  ( call :PHASE_BAR  1  5 10 & echo %ESC%[33m!UI_PB! !F1_ACT!%ESC%[0m )
+if defined F1_ACT  ( call :PHASE_BAR  1  5 10 & echo %ESC%[38;2;144;238;144m!UI_PB! !F1_ACT!%ESC%[0m )
 if defined F1_RES  ( call :ARROW_BAR  1  5 10 & call :RES_COLOR "!F1_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F2_ACT  ( call :PHASE_BAR  2 10 20 & echo %ESC%[33m!UI_PB! !F2_ACT!%ESC%[0m )
+if defined F2_ACT  ( call :PHASE_BAR  2 10 20 & echo %ESC%[38;2;144;238;144m!UI_PB! !F2_ACT!%ESC%[0m )
 if defined F2_RES  ( call :ARROW_BAR  2 10 20 & call :RES_COLOR "!F2_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F3_ACT  ( call :PHASE_BAR  3 20 30 & echo %ESC%[33m!UI_PB! !F3_ACT!%ESC%[0m )
+if defined F3_ACT  ( call :PHASE_BAR  3 20 30 & echo %ESC%[38;2;144;238;144m!UI_PB! !F3_ACT!%ESC%[0m )
 if defined F3_RES  ( call :ARROW_BAR  3 20 30 & call :RES_COLOR "!F3_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F4_ACT  ( call :PHASE_BAR  4 30 40 & echo %ESC%[33m!UI_PB! !F4_ACT!%ESC%[0m )
+if defined F4_ACT  ( call :PHASE_BAR  4 30 40 & echo %ESC%[38;2;144;238;144m!UI_PB! !F4_ACT!%ESC%[0m )
 if defined F4_RES  ( call :ARROW_BAR  4 30 40 & call :RES_COLOR "!F4_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F5_ACT  ( call :PHASE_BAR  5 40 50 & echo %ESC%[33m!UI_PB! !F5_ACT!%ESC%[0m )
+if defined F5_ACT  ( call :PHASE_BAR  5 40 50 & echo %ESC%[38;2;144;238;144m!UI_PB! !F5_ACT!%ESC%[0m )
 if defined F5_RES  ( call :ARROW_BAR  5 40 50 & call :RES_COLOR "!F5_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F6_ACT  ( call :PHASE_BAR  6 50 60 & echo %ESC%[33m!UI_PB! !F6_ACT!%ESC%[0m )
+if defined F6_ACT  ( call :PHASE_BAR  6 50 60 & echo %ESC%[38;2;144;238;144m!UI_PB! !F6_ACT!%ESC%[0m )
 if defined F6_RES  ( call :ARROW_BAR  6 50 60 & call :RES_COLOR "!F6_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F7_ACT  ( call :PHASE_BAR  7 60 70 & echo %ESC%[33m!UI_PB! !F7_ACT!%ESC%[0m )
+if defined F7_ACT  ( call :PHASE_BAR  7 60 70 & echo %ESC%[38;2;144;238;144m!UI_PB! !F7_ACT!%ESC%[0m )
 if defined F7_RES  ( call :ARROW_BAR  7 60 70 & call :RES_COLOR "!F7_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F8_ACT  ( call :PHASE_BAR  8 70 80 & echo %ESC%[33m!UI_PB! !F8_ACT!%ESC%[0m )
+if defined F8_ACT  ( call :PHASE_BAR  8 70 80 & echo %ESC%[38;2;144;238;144m!UI_PB! !F8_ACT!%ESC%[0m )
 if defined F8_RES  ( call :ARROW_BAR  8 70 80 & call :RES_COLOR "!F8_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F9_ACT  ( call :PHASE_BAR  9 80 82 & echo %ESC%[33m!UI_PB! !F9_ACT!%ESC%[0m )
+if defined F9_ACT  ( call :PHASE_BAR  9 80 82 & echo %ESC%[38;2;144;238;144m!UI_PB! !F9_ACT!%ESC%[0m )
 if defined F9_RES  ( call :ARROW_BAR  9 80 82 & call :RES_COLOR "!F9_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F9B_ACT ( call :PHASE_BAR 10 82 85 & echo %ESC%[33m!UI_PB! !F9B_ACT!%ESC%[0m )
+if defined F9B_ACT ( call :PHASE_BAR 10 82 85 & echo %ESC%[38;2;144;238;144m!UI_PB! !F9B_ACT!%ESC%[0m )
 if defined F9B_RES ( call :ARROW_BAR 10 82 85 & call :RES_COLOR "!F9B_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10_ACT  ( call :PHASE_BAR 11 85 87 & echo %ESC%[33m!UI_PB! !F10_ACT!%ESC%[0m )
+if defined F10_ACT  ( call :PHASE_BAR 11 85 87 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10_ACT!%ESC%[0m )
 if defined F10_RES  ( call :ARROW_BAR 11 85 87 & call :RES_COLOR "!F10_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10B_ACT ( call :PHASE_BAR 12 87 89 & echo %ESC%[33m!UI_PB! !F10B_ACT!%ESC%[0m )
+if defined F10B_ACT ( call :PHASE_BAR 12 87 89 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10B_ACT!%ESC%[0m )
 if defined F10B_RES ( call :ARROW_BAR 12 87 89 & call :RES_COLOR "!F10B_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10C_ACT ( call :PHASE_BAR 13 89 91 & echo %ESC%[33m!UI_PB! !F10C_ACT!%ESC%[0m )
+if defined F10C_ACT ( call :PHASE_BAR 13 89 91 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10C_ACT!%ESC%[0m )
 if defined F10C_RES ( call :ARROW_BAR 13 89 91 & call :RES_COLOR "!F10C_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10D_ACT ( call :PHASE_BAR 14 91 93 & echo %ESC%[33m!UI_PB! !F10D_ACT!%ESC%[0m )
+if defined F10D_ACT ( call :PHASE_BAR 14 91 93 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10D_ACT!%ESC%[0m )
 if defined F10D_RES ( call :ARROW_BAR 14 91 93 & call :RES_COLOR "!F10D_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F11_ACT  ( call :PHASE_BAR 15 93 96 & echo %ESC%[33m!UI_PB! !F11_ACT!%ESC%[0m )
+if defined F11_ACT  ( call :PHASE_BAR 15 93 96 & echo %ESC%[38;2;144;238;144m!UI_PB! !F11_ACT!%ESC%[0m )
 if defined F11_RES  ( call :ARROW_BAR 15 93 96 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F12_ACT  ( call :PHASE_BAR 16 96 98 & echo %ESC%[33m!UI_PB! !F12_ACT!%ESC%[0m )
+if defined F12_ACT  ( call :PHASE_BAR 16 96 98 & echo %ESC%[38;2;144;238;144m!UI_PB! !F12_ACT!%ESC%[0m )
 if defined F12_RES  ( call :ARROW_BAR 16 96 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F13_ACT  ( call :PHASE_BAR 17 98 100 & echo %ESC%[33m!UI_PB! !F13_ACT!%ESC%[0m )
+if defined F13_ACT  ( call :PHASE_BAR 17 98 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
 if defined F13_RES  ( call :ARROW_BAR 17 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
@@ -1156,18 +1157,15 @@ exit /b
 :RES_COLOR
 set "RES_STR=%~1"
 set "RES_COLORED=%RES_STR%"
-
-:: Estrai i primi 16 caratteri per determinare il tipo esatto di tag
 set "RES_PREFIX=%RES_STR:~0,16%"
 
-:: [      OK      ] = VERDE, [     WARN     ] = GIALLO, [    ERRORE    ]/[      ERR     ] = ROSSO, [     SKIP     ] = CYAN
 if "%RES_PREFIX%"=="[      OK      ]" (
     set "RES_COLORED=%ESC%[32m%RES_STR%%ESC%[0m"
-) else if "%RES_STR:~0,6%"=="[     WARN     ]" (
-    set "RES_COLORED=%ESC%[33m%RES_STR%%ESC%[0m"
-) else if "%RES_STR:~0,7%"=="[    ERRORE    ]" (
+) else if "%RES_PREFIX%"=="[     WARN     ]" (
     set "RES_COLORED=%ESC%[31m%RES_STR%%ESC%[0m"
-) else if "%RES_STR:~0,5%"=="[      ERR     ]" (
+) else if "%RES_PREFIX%"=="[    ERRORE    ]" (
+    set "RES_COLORED=%ESC%[31m%RES_STR%%ESC%[0m"
+) else if "%RES_PREFIX%"=="[      ERR     ]" (
     set "RES_COLORED=%ESC%[31m%RES_STR%%ESC%[0m"
 ) else if "%RES_PREFIX%"=="[     SKIP     ]" (
     set "RES_COLORED=%ESC%[36m%RES_STR%%ESC%[0m"
