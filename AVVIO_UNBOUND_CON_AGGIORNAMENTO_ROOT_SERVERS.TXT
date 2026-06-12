@@ -347,7 +347,7 @@ if errorlevel 1 (
     pause
     exit /b
 )
-set "F1_RES=[      OK      ] NET  >> Rete attiva, posso continuare."
+set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza."
 call :LOGSTEP "NET" "Connettivita verificata"
 :: Garantisce resolver esterno per tutti i download successivi
 call :DNS_FALLBACK_ON
@@ -441,7 +441,7 @@ sc config w32time start= auto >nul 2>&1
 net start w32time >nul 2>&1
 w32tm /resync /force /nowait >nul 2>&1
 set "NOW_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
-set "F6_RES=[      OK      ] TIME >> Orologio sincronizzato - ora sistema: %NOW_TIME%"
+set "F6_RES=[      OK      ] TIME >> Orologio sincronizzato correttamente - ora sistema: %NOW_TIME%"
 call :LOGSTEP "TIME" "w32time sincronizzato - ora: %NOW_TIME%"
 
 :: FASE 7 - Azione
@@ -472,7 +472,7 @@ set "F8_ACT=[...in corso...] CORE >> Fermo Unbound e termino eventuali processi 
 call :UPDATE_UI 70
 net stop unbound >nul 2>&1
 taskkill /f /im unbound.exe >nul 2>&1
-set "F8_RES=[      OK      ] CORE >> Servizio fermato e porta 53 liberata."
+set "F8_RES=[      OK      ] CORE >> Servizio fermato e pronto per assestare aggiornamenti ed impostazioni sicure."
 call :LOGSTEP "CORE" "Unbound fermato"
 :: DNS bootstrap: Unbound è fermo, serve resolver esterno per i download
 call :DNS_FALLBACK_ON
@@ -481,7 +481,7 @@ call :DNS_FALLBACK_ON
 :: -------------------------------------------------------
 :: F9 — named.cache
 :: -------------------------------------------------------
-set "F9_ACT=[...in corso...] NET  >> Scarico named.cache da internic.net..."
+set "F9_ACT=[...in corso...] NET  >> Scarico file NAMED.CACHE da www.internic.net..."
 call :UPDATE_UI 80
 
 set "NC_URL=https://www.internic.net/domain/named.cache"
@@ -490,7 +490,7 @@ set "NC_TMP=%UB_DIR%\named.cache.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\named.cache" (
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[     SKIP     ] NET  >> named.cache gia' presente: !DT_NC!"
+    set "F9_RES=[     SKIP     ] NET  >> NAMED.CACHE gia' presente: !DT_NC!"
     goto :NC_DONE
 )
 
@@ -503,24 +503,24 @@ if errorlevel 1 (
     if exist "%NCACHE_BAK%" (
         copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
         call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-        set "F9_RES=[     WARN     ] NET  >> named.cache non scaricato, ripristinato dal backup: !DT_NC!"
+        set "F9_RES=[     WARN     ] NET  >> NAME.CACHE non scaricato, ripristinato dal backup: !DT_NC!"
     ) else (
         set "F9_RES=[ERR ] NET  >> named.cache non scaricabile e nessun backup disponibile!"
     )
 ) else (
     if not exist "%NC_TMP%" (
-        set "F9_RES=[ERR ] NET  >> named.cache: curl ok ma file assente."
+        set "F9_RES=[ERR ] NET  >> NAME.CACHE: curl ok ma file assente."
         goto :NC_DONE
     )
     for %%I in ("%NC_TMP%") do set "NC_SIZE=%%~zI"
     if !NC_SIZE! LSS 1024 (
         del /f /q "%NC_TMP%" >nul 2>&1
-        set "F9_RES=[ERR ] NET  >> named.cache: file scaricato troppo piccolo (!NC_SIZE! bytes)."
+        set "F9_RES=[ERR ] NET  >> NAME.CACHE: file scaricato troppo piccolo (!NC_SIZE! bytes)."
         goto :NC_DONE
     )
     move /y "%NC_TMP%" "%UB_DIR%\named.cache" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[      OK      ] NET  >> named.cache scaricato e installato: !DT_NC!"
+    set "F9_RES=[      OK      ] NET  >> NAME.CACHE scaricato e installato: !DT_NC!"
 )
 :NC_DONE
 if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
@@ -530,7 +530,7 @@ call :LOGSTEP "NET" "!F9_RES!"
 :: -------------------------------------------------------
 :: F9B — root.zone
 :: -------------------------------------------------------
-set "F9B_ACT=[...in corso...] NET  >> Scarico root.zone da internic.net..."
+set "F9B_ACT=[...in corso...] NET  >> Scarico ROOT.ZONE da www.internic.net..."
 call :UPDATE_UI 82
 
 set "RZ_URL=https://www.internic.net/domain/root.zone"
@@ -539,7 +539,7 @@ set "RZ_TMP=%UB_DIR%\root.zone.tmp"
 :: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\root.zone" (
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[     SKIP     ] NET  >> root.zone gia' presente: !DT_RZ!"
+    set "F9B_RES=[     SKIP     ] NET  >> ROOT.ZONE gia' presente: !DT_RZ!"
     goto :RZ_DONE
 )
 
@@ -552,24 +552,24 @@ if errorlevel 1 (
     if exist "%RZONE_BAK%" (
         copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
         call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-        set "F9B_RES=[     WARN     ] NET  >> root.zone non scaricato, ripristinato dal backup: !DT_RZ!"
+        set "F9B_RES=[     WARN     ] NET  >> ROOT.ZONE non scaricato, ripristinato dal backup: !DT_RZ!"
     ) else (
         set "F9B_RES=[ERR ] NET  >> root.zone non scaricabile e nessun backup disponibile!"
     )
 ) else (
     if not exist "%RZ_TMP%" (
-        set "F9B_RES=[ERR ] NET  >> root.zone: curl ok ma file assente."
+        set "F9B_RES=[ERR ] NET  >> ROOT.ZONE: curl ok ma file assente."
         goto :RZ_DONE
     )
     for %%I in ("%RZ_TMP%") do set "RZ_SIZE=%%~zI"
     if !RZ_SIZE! LSS 102400 (
         del /f /q "%RZ_TMP%" >nul 2>&1
-        set "F9B_RES=[ERR ] NET  >> root.zone: file scaricato troppo piccolo (!RZ_SIZE! bytes)."
+        set "F9B_RES=[ERR ] NET  >> ROOT.ZONE: file scaricato troppo piccolo (!RZ_SIZE! bytes)."
         goto :RZ_DONE
     )
     move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[      OK      ] NET  >> root.zone scaricato e installato: !DT_RZ!"
+    set "F9B_RES=[      OK      ] NET  >> ROOT.ZONE scaricato e installato: !DT_RZ!"
 )
 :RZ_DONE
 if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
