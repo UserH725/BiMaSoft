@@ -285,7 +285,7 @@ set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
 
 set "CURL_CA=--ipv4 --location --max-time 60"
-title UNBOUND BUNKER - by Mauro Bigoni (c) 2026 All right reserved. Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
+title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
 :: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 
@@ -1020,7 +1020,7 @@ echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
 echo ==============================================================================================================================
-echo                        SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) 2026 
+echo              SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
 echo ==============================================================================================================================
 echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
 echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
