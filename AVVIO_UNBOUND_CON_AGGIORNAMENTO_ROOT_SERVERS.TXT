@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.61"
+set "LOCAL_VER=28.62"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -280,6 +280,8 @@ set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
 set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
 set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak"
+set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
+set "HZ_TIF_BAK=%HZ_TIF%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
@@ -453,6 +455,7 @@ if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >n
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
 if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
+if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -626,7 +629,58 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+call :UPDATE_UI 85
 call :LOGSTEP "NET" "!F10_RES!"
+
+:: ================================================================
+:: F10B — HAGEZI TIF (Threat Intelligence Feeds)
+:: ================================================================
+set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (Threat Intelligence) e la preparo come RPZ attiva."
+call :UPDATE_UI 87
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
+if errorlevel 1 (
+    if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+    ) else if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF: download fallito, uso esistente: !DT_TIF!"
+    ) else (
+        set "F10B_RES=[ERR ] NET  >> HaGeZi TIF non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
+        set "SKIP_TIF=0"
+        if exist "%HZ_TIF%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            )
+        )
+        if "!SKIP_TIF!"=="0" (
+            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10B_RES=[      OK      ] NET  >> HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+        ) else (
+            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+        )
+    ) else (
+        if exist "%HZ_TIF%" (
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+        ) else (
+            set "F10B_RES=[    ERRORE    ] NET  >> HaGeZi TIF - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+call :LOGSTEP "NET" "!F10B_RES!"
 
 
 :: FASE 11 - Azione
@@ -646,6 +700,7 @@ call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_PRO_PLUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_TIF%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
@@ -787,6 +842,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
 if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
+if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
 
 :: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
@@ -893,7 +949,44 @@ if not errorlevel 1 (
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 
-:: Riavvio silenzioso del servizio SOLO se qualcosa è cambiato
+:: HaGeZi TIF (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
+if not errorlevel 1 (
+    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
+        set "SKIP_TIF=0"
+        if exist "%HZ_TIF%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            )
+        )
+        if "!SKIP_TIF!"=="0" (
+            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+        ) else (
+            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+    )
+) else (
+    if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -921,6 +1014,7 @@ echo ------------------------------------------------------------------
 if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
+if exist "%HZ_TIF_BAK%" copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
