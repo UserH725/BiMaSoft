@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.65"
+set "LOCAL_VER=28.70"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -279,14 +279,26 @@ set "LOG_FILE=%UB_DIR%\logfile.log"
 set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
 set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
-set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak"
+set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak1"
+set "HZ_PRO_PLUS_BAK2=%HZ_PRO_PLUS%.bak2"
+set "HZ_PRO_PLUS_BAK3=%HZ_PRO_PLUS%.bak3"
 set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
-set "HZ_TIF_BAK=%HZ_TIF%.bak"
+set "HZ_TIF_BAK=%HZ_TIF%.bak1"
+set "HZ_TIF_BAK2=%HZ_TIF%.bak2"
+set "HZ_TIF_BAK3=%HZ_TIF%.bak3"
 set "SH_DROP=%UB_DIR%\spamhaus-drop.conf"
-set "SH_DROP_BAK=%SH_DROP%.bak"
-set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
-set "RZONE_BAK=%UB_DIR%\root.zone.bak"
-set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
+set "SH_DROP_BAK=%SH_DROP%.bak1"
+set "SH_DROP_BAK2=%SH_DROP%.bak2"
+set "SH_DROP_BAK3=%SH_DROP%.bak3"
+set "NCACHE_BAK=%UB_DIR%\named.cache.bak1"
+set "NCACHE_BAK2=%UB_DIR%\named.cache.bak2"
+set "NCACHE_BAK3=%UB_DIR%\named.cache.bak3"
+set "RZONE_BAK=%UB_DIR%\root.zone.bak1"
+set "RZONE_BAK2=%UB_DIR%\root.zone.bak2"
+set "RZONE_BAK3=%UB_DIR%\root.zone.bak3"
+set "ROOTKEY_BAK=%UB_DIR%\root.key.bak1"
+set "ROOTKEY_BAK2=%UB_DIR%\root.key.bak2"
+set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
 
 set "CURL_CA=--ipv4 --location --max-time 60"
 title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
@@ -308,6 +320,14 @@ set "F10D_ACT="
 set "F10D_RES="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
+
+:: --- MIGRAZIONE ONE-SHOT: vecchi .bak singoli -> nuovo schema .bak1 ---
+if exist "%HZ_PRO_PLUS%.bak" if not exist "%HZ_PRO_PLUS_BAK%" ren "%HZ_PRO_PLUS%.bak" "hagezi-pro-plus.conf.bak1" >nul 2>&1
+if exist "%HZ_TIF%.bak" if not exist "%HZ_TIF_BAK%" ren "%HZ_TIF%.bak" "hagezi-tif.conf.bak1" >nul 2>&1
+if exist "%SH_DROP%.bak" if not exist "%SH_DROP_BAK%" ren "%SH_DROP%.bak" "spamhaus-drop.conf.bak1" >nul 2>&1
+if exist "%UB_DIR%\named.cache.bak" if not exist "%NCACHE_BAK%" ren "%UB_DIR%\named.cache.bak" "named.cache.bak1" >nul 2>&1
+if exist "%UB_DIR%\root.zone.bak" if not exist "%RZONE_BAK%" ren "%UB_DIR%\root.zone.bak" "root.zone.bak1" >nul 2>&1
+if exist "%UB_DIR%\root.key.bak" if not exist "%ROOTKEY_BAK%" ren "%UB_DIR%\root.key.bak" "root.key.bak1" >nul 2>&1
 set "NOW_H=%time:~0,2%"
 set "NOW_M=%time:~3,2%"
 set /a "NOW_MINS=NOW_H*60+NOW_M"
@@ -453,11 +473,17 @@ call :LOGSTEP "TIME" "w32time sincronizzato - ora: %NOW_TIME%"
 set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
 if exist "%LOG_FILE%" (for %%I in ("%LOG_FILE%") do if %%~zI gtr 10485760 type nul > "%LOG_FILE%")
+if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
+if exist "%UB_DIR%\root.zone" call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
 if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
+if exist "%UB_DIR%\root.key" call :ROTATE_BAK "%ROOTKEY_BAK%" "%ROOTKEY_BAK2%" "%ROOTKEY_BAK3%"
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
+if exist "%HZ_PRO_PLUS%" call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
 if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
+if exist "%HZ_TIF%" call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
 if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF_BAK%" >nul 2>&1
+if exist "%SH_DROP%" call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%" copy /y "%SH_DROP%" "%SH_DROP_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
@@ -891,11 +917,16 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
     )
 )
 
-:: Backup prima di sovrascrivere
+:: Backup prima di sovrascrivere (con rotazione a 3 versioni)
+if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
+if exist "%UB_DIR%\root.zone"   call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
+if exist "%HZ_PRO_PLUS%"        call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
 if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
+if exist "%HZ_TIF%"             call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
 if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
+if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
 
 :: named.cache (refresh biorario)
@@ -1321,6 +1352,16 @@ for /L %%K in (1,1,%PB_FILL%)  do set "PB_ARROW=!PB_ARROW!>"
 for /L %%K in (1,1,%PB_EMPTY%) do set "PB_ARROW=!PB_ARROW!."
 
 set "UI_ARROW=!PB_ARROW!"
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: ruota i backup a 3 versioni (bak1=piu' recente, bak3=piu' vecchio)
+:: Uso: call :ROTATE_BAK <bak1> <bak2> <bak3>
+:: Da chiamare SUBITO PRIMA di scrivere il nuovo .bak1.
+:: ==================================================================
+:ROTATE_BAK
+if exist "%~2" copy /y "%~2" "%~3" >nul 2>&1
+if exist "%~1" copy /y "%~1" "%~2" >nul 2>&1
 exit /b
 
 :: ==================================================================
