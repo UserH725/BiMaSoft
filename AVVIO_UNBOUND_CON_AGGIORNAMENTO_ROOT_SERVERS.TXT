@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=29.00"
+set "LOCAL_VER=30.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -288,6 +288,10 @@ set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
 set "HZ_TIF_BAK=%HZ_TIF%.bak1"
 set "HZ_TIF_BAK2=%HZ_TIF%.bak2"
 set "HZ_TIF_BAK3=%HZ_TIF%.bak3"
+set "HZ_TIF_IPS=%UB_DIR%\hagezi-tif-ips.conf"
+set "HZ_TIF_IPS_BAK=%HZ_TIF_IPS%.bak1"
+set "HZ_TIF_IPS_BAK2=%HZ_TIF_IPS%.bak2"
+set "HZ_TIF_IPS_BAK3=%HZ_TIF_IPS%.bak3"
 set "SH_DROP=%UB_DIR%\spamhaus-drop.conf"
 set "SH_DROP_BAK=%SH_DROP%.bak1"
 set "SH_DROP_BAK2=%SH_DROP%.bak2"
@@ -485,6 +489,8 @@ if exist "%HZ_PRO_PLUS%" call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2
 if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
 if exist "%HZ_TIF%" call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
 if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF_BAK%" >nul 2>&1
+if exist "%HZ_TIF_IPS%" call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
+if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" >nul 2>&1
 if exist "%SH_DROP%" call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%" copy /y "%SH_DROP%" "%SH_DROP_BAK%" >nul 2>&1
 
@@ -714,9 +720,60 @@ if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10B_RES!"
 
 :: ================================================================
-:: F10C — SPAMHAUS DROP (Hijacked Netblocks / Botnet C2 - IP based)
+:: F10C — HAGEZI TIF-IPS (IP companion: blocca connessioni dirette
+:: a IP malware/phishing/C2 che bypassano del tutto il DNS)
 :: ================================================================
-set "F10C_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
+set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
+call :UPDATE_UI 88
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
+if errorlevel 1 (
+    if exist "%HZ_TIF_IPS_BAK%" (
+        copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        set "F10C_RES=[     WARN     ] NET  >> HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
+    ) else if exist "%HZ_TIF_IPS%" (
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        set "F10C_RES=[     WARN     ] NET  >> HaGeZi TIF-IPS: download fallito, uso esistente: !DT_TIFIPS!"
+    ) else (
+        set "F10C_RES=[ERR ] NET  >> HaGeZi TIF-IPS non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_TIFIPS=0"
+        if exist "%HZ_TIF_IPS%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF_IPS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF_IPS%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIFIPS=1"
+            )
+        )
+        if "!SKIP_TIFIPS!"=="0" (
+            move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            set "F10C_RES=[      OK      ] NET  >> HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!"
+        ) else (
+            del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            set "F10C_RES=[     SKIP     ] NET  >> HaGeZi TIF-IPS - RPZ-IP gia' aggiornato: !DT_TIFIPS!"
+        )
+    ) else (
+        if exist "%HZ_TIF_IPS%" (
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            set "F10C_RES=[     SKIP     ] NET  >> HaGeZi TIF-IPS - file scaricato piccolo, uso esistente: !DT_TIFIPS!"
+        ) else (
+            set "F10C_RES=[    ERRORE    ] NET  >> HaGeZi TIF-IPS - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+call :LOGSTEP "NET" "!F10C_RES!"
+
+:: ================================================================
+:: F10D — SPAMHAUS DROP (Hijacked Netblocks / Botnet C2 - IP based)
+:: ================================================================
+set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
 curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop.txt >nul 2>&1
@@ -724,12 +781,12 @@ if errorlevel 1 (
     if exist "%SH_DROP_BAK%" (
         copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
         call :FILE_DATE "%SH_DROP%" DT_DROP
-        set "F10C_RES=[     WARN     ] NET  >> Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
+        set "F10D_RES=[     WARN     ] NET  >> Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
     ) else if exist "%SH_DROP%" (
         call :FILE_DATE "%SH_DROP%" DT_DROP
-        set "F10C_RES=[     WARN     ] NET  >> Spamhaus DROP: download fallito, uso esistente: !DT_DROP!"
+        set "F10D_RES=[     WARN     ] NET  >> Spamhaus DROP: download fallito, uso esistente: !DT_DROP!"
     ) else (
-        set "F10C_RES=[ERR ] NET  >> Spamhaus DROP non scaricabile e nessun backup disponibile!"
+        set "F10D_RES=[ERR ] NET  >> Spamhaus DROP non scaricabile e nessun backup disponibile!"
     )
 ) else (
     for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
@@ -743,24 +800,24 @@ if errorlevel 1 (
         if "!SKIP_DROP!"=="0" (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10C_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
+            set "F10D_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
         ) else (
             del /f /q "%SH_DROP%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10C_RES=[     SKIP     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+            set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
         )
     ) else (
         if exist "%SH_DROP%" (
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10C_RES=[     SKIP     ] NET  >> Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
+            set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
         ) else (
-            set "F10C_RES=[    ERRORE    ] NET  >> Spamhaus DROP - file scaricato troppo piccolo e nessun backup!"
+            set "F10D_RES=[    ERRORE    ] NET  >> Spamhaus DROP - file scaricato troppo piccolo e nessun backup!"
         )
     )
 )
 if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
-call :LOGSTEP "NET" "!F10C_RES!"
+call :LOGSTEP "NET" "!F10D_RES!"
 
 
 :: FASE 11 - Azione
@@ -781,6 +838,7 @@ icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Admini
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_PRO_PLUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_TIF%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_TIF_IPS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%SH_DROP%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
@@ -930,6 +988,8 @@ if exist "%HZ_PRO_PLUS%"        call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PL
 if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
 if exist "%HZ_TIF%"             call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
 if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
+if exist "%HZ_TIF_IPS%"         call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
+if exist "%HZ_TIF_IPS%"         copy /y "%HZ_TIF_IPS%"         "%HZ_TIF_IPS_BAK%"   >nul 2>&1
 if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
 
@@ -1077,6 +1137,45 @@ if not errorlevel 1 (
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 
+:: HaGeZi TIF-IPS (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
+if not errorlevel 1 (
+    for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_TIFIPS=0"
+        if exist "%HZ_TIF_IPS%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF_IPS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF_IPS%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIFIPS=1"
+            )
+        )
+        if "!SKIP_TIFIPS!"=="0" (
+            move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!"
+        ) else (
+            del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - RPZ-IP gia' aggiornato: !DT_TIFIPS!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - file scaricato piccolo, uso esistente: !DT_TIFIPS!"
+    )
+) else (
+    if exist "%HZ_TIF_IPS_BAK%" (
+        copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF-IPS non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+
 :: Spamhaus DROP (refresh biorario)
 :: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
 :: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
@@ -1144,6 +1243,7 @@ if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
 if exist "%HZ_TIF_BAK%" copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul
+if exist "%HZ_TIF_IPS_BAK%" copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul
 if exist "%SH_DROP_BAK%" copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
