@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.62"
+set "LOCAL_VER=28.63"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -282,6 +282,8 @@ set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
 set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak"
 set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
 set "HZ_TIF_BAK=%HZ_TIF%.bak"
+set "SH_DROP=%UB_DIR%\spamhaus-drop.conf"
+set "SH_DROP_BAK=%SH_DROP%.bak"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak"
 set "RZONE_BAK=%UB_DIR%\root.zone.bak"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak"
@@ -456,6 +458,7 @@ if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>
 if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
 if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
 if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF_BAK%" >nul 2>&1
+if exist "%SH_DROP%" copy /y "%SH_DROP%" "%SH_DROP_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -682,6 +685,55 @@ if errorlevel 1 (
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10B_RES!"
 
+:: ================================================================
+:: F10C — SPAMHAUS DROP (Hijacked Netblocks / Botnet C2 - IP based)
+:: ================================================================
+set "F10C_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
+call :UPDATE_UI 89
+
+curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop.txt >nul 2>&1
+if errorlevel 1 (
+    if exist "%SH_DROP_BAK%" (
+        copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        set "F10C_RES=[     WARN     ] NET  >> Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
+    ) else if exist "%SH_DROP%" (
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        set "F10C_RES=[     WARN     ] NET  >> Spamhaus DROP: download fallito, uso esistente: !DT_DROP!"
+    ) else (
+        set "F10C_RES=[ERR ] NET  >> Spamhaus DROP non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
+        call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
+        set "SKIP_DROP=0"
+        if exist "%SH_DROP%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
+            )
+        )
+        if "!SKIP_DROP!"=="0" (
+            move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            set "F10C_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
+        ) else (
+            del /f /q "%SH_DROP%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            set "F10C_RES=[     SKIP     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+        )
+    ) else (
+        if exist "%SH_DROP%" (
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            set "F10C_RES=[     SKIP     ] NET  >> Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
+        ) else (
+            set "F10C_RES=[    ERRORE    ] NET  >> Spamhaus DROP - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
+call :LOGSTEP "NET" "!F10C_RES!"
+
 
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -701,6 +753,7 @@ icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Admini
 icacls "%UB_DIR%\root.zone" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_PRO_PLUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_TIF%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%SH_DROP%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 if exist "%LOG_FILE%" icacls "%LOG_FILE%" /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
@@ -843,6 +896,7 @@ if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >n
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
 if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
 if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
+if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
 
 :: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
@@ -987,6 +1041,46 @@ if not errorlevel 1 (
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+
+:: Spamhaus DROP (refresh biorario)
+:: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
+:: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
+curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop.txt >nul 2>&1
+if not errorlevel 1 (
+    for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
+        call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
+        set "SKIP_DROP=0"
+        if exist "%SH_DROP%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
+            )
+        )
+        if "!SKIP_DROP!"=="0" (
+            move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
+        ) else (
+            del /f /q "%SH_DROP%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+        )
+    ) else (
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
+    )
+) else (
+    if exist "%SH_DROP_BAK%" (
+        copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROP non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
+
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -1015,6 +1109,7 @@ if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul
 if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul
 if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul
 if exist "%HZ_TIF_BAK%" copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul
+if exist "%SH_DROP_BAK%" copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
@@ -1241,6 +1336,30 @@ if exist "%FD_TMP%" (
     set /p %~2=<"%FD_TMP%"
     del /f /q "%FD_TMP%" >nul 2>&1
 )
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: converte Spamhaus DROP (CIDR IPv4) in zona RPZ-IP
+:: per Unbound, equivalente al contrib/drop2rpz ufficiale (Perl->PS1).
+:: Uso: call :DROP_TO_RPZ <file_drop.txt_in> <file_rpz_out>
+:: Formato per record: <bit-len>.<o4>.<o3>.<o2>.<o1>.rpz-ip CNAME .
+:: ==================================================================
+:DROP_TO_RPZ
+set "DR_IN=%~1"
+set "DR_OUT=%~2"
+powershell -NoProfile -Command ^
+  "$origin = 'spamhaus-drop.rpz'; " ^
+  "$serial = Get-Date -Format 'yyyyMMddHH'; " ^
+  "$lines = New-Object System.Collections.Generic.List[string]; " ^
+  "$lines.Add(\"$origin. SOA localhost. root.localhost. $serial 43200 7200 2419200 3600\"); " ^
+  "$lines.Add(\"$origin. NS localhost.\"); " ^
+  "Get-Content -LiteralPath '%DR_IN%' | ForEach-Object { " ^
+  "    if ($_ -match '^\s*([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/([0-9]+)') { " ^
+  "        $o1=$matches[1]; $o2=$matches[2]; $o3=$matches[3]; $o4=$matches[4]; $m=$matches[5]; " ^
+  "        $lines.Add(\"$m.$o4.$o3.$o2.$o1.rpz-ip.$origin. CNAME .\"); " ^
+  "    } " ^
+  "}; " ^
+  "[System.IO.File]::WriteAllLines('%DR_OUT%', $lines)" >nul 2>&1
 exit /b
 
 :: ==================================================================
