@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=28.70"
+set "LOCAL_VER=29.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -111,6 +111,7 @@ if "!UPDATE_NEEDED!"=="1" (
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
         if exist "!BAK_FILE!" (
             echo   [OK] Backup creato: !BAK_FILE!
+            call :PRUNE_BKP "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
         ) else (
             echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
         )
@@ -194,6 +195,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
             copy /y "!SERVICE_CONF!" "!SVC_BAK!"
             if exist "!SVC_BAK!" (
                 echo   [OK] Backup creato: !SVC_BAK!
+                call :PRUNE_BKP "%UB_DIR%" "service_v*.conf.BKP"
             ) else (
                 echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
             )
@@ -853,6 +855,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
         )
         set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
+        call :PRUNE_BKP "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
         
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
@@ -894,6 +897,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
         call :LOGSTEP "REFRESH" "ATTENZIONE, rilevato aggiornamento del file service.conf: v!LOCAL_SVC_VER! -> v!SVC_VER!"
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
+        call :PRUNE_BKP "%UB_DIR%" "service_v*.conf.BKP"
         
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
@@ -1362,6 +1366,23 @@ exit /b
 :ROTATE_BAK
 if exist "%~2" copy /y "%~2" "%~3" >nul 2>&1
 if exist "%~1" copy /y "%~1" "%~2" >nul 2>&1
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: mantiene solo i 3 file .BKP piu' recenti (per data di
+:: modifica) corrispondenti al pattern indicato, elimina i piu' vecchi.
+:: Usata dopo ogni self-update di BAT/service.conf (il nome include
+:: il numero di versione, quindi qui si pota per data, non per shift).
+:: Uso: call :PRUNE_BKP "<cartella>" "<pattern_glob>"
+:: Esempio: call :PRUNE_BKP "%UB_DIR%" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+:: ==================================================================
+:PRUNE_BKP
+set "PB_DIR=%~1"
+set "PB_PATTERN=%~2"
+set "PB_KEEP=3"
+for /f "skip=%PB_KEEP% delims=" %%F in ('dir /b /o-d "%PB_DIR%\%PB_PATTERN%" 2^>nul') do (
+    del /f /q "%PB_DIR%\%%F" >nul 2>&1
+)
 exit /b
 
 :: ==================================================================
