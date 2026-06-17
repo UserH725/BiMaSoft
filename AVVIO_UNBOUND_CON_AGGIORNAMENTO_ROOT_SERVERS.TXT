@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=31.00"
+set "LOCAL_VER=32.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -292,10 +292,14 @@ set "HZ_TIF_IPS=%UB_DIR%\hagezi-tif-ips.conf"
 set "HZ_TIF_IPS_BAK=%HZ_TIF_IPS%.bak1"
 set "HZ_TIF_IPS_BAK2=%HZ_TIF_IPS%.bak2"
 set "HZ_TIF_IPS_BAK3=%HZ_TIF_IPS%.bak3"
-set "SH_DROP=%UB_DIR%\spamhaus-drop.conf"
+set "SH_DROP=%UB_DIR%\spamhaus-drop-v4.conf"
 set "SH_DROP_BAK=%SH_DROP%.bak1"
 set "SH_DROP_BAK2=%SH_DROP%.bak2"
 set "SH_DROP_BAK3=%SH_DROP%.bak3"
+set "SH_DROP6=%UB_DIR%\spamhaus-drop-v6.conf"
+set "SH_DROP6_BAK=%SH_DROP6%.bak1"
+set "SH_DROP6_BAK2=%SH_DROP6%.bak2"
+set "SH_DROP6_BAK3=%SH_DROP6%.bak3"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak1"
 set "NCACHE_BAK2=%UB_DIR%\named.cache.bak2"
 set "NCACHE_BAK3=%UB_DIR%\named.cache.bak3"
@@ -330,7 +334,6 @@ set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 :: --- MIGRAZIONE ONE-SHOT: vecchi .bak singoli -> nuovo schema .bak1 ---
 if exist "%HZ_PRO_PLUS%.bak" if not exist "%HZ_PRO_PLUS_BAK%" ren "%HZ_PRO_PLUS%.bak" "hagezi-pro-plus.conf.bak1" >nul 2>&1
 if exist "%HZ_TIF%.bak" if not exist "%HZ_TIF_BAK%" ren "%HZ_TIF%.bak" "hagezi-tif.conf.bak1" >nul 2>&1
-if exist "%SH_DROP%.bak" if not exist "%SH_DROP_BAK%" ren "%SH_DROP%.bak" "spamhaus-drop.conf.bak1" >nul 2>&1
 if exist "%UB_DIR%\named.cache.bak" if not exist "%NCACHE_BAK%" ren "%UB_DIR%\named.cache.bak" "named.cache.bak1" >nul 2>&1
 if exist "%UB_DIR%\root.zone.bak" if not exist "%RZONE_BAK%" ren "%UB_DIR%\root.zone.bak" "root.zone.bak1" >nul 2>&1
 if exist "%UB_DIR%\root.key.bak" if not exist "%ROOTKEY_BAK%" ren "%UB_DIR%\root.key.bak" "root.key.bak1" >nul 2>&1
@@ -823,6 +826,55 @@ if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10D_RES!"
 
+:: ================================================================
+:: F10E — SPAMHAUS DROPv6 (Hijacked Netblocks / Botnet C2 - IPv6 based)
+:: ================================================================
+set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
+call :UPDATE_UI 89
+
+curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
+if errorlevel 1 (
+    if exist "%SH_DROP6_BAK%" (
+        copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        set "F10E_RES=[     WARN     ] NET  >> Spamhaus DROPv6 non scaricato, ripristinato dal backup: !DT_DROP6!"
+    ) else if exist "%SH_DROP6%" (
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        set "F10E_RES=[     WARN     ] NET  >> Spamhaus DROPv6: download fallito, uso esistente: !DT_DROP6!"
+    ) else (
+        set "F10E_RES=[ERR ] NET  >> Spamhaus DROPv6 non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
+        call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
+        set "SKIP_DROP6=0"
+        if exist "%SH_DROP6%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
+            )
+        )
+        if "!SKIP_DROP6!"=="0" (
+            move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            set "F10E_RES=[      OK      ] NET  >> Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!"
+        ) else (
+            del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+        )
+    ) else (
+        if exist "%SH_DROP6%" (
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6 - file scaricato piccolo, uso esistente: !DT_DROP6!"
+        ) else (
+            set "F10E_RES=[    ERRORE    ] NET  >> Spamhaus DROPv6 - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+call :LOGSTEP "NET" "!F10E_RES!"
+
 
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -1219,6 +1271,43 @@ if not errorlevel 1 (
 if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 
+:: Spamhaus DROPv6 (refresh biorario)
+curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
+if not errorlevel 1 (
+    for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
+        call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
+        set "SKIP_DROP6=0"
+        if exist "%SH_DROP6%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
+            )
+        )
+        if "!SKIP_DROP6!"=="0" (
+            move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!"
+        ) else (
+            del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+        )
+    ) else (
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - file scaricato piccolo, uso esistente: !DT_DROP6!"
+    )
+) else (
+    if exist "%SH_DROP6_BAK%" (
+        copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 non scaricato, ripristinato dal backup: !DT_DROP6!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROPv6 non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -1505,27 +1594,78 @@ if exist "%FD_TMP%" (
 exit /b
 
 :: ==================================================================
-:: SUBROUTINE: converte Spamhaus DROP (CIDR IPv4) in zona RPZ-IP
-:: per Unbound, equivalente al contrib/drop2rpz ufficiale (Perl->PS1).
-:: Uso: call :DROP_TO_RPZ <file_drop.txt_in> <file_rpz_out>
+:: SUBROUTINE: converte Spamhaus DROP v4 (JSON Lines, campo "cidr")
+:: in zona RPZ-IP per Unbound, equivalente al contrib/drop2rpz ufficiale
+:: aggiornato al nuovo formato JSON pubblicato da Spamhaus.
+:: Uso: call :DROP_TO_RPZ <file_drop_v4.json_in> <file_rpz_out>
 :: Formato per record: <bit-len>.<o4>.<o3>.<o2>.<o1>.rpz-ip CNAME .
 :: ==================================================================
 :DROP_TO_RPZ
 set "DR_IN=%~1"
 set "DR_OUT=%~2"
 powershell -NoProfile -Command ^
-  "$origin = 'spamhaus-drop.rpz'; " ^
+  "$origin = 'spamhaus-drop-v4.rpz'; " ^
   "$serial = Get-Date -Format 'yyyyMMddHH'; " ^
   "$lines = New-Object System.Collections.Generic.List[string]; " ^
   "$lines.Add(\"$origin. SOA localhost. root.localhost. $serial 43200 7200 2419200 3600\"); " ^
   "$lines.Add(\"$origin. NS localhost.\"); " ^
   "Get-Content -LiteralPath '%DR_IN%' | ForEach-Object { " ^
-  "    if ($_ -match '^\s*([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/([0-9]+)') { " ^
+  "    if ($_ -match '\"cidr\"\s*:\s*\"([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/([0-9]+)\"') { " ^
   "        $o1=$matches[1]; $o2=$matches[2]; $o3=$matches[3]; $o4=$matches[4]; $m=$matches[5]; " ^
   "        $lines.Add(\"$m.$o4.$o3.$o2.$o1.rpz-ip.$origin. CNAME .\"); " ^
   "    } " ^
   "}; " ^
   "[System.IO.File]::WriteAllLines('%DR_OUT%', $lines)" >nul 2>&1
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: converte Spamhaus DROPv6 (JSON Lines, campo "cidr")
+:: in zona RPZ-IP per Unbound. Conversione bit-esatta: nessun
+:: arrotondamento del prefisso, compressione "zz" applicata solo
+:: ai gruppi interi completamente fuori dal prefisso (mai a un
+:: gruppo parziale, per non perdere precisione sul bit-len).
+:: Uso: call :DROP_TO_RPZ_V6 <file_drop_v6.json_in> <file_rpz_out>
+:: Formato per record: <bit-len>.<gruppi-invertiti[.zz]>.rpz-ip CNAME .
+:: ==================================================================
+:DROP_TO_RPZ_V6
+set "DR6_IN=%~1"
+set "DR6_OUT=%~2"
+powershell -NoProfile -Command ^
+  "$origin = 'spamhaus-drop-v6.rpz'; " ^
+  "$serial = Get-Date -Format 'yyyyMMddHH'; " ^
+  "$lines = New-Object System.Collections.Generic.List[string]; " ^
+  "$lines.Add(\"$origin. SOA localhost. root.localhost. $serial 43200 7200 2419200 3600\"); " ^
+  "$lines.Add(\"$origin. NS localhost.\"); " ^
+  "Get-Content -LiteralPath '%DR6_IN%' | ForEach-Object { " ^
+  "    if ($_ -match '\"cidr\"\s*:\s*\"([0-9a-fA-F:]+)/([0-9]+)\"') { " ^
+  "        $addrStr = $matches[1]; $bitLen = [int]$matches[2]; " ^
+  "        try { " ^
+  "            $ip = [System.Net.IPAddress]::Parse($addrStr); " ^
+  "            $bytes = $ip.GetAddressBytes(); " ^
+  "            $groupsOrig = New-Object string[] 8; " ^
+  "            for ($g = 0; $g -lt 8; $g++) { " ^
+  "                $groupsOrig[$g] = ('{0:x2}{1:x2}' -f $bytes[$g*2], $bytes[$g*2+1]); " ^
+  "            }; " ^
+  "            $fullGroupsCovered = [int][Math]::Ceiling($bitLen / 16.0); " ^
+  "            $out = New-Object System.Collections.Generic.List[string]; " ^
+  "            $compressed = $false; " ^
+  "            for ($start = $fullGroupsCovered; $start -lt 8 -and -not $compressed; $start++) { " ^
+  "                $allZeroToEnd = $true; " ^
+  "                for ($chk = $start; $chk -lt 8; $chk++) { if ($groupsOrig[$chk] -ne '0000') { $allZeroToEnd = $false } }; " ^
+  "                if ($allZeroToEnd) { " ^
+  "                    for ($i = 0; $i -lt $start; $i++) { $out.Add($groupsOrig[$i]) }; " ^
+  "                    $out.Add('zz'); " ^
+  "                    $compressed = $true; " ^
+  "                } " ^
+  "            }; " ^
+  "            if (-not $compressed) { for ($i = 0; $i -lt 8; $i++) { $out.Add($groupsOrig[$i]) } }; " ^
+  "            $rev = $out.ToArray(); [array]::Reverse($rev); " ^
+  "            $label = ($rev -join '.'); " ^
+  "            $lines.Add(\"$bitLen.$label.rpz-ip.$origin. CNAME .\"); " ^
+  "        } catch { } " ^
+  "    } " ^
+  "}; " ^
+  "[System.IO.File]::WriteAllLines('%DR6_OUT%', $lines)" >nul 2>&1
 exit /b
 
 :: ==================================================================
