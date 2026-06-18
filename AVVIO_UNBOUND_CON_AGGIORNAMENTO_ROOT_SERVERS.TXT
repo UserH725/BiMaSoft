@@ -1048,6 +1048,9 @@ if exist "%HZ_TIF_IPS%"         call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS
 if exist "%HZ_TIF_IPS%"         copy /y "%HZ_TIF_IPS%"         "%HZ_TIF_IPS_BAK%"   >nul 2>&1
 if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
+if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
+if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
+
 
 :: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
