@@ -783,7 +783,7 @@ call :LOGSTEP "NET" "!F10C_RES!"
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
-curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop.txt >nul 2>&1
+curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
 if errorlevel 1 (
     if exist "%SH_DROP_BAK%" (
         copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
@@ -1235,7 +1235,7 @@ if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 :: Spamhaus DROP (refresh biorario)
 :: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
 :: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
-curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop.txt >nul 2>&1
+curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
         call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
