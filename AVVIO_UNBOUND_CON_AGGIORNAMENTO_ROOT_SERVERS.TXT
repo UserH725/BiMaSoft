@@ -328,6 +328,8 @@ set "F10C_ACT="
 set "F10C_RES="
 set "F10D_ACT="
 set "F10D_RES="
+set "F10E_ACT="
+set "F10E_RES="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 
