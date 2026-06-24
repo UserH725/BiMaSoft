@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=70.00"
+set "LOCAL_VER=75.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -361,6 +361,7 @@ if "%~1"=="--scheduled" (
 :: Lettura parametri cache dal service.conf (una volta sola all'avvio)
 set "CONF_MSG_CACHE=N/A"
 set "CONF_RRSET_CACHE=N/A"
+set "CONF_DNS_NAMES=N/A"
 if exist "%UB_DIR%\service.conf" (
     for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"msg-cache-size:" "%UB_DIR%\service.conf" ^| findstr /v /i "slabs"') do (
         if "!CONF_MSG_CACHE!"=="N/A" set "CONF_MSG_CACHE=%%V"
@@ -368,6 +369,27 @@ if exist "%UB_DIR%\service.conf" (
     for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"rrset-cache-size:" "%UB_DIR%\service.conf" ^| findstr /v /i "slabs"') do (
         if "!CONF_RRSET_CACHE!"=="N/A" set "CONF_RRSET_CACHE=%%V"
     )
+    :: Legge i nomi host DoT dai forwarder (parte dopo il #) e li concatena con " · "
+    set "CONF_DNS_NAMES="
+    for /f "tokens=2 delims=#" %%N in ('findstr /i /c:"forward-addr:" "%UB_DIR%\service.conf"') do (
+        set "DNS_HOST=%%N"
+        set "DNS_HOST=!DNS_HOST: =!"
+        if not "!DNS_HOST!"=="" (
+            set "ALREADY=0"
+            if not "!CONF_DNS_NAMES!"=="" (
+                echo !CONF_DNS_NAMES! | findstr /i /c:"!DNS_HOST!" >nul 2>&1
+                if not errorlevel 1 set "ALREADY=1"
+            )
+            if "!ALREADY!"=="0" (
+                if "!CONF_DNS_NAMES!"=="" (
+                    set "CONF_DNS_NAMES=!DNS_HOST!"
+                ) else (
+                    set "CONF_DNS_NAMES=!CONF_DNS_NAMES! · !DNS_HOST!"
+                )
+            )
+        )
+    )
+    if "!CONF_DNS_NAMES!"=="" set "CONF_DNS_NAMES=N/A"
 )
 
 :: Pulisce lo schermo dai log di backup/aggiornamento (self-update BAT + service.conf)
@@ -1451,6 +1473,7 @@ echo ===========================================================================
 echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
 echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
 echo       Cache risposte complete msg-cache-size.: !CONF_MSG_CACHE!                Cache singoli record DNS rrset-cache-size.: !CONF_RRSET_CACHE!
+echo       DNS forwarder DoT attivi (upstream)....: !CONF_DNS_NAMES!
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
