@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=40.00"
+set "LOCAL_VER=60.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -631,6 +631,7 @@ call :LOGSTEP "NET" "!F9B_RES!"
 :: ================================================================
 set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
+:: OTTIMIZZATO LITE: risoluzione jsDelivr unica per F10+F10B+F10C (evita 2 avvii PowerShell extra)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -683,9 +684,6 @@ call :LOGSTEP "NET" "!F10_RES!"
 :: ================================================================
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (Threat Intelligence) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
 if errorlevel 1 (
@@ -734,9 +732,6 @@ call :LOGSTEP "NET" "!F10B_RES!"
 :: ================================================================
 set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
 call :UPDATE_UI 88
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
 if errorlevel 1 (
@@ -1121,6 +1116,7 @@ if exist "%UB_DIR%\root.zone" (
 )
 
 :: HaGeZi Pro Plus (refresh biorario)
+:: OTTIMIZZATO LITE: risoluzione jsDelivr unica per Pro Plus + TIF + TIF-IPS (evita 2 avvii PowerShell extra)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -1159,11 +1155,7 @@ if not errorlevel 1 (
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 
-:: HaGeZi TIF (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
+:: HaGeZi TIF (refresh biorario) — riusa RES_JSDELIVR già risolta sopra
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
@@ -1198,11 +1190,7 @@ if not errorlevel 1 (
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 
-:: HaGeZi TIF-IPS (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
+:: HaGeZi TIF-IPS (refresh biorario) — riusa RES_JSDELIVR già risolta sopra
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
@@ -1361,7 +1349,7 @@ pause
 goto :FINALIZZAZIONE
 
 :FINALIZZAZIONE
-powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]2147483648 }; [System.GC]::Collect()" >nul 2>&1
+powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]134217728; $p.MaxWorkingSet = [IntPtr]536870912 }; [System.GC]::Collect()" >nul 2>&1
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
