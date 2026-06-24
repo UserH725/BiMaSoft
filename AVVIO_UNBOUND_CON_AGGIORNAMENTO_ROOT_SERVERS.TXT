@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=60.00"
+set "LOCAL_VER=70.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -310,7 +310,8 @@ set "ROOTKEY_BAK=%UB_DIR%\root.key.bak1"
 set "ROOTKEY_BAK2=%UB_DIR%\root.key.bak2"
 set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
 
-set "CURL_CA=--ipv4 --location --max-time 60"
+:: OTTIMIZZATO LITE: su fibra 20s è più che sufficiente; connect-timeout 8s evita attese inutili su server irraggiungibili
+set "CURL_CA=--ipv4 --location --max-time 20 --connect-timeout 8"
 title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
 :: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
@@ -466,7 +467,16 @@ call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
 :: FASE 5 - Azione
 set "F5_ACT=[...in corso...] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
-powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
+:: OTTIMIZZATO LITE: Set-ProcessMitigation è pesante su CPU vecchia — eseguito solo al primo avvio
+:: Nei run successivi il flag-file lo salta, risparmiando 2-4 secondi su hardware lento
+set "MITIGATION_FLAG=%TEMP%\unbound_mitigation.flag"
+if not exist "%MITIGATION_FLAG%" (
+    powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
+    echo.> "%MITIGATION_FLAG%"
+) else (
+    :: NetBIOS va comunque disattivato ad ogni avvio (più leggero, niente CFG/ASLR)
+    powershell -Command "Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
+)
 
 :: --- DNS IPV6 SU ::1 (esclude WireGuard/WARP) ---
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
@@ -908,10 +918,16 @@ if %errorLevel% neq 0 goto :CONFIG_ERROR
 :: Ripristina 127.0.0.1 prima di avviare Unbound
 call :DNS_FALLBACK_OFF
 net start unbound >nul 2>&1
-:: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
-timeout /t 2 >nul
-sc query unbound | find "RUNNING" >nul 2>&1
-if %errorLevel% neq 0 goto :START_ERROR
+:: OTTIMIZZATO LITE: polling invece di timeout fisso — esce appena Unbound è RUNNING (max 3s)
+set "UB_READY=0"
+for /L %%W in (1,1,3) do (
+    if "!UB_READY!"=="0" (
+        timeout /t 1 /nobreak >nul
+        sc query unbound | find "RUNNING" >nul 2>&1
+        if not errorlevel 1 set "UB_READY=1"
+    )
+)
+if "!UB_READY!"=="0" goto :START_ERROR
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
