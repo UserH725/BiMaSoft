@@ -1,0 +1,26 @@
+name: Generate SHA256 Hashes
+
+on:
+  push:
+    paths:
+      - 'service.conf'
+      - 'AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT'
+
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Genera hash SHA256
+        run: |
+          sha256sum service.conf | awk '{print $1}' > service.conf.sha256
+          sha256sum AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT | awk '{print $1}' > AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.sha256
+
+      - name: Commit e push degli hash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add *.sha256
+          git diff --staged --quiet || git commit -m "chore: aggiorna hash SHA256 automaticamente"
+          git push
