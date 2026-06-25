@@ -1575,8 +1575,7 @@ echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by 
 echo ==============================================================================================================================
 echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
 echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
-echo       Cache risposte complete msg-cache-size.: !CONF_MSG_CACHE!                Cache singoli record DNS rrset-cache-size.: !CONF_RRSET_CACHE!
-echo  RAM: "!RAW_RAM!"
+echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - Cache msg-cache-size.: !CONF_MSG_CACHE! - Cache DNS rrset-cache-size.: !CONF_RRSET_CACHE!
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
