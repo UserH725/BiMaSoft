@@ -40,6 +40,12 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
+:: ==================================================================
+:: INIZIO SEQUENZA OPERATIVA DEL BUNKER
+:: ==================================================================
+:: Esegue l'Auto-Tuning Hardware prima di ogni altra operazione o controllo
+call :AUTO_TUNING_HARDWARE
+
 :: Abilita i codici di escape ANSI per i colori
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 :: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
@@ -49,7 +55,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=250.00"
+set "LOCAL_VER=300"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1820,4 +1826,74 @@ if "%RES_PREFIX%"=="[      OK      ]" (
 ) else if "%RES_PREFIX%"=="[     SKIP     ]" (
     set "RES_COLORED=%ESC%[36m%RES_STR%%ESC%[0m"
 )
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: RILEVAMENTO HARDWARE E AUTO-TUNING DINAMICO (FIX REGIONALE)
+:: Genera hardware.conf in base a RAM e CPU reali rilevate nel sistema
+:: ==================================================================
+:AUTO_TUNING_HARDWARE
+echo [+] Analisi hardware in corso per ottimizzazione Bunker...
+
+:: 1. Rilevamento Core Logici (CPU)
+set "THREADS=2"
+for /f %%A in ('powershell -NoProfile -Command "[Environment]::ProcessorCount"') do set "THREADS=%%A"
+if "!THREADS!"=="" set "THREADS=2"
+
+:: Calcolo degli Slabs (potenza di 2 più vicina o uguale ai thread, max 8 per stabilità)
+set "SLABS=2"
+if !THREADS! geq 4 set "SLABS=4"
+if !THREADS! geq 8 set "SLABS=8"
+
+:: 2. Rilevamento RAM Totale Reale (Estrazione pulita in formato stringa numerica pura)
+set "TOTAL_RAM_GB=8"
+for /f "delims=" %%A in ('powershell -NoProfile -Command "[int][math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)"') do (
+    set "RAW_RAM=%%A"
+    :: Rimuove via software qualsiasi carattere non numerico spurio (come +, spazi o trattini)
+    set "RAW_RAM=!RAW_RAM:+=!"
+    set "RAW_RAM=!RAW_RAM: =!"
+    if not "!RAW_RAM!"=="" set "TOTAL_RAM_GB=!RAW_RAM!"
+)
+
+:: Protezione di sicurezza: se il calcolo fallisce o restituisce 0, forziamo un valore safe
+if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=8"
+
+:: Profili di Cache basati sulla RAM reale rilevata
+:: Default (Profilo Light: <= 8GB RAM)
+set "MSG_CACHE=64m"
+set "RRSET_CACHE=128m"
+set "SO_RCVBUF=4m"
+set "SO_SNDBUF=4m"
+
+if !TOTAL_RAM_GB! geq 30 (
+    :: Profilo Ultra (>= 32GB RAM)
+    set "MSG_CACHE=512m"
+    set "RRSET_CACHE=1024m"
+    set "SO_RCVBUF=8m"
+    set "SO_SNDBUF=8m"
+) else if !TOTAL_RAM_GB! geq 14 (
+    :: Profilo Standard (16GB RAM)
+    set "MSG_CACHE=256m"
+    set "RRSET_CACHE=512m"
+    set "SO_RCVBUF=6m"
+    set "SO_SNDBUF=6m"
+)
+
+:: 3. Scrittura del file hardware.conf
+set "HW_CONF=C:\Program Files\Unbound\hardware.conf"
+
+echo # CONFIGURAZIONE GENERATA AUTOMATICAMENTE DAL BUNKER MANAGER > "%HW_CONF%"
+echo # Rilevati: !TOTAL_RAM_GB! GB RAM ^| !THREADS! CPU Thread >> "%HW_CONF%"
+echo server: >> "%HW_CONF%"
+echo     num-threads: !THREADS! >> "%HW_CONF%"
+echo     msg-cache-slabs: !SLABS! >> "%HW_CONF%"
+echo     rrset-cache-slabs: !SLABS! >> "%HW_CONF%"
+echo     infra-cache-slabs: !SLABS! >> "%HW_CONF%"
+echo     key-cache-slabs: !SLABS! >> "%HW_CONF%"
+echo     msg-cache-size: !MSG_CACHE! >> "%HW_CONF%"
+echo     rrset-cache-size: !RRSET_CACHE! >> "%HW_CONF%"
+echo     so-rcvbuf: !SO_RCVBUF! >> "%HW_CONF%"
+echo     so-sndbuf: !SO_SNDBUF! >> "%HW_CONF%"
+
+echo [     OK      ] Ottimizzazione completata: Thread=!THREADS!, Profilo RAM=!MSG_CACHE!/!RRSET_CACHE! (Rilevati !TOTAL_RAM_GB!GB)
 exit /b
