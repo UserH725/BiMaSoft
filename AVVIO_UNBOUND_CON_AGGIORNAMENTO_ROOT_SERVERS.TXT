@@ -55,7 +55,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=300.00"
+set "LOCAL_VER=300.01"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1571,11 +1571,12 @@ echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
 echo ==============================================================================================================================
-echo              SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO - Software by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
+echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
 echo ==============================================================================================================================
 echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
 echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
 echo       Cache risposte complete msg-cache-size.: !CONF_MSG_CACHE!                Cache singoli record DNS rrset-cache-size.: !CONF_RRSET_CACHE!
+echo  RAM: "!RAW_RAM!"
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
