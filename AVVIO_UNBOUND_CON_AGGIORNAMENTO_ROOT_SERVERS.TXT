@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=100.00"
+set "LOCAL_VER=150.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -330,6 +330,8 @@ set "F10D_ACT="
 set "F10D_RES="
 set "F10E_ACT="
 set "F10E_RES="
+set "F14_ACT="
+set "F14_RES="
 
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 
@@ -922,6 +924,73 @@ powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
+
+:: FASE 14 - Verifica DoT (test TCP porta 853 su upstream campione)
+set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream principali..."
+call :UPDATE_UI 100
+
+set "DOT_OK=0"
+set "DOT_FAIL=0"
+set "DOT_FAIL_LIST="
+set "DOT_TMP=%TEMP%\ub_dot_check.txt"
+if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
+
+:: Test campione: un IP per provider (IPv4 only, timeout 3s)
+powershell -NoProfile -Command ^
+  "$upstreams = @(" ^
+  "  @{ip='1.1.1.2';          nome='Cloudflare'}," ^
+  "  @{ip='9.9.9.9';          nome='Quad9'}," ^
+  "  @{ip='194.242.2.4';      nome='Mullvad'}," ^
+  "  @{ip='86.54.11.1';       nome='DNS4EU'}," ^
+  "  @{ip='188.34.161.210';   nome='Hagezi-Root'}," ^
+  "  @{ip='159.69.155.94';    nome='Hagezi-Wurzn'}," ^
+  "  @{ip='95.217.163.17';    nome='Hagezi-Juuri'}," ^
+  "  @{ip='162.55.58.40';     nome='Hagezi-CTIF'}," ^
+  "  @{ip='45.90.28.0';       nome='NextDNS-P'}," ^
+  "  @{ip='45.90.30.0';       nome='NextDNS-S'}" ^
+  "); " ^
+  "$ok=0; $fail=0; $failList=@(); " ^
+  "foreach ($u in $upstreams) { " ^
+  "  try { " ^
+  "    $tcp = New-Object System.Net.Sockets.TcpClient; " ^
+  "    $conn = $tcp.BeginConnect($u.ip, 853, $null, $null); " ^
+  "    $hit = $conn.AsyncWaitHandle.WaitOne(3000, $false); " ^
+  "    $tcp.Close(); " ^
+  "    if ($hit) { $ok++ } else { $fail++; $failList += $u.nome } " ^
+  "  } catch { $fail++; $failList += $u.nome } " ^
+  "}; " ^
+  "\"OK=$ok\" | Out-File '%DOT_TMP%' -Encoding ascii; " ^
+  "\"FAIL=$fail\" | Out-File '%DOT_TMP%' -Append -Encoding ascii; " ^
+  "\"FAILLIST=$($failList -join ','  )\" | Out-File '%DOT_TMP%' -Append -Encoding ascii" ^
+  >nul 2>&1
+
+if exist "%DOT_TMP%" (
+    for /f "tokens=1,2 delims==" %%A in (%DOT_TMP%) do (
+        if "%%A"=="OK"       set "DOT_OK=%%B"
+        if "%%A"=="FAIL"     set "DOT_FAIL=%%B"
+        if "%%A"=="FAILLIST" set "DOT_FAIL_LIST=%%B"
+    )
+    del /f /q "%DOT_TMP%" >nul 2>&1
+)
+
+:: Rimuove spazi da DOT_OK e DOT_FAIL per il confronto numerico
+set "DOT_OK=%DOT_OK: =%"
+set "DOT_FAIL=%DOT_FAIL: =%"
+if "%DOT_OK%"=="" set "DOT_OK=0"
+if "%DOT_FAIL%"=="" set "DOT_FAIL=0"
+
+if %DOT_FAIL% EQU 0 (
+    set "F14_RES=[      OK      ] DoT  >> Porta 853 raggiungibile su tutti i 10 upstream testati. Traffico cifrato."
+    call :LOGSTEP "DoT" "OK: porta 853 OK su tutti gli upstream"
+) else if %DOT_OK% EQU 0 (
+    set "CONSOLE_COLOR=0C"
+    set "F14_RES=[    ERRORE    ] DoT  >> ALLARME: nessun upstream risponde su 853! Traffico in chiaro."
+    call :LOGFAIL "DoT" "ALLARME: porta 853 irraggiungibile su tutti gli upstream"
+) else (
+    set "F14_RES=[     WARN     ] DoT  >> !DOT_OK! upstream OK, !DOT_FAIL! non risponde su 853: !DOT_FAIL_LIST!"
+    call :LOGSTEP "DoT" "WARN: !DOT_FAIL! upstream non raggiungibili su 853: !DOT_FAIL_LIST!"
+)
+call :UPDATE_UI 100
 goto :FINALIZZAZIONE
 
 :: ============================================================================
@@ -1500,6 +1569,9 @@ if defined F12_RES  ( call :ARROW_BAR 16 96 98 & call :RES_COLOR "!F12_RES!" & e
 
 if defined F13_ACT  ( call :PHASE_BAR 17 98 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
 if defined F13_RES  ( call :ARROW_BAR 17 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F14_ACT  ( call :PHASE_BAR 18 100 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F14_ACT!%ESC%[0m )
+if defined F14_RES  ( call :ARROW_BAR 18 100 100 & call :RES_COLOR "!F14_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
 :PHASE_BAR
