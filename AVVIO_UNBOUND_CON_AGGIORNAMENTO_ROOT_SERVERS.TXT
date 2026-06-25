@@ -55,7 +55,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=301.00"
+set "LOCAL_VER=305.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -293,6 +293,11 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
         echo.
     )
 )
+
+:: =======================================================================
+:: --- NUOVA VERIFICA CORE: CONTROLLO VERSIONE BINARI UNBOUND ---
+:: =======================================================================
+call :CHECK_UNBOUND_VERSION
 
 :: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO + TASK LOGON ---
 set "TASK_NAME=Unbound_Bunker_Daily"
@@ -1573,6 +1578,7 @@ echo !ESC![92m
 echo ==============================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
 echo ==============================================================================================================================
+echo                 Versione locale UBNOUND......: !UB_LOCAL_VER!           Versione cloud UNBOUND....................:!UB_CLOUD_VER! 
 echo                 Versione BAT locale..........: v!LOCAL_VER!             Versione SERVICE.CONF locale..............: v!LOCAL_SVC_VER!
 echo                 Versione BAT cloud...........: v!CLOUD_VER!             Versione SERVICE.CONF cloud...............: v!SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
@@ -1896,4 +1902,53 @@ echo     so-rcvbuf: !SO_RCVBUF! >> "%HW_CONF%"
 echo     so-sndbuf: !SO_SNDBUF! >> "%HW_CONF%"
 
 echo [     OK      ] Ottimizzazione completata: Thread=!THREADS!, Profilo RAM=!MSG_CACHE!/!RRSET_CACHE! (Rilevati !TOTAL_RAM_GB!GB)
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: CONTROLLO VERSIONE BINARI UNBOUND (LOCAL VS CLOUD)
+:: ==================================================================
+:CHECK_UNBOUND_VERSION
+set "UB_LOCAL_VER=N/A"
+set "UB_CLOUD_VER=N/A"
+set "UB_EXE=%UB_DIR%\unbound.exe"
+
+:: 1. Estrazione della versione locale direttamente dall'eseguibile funzionante
+if exist "%UB_EXE%" (
+    for /f "tokens=2" %%A in ('"%UB_EXE%" -h 2^>^&1 ^| findstr /i "Version"') do (
+        set "UB_LOCAL_VER=%%A"
+    )
+)
+
+:: 2. Interrogazione API GitHub ufficiale per l'ultima release stabile rilasciata
+set "UB_TMP=%TEMP%\ub_bin_cloud.txt"
+if exist "%UB_TMP%" del /f /q "%UB_TMP%" >nul 2>&1
+
+powershell -NoProfile -Command "try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if($v -match 'release-(.*)') { $v = $matches[1] }; [System.IO.File]::WriteAllText('%UB_TMP%', $v) } catch {}" >nul 2>&1
+
+if exist "%UB_TMP%" (
+    set /p UB_CLOUD_VER=<"%UB_TMP%"
+    del /f /q "%UB_TMP%" >nul 2>&1
+)
+if "!UB_CLOUD_VER!"=="" set "UB_CLOUD_VER=N/A"
+
+:: 3. Output grafico integrato nello stile del Bunker
+echo ==================================================================
+echo  [i] VERIFICA COMPONENTI CORE: NLnet Labs Unbound Engine
+echo ==================================================================
+echo      Versione installata nel Bunker: !UB_LOCAL_VER!
+echo      Ultima versione stabile sul sito: !UB_CLOUD_VER!
+echo.
+
+if not "!UB_CLOUD_VER!"=="N/A" if not "!UB_LOCAL_VER!"=="N/A" (
+    if not "!UB_LOCAL_VER!"=="!UB_CLOUD_VER!" (
+        echo %ESC%[1;33m    [!] NOTA: E' disponibile una nuova release di Unbound sul sito ufficiale.%ESC%[0m
+        echo      La sostituzione manuale dei binari e' consigliata per la massima sicurezza.
+    ) else (
+        echo      [OK] Il motore Unbound e' aggiornato all'ultima versione.
+    )
+) else (
+    echo      [WARN] Impossibile confrontare le versioni (Rete non disponibile o file mancante).
+)
+echo ==================================================================
+echo.
 exit /b
