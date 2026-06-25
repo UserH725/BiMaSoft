@@ -55,7 +55,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=305.00"
+set "LOCAL_VER=306.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1912,9 +1912,9 @@ set "UB_LOCAL_VER=N/A"
 set "UB_CLOUD_VER=N/A"
 set "UB_EXE=%UB_DIR%\unbound.exe"
 
-:: 1. Estrazione della versione locale direttamente dall'eseguibile funzionante
+:: 1. Estrazione della versione locale (Sintassi corretta con virgolette doppie per i percorsi con spazi)
 if exist "%UB_EXE%" (
-    for /f "tokens=2" %%A in ('"%UB_EXE%" -h 2^>^&1 ^| findstr /i "Version"') do (
+    for /f "tokens=2" %%A in ('""%UB_EXE%" -h 2>&1" ^| findstr /i "Version"') do (
         set "UB_LOCAL_VER=%%A"
     )
 )
