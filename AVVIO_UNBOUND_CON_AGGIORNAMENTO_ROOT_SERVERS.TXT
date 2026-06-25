@@ -49,7 +49,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=200.00"
+set "LOCAL_VER=250.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -75,6 +75,7 @@ if "!SVC_VER!"=="" set "SVC_VER=N/A"
 :: --- SELF-UPDATE: confronta versione locale con cloud ---
 set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
 set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
+set "CLOUD_BAT_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.sha256"
 set "UPDATE_NEEDED=0"
 
 if not "!CLOUD_VER!"=="N/A" (
@@ -93,11 +94,9 @@ if "!UPDATE_NEEDED!"=="1" (
         echo.
         echo   [..] Backup del file corrente in corso...
 
-        :: Determina quale file fare il backup
         set "FILE_TO_BAK=%~f0"
         if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
 
-        :: Legge la versione contenuta nel file tramite PowerShell su file temp
         set "VER_IN_FILE=unknown"
         set "VER_TMP2=%TEMP%\ub_ver_bak.txt"
         powershell -Command "$line = Get-Content -LiteralPath '!FILE_TO_BAK!' | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1; if ($line -match '([0-9]+\.[0-9]+)') { $matches[1] | Out-File -FilePath '%TEMP%\ub_ver_bak.txt' -Encoding ascii -NoNewline }" >nul 2>&1
@@ -119,31 +118,60 @@ if "!UPDATE_NEEDED!"=="1" (
         echo   [..] Download nuova versione v!CLOUD_VER! in corso...
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
+        set "SHA_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat.sha256"
+        
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP!') } catch { exit 1 }"
 
-        if exist "!UPDATE_TMP!" (
-		    echo   [OK] Download completato.
-            for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-                move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                echo ==================================================================
-                echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!
-                echo ==================================================================
-                echo   Versione installata: v!CLOUD_VER!
-                echo   File aggiornato: !SELF_BAT!
-                echo   Backup precedente: !BAK_FILE!
-                echo   Il nuovo script sara' avviato automaticamente in 2 secondi.
-                echo ==================================================================
-                timeout /t 2 >nul
-                start "" "!SELF_BAT!"
-                exit
+        if exist "!UPDATE_TMP!" if exist "!SHA_TMP!" (
+            echo   [..] Verifica integrita' SHA256 in corso...
+            
+            :: Estrae l'hash atteso dal file .sha256 (prende la prima stringa di 64 caratteri esadecimali)
+            for /f "tokens=1" %%A in ('type "!SHA_TMP!"') do set "EXPECTED_SHA=%%A"
+            
+            :: Calcola l'hash locale del file appena scaricato
+            set "LOCAL_SHA="
+            for /f "skip=1 delims=" %%A in ('certutil -hashfile "!UPDATE_TMP!" SHA256 ^| findstr /v "CertUtil"') do (
+                set "LOCAL_SHA=%%A"
+                set "LOCAL_SHA=!LOCAL_SHA: =!"
+            )
+            
+            del /f /q "!SHA_TMP!" >nul 2>&1
+
+            :: Confronto formale degli hash
+            if /i "!LOCAL_SHA!"=="!EXPECTED_SHA!" (
+                echo   [OK] Hash SHA256 verificato con successo.
+                for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
+                    move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
+                    echo ==================================================================
+                    echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!
+                    echo ==================================================================
+                    echo   Versione installata: v!CLOUD_VER!
+                    echo   File aggiornato: !SELF_BAT!
+                    echo   Backup precedente: !BAK_FILE!
+                    echo   Il nuovo script sara' avviato automaticamente in 2 secondi.
+                    echo ==================================================================
+                    timeout /t 2 >nul
+                    start "" "!SELF_BAT!"
+                    exit
+                ) else (
+                    echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
+                    del /f /q "!UPDATE_TMP!" >nul 2>&1
+                    echo   Proseguo con la versione attuale...
+                    echo.
+                )
             ) else (
-                echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
+                echo   [ERRORE CRITICO] Mismatch SHA256 dello script BAT cloud!
+                echo   Atteso: !EXPECTED_SHA!
+                echo   Locale: !LOCAL_SHA!
+                echo   Aggiornamento interrotto per sicurezza.
                 del /f /q "!UPDATE_TMP!" >nul 2>&1
                 echo   Proseguo con la versione attuale...
                 echo.
             )
         ) else (
-            echo   [ERRORE] Download fallito. Aggiornamento annullato.
+            echo   [ERRORE] Download fallito del file o del suo hash SHA256.
+            if exist "!UPDATE_TMP!" del /f /q "!UPDATE_TMP!" >nul 2>&1
+            if exist "!SHA_TMP!" del /f /q "!SHA_TMP!" >nul 2>&1
             echo   Proseguo con la versione attuale...
             echo.
         )
@@ -158,23 +186,21 @@ set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
 set "BAT_VER_FILE=%UB_DIR%\versione_script_bat.txt"
 set "CLOUD_SVC_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf"
+set "CLOUD_SVC_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf.sha256"
 set "LOCAL_SVC_VER=N/A"
 set "SVC_UPDATE_NEEDED=0"
 
-:: Legge la versione locale del service.conf dal file di tracciamento
 if exist "!LOCAL_SVC_VER_FILE!" (
     set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
 )
 
-:: Confronto versioni service.conf (stesso metodo del BAT: rimuove il punto)
 if not "!SVC_VER!"=="N/A" (
     if not "!LOCAL_SVC_VER!"=="N/A" (
         set "LOC_SVC_INT=!LOCAL_SVC_VER:.=!"
         set "CLD_SVC_INT=!SVC_VER:.=!"
         if !CLD_SVC_INT! GTR !LOC_SVC_INT! set "SVC_UPDATE_NEEDED=1"
     ) else (
-        :: File di tracciamento assente: primo avvio, aggiorna subito
         set "SVC_UPDATE_NEEDED=1"
     )
 )
@@ -189,7 +215,6 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
         echo.
         echo   [..] Backup di service.conf in corso...
 
-        :: Nome backup con versione locale nel nome
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" (
             copy /y "!SERVICE_CONF!" "!SVC_BAK!"
@@ -205,28 +230,57 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 
         echo   [..] Download service.conf v!SVC_VER! in corso...
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        set "SVC_SHA_TMP=%UB_DIR%\service.conf.sha256.tmp"
+        
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_SHA_URL!', '!SVC_SHA_TMP!') } catch { exit 1 }" >nul 2>&1
 
-        if exist "!SVC_TMP!" (
-            for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
-                move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
-                echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
-                set "LOCAL_SVC_VER=!SVC_VER!"
-                echo.
-                echo ==============================================================================
-                echo   SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
-                echo ==============================================================================
-                echo   Versione installata: v!SVC_VER!
-                echo   File aggiornato: !SERVICE_CONF!
-                if exist "!SVC_BAK!" echo   Backup precedente: !SVC_BAK!
-                echo ==============================================================================
-                echo.
+        if exist "!SVC_TMP!" if exist "!SVC_SHA_TMP!" (
+            echo   [..] Verifica integrita' SHA256 in corso...
+            
+            :: Estrae l'hash atteso dal file .sha256
+            for /f "tokens=1" %%A in ('type "!SVC_SHA_TMP!"') do set "EXPECTED_SVC_SHA=%%A"
+            
+            :: Calcola l'hash locale di service.conf.tmp
+            set "LOCAL_SVC_SHA="
+            for /f "skip=1 delims=" %%A in ('certutil -hashfile "!SVC_TMP!" SHA256 ^| findstr /v "CertUtil"') do (
+                set "LOCAL_SVC_SHA=%%A"
+                set "LOCAL_SVC_SHA=!LOCAL_SVC_SHA: =!"
+            )
+            
+            del /f /q "!SVC_SHA_TMP!" >nul 2>&1
+
+            :: Confronto formale degli hash
+            if /i "!LOCAL_SVC_SHA!"=="!EXPECTED_SVC_SHA!" (
+                echo   [OK] Hash SHA256 verificato con successo.
+                for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
+                    move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
+                    echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
+                    set "LOCAL_SVC_VER=!SVC_VER!"
+                    echo.
+                    echo ==============================================================================
+                    echo   SERVICE.CONF AGGIORNATO CON SUCCESSO !!!!
+                    echo ==============================================================================
+                    echo   Versione installata: v!SVC_VER!
+                    echo   File aggiornato: !SERVICE_CONF!
+                    if exist "!SVC_BAK!" echo   Backup precedente: !BAK_FILE!
+                    echo ==============================================================================
+                    echo.
+                ) else (
+                    echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
+                    del /f /q "!SVC_TMP!" >nul 2>&1
+                )
             ) else (
-                echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
+                echo   [ERRORE CRITICO] Mismatch SHA256 del file service.conf cloud!
+                echo   Atteso: !EXPECTED_SVC_SHA!
+                echo   Locale: !LOCAL_SVC_SHA!
+                echo   Aggiornamento interrotto per sicurezza.
                 del /f /q "!SVC_TMP!" >nul 2>&1
+                echo.
             )
         ) else (
-            echo   [ERRORE] Download fallito. Aggiornamento annullato.
+            echo   [ERRORE] Download fallito di service.conf o del suo hash SHA256.
+            if exist "!SVC_TMP!" del /f /q "!SVC_TMP!" >nul 2>&1
+            if exist "!SVC_SHA_TMP!" del /f /q "!SVC_SHA_TMP!" >nul 2>&1
         )
     ) else (
         echo   Aggiornamento service.conf rimandato. Proseguo con la versione attuale v!LOCAL_SVC_VER!...
