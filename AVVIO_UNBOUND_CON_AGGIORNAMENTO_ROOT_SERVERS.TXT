@@ -1109,15 +1109,32 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
         
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!') } catch { exit 1 }"
+        set "SHA_TMP_R=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat.sha256"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP_R!') } catch { exit 1 }"
         
-        if exist "!UPDATE_TMP!" (
-            for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-                move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
-                call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER!. Riavvio script..."
-                start "" "!SELF_BAT!" --refresh
-                exit
+        if exist "!UPDATE_TMP!" if exist "!SHA_TMP_R!" (
+            for /f "tokens=1" %%A in ('type "!SHA_TMP_R!"') do set "EXPECTED_SHA_R=%%A"
+            set "LOCAL_SHA_R="
+            for /f "skip=1 delims=" %%A in ('certutil -hashfile "!UPDATE_TMP!" SHA256 ^| findstr /v "CertUtil"') do (
+                set "LOCAL_SHA_R=%%A"
+                set "LOCAL_SHA_R=!LOCAL_SHA_R: =!"
             )
+            del /f /q "!SHA_TMP_R!" >nul 2>&1
+            if /i "!LOCAL_SHA_R!"=="!EXPECTED_SHA_R!" (
+                for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
+                    move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
+                    call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER! (SHA256 OK). Riavvio script..."
+                    start "" "!SELF_BAT!" --refresh
+                    exit
+                )
+            ) else (
+                call :LOGFAIL "REFRESH" "Mismatch SHA256 BAT cloud nel refresh — aggiornamento annullato per sicurezza"
+                del /f /q "!UPDATE_TMP!" >nul 2>&1
+            )
+        ) else (
+            call :LOGFAIL "REFRESH" "Download BAT o SHA256 fallito nel refresh"
+            if exist "!UPDATE_TMP!" del /f /q "!UPDATE_TMP!" >nul 2>&1
+            if exist "!SHA_TMP_R!" del /f /q "!SHA_TMP_R!" >nul 2>&1
         )
     )
 )
