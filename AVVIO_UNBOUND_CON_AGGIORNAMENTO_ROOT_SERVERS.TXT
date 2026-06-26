@@ -55,7 +55,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=310.00"
+set "LOCAL_VER=315.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1835,8 +1835,8 @@ if "%RES_PREFIX%"=="[      OK      ]" (
 exit /b
 
 :: ==================================================================
-:: SUBROUTINE: RILEVAMENTO HARDWARE E AUTO-TUNING DINAMICO (FIX REGIONALE)
-:: Genera hardware.conf in base a RAM e CPU reali rilevate nel sistema
+:: SUBROUTINE: RILEVAMENTO HARDWARE E AUTO-TUNING DINAMICO (RECALIBRATO)
+:: Genera hardware.conf adattando millimetricamente cache e slabs
 :: ==================================================================
 :AUTO_TUNING_HARDWARE
 echo [+] Analisi hardware in corso per ottimizzazione Bunker...
@@ -1846,46 +1846,57 @@ set "THREADS=2"
 for /f %%A in ('powershell -NoProfile -Command "[Environment]::ProcessorCount"') do set "THREADS=%%A"
 if "!THREADS!"=="" set "THREADS=2"
 
-:: Calcolo degli Slabs (potenza di 2 più vicina o uguale ai thread, max 8 per stabilità)
-set "SLABS=2"
-if !THREADS! geq 4 set "SLABS=4"
-if !THREADS! geq 8 set "SLABS=8"
-
-:: 2. Rilevamento RAM Totale Reale (Estrazione pulita in formato stringa numerica pura)
+:: 2. Rilevamento RAM Totale Reale
 set "TOTAL_RAM_GB=8"
 for /f "delims=" %%A in ('powershell -NoProfile -Command "[int][math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)"') do (
     set "RAW_RAM=%%A"
-    :: Rimuove via software qualsiasi carattere non numerico spurio (come +, spazi o trattini)
     set "RAW_RAM=!RAW_RAM:+=!"
     set "RAW_RAM=!RAW_RAM: =!"
     if not "!RAW_RAM!"=="" set "TOTAL_RAM_GB=!RAW_RAM!"
 )
+if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=4"
 
-:: Protezione di sicurezza: se il calcolo fallisce o restituisce 0, forziamo un valore safe
-if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=8"
-
-:: Profili di Cache basati sulla RAM reale rilevata
-:: Default (Profilo Light: <= 8GB RAM)
-set "MSG_CACHE=64m"
-set "RRSET_CACHE=128m"
-set "SO_RCVBUF=4m"
-set "SO_SNDBUF=4m"
-
-if !TOTAL_RAM_GB! geq 30 (
-    :: Profilo Ultra (>= 32GB RAM)
+:: 3. Assegnazione dei Profili in base alle soglie di RAM reali (4, 6, 8, 12, 16, 32)
+if !TOTAL_RAM_GB! leq 5 (
+    :: --- PROFILO MICRO (<= 4GB RAM) ---
+    set "MSG_CACHE=8m"
+    set "RRSET_CACHE=16m"
+    set "SO_RCVBUF=1m"
+    set "SO_SNDBUF=1m"
+    set "SLABS_MAX=1"
+) else if !TOTAL_RAM_GB! leq 9 (
+    :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
+    set "MSG_CACHE=32m"
+    set "RRSET_CACHE=64m"
+    set "SO_RCVBUF=2m"
+    set "SO_SNDBUF=2m"
+    set "SLABS_MAX=2"
+) else if !TOTAL_RAM_GB! leq 24 (
+    :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
+    set "MSG_CACHE=128m"
+    set "RRSET_CACHE=256m"
+    set "SO_RCVBUF=4m"
+    set "SO_SNDBUF=4m"
+    set "SLABS_MAX=4"
+) else (
+    :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "MSG_CACHE=512m"
     set "RRSET_CACHE=1024m"
     set "SO_RCVBUF=8m"
     set "SO_SNDBUF=8m"
-) else if !TOTAL_RAM_GB! geq 14 (
-    :: Profilo Standard (16GB RAM)
-    set "MSG_CACHE=256m"
-    set "RRSET_CACHE=512m"
-    set "SO_RCVBUF=6m"
-    set "SO_SNDBUF=6m"
+    set "SLABS_MAX=8"
 )
 
-:: 3. Scrittura del file hardware.conf
+:: 4. Calcolo dinamico intelligente degli Slabs condizionato dal profilo RAM
+set "SLABS=1"
+if !THREADS! geq 2 set "SLABS=2"
+if !THREADS! geq 4 set "SLABS=4"
+if !THREADS! geq 8 set "SLABS=8"
+
+:: Forza il tetto massimo degli slabs per non sprecare memoria sui profili bassi
+if !SLABS! gtr !SLABS_MAX! set "SLABS=!SLABS_MAX!"
+
+:: 5. Scrittura del file hardware.conf
 set "HW_CONF=C:\Program Files\Unbound\hardware.conf"
 
 echo # CONFIGURAZIONE GENERATA AUTOMATICAMENTE DAL BUNKER MANAGER > "%HW_CONF%"
@@ -1901,7 +1912,7 @@ echo     rrset-cache-size: !RRSET_CACHE! >> "%HW_CONF%"
 echo     so-rcvbuf: !SO_RCVBUF! >> "%HW_CONF%"
 echo     so-sndbuf: !SO_SNDBUF! >> "%HW_CONF%"
 
-echo [     OK      ] Ottimizzazione completata: Thread=!THREADS!, Profilo RAM=!MSG_CACHE!/!RRSET_CACHE! (Rilevati !TOTAL_RAM_GB!GB)
+echo [     OK      ] Ottimizzazione hardware completata: Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB)
 exit /b
 
 :: ==================================================================
