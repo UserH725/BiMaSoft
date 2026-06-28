@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=353.00"
+set "LOCAL_VER=355.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1950,17 +1950,23 @@ set "UB_OUT_TMP=%TEMP%\ub_core_check.txt"
 if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
 :: 1. Esecuzione PowerShell su una singola riga piatta
-powershell -NoProfile -Command "$l='N/A'; $c='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v } } catch {}; ($l + '#' + $c) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+::    FIX: usa # come separatore invece di ^| per evitare l'errore di sintassi
+::         causato dall'interpretazione del pipe da parte di CMD
+powershell -NoProfile -Command "$l='N/A'; $c='N/A'; $u='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; $asset = $json.assets | Where-Object { $_.name -match 'unbound.*_windows.*\.exe$' -or $_.name -match 'unbound.*setup.*\.exe$' } | Select-Object -First 1; if ($asset) { $u = $asset.browser_download_url } } catch {}; ($l + '#' + $c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
 
-
-:: 2. Lettura del risultato
+:: 2. Lettura del risultato (3 token: versione locale # versione cloud # url download)
 if not exist "%UB_OUT_TMP%" goto :UB_OUTPUT
-for /f "usebackq tokens=1,2 delims=#" %%A in ("%UB_OUT_TMP%") do set "UB_LOCAL_VER=%%A"&set "UB_CLOUD_VER=%%B"
+for /f "usebackq tokens=1,2,3 delims=#" %%A in ("%UB_OUT_TMP%") do (
+    set "UB_LOCAL_VER=%%A"
+    set "UB_CLOUD_VER=%%B"
+    set "UB_DL_URL=%%C"
+)
 del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
 :UB_OUTPUT
 if "!UB_LOCAL_VER!"=="" set "UB_LOCAL_VER=N/A"
 if "!UB_CLOUD_VER!"=="" set "UB_CLOUD_VER=N/A"
+if "!UB_DL_URL!"==""    set "UB_DL_URL=N/A"
 
 echo ==================================================================
 echo  [i] VERIFICA COMPONENTI CORE: NLnet Labs Unbound Engine
@@ -1978,16 +1984,133 @@ if "!UB_CLOUD_VER!"=="N/A" (
     call :LOGSTEP "CORE" "Unbound cloud ver N/A - controllo saltato, rete non disponibile"
     goto :UB_END
 )
-echo !ESC![1;33m    [!] AVVISO: versione installata ^(!UB_LOCAL_VER!^) diversa dall'ultima stabile ^(!UB_CLOUD_VER!^).!ESC![0m
-echo      Scarica manualmente l'eseguibile aggiornato:
-echo      -> https://nlnetlabs.nl/projects/unbound/download/
-echo      -> https://github.com/NLnetLabs/unbound/releases/latest
+
+:: In modalita' automatica: avvisa solo nel log e prosegue senza interazione
+if "%~1"=="--scheduled" (
+    call :LOGSTEP "CORE" "Unbound aggiornamento disponibile: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER! (avvio manuale per installare)"
+    goto :UB_END
+)
+if "%~1"=="--refresh" (
+    call :LOGSTEP "CORE" "Unbound aggiornamento disponibile: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER! (avvio manuale per installare)"
+    goto :UB_END
+)
+
+:: === MODALITA' INTERATTIVA: offre download e installazione ===
+echo !ESC![1;33m    [!] AGGIORNAMENTO DISPONIBILE: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!!ESC![0m
 echo.
-if "%~1"=="--scheduled" goto :UB_END
-if "%~1"=="--refresh"   goto :UB_END
+echo      L'installer verra' scaricato, verificato con SHA256 e
+echo      pronto per l'avvio con un tasto.
+echo.
+
+if "!UB_DL_URL!"=="N/A" (
+    echo !ESC![1;31m    [ERRORE] URL di download non trovato nella release GitHub.!ESC![0m
+    echo      Scarica manualmente da:
+    echo      -> https://nlnetlabs.nl/projects/unbound/download/
+    echo      -> https://github.com/NLnetLabs/unbound/releases/latest
+    echo.
+    call :LOGFAIL "CORE" "URL installer Unbound v!UB_CLOUD_VER! non trovato nella release"
+    echo ==================================================================
+    echo !ESC![1;36m    [i] Il Manager e' in attesa. Verifica i file, poi premi un tasto.!ESC![0m
+    pause
+    goto :UB_END
+)
+
+:: Mostra l'URL che sta per essere scaricato
+echo      Fonte: !UB_DL_URL!
+echo.
+
+:: Estrae il nome del file dall'URL
+set "UB_INSTALLER_NAME=unbound_setup_!UB_CLOUD_VER!.exe"
+for %%F in ("!UB_DL_URL!") do set "UB_INSTALLER_NAME=%%~nxF"
+set "UB_INSTALLER_PATH=!UB_DIR!\!UB_INSTALLER_NAME!"
+set "UB_SHA_PATH=!UB_INSTALLER_PATH!.sha256"
+set "UB_SHA_URL=!UB_DL_URL!.sha256"
+
+:: Scarica il file installer
+echo      [..] Download installer Unbound v!UB_CLOUD_VER! in corso...
+if exist "!UB_INSTALLER_PATH!" del /f /q "!UB_INSTALLER_PATH!" >nul 2>&1
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!UB_DL_URL!', '!UB_INSTALLER_PATH!') } catch { exit 1 }"
+
+if not exist "!UB_INSTALLER_PATH!" (
+    echo !ESC![1;31m    [ERRORE] Download fallito. Verificare la connessione e riprovare.!ESC![0m
+    call :LOGFAIL "CORE" "Download installer Unbound v!UB_CLOUD_VER! fallito"
+    echo      Proseguo con la versione attuale v!UB_LOCAL_VER!...
+    echo.
+    goto :UB_END
+)
+
+:: Scarica il file SHA256 per la verifica integrita' (GitHub pubblica il .sha256 accanto all'exe)
+echo      [..] Download hash SHA256 per verifica integrita'...
+if exist "!UB_SHA_PATH!" del /f /q "!UB_SHA_PATH!" >nul 2>&1
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!UB_SHA_URL!', '!UB_SHA_PATH!') } catch { exit 1 }" >nul 2>&1
+
+:: Verifica integrita' SHA256
+set "UB_SHA_OK=0"
+if exist "!UB_SHA_PATH!" (
+    echo      [..] Verifica integrita' SHA256 in corso...
+    for /f "tokens=1" %%A in ('type "!UB_SHA_PATH!"') do set "UB_EXPECTED_SHA=%%A"
+    set "UB_LOCAL_SHA="
+    for /f "skip=1 delims=" %%A in ('certutil -hashfile "!UB_INSTALLER_PATH!" SHA256 ^| findstr /v "CertUtil"') do (
+        if "!UB_LOCAL_SHA!"=="" (
+            set "UB_LOCAL_SHA=%%A"
+            set "UB_LOCAL_SHA=!UB_LOCAL_SHA: =!"
+        )
+    )
+    del /f /q "!UB_SHA_PATH!" >nul 2>&1
+    if /i "!UB_LOCAL_SHA!"=="!UB_EXPECTED_SHA!" (
+        set "UB_SHA_OK=1"
+        echo      [OK] Hash SHA256 verificato con successo.
+        call :LOGSTEP "CORE" "Installer Unbound v!UB_CLOUD_VER! scaricato e verificato SHA256"
+    ) else (
+        echo !ESC![1;31m    [ERRORE CRITICO] Mismatch SHA256 - file potenzialmente corrotto o manomesso!!ESC![0m
+        echo      Atteso:  !UB_EXPECTED_SHA!
+        echo      Locale:  !UB_LOCAL_SHA!
+        del /f /q "!UB_INSTALLER_PATH!" >nul 2>&1
+        call :LOGFAIL "CORE" "SHA256 mismatch installer Unbound v!UB_CLOUD_VER! - file eliminato per sicurezza"
+        echo      Proseguo con la versione attuale v!UB_LOCAL_VER!...
+        echo.
+        goto :UB_END
+    )
+) else (
+    :: File .sha256 non disponibile su GitHub: avvisa ma non blocca
+    echo !ESC![1;33m    [WARN] File SHA256 non disponibile su GitHub per questa release.!ESC![0m
+    echo           Impossibile verificare l'integrita'. Il file potrebbe essere autentico
+    echo           ma non e' possibile confermarlo crittograficamente.
+    echo.
+    set "UB_SHA_OK=2"
+    call :LOGSTEP "CORE" "WARN: SHA256 non disponibile per Unbound v!UB_CLOUD_VER! - verifica manuale consigliata"
+)
+
+:: Riepilogo e richiesta conferma prima di avviare il setup
+echo.
 echo ==================================================================
-echo !ESC![1;36m    [i] Il Manager e' in attesa. Verifica i file, poi premi un tasto.!ESC![0m
-pause
+echo   INSTALLER PRONTO: !UB_INSTALLER_NAME!
+echo   Percorso:         !UB_INSTALLER_PATH!
+if "!UB_SHA_OK!"=="1" echo   Integrita':       [OK] SHA256 verificato
+if "!UB_SHA_OK!"=="2" echo   Integrita':       [WARN] SHA256 non disponibile - non verificato
+echo ==================================================================
+echo.
+echo !ESC![1;36m    [i] Vuoi avviare l'installer adesso?!ESC![0m
+echo         Il servizio Unbound e' gia' fermo (gestito dal Bunker).
+echo         Al termine dell'installazione lo script ripartira' normalmente.
+echo.
+choice /c SN /d N /t 30 /m "     [S=Avvia installer / N=Salta, manuale dopo, default N in 30 sec]"
+if !errorlevel! EQU 1 (
+    echo.
+    echo      [..] Avvio installer Unbound v!UB_CLOUD_VER!...
+    call :LOGSTEP "CORE" "Avvio installer Unbound v!UB_CLOUD_VER! confermato dall'utente"
+    start /wait "" "!UB_INSTALLER_PATH!"
+    echo.
+    echo      [OK] Installer completato. Il Bunker prosegue con la sequenza normale.
+    call :LOGSTEP "CORE" "Installer Unbound v!UB_CLOUD_VER! completato"
+) else (
+    echo.
+    echo      [INFO] Installazione rimandata. L'installer e' salvato in:
+    echo             !UB_INSTALLER_PATH!
+    echo      Puoi avviarlo manualmente dopo la chiusura del Bunker.
+    call :LOGSTEP "CORE" "Installazione Unbound v!UB_CLOUD_VER! rimandata dall'utente - file conservato in UB_DIR"
+)
+echo.
 goto :UB_END
 
 :UB_OK
