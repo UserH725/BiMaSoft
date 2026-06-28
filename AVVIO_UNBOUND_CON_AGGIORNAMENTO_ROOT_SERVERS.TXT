@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=351.00"
+set "LOCAL_VER=352.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1603,7 +1603,7 @@ echo !ESC![92m
 echo ==============================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
 echo ==============================================================================================================================
-echo  Versione UBNOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! 
+echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! 
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
