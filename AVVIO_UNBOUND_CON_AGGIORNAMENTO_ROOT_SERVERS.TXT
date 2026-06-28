@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=352.00"
+set "LOCAL_VER=353.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1950,11 +1950,12 @@ set "UB_OUT_TMP=%TEMP%\ub_core_check.txt"
 if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
 :: 1. Esecuzione PowerShell su una singola riga piatta
-powershell -NoProfile -Command "$l='N/A'; $c='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v } } catch {}; \"$l^|$c\" | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+powershell -NoProfile -Command "$l='N/A'; $c='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v } } catch {}; ($l + '#' + $c) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+
 
 :: 2. Lettura del risultato
 if not exist "%UB_OUT_TMP%" goto :UB_OUTPUT
-for /f "usebackq tokens=1,2 delims=|" %%A in ("%UB_OUT_TMP%") do set "UB_LOCAL_VER=%%A"&set "UB_CLOUD_VER=%%B"
+for /f "usebackq tokens=1,2 delims=#" %%A in ("%UB_OUT_TMP%") do set "UB_LOCAL_VER=%%A"&set "UB_CLOUD_VER=%%B"
 del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
 :UB_OUTPUT
