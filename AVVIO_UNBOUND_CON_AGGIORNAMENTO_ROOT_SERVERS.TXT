@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=360.00"
+set "LOCAL_VER=365.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -502,6 +502,7 @@ reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "BuiltInDnsClientEnabled" /t R
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\DNSOverHTTPS" /v "Enabled" /t REG_DWORD /d 0 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\DNSOverHTTPS" /v "Locked" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
@@ -512,6 +513,7 @@ reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "BuiltInDnsClientEnabled" /t REG_DWO
 :: --- HARDENING ANTI-OMOGRAFO IDN (FORZA VISUALIZZAZIONE PUNYCODE) ---
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\Preferences" /v "network.IDN_show_punycode" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
@@ -528,6 +530,10 @@ reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "DnsCanonicalNameMode" /t REG_
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox" /v "EnableTrackingProtection" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\Preferences" /v "browser.contentblocking.category" /t REG_SZ /d "strict" /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\Preferences" /v "network.dns.disablePrefetch" /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\Preferences" /v "network.predictor.enabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
