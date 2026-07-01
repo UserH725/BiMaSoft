@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=367.00"
+set "LOCAL_VER=368.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -443,6 +443,29 @@ if exist "%UB_DIR%\service.conf" (
         if "!CONF_RRSET_CACHE!"=="N/A" set "CONF_RRSET_CACHE=%%V"
     )
 )
+
+:: --- RILEVAMENTO DINAMICO DEI DNS FORWARDER ATTIVI ---
+:: Cerca righe intestazione nel formato "# --- NOME ---" dentro service.conf.
+:: Se aggiungi un nuovo provider con lo stesso stile di commento, comparira'
+:: automaticamente qui senza dover modificare il BAT.
+set "DNS_PROVIDERS="
+set "DNS_COUNT=0"
+if exist "%UB_DIR%\service.conf" (
+    for /f "usebackq delims=" %%L in (`findstr /I /R "^# --- .* ---$" "%UB_DIR%\service.conf"`) do (
+        set "DNS_LINE=%%L"
+        set "DNS_LINE=!DNS_LINE:# --- =!"
+        set "DNS_LINE=!DNS_LINE: ---=!"
+        set /a DNS_COUNT+=1
+        if "!DNS_PROVIDERS!"=="" (
+            set "DNS_PROVIDERS=!DNS_LINE!"
+        ) else (
+            set "DNS_PROVIDERS=!DNS_PROVIDERS! / !DNS_LINE!"
+        )
+    )
+)
+if "%DNS_PROVIDERS%"=="" set "DNS_PROVIDERS=N/A"
+call :LOGSTEP "DNS_FWD" "Rilevati !DNS_COUNT! provider forwarder: !DNS_PROVIDERS!"
+
 
 :: Pulisce lo schermo dai log di backup/aggiornamento (self-update BAT + service.conf)
 :: prima di disegnare il primo frame della UI a barra fissa.
@@ -1622,6 +1645,7 @@ echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER!
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
+echo  DNS Forwarder attivi (!DNS_COUNT!^): !DNS_PROVIDERS!
 echo ==============================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ==============================================================================================================================
