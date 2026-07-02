@@ -538,49 +538,49 @@ if not exist "%STATS_BAT%" (
         echo     pause
         echo     exit /b
         echo ^)
-        echo powershell -NoProfile -Command ^
-        echo     "$data = @{};" ^
-        echo     "Get-Content '%%TMP_RAW%%' | ForEach-Object {" ^
-        echo     "    if($_ -match '^^num\.query\.([\w\.]+)=(.*)') { $data['q_' + $matches[1]] = $matches[2] }" ^
-        echo     "    elseif($_ -match '^^mem\.([\w\.]+)=(.*)') { $data['m_' + $matches[1]] = $matches[2] }" ^
-        echo     "    elseif($_ -match '^^histogram\.([\w\.]+)\.to\.([\w\.]+)=(.*)') { $data['h_' + $matches[2]] = $matches[3] }" ^
-        echo     "    elseif($_ -match '^^unwanted\.(.*)=(.*)') { $data['unwanted'] = $matches[2] }" ^
-        echo     "};" ^
-        echo     "$report = @();" ^
-        echo     "$report += '==================================================================';" ^
-        echo     "$report += '          UNBOUND BUNKER REPORT STATISTICHE OPERATIVE             ';" ^
-        echo     "$report += '          Generato il: ' + (Get-Date -Format 'dd/MM/yyyy HH:mm:ss');" ^
-        echo     "$report += '==================================================================';" ^
-        echo     "$report += '';" ^
-        echo     "$report += '--- ATTIVITA'' GENERALE ---';" ^
-        echo     "$report += ('  Total Query Gestite:       {0}' -f $data['q_total']);" ^
-        echo     "$report += ('  Query UDP:                 {0}' -f $data['q_udp']);" ^
-        echo     "$report += ('  Query TCP/DoT:             {0}' -f $data['q_tcp']);" ^
-        echo     "$report += ('  Risposte da Cache (Hit):   {0}' -f $data['q_cachehit']);" ^
-        echo     "$report += ('  Risoluzioni Esterne (Miss): {0}' -f $data['q_cachemiss']);" ^
-        echo     "if([double]$data['q_total'] -gt 0) {" ^
-        echo     "   $hitRate = ([double]$data['q_cachehit'] / [double]$data['q_total']) * 100;" ^
-        echo     "   $report += ('  Cache Hit Rate:            {0:N2}%%' -f $hitRate);" ^
-        echo     "}" ^
-        echo     "$report += '';" ^
-        echo     "$report += '--- SICUREZZA ^& ANOMALIE ---';" ^
-        echo     "$report += ('  Query Rifiutate (Refused): {0}' -f $data['q_rcodes.REFUSED']);" ^
-        echo     "$report += ('  Domini Non Esistenti (NX): {0}' -f $data['q_rcodes.NXDOMAIN']);" ^
-        echo     "$report += ('  Risposte Indesiderate:     {0} (Soglia Anti-Poisoning)' -f $data['unwanted']);" ^
-        echo     "$report += '';" ^
-        echo     "$report += '--- UTILIZZO MEMORIA CACHE ---';" ^
-        echo     "$report += ('  Message Cache:             {0:N2} MB' -f ([double]$data['m_msg'] / 1MB));" ^
-        echo     "$report += ('  RRset Cache:               {0:N2} MB' -f ([double]$data['m_rrset'] / 1MB));" ^
-        echo     "$report += ('  Infra Cache:               {0:N2} MB' -f ([double]$data['m_infra'] / 1MB));" ^
-        echo     "$report += ('  Key Cache (DNSSEC):        {0:N2} MB' -f ([double]$data['m_key'] / 1MB));" ^
-        echo     "$report += '';" ^
-        echo     "$report += '--- ISTOGRAMMA DELLE LATENZE (REATTIVITA'' DEL TUNNEL) ---';" ^
-        echo     "$report += ('  Sotto i 1ms (Cache ultra):  {0} query' -f $data['h_1ms']);" ^
-        echo     "$report += ('  Da 1ms a 10ms (Local LAN): {0} query' -f $data['h_10ms']);" ^
-        echo     "$report += ('  Da 10ms a 100ms (Anycast): {0} query' -f $data['h_100ms']);" ^
-        echo     "$report += ('  Da 10ms a 500ms (Tunnel): {0} query' -f $data['h_500ms']);" ^
-        echo     "$report += ('  Oltre i 500ms (Latenza):   {0} query' -f $data['h_1s']);" ^
-        echo     "$report += '==================================================================';" ^
+        echo powershell -NoProfile -Command ^^
+        echo     "$data = @{};" ^^
+        echo     "Get-Content '%%TMP_RAW%%' | ForEach-Object {" ^^
+        echo     "    if($_ -match 'num\.query\.([\w\.]+)=(.*)') { $data['q_' + $matches[1]] = $matches[2] }" ^^
+        echo     "    elseif($_ -match 'mem\.([\w\.]+)=(.*)') { $data['m_' + $matches[1]] = $matches[2] }" ^^
+        echo     "    elseif($_ -match 'histogram\.([\w\.]+)\.to\.([\w\.]+)=(.*)') { $data['h_' + $matches[2]] = $matches[3] }" ^^
+        echo     "    elseif($_ -match 'unwanted\.(.*)=(.*)') { $data['unwanted'] = $matches[2] }" ^^
+        echo     "};" ^^
+        echo     "$report = @();" ^^
+        echo     "$report += '==================================================================';" ^^
+        echo     "$report += '          UNBOUND BUNKER REPORT STATISTICHE OPERATIVE             ';" ^^
+        echo     "$report += '          Generato il: ' + (Get-Date -Format 'dd/MM/yyyy HH:mm:ss');" ^^
+        echo     "$report += '==================================================================';" ^^
+        echo     "$report += '';" ^^
+        echo     "$report += '--- ATTIVITA'' GENERALE ---';" ^^
+        echo     "$report += ('  Total Query Gestite:       {0}' -f $data['q_total']);" ^^
+        echo     "$report += ('  Query UDP:                 {0}' -f $data['q_udp']);" ^^
+        echo     "$report += ('  Query TCP/DoT:             {0}' -f $data['q_tcp']);" ^^
+        echo     "$report += ('  Risposte da Cache (Hit):   {0}' -f $data['q_cachehit']);" ^^
+        echo     "$report += ('  Risoluzioni Esterne (Miss): {0}' -f $data['q_cachemiss']);" ^^
+        echo     "if([double]$data['q_total'] -gt 0) {" ^^
+        echo     "   $hitRate = ([double]$data['q_cachehit'] / [double]$data['q_total']) * 100;" ^^
+        echo     "   $report += ('  Cache Hit Rate:            {0:N2}%%%%' -f $hitRate);" ^^
+        echo     "}" ^^
+        echo     "$report += '';" ^^
+        echo     "$report += '--- SICUREZZA ^^^& ANOMALIE ---';" ^^
+        echo     "$report += ('  Query Rifiutate (Refused): {0}' -f $data['q_rcodes.REFUSED']);" ^^
+        echo     "$report += ('  Domini Non Esistenti (NX): {0}' -f $data['q_rcodes.NXDOMAIN']);" ^^
+        echo     "$report += ('  Risposte Indesiderate:     {0} (Soglia Anti-Poisoning)' -f $data['unwanted']);" ^^
+        echo     "$report += '';" ^^
+        echo     "$report += '--- UTILIZZO MEMORIA CACHE ---';" ^^
+        echo     "$report += ('  Message Cache:             {0:N2} MB' -f ([double]$data['m_msg'] / 1MB));" ^^
+        echo     "$report += ('  RRset Cache:               {0:N2} MB' -f ([double]$data['m_rrset'] / 1MB));" ^^
+        echo     "$report += ('  Infra Cache:               {0:N2} MB' -f ([double]$data['m_infra'] / 1MB));" ^^
+        echo     "$report += ('  Key Cache (DNSSEC):        {0:N2} MB' -f ([double]$data['m_key'] / 1MB));" ^^
+        echo     "$report += '';" ^^
+        echo     "$report += '--- ISTOGRAMMA DELLE LATENZE (REATTIVITA'' DEL TUNNEL) ---';" ^^
+        echo     "$report += ('  Sotto i 1ms (Cache ultra):  {0} query' -f $data['h_1ms']);" ^^
+        echo     "$report += ('  Da 1ms a 10ms (Local LAN): {0} query' -f $data['h_10ms']);" ^^
+        echo     "$report += ('  Da 10ms a 100ms (Anycast): {0} query' -f $data['h_100ms']);" ^^
+        echo     "$report += ('  Da 10ms a 500ms (Tunnel): {0} query' -f $data['h_500ms']);" ^^
+        echo     "$report += ('  Oltre i 500ms (Latenza):   {0} query' -f $data['h_1s']);" ^^
+        echo     "==================================================================';" ^^
         echo     "$report | Out-File -FilePath '%%STATS_TXT%%' -Encoding utf8;"
         echo del /f /q "%%TMP_RAW%%" ^>nul 2^>^&1
         echo start "" notepad.exe "%%STATS_TXT%%"
