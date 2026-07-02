@@ -510,7 +510,7 @@ call :LOGSTEP "NET" "Connettivita verificata"
 call :DNS_FALLBACK_ON
 
 :: FASE 2 - Azione
-set "F2_ACT=[...in corso...] FS   >> Verifico la cartella di Unbound e l'integrita' degli strumenti di statistica."
+set "F2_ACT=[...in corso...] FS   >> Verifico la cartella di Unbound."
 call :UPDATE_UI 10
 if not exist "%UB_DIR%" (
     set "CONSOLE_COLOR=0C"
@@ -522,7 +522,7 @@ if not exist "%UB_DIR%" (
 )
 
 
-set "F2_RES=[      OK      ] FS   >> Cartella e strumenti di statistica pronti e verificati."
+set "F2_RES=[      OK      ] FS   >> Cartella Unbound verificata."
 call :LOGSTEP "FS" "Directory Unbound trovata"
 
 :: FASE 3 - Azione
