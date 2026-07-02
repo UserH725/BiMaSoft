@@ -1122,7 +1122,7 @@ if "%DOT_OK%"=="" set "DOT_OK=0"
 if "%DOT_FAIL%"=="" set "DOT_FAIL=0"
 
 if %DOT_FAIL% EQU 0 (
-    set "F14_RES=[      OK      ] DoT  >> Porta 853 raggiungibile su tutti i 10 upstream testati. Traffico cifrato."
+    set "F14_RES=[      OK      ] DoT  >> Porta 853 raggiungibile su tutti i 10 upstream testati. Porta raggiungibile."
     call :LOGSTEP "DoT" "OK: porta 853 OK su tutti gli upstream"
 ) else if %DOT_OK% EQU 0 (
     set "CONSOLE_COLOR=0C"
