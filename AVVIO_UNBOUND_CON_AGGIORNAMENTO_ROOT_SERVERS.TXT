@@ -540,7 +540,7 @@ if not exist "%STATS_BAT%" (
         echo ^)
         echo powershell -NoProfile -Command ^^
         echo     "$data = @{};" ^^
-        echo     "Get-Content '%%TMP_RAW%%' | ForEach-Object {" ^^
+        echo     "Get-Content -LiteralPath '%%TMP_RAW%%' | ForEach-Object {" ^^
         echo     "    if($_ -match 'num\.query\.([\w\.]+)=(.*)') { $data['q_' + $matches[1]] = $matches[2] }" ^^
         echo     "    elseif($_ -match 'mem\.([\w\.]+)=(.*)') { $data['m_' + $matches[1]] = $matches[2] }" ^^
         echo     "    elseif($_ -match 'histogram\.([\w\.]+)\.to\.([\w\.]+)=(.*)') { $data['h_' + $matches[2]] = $matches[3] }" ^^
