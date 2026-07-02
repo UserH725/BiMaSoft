@@ -527,7 +527,7 @@ if not exist "%STATS_BAT%" (
     (
         echo @echo off
         echo setlocal enabledelayedexpansion
-        echo chcp 6001 ^>nul
+        echo chcp 65001 ^>nul
         echo set "UB_DIR=C:\Program Files\Unbound"
         echo set "STATS_TXT=%%UB_DIR%%\unbound_stats_report.txt"
         echo set "TMP_RAW=%%TEMP%%\ub_raw_stats.txt"
