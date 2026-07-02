@@ -53,13 +53,13 @@ powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Obje
 :: Abilita i codici di escape ANSI per i colori
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 :: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
-set "FLAG_LINE=%ESC%[42m                                          %ESC%[0m%ESC%[47m                                          %ESC%[0m%ESC%[41m                                          %ESC%[0m%ESC%[0m"
-mode con: cols=126 lines=65
+set "FLAG_LINE=%ESC%[42m                                                  %ESC%[0m%ESC%[47m                                                  %ESC%[0m%ESC%[41m                                                  %ESC%[0m%ESC%[0m"
+mode con: cols=150 lines=65
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=370.00"
+set "LOCAL_VER=450.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -444,6 +444,48 @@ if exist "%UB_DIR%\service.conf" (
     )
 )
 
+:: --- Lettura dinamica dei FORWARDER dal service.conf (una volta sola all'avvio) ---
+:: Scansiona tutte le righe "forward-addr:" ed estrae il nome host dopo il "#",
+:: deduplicandolo. Se aggiungi/rimuovi un forward-addr nel service.conf, questo
+:: elenco si aggiorna da solo al riavvio dello script, senza toccare il .bat.
+set "FWD_LIST="
+set "FWD_COUNT=0"
+set "HYPERLOCAL_ACTIVE=0"
+set "FALLBACK_ENABLED=no"
+set "FOR_UPSTREAM=no"
+
+if exist "%UB_DIR%\service.conf" (
+    :: Scansione Forwarder tradizionali DoT
+    for /f "tokens=2 delims=#" %%H in ('findstr /i /c:"forward-addr:" "%UB_DIR%\service.conf"') do (
+        set "FWD_NAME=%%H"
+        set "FWD_DUP=0"
+        echo !FWD_LIST! | findstr /i /c:"!FWD_NAME!" >nul 2>&1 && set "FWD_DUP=1"
+        if "!FWD_DUP!"=="0" (
+            set /a FWD_COUNT+=1
+            if "!FWD_LIST!"=="" (
+                set "FWD_LIST=!FWD_NAME!"
+            ) else (
+                set "FWD_LIST=!FWD_LIST!, !FWD_NAME!"
+            )
+        )
+    )
+    
+    :: Verifica se la zona auth-zone per "." ha il fallback attivo su Hyperlocal
+    for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"fallback-enabled:" "%UB_DIR%\service.conf"') do set "FALLBACK_ENABLED=%%V"
+    for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"for-upstream:" "%UB_DIR%\service.conf"') do set "FOR_UPSTREAM=%%V"
+    
+    if /i "!FALLBACK_ENABLED!"=="yes" if /i "!FOR_UPSTREAM!"=="yes" (
+        set "HYPERLOCAL_ACTIVE=1"
+        set /a FWD_COUNT+=1
+        if "!FWD_LIST!"=="" (
+            set "FWD_LIST=ICANN Root Servers (Hyperlocal Fallback)"
+        ) else (
+            set "FWD_LIST=!FWD_LIST!, ICANN Root Servers (Hyperlocal Fallback)"
+        )
+    )
+)
+if "!FWD_LIST!"=="" set "FWD_LIST=N/A"
+
 :: Pulisce lo schermo dai log di backup/aggiornamento (self-update BAT + service.conf)
 :: prima di disegnare il primo frame della UI a barra fissa.
 cls
@@ -468,7 +510,7 @@ call :LOGSTEP "NET" "Connettivita verificata"
 call :DNS_FALLBACK_ON
 
 :: FASE 2 - Azione
-set "F2_ACT=[...in corso...] FS   >> Verifico che la cartella di Unbound esista e sia accessibile."
+set "F2_ACT=[...in corso...] FS   >> Verifico la cartella di Unbound e l'integrita' degli strumenti di statistica."
 call :UPDATE_UI 10
 if not exist "%UB_DIR%" (
     set "CONSOLE_COLOR=0C"
@@ -478,7 +520,77 @@ if not exist "%UB_DIR%" (
     pause
     exit /b
 )
-set "F2_RES=[      OK      ] FS   >> Cartella trovata e accessibile."
+
+:: --- CODICE INTEGRATO: AUTO-PROVISIONING DELLO SCRIPT STATISTICHE ---
+set "STATS_BAT=%UB_DIR%\Unbound_Stats_Visualizer.bat"
+if not exist "%STATS_BAT%" (
+    (
+        echo @echo off
+        echo setlocal enabledelayedexpansion
+        echo chcp 6001 ^>nul
+        echo set "UB_DIR=C:\Program Files\Unbound"
+        echo set "STATS_TXT=%%UB_DIR%%\unbound_stats_report.txt"
+        echo set "TMP_RAW=%%TEMP%%\ub_raw_stats.txt"
+        echo "%%UB_DIR%%\unbound-control.exe" -c "%%UB_DIR%%\service.conf" stats_noreset ^> "%%TMP_RAW%%" 2^>^&1
+        echo if %%errorLevel%% neq 0 ^(
+        echo     echo [ERRORE] Impossibile comunicare con Unbound Control. Verificare il servizio.
+        echo     del /f /q "%%TMP_RAW%%" ^>nul 2^>^&1
+        echo     pause
+        echo     exit /b
+        echo ^)
+        echo powershell -NoProfile -Command ^
+        echo     "$data = @{};" ^
+        echo     "Get-Content '%%TMP_RAW%%' | ForEach-Object {" ^
+        echo     "    if($_ -match '^^num\.query\.([\w\.]+)=(.*)') { $data['q_' + $matches[1]] = $matches[2] }" ^
+        echo     "    elseif($_ -match '^^mem\.([\w\.]+)=(.*)') { $data['m_' + $matches[1]] = $matches[2] }" ^
+        echo     "    elseif($_ -match '^^histogram\.([\w\.]+)\.to\.([\w\.]+)=(.*)') { $data['h_' + $matches[2]] = $matches[3] }" ^
+        echo     "    elseif($_ -match '^^unwanted\.(.*)=(.*)') { $data['unwanted'] = $matches[2] }" ^
+        echo     "};" ^
+        echo     "$report = @();" ^
+        echo     "$report += '==================================================================';" ^
+        echo     "$report += '          UNBOUND BUNKER REPORT STATISTICHE OPERATIVE             ';" ^
+        echo     "$report += '          Generato il: ' + (Get-Date -Format 'dd/MM/yyyy HH:mm:ss');" ^
+        echo     "$report += '==================================================================';" ^
+        echo     "$report += '';" ^
+        echo     "$report += '--- ATTIVITA'' GENERALE ---';" ^
+        echo     "$report += ('  Total Query Gestite:       {0}' -f $data['q_total']);" ^
+        echo     "$report += ('  Query UDP:                 {0}' -f $data['q_udp']);" ^
+        echo     "$report += ('  Query TCP/DoT:             {0}' -f $data['q_tcp']);" ^
+        echo     "$report += ('  Risposte da Cache (Hit):   {0}' -f $data['q_cachehit']);" ^
+        echo     "$report += ('  Risoluzioni Esterne (Miss): {0}' -f $data['q_cachemiss']);" ^
+        echo     "if([double]$data['q_total'] -gt 0) {" ^
+        echo     "   $hitRate = ([double]$data['q_cachehit'] / [double]$data['q_total']) * 100;" ^
+        echo     "   $report += ('  Cache Hit Rate:            {0:N2}%%' -f $hitRate);" ^
+        echo     "}" ^
+        echo     "$report += '';" ^
+        echo     "$report += '--- SICUREZZA ^& ANOMALIE ---';" ^
+        echo     "$report += ('  Query Rifiutate (Refused): {0}' -f $data['q_rcodes.REFUSED']);" ^
+        echo     "$report += ('  Domini Non Esistenti (NX): {0}' -f $data['q_rcodes.NXDOMAIN']);" ^
+        echo     "$report += ('  Risposte Indesiderate:     {0} (Soglia Anti-Poisoning)' -f $data['unwanted']);" ^
+        echo     "$report += '';" ^
+        echo     "$report += '--- UTILIZZO MEMORIA CACHE ---';" ^
+        echo     "$report += ('  Message Cache:             {0:N2} MB' -f ([double]$data['m_msg'] / 1MB));" ^
+        echo     "$report += ('  RRset Cache:               {0:N2} MB' -f ([double]$data['m_rrset'] / 1MB));" ^
+        echo     "$report += ('  Infra Cache:               {0:N2} MB' -f ([double]$data['m_infra'] / 1MB));" ^
+        echo     "$report += ('  Key Cache (DNSSEC):        {0:N2} MB' -f ([double]$data['m_key'] / 1MB));" ^
+        echo     "$report += '';" ^
+        echo     "$report += '--- ISTOGRAMMA DELLE LATENZE (REATTIVITA'' DEL TUNNEL) ---';" ^
+        echo     "$report += ('  Sotto i 1ms (Cache ultra):  {0} query' -f $data['h_1ms']);" ^
+        echo     "$report += ('  Da 1ms a 10ms (Local LAN): {0} query' -f $data['h_10ms']);" ^
+        echo     "$report += ('  Da 10ms a 100ms (Anycast): {0} query' -f $data['h_100ms']);" ^
+        echo     "$report += ('  Da 10ms a 500ms (Tunnel): {0} query' -f $data['h_500ms']);" ^
+        echo     "$report += ('  Oltre i 500ms (Latenza):   {0} query' -f $data['h_1s']);" ^
+        echo     "$report += '==================================================================';" ^
+        echo     "$report | Out-File -FilePath '%%STATS_TXT%%' -Encoding utf8;"
+        echo del /f /q "%%TMP_RAW%%" ^>nul 2^>^&1
+        echo start "" notepad.exe "%%STATS_TXT%%"
+        echo exit /b
+    ) > "%STATS_BAT%"
+    call :LOGSTEP "FS" "Generato automaticamente lo script Unbound_Stats_Visualizer.bat"
+)
+:: ---------------------------------------------------------------------
+
+set "F2_RES=[      OK      ] FS   >> Cartella e strumenti di statistica pronti e verificati."
 call :LOGSTEP "FS" "Directory Unbound trovata"
 
 :: FASE 3 - Azione
@@ -736,8 +848,8 @@ if errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
         if exist "%HZ_PRO_PLUS%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO_PLUS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO_PLUS%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
             )
         )
         if "!SKIP_HZ!"=="0" (
@@ -787,8 +899,8 @@ if errorlevel 1 (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
             )
         )
         if "!SKIP_TIF!"=="0" (
@@ -838,8 +950,8 @@ if errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
         if exist "%HZ_TIF_IPS%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF_IPS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF_IPS%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIFIPS=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
             )
         )
         if "!SKIP_TIFIPS!"=="0" (
@@ -1007,7 +1119,7 @@ set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato co
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
-:: FASE 14 - Verifica DoT (test TCP porta 853 su upstream campione)
+:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo)
 set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream principali..."
 call :UPDATE_UI 100
 
@@ -1017,12 +1129,12 @@ set "DOT_FAIL_LIST="
 set "DOT_TMP=%TEMP%\ub_dot_check.txt"
 if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 
-:: Test campione: un IP per provider (IPv4 only, timeout 3s)
+:: [CHIRURGICO] Utilizzo espressioni lineari pulite (.Add()) per evitare simboli matematici conflittuali con CMD
 powershell -NoProfile -Command ^
   "$upstreams = @(" ^
-  "  @{ip='1.1.1.2';          nome='Cloudflare'}," ^
+  "  @{ip='1.1.1.1';          nome='Cloudflare'}," ^
   "  @{ip='9.9.9.9';          nome='Quad9'}," ^
-  "  @{ip='194.242.2.4';      nome='Mullvad'}," ^
+  "  @{ip='194.242.2.2';      nome='Mullvad'}," ^
   "  @{ip='86.54.11.1';       nome='DNS4EU'}," ^
   "  @{ip='188.34.161.210';   nome='Hagezi-Root'}," ^
   "  @{ip='159.69.155.94';    nome='Hagezi-Wurzn'}," ^
@@ -1031,19 +1143,28 @@ powershell -NoProfile -Command ^
   "  @{ip='45.90.28.0';       nome='NextDNS-P'}," ^
   "  @{ip='45.90.30.0';       nome='NextDNS-S'}" ^
   "); " ^
-  "$ok=0; $fail=0; $failList=@(); " ^
-  "foreach ($u in $upstreams) { " ^
-  "  try { " ^
+  "$jobs = foreach ($u in $upstreams) { " ^
+  "  $code = { " ^
+  "    param($ip, $nome) " ^
   "    $tcp = New-Object System.Net.Sockets.TcpClient; " ^
-  "    $conn = $tcp.BeginConnect($u.ip, 853, $null, $null); " ^
+  "    $conn = $tcp.BeginConnect($ip, 853, $null, $null); " ^
   "    $hit = $conn.AsyncWaitHandle.WaitOne(3000, $false); " ^
   "    $tcp.Close(); " ^
-  "    if ($hit) { $ok++ } else { $fail++; $failList += $u.nome } " ^
-  "  } catch { $fail++; $failList += $u.nome } " ^
+  "    [PSCustomObject]@{Nome=$nome; Status=$hit} " ^
+  "  }; " ^
+  "  [powershell]::Create().AddScript($code).AddArgument($u.ip).AddArgument($u.nome)" ^
   "}; " ^
-  "\"OK=$ok\" | Out-File '%DOT_TMP%' -Encoding ascii; " ^
-  "\"FAIL=$fail\" | Out-File '%DOT_TMP%' -Append -Encoding ascii; " ^
-  "\"FAILLIST=$($failList -join ','  )\" | Out-File '%DOT_TMP%' -Append -Encoding ascii" ^
+  "$handles = foreach ($j in $jobs) { $j.BeginInvoke() }; " ^
+  "$listOK = New-Object System.Collections.Generic.List[string]; " ^
+  "$listFAIL = New-Object System.Collections.Generic.List[string]; " ^
+  "for ($i=0; $i -lt $jobs.Count; $i++) { " ^
+  "  $res = $jobs[$i].EndInvoke($handles[$i]); " ^
+  "  if ($res.Status) { $listOK.Add($res.Nome) } else { $listFAIL.Add($res.Nome) } " ^
+  "  $jobs[$i].Dispose() " ^
+  "}; " ^
+  "\"OK=$($listOK.Count)\" | Out-File '%DOT_TMP%' -Encoding ascii; " ^
+  "\"FAIL=$($listFAIL.Count)\" | Out-File '%DOT_TMP%' -Append -Encoding ascii; " ^
+  "\"FAILLIST=$($listFAIL -join ',')\" | Out-File '%DOT_TMP%' -Append -Encoding ascii" ^
   >nul 2>&1
 
 if exist "%DOT_TMP%" (
@@ -1055,7 +1176,6 @@ if exist "%DOT_TMP%" (
     del /f /q "%DOT_TMP%" >nul 2>&1
 )
 
-:: Rimuove spazi da DOT_OK e DOT_FAIL per il confronto numerico
 set "DOT_OK=%DOT_OK: =%"
 set "DOT_FAIL=%DOT_FAIL: =%"
 if "%DOT_OK%"=="" set "DOT_OK=0"
@@ -1298,8 +1418,8 @@ if not errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
         if exist "%HZ_PRO_PLUS%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_PRO_PLUS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_PRO_PLUS%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_HZ=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
             )
         )
         if "!SKIP_HZ!"=="0" (
@@ -1337,8 +1457,8 @@ if not errorlevel 1 (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIF=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
             )
         )
         if "!SKIP_TIF!"=="0" (
@@ -1376,8 +1496,8 @@ if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
         if exist "%HZ_TIF_IPS%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%HZ_TIF_IPS%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%HZ_TIF_IPS%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_TIFIPS=1"
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
             )
         )
         if "!SKIP_TIFIPS!"=="0" (
@@ -1484,11 +1604,13 @@ if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
-    :: DNS bootstrap per i download a servizio fermo
+    :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
     call :DNS_FALLBACK_ON
-    :: Ripristina il DNS locale prima di riavviare Unbound
-    call :DNS_FALLBACK_OFF
     net start unbound >nul 2>&1
+    :: Verifica stabilità: attendo 2 secondi affinché Unbound sia pronto ad accettare query
+    timeout /t 2 >nul
+    :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
+    call :DNS_FALLBACK_OFF
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 ) else (
@@ -1595,8 +1717,8 @@ exit /b
 
 :UPDATE_UI
 set "P_VAL=%~1"
-set /a "BLOCKS=P_VAL * 107 / 100"
-set /a "EMPTY=107 - BLOCKS"
+set /a "BLOCKS=P_VAL * 131 / 100"
+set /a "EMPTY=131 - BLOCKS"
 
 :: Generazione della barra IN MEMORIA (Nativa e istantanea, zero impatto CPU)
 set "BARRA="
@@ -1615,16 +1737,17 @@ echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
-echo ==============================================================================================================================
+echo ======================================================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
-echo ==============================================================================================================================
+echo ======================================================================================================================================================
 echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! 
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
-echo ==============================================================================================================================
+echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
+echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
-echo ==============================================================================================================================
+echo ======================================================================================================================================================
 if defined F1_ACT  ( call :PHASE_BAR  1  5 10 & echo %ESC%[38;2;144;238;144m!UI_PB! !F1_ACT!%ESC%[0m )
 if defined F1_RES  ( call :ARROW_BAR  1  5 10 & call :RES_COLOR "!F1_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
