@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=703.00"
+set "LOCAL_VER=704.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -130,7 +130,7 @@ if "!UPDATE_NEEDED!"=="1" (
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
         set "SHA_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat.sha256"
         
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP!') } catch { exit 1 }"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP!') } catch { exit 1 }"
 
         if exist "!UPDATE_TMP!" if exist "!SHA_TMP!" (
             echo   [..] Verifica integrita' SHA256 in corso...
@@ -242,7 +242,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
         set "SVC_SHA_TMP=%UB_DIR%\service.conf.sha256.tmp"
         
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_SHA_URL!', '!SVC_SHA_TMP!') } catch { exit 1 }" >nul 2>&1
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_SHA_URL!', '!SVC_SHA_TMP!') } catch { exit 1 }" >nul 2>&1
 
         if exist "!SVC_TMP!" if exist "!SVC_SHA_TMP!" (
             echo   [..] Verifica integrita' SHA256 in corso...
@@ -1073,14 +1073,17 @@ if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 powershell -NoProfile -Command ^
   "$upstreams = @(" ^
   "  @{ip='1.1.1.1';          nome='Cloudflare'}," ^
-  "  @{ip='1.0.0.1';          nome='Cloudflare'}," ^
   "  @{ip='9.9.9.10';         nome='Quad9'}," ^
-  "  @{ip='149.112.112.10';   nome='Quad9'}," ^
   "  @{ip='194.242.2.2';      nome='Mullvad'}," ^
   "  @{ip='86.54.11.100';     nome='DNS4EU'}," ^
   "  @{ip='86.54.11.200';     nome='DNS4EU'}," ^
   "  @{ip='185.222.222.222';  nome='DNS.SB'}," ^
   "  @{ip='45.11.45.11';      nome='DNS.SB'}," ^
+  "  @{ip='2606:4700:4700::1111'; nome='Cloudflare-v6'}," ^
+  "  @{ip='2620:fe::10';      nome='Quad9-v6'}," ^
+  "  @{ip='2a07:e340::2';     nome='Mullvad-v6'}," ^
+  "  @{ip='2a13:1001::86:54:11:100'; nome='DNS4EU-v6'}," ^
+  "  @{ip='2a09::';           nome='DNS.SB-v6'} " ^
   "); " ^
   "$jobs = foreach ($u in $upstreams) { " ^
   "  $code = { " ^
@@ -1186,7 +1189,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
         set "SHA_TMP_R=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat.sha256"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP_R!') } catch { exit 1 }"
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_URL!', '!UPDATE_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_BAT_SHA_URL!', '!SHA_TMP_R!') } catch { exit 1 }"
         
         if exist "!UPDATE_TMP!" if exist "!SHA_TMP_R!" (
             for /f "tokens=1" %%A in ('type "!SHA_TMP_R!"') do set "EXPECTED_SHA_R=%%A"
@@ -1243,7 +1246,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
         call :PRUNE_BKP "%UB_DIR%" "service_v*.conf.BKP"
         
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
-        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
         
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
@@ -2106,7 +2109,7 @@ set "UB_SHA_URL=!UB_DL_URL!.sha256"
 :: Scarica il file installer
 echo      [..] Download installer Unbound v!UB_CLOUD_VER! in corso...
 if exist "!UB_INSTALLER_PATH!" del /f /q "!UB_INSTALLER_PATH!" >nul 2>&1
-powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!UB_DL_URL!', '!UB_INSTALLER_PATH!') } catch { exit 1 }"
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!UB_DL_URL!', '!UB_INSTALLER_PATH!') } catch { exit 1 }"
 
 if not exist "!UB_INSTALLER_PATH!" (
     echo !ESC![1;31m    [ERRORE] Download fallito. Verificare la connessione e riprovare.!ESC![0m
@@ -2119,7 +2122,7 @@ if not exist "!UB_INSTALLER_PATH!" (
 :: Scarica il file SHA256 per la verifica integrita' (GitHub pubblica il .sha256 accanto all'exe)
 echo      [..] Download hash SHA256 per verifica integrita'...
 if exist "!UB_SHA_PATH!" del /f /q "!UB_SHA_PATH!" >nul 2>&1
-powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object System.Net.WebClient).DownloadFile('!UB_SHA_URL!', '!UB_SHA_PATH!') } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!UB_SHA_URL!', '!UB_SHA_PATH!') } catch { exit 1 }" >nul 2>&1
 
 :: Verifica integrita' SHA256
 set "UB_SHA_OK=0"
