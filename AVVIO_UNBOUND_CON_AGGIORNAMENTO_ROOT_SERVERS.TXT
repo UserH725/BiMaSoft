@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=701.00"
+set "LOCAL_VER=702.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1073,15 +1073,13 @@ if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 powershell -NoProfile -Command ^
   "$upstreams = @(" ^
   "  @{ip='1.1.1.1';          nome='Cloudflare'}," ^
-  "  @{ip='9.9.9.9';          nome='Quad9'}," ^
+  "  @{ip='9.9.9.10';         nome='Quad9'}," ^
   "  @{ip='194.242.2.2';      nome='Mullvad'}," ^
-  "  @{ip='86.54.11.1';       nome='DNS4EU'}," ^
-  "  @{ip='188.34.161.210';   nome='Hagezi-Root'}," ^
-  "  @{ip='159.69.155.94';    nome='Hagezi-Wurzn'}," ^
-  "  @{ip='95.217.163.17';    nome='Hagezi-Juuri'}," ^
-  "  @{ip='162.55.58.40';     nome='Hagezi-CTIF'}," ^
-  "  @{ip='45.90.28.0';       nome='NextDNS-P'}," ^
-  "  @{ip='45.90.30.0';       nome='NextDNS-S'}" ^
+  "  @{ip='86.54.11.100';     nome='DNS4EU'}," ^
+  "  @{ip='86.54.11.200';     nome='DNS4EU'}," ^
+  "  @{ip='185.222.222.222';  nome='DNS.SB'}," ^
+  "  @{ip='45.11.45.11';      nome='DNS.SB'}," ^
+  "  @{ip='8.8.8.8';          nome='Google'}," ^
   "); " ^
   "$jobs = foreach ($u in $upstreams) { " ^
   "  $code = { " ^
