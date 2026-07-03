@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=715.00"
+set "LOCAL_VER=720.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1081,7 +1081,7 @@ set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato co
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
-:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo e dinamico con Gestore - SOLUZIONE LINEARE)
+:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo e dinamico con Gestore - OTTIMIZZATO NEI TEMPI)
 set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream attivi nel conf..."
 call :UPDATE_UI 100
 
@@ -1111,13 +1111,13 @@ if exist "C:\Program Files\Unbound\service.conf" (
 if not defined PS_ARGS (
     set "F14_RES=[    ERRORE    ] DoT  >> Nessun resolver attivo trovato nel file service.conf."
     call :UPDATE_UI 100
-    goto :FINALIZZAZIONE
+    goto :FINALIZZAZIONE_RAPIDA
 )
 
 :: Rimuove la virgola finale dagli argomenti passati a PowerShell
 set "PS_ARGS=!PS_ARGS:~0,-1!"
 
-:: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare e pulita
+:: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$targets = @(%PS_ARGS%); $jobs = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; $code = { param($i, $g) try { $fam = [System.Net.IPAddress]::Parse($i).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $conn = $tcp.BeginConnect($i, 853, $null, $null); $hit = $conn.AsyncWaitHandle.WaitOne(2000, $false); $tcp.Close(); [PSCustomObject]@{IP=$i;Tag=$g;Status=$hit} } catch { [PSCustomObject]@{IP=$i;Tag=$g;Status=$false} } }; [powershell]::Create().AddScript($code).AddArgument($ip).AddArgument($tag) }; $handles = foreach ($j in $jobs) { $j.BeginInvoke() }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; for ($i=0; $i -lt $jobs.Count; $i++) { $r = $jobs[$i].EndInvoke($handles[$i]); $st = if ($r.Status) { 'OK' } else { 'FAIL' }; if ($r.Status) { $listOK.Add($r.IP) } else { $listFAIL.Add($r.IP) }; $details.Add(($r.IP + '|' + $r.Tag + '|' + $st)); $jobs[$i].Dispose() }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
 
@@ -1137,7 +1137,7 @@ set "DOT_FAIL=%DOT_FAIL: =%"
 if "%DOT_OK%"=="" set "DOT_OK=0"
 if "%DOT_FAIL%"=="" set "DOT_FAIL=0"
 
-:: 3) Scrittura immediata dell'esito della fase e ricarica della UI complessiva
+:: 3) Scrittura immediata dell'esito della fase
 if %DOT_FAIL% EQU 0 (
     set "F14_RES=[      OK      ] DoT  >> Verifica eseguita con successo su tutti i resolver attivi."
     call :LOGSTEP "DoT" "OK: Porta 853 aperta su tutti i resolver dinamici"
@@ -1150,10 +1150,14 @@ if %DOT_FAIL% EQU 0 (
     call :LOGSTEP "DoT" "WARN: !DOT_FAIL! resolver non raggiungibili su 853: !DOT_FAIL_LIST!"
 )
 
-:: Ricarica lo schermo mostrando lo stato definitivo [OK][cite: 2]
+:: [CHIRURGICO] Spostiamo la raccolta statistiche QUI, PRIMA di stampare l'output a video. 
+:: In questo modo l'eventuale attesa di unbound-control avviene "al buio".
+call :RACCOLTA_STATISTICHE APPEND
+
+:: Ricarica lo schermo mostrando la UI definitiva al 100%
 call :UPDATE_UI 100
 
-:: 4) Disegna la tabella dei dettagli staccata sotto l'interfaccia principale
+:: 4) Disegna la tabella dei dettagli a schermo
 echo.
 echo   --------------------------------------------------------------------------------------------------
 echo    RESOLVER IP ADDRESS               GESTORE / TAG                             PORT     STATUS      
@@ -1183,8 +1187,8 @@ if defined DOT_DETAILS (
 echo   --------------------------------------------------------------------------------------------------
 echo.
 
-call :RACCOLTA_STATISTICHE APPEND
-goto :FINALIZZAZIONE
+:: Salto diretto alla nuova finalizzazione rapida senza attese intermedie
+goto :FINALIZZAZIONE_RAPIDA
 
 :: ============================================================================
 :: STATS_RESET_ONLY: azzera il file statistiche del giorno corrente.
@@ -2354,3 +2358,21 @@ echo.
 
 :UB_END
 exit /b
+
+
+:FINALIZZAZIONE_RAPIDA
+set "END_TIME=%time%"
+set "START_TIME=%START_TIME: =0%"
+set "END_TIME=%END_TIME: =0%"
+set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME:~6,2%-100"
+set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
+set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
+if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
+echo !FLAG_LINE!
+echo !FLAG_LINE!
+echo !FLAG_LINE!
+echo !ESC![0m
+echo !ESC![92m
+echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
+timeout /t 3 >nul
+exit
