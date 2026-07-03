@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=705.00"
+set "LOCAL_VER=710.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -307,6 +307,7 @@ call :CHECK_UNBOUND_VERSION
 set "TASK_NAME=Unbound_Bunker_Daily"
 set "TASK_NAME_2H=Unbound_Bunker_2h"
 set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
+set "TASK_NAME_STATS=Unbound_Bunker_StatsReset"
 
 :: 1. CONTROLLO E CREAZIONE TASK GIORNALIERO
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
@@ -345,6 +346,18 @@ if %errorLevel% NEQ 0 (
     schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /ru "%USERNAME%" /rl highest /f >nul 2>&1
 )
 
+:: 4. CONTROLLO E CREAZIONE TASK AZZERAMENTO STATISTICHE (00:00)
+:: Separato dal task giornaliero delle 06:00 in modo che il file di
+:: statistiche del giorno copra l'intera giornata 00:00-24:00 e non
+:: parta a meta' mattina. Non tocca servizio/DNS/filtri: solo il log.
+schtasks /query /tn "%TASK_NAME_STATS%" >nul 2>&1
+if %errorLevel% NEQ 0 goto :MAKE_STATS_TASK
+goto :TASKS_DONE
+
+:MAKE_STATS_TASK
+echo [+] Creazione del task pianificato di azzeramento statistiche a mezzanotte...
+schtasks /create /tn "%TASK_NAME_STATS%" /tr "cmd.exe /c \"\"%~f0\" --stats-reset\"" /sc daily /st 00:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
+
 :TASKS_DONE
 
 set "CONSOLE_COLOR=0A"
@@ -353,6 +366,8 @@ set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "LOG_FILE=%UB_DIR%\logfile.log"
 set "DOWNLOAD_LOG=%UB_DIR%\download.log"
 set "SYS_LOG=%UB_DIR%\system.log"
+set "STATS_DIR=%UB_DIR%\stats"
+if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
 set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
 set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak1"
 set "HZ_PRO_PLUS_BAK2=%HZ_PRO_PLUS%.bak2"
@@ -423,6 +438,13 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
+
+:: ==================================================================
+:: FLAG --stats-reset: azzera SOLO il file statistiche del giorno.
+:: Eseguito a mezzanotte dal task dedicato. Non tocca servizio,
+:: DNS, filtri o root zone: e' un'operazione di puro logging.
+:: ==================================================================
+if "%~1"=="--stats-reset" goto :STATS_RESET_ONLY
 
 set "SKIP_MAINTENANCE=0"
 if "%~1"=="--scheduled" (
@@ -1136,7 +1158,19 @@ if %DOT_FAIL% EQU 0 (
     call :LOGSTEP "DoT" "WARN: !DOT_FAIL! upstream non raggiungibili su 853: !DOT_FAIL_LIST!"
 )
 call :UPDATE_UI 100
+call :RACCOLTA_STATISTICHE APPEND
 goto :FINALIZZAZIONE
+
+:: ============================================================================
+:: STATS_RESET_ONLY: azzera il file statistiche del giorno corrente.
+:: Eseguito a mezzanotte in modo che il file copra 00:00-24:00 e non
+:: 06:00-06:00 come accadrebbe se il RESET restasse agganciato al run
+:: giornaliero completo. Operazione di sola scrittura file, nessun
+:: impatto su Unbound/DNS/filtri.
+:: ============================================================================
+:STATS_RESET_ONLY
+call :RACCOLTA_STATISTICHE RESET
+exit /b
 
 :: ============================================================================
 :: REFRESH BIORARIO: BAT, SERVICE.CONF, HaGeZi, named.cache, root.zone, riavvio
@@ -1565,6 +1599,7 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
+call :RACCOLTA_STATISTICHE APPEND
 exit /b
 
 :CONFIG_ERROR
@@ -1656,6 +1691,99 @@ exit /b
 :LOGFAIL
 set "LOG_TS=%date% %time%"
 >>"%DOWNLOAD_LOG%" echo [%LOG_TS%] [ERRORE] [%~1] %~2
+exit /b
+
+:: ============================================================================
+:: RACCOLTA_STATISTICHE - Log giornaliero dell'attivita' del Bunker con
+:: rotazione settimanale automatica: 7 file, uno per giorno della settimana
+:: (Lunedi.log ... Domenica.log). Il file del giorno viene azzerato alla
+:: prima esecuzione della giornata (--scheduled, ore 06:00) e aggiornato in
+:: append dai refresh biorari (--refresh), cosi' che ogni file mostri la
+:: cronologia della giornata corrente e venga interamente sovrascritto la
+:: settimana successiva, senza bisogno di cancellazioni manuali.
+:: Uso: call :RACCOLTA_STATISTICHE RESET    (nuovo giorno, azzera il file)
+::      call :RACCOLTA_STATISTICHE APPEND   (aggiunge uno snapshot)
+:: ============================================================================
+:RACCOLTA_STATISTICHE
+:: Giorno della settimana calcolato via .NET (indipendente dalla lingua di sistema)
+set "DOW_NUM="
+for /f %%D in ('powershell -NoProfile -Command "(Get-Date).DayOfWeek.value__"') do set "DOW_NUM=%%D"
+if "%DOW_NUM%"=="0" set "GIORNO=Domenica"
+if "%DOW_NUM%"=="1" set "GIORNO=Lunedi"
+if "%DOW_NUM%"=="2" set "GIORNO=Martedi"
+if "%DOW_NUM%"=="3" set "GIORNO=Mercoledi"
+if "%DOW_NUM%"=="4" set "GIORNO=Giovedi"
+if "%DOW_NUM%"=="5" set "GIORNO=Venerdi"
+if "%DOW_NUM%"=="6" set "GIORNO=Sabato"
+if "%GIORNO%"=="" (
+    call :LOGFAIL "STATS" "Giorno della settimana non determinato (DOW_NUM='%DOW_NUM%'), powershell non raggiungibile?"
+    exit /b
+)
+if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
+
+set "STATS_FILE=%STATS_DIR%\%GIORNO%.log"
+
+if /i "%~1"=="RESET" (
+    if exist "%STATS_FILE%" del /f /q "%STATS_FILE%" >nul 2>&1
+    >>"%STATS_FILE%" echo ============================================================
+    >>"%STATS_FILE%" echo  BUNKER - Attivita' di %GIORNO% ^(rotazione settimanale, 7 file^)
+    >>"%STATS_FILE%" echo ============================================================
+)
+
+if not exist "%UB_DIR%\unbound-control.exe" (
+    >>"%STATS_FILE%" echo [%date% %time%] unbound-control.exe non trovato in "%UB_DIR%" - snapshot saltato.
+    call :LOGFAIL "STATS" "unbound-control.exe non trovato in %UB_DIR%"
+    exit /b
+)
+
+set "STATS_TMP=%TEMP%\ub_stats_snapshot.txt"
+if exist "%STATS_TMP%" del /f /q "%STATS_TMP%" >nul 2>&1
+"%UB_DIR%\unbound-control.exe" -c "%SERVICE_CONF%" stats > "%STATS_TMP%" 2>nul
+
+if not exist "%STATS_TMP%" (
+    >>"%STATS_FILE%" echo [%date% %time%] Snapshot non disponibile: unbound-control non ha risposto.
+    call :LOGFAIL "STATS" "unbound-control.exe non ha risposto (servizio fermo o control-port bloccata?)"
+    exit /b
+)
+
+:: Estrae un ampio set di contatori e li scrive come blocco multi-riga.
+:: statistics-cumulative:no in service.conf => "stats" restituisce il
+:: delta dall'ultima lettura, quindi ogni blocco rappresenta l'attivita'
+:: del solo intervallo trascorso (biorario), non il totale cumulativo.
+powershell -NoProfile -Command ^
+  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
+  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
+  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
+  "function GD($k) { return [double](G $k) }; " ^
+  "$q = GD 'total.num.queries'; $hit = GD 'total.num.cachehits'; $miss = GD 'total.num.cachemiss'; " ^
+  "$tot = $hit + $miss; $pct = if ($tot -gt 0) { [math]::Round(($hit / $tot) * 100, 1) } else { 0 }; " ^
+  "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
+  "$tcp = G 'num.query.tcp'; $ipv6q = G 'num.query.ipv6'; $edns = G 'num.query.edns.present'; $ednsdo = G 'num.query.edns.DO'; " ^
+  "$ta = G 'num.query.type.A'; $taaaa = G 'num.query.type.AAAA'; $thttps = G 'num.query.type.HTTPS'; " ^
+  "$tptr = G 'num.query.type.PTR'; $ttxt = G 'num.query.type.TXT'; $tmx = G 'num.query.type.MX'; $tns = G 'num.query.type.NS'; " ^
+  "$sec = G 'num.answer.secure'; $bog = G 'num.answer.bogus'; $rrbog = G 'num.rrset.bogus'; " ^
+  "$unwq = G 'unwanted.queries'; $unwr = G 'unwanted.replies'; " ^
+  "$rcOk = G 'num.answer.rcode.NOERROR'; $rcNx = G 'num.answer.rcode.NXDOMAIN'; $rcSf = G 'num.answer.rcode.SERVFAIL'; $rcRe = G 'num.answer.rcode.REFUSED'; " ^
+  "$rtavg = G 'total.recursion.time.avg'; $rtmed = G 'total.recursion.time.median'; $rlavg = G 'total.requestlist.avg'; $rlmax = G 'total.requestlist.max'; " ^
+  "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
+  "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$lines = @(); " ^
+  "$lines += ''; " ^
+  "$lines += '------------------------------------------------------------'; " ^
+  "$lines += ('[{0}] Snapshot ultimo intervallo' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')); " ^
+  "$lines += '------------------------------------------------------------'; " ^
+  "$lines += (' TRAFFICO     Query totali: {0}  TCP: {1}  IPv6: {2}  EDNS: {3}  DO/DNSSEC: {4}' -f $q,$tcp,$ipv6q,$edns,$ednsdo); " ^
+  "$lines += (' TIPI QUERY   A: {0}  AAAA: {1}  HTTPS: {2}  PTR: {3}  TXT: {4}  MX: {5}  NS: {6}' -f $ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns); " ^
+  "$lines += (' CACHE        Hit: {0}  Miss: {1}  Hit-rate: {2}%%  Prefetch: {3}  Zero-TTL: {4}' -f $hit,$miss,$pct,$prefetch,$zerottl); " ^
+  "$lines += (' CACHE(voci)  Messaggi: {0}  RRset: {1}  Infra: {2}  Key: {3}' -f $msgN,$rrN,$infraN,$keyN); " ^
+  "$lines += (' CACHE(mem)   Messaggi: {0}MB  RRset: {1}MB' -f $memMsg,$memRR); " ^
+  "$lines += (' DNSSEC       Valide: {0}  Bogus: {1}  RRset bogus: {2}' -f $sec,$bog,$rrbog); " ^
+  "$lines += (' SICUREZZA    Query indesiderate: {0}  Risposte indesiderate: {1}' -f $unwq,$unwr); " ^
+  "$lines += (' RISPOSTE     NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $rcOk,$rcNx,$rcSf,$rcRe); " ^
+  "$lines += (' PERFORMANCE  Ricorsione media: {0}ms  mediana: {1}ms  Coda media: {2}  Coda max: {3}' -f $rtavg,$rtmed,$rlavg,$rlmax); " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+
+del /f /q "%STATS_TMP%" >nul 2>&1
 exit /b
 
 :UPDATE_UI
