@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=710.00"
+set "LOCAL_VER=715.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1081,8 +1081,8 @@ set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato co
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
-:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo)
-set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream principali..."
+:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo e dinamico con Gestore - SOLUZIONE LINEARE)
+set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream attivi nel conf..."
 call :UPDATE_UI 100
 
 set "DOT_OK=0"
@@ -1091,52 +1091,43 @@ set "DOT_FAIL_LIST="
 set "DOT_TMP=%TEMP%\ub_dot_check.txt"
 if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 
-:: [CHIRURGICO] Utilizzo espressioni lineari pulite (.Add()) per evitare simboli matematici conflittuali con CMD
-powershell -NoProfile -Command ^
-  "$upstreams = @(" ^
-  "  @{ip='1.1.1.1';          nome='Cloudflare'}," ^
-  "  @{ip='9.9.9.10';         nome='Quad9'}," ^
-  "  @{ip='194.242.2.2';      nome='Mullvad'}," ^
-  "  @{ip='86.54.11.100';     nome='DNS4EU'}," ^
-  "  @{ip='86.54.11.200';     nome='DNS4EU'}," ^
-  "  @{ip='185.222.222.222';  nome='DNS.SB'}," ^
-  "  @{ip='45.11.45.11';      nome='DNS.SB'}," ^
-  "  @{ip='2606:4700:4700::1111'; nome='Cloudflare-v6'}," ^
-  "  @{ip='2620:fe::10';      nome='Quad9-v6'}," ^
-  "  @{ip='2a07:e340::2';     nome='Mullvad-v6'}," ^
-  "  @{ip='2a13:1001::86:54:11:100'; nome='DNS4EU-v6'}," ^
-  "  @{ip='2a09::';           nome='DNS.SB-v6'} " ^
-  "); " ^
-  "$jobs = foreach ($u in $upstreams) { " ^
-  "  $code = { " ^
-  "    param($ip, $nome) " ^
-  "    $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; " ^
-  "    $tcp = New-Object System.Net.Sockets.TcpClient($fam); " ^
-  "    $conn = $tcp.BeginConnect($ip, 853, $null, $null); " ^
-  "    $hit = $conn.AsyncWaitHandle.WaitOne(3000, $false); " ^
-  "    $tcp.Close(); " ^
-  "    [PSCustomObject]@{Nome=$nome; Status=$hit} " ^
-  "  }; " ^
-  "  [powershell]::Create().AddScript($code).AddArgument($u.ip).AddArgument($u.nome)" ^
-  "}; " ^
-  "$handles = foreach ($j in $jobs) { $j.BeginInvoke() }; " ^
-  "$listOK = New-Object System.Collections.Generic.List[string]; " ^
-  "$listFAIL = New-Object System.Collections.Generic.List[string]; " ^
-  "for ($i=0; $i -lt $jobs.Count; $i++) { " ^
-  "  $res = $jobs[$i].EndInvoke($handles[$i]); " ^
-  "  if ($res.Status) { $listOK.Add($res.Nome) } else { $listFAIL.Add($res.Nome) } " ^
-  "  $jobs[$i].Dispose() " ^
-  "}; " ^
-  "\"OK=$($listOK.Count)\" | Out-File '%DOT_TMP%' -Encoding ascii; " ^
-  "\"FAIL=$($listFAIL.Count)\" | Out-File '%DOT_TMP%' -Append -Encoding ascii; " ^
-  "\"FAILLIST=$($listFAIL -join ',')\" | Out-File '%DOT_TMP%' -Append -Encoding ascii" ^
-  >nul 2>&1
+:: 1) Parsing dei resolver direttamente in Batch per evitare sfarfallio e conflitti RegEx in PowerShell
+set "PS_ARGS="
+if exist "C:\Program Files\Unbound\service.conf" (
+    for /f "tokens=1,2* delims=#" %%A in ('findstr /i /c:"forward-addr:" "C:\Program Files\Unbound\service.conf"') do (
+        set "RAW_LINE=%%A"
+        for /f "tokens=2 delims= " %%I in ("!RAW_LINE!") do (
+            set "IP_PORT=%%I"
+            for /f "tokens=1 delims=@" %%G in ("!IP_PORT!") do set "IP_ONLY=%%G"
+        )
+        set "TAG_ONLY=%%B"
+        if not defined TAG_ONLY set "TAG_ONLY=Unknown"
+        set "TAG_ONLY=!TAG_ONLY: =!"
+        
+        set "PS_ARGS=!PS_ARGS! '!IP_ONLY!|!TAG_ONLY!',"
+    )
+)
 
+if not defined PS_ARGS (
+    set "F14_RES=[    ERRORE    ] DoT  >> Nessun resolver attivo trovato nel file service.conf."
+    call :UPDATE_UI 100
+    goto :FINALIZZAZIONE
+)
+
+:: Rimuove la virgola finale dagli argomenti passati a PowerShell
+set "PS_ARGS=!PS_ARGS:~0,-1!"
+
+:: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare e pulita
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$targets = @(%PS_ARGS%); $jobs = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; $code = { param($i, $g) try { $fam = [System.Net.IPAddress]::Parse($i).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $conn = $tcp.BeginConnect($i, 853, $null, $null); $hit = $conn.AsyncWaitHandle.WaitOne(2000, $false); $tcp.Close(); [PSCustomObject]@{IP=$i;Tag=$g;Status=$hit} } catch { [PSCustomObject]@{IP=$i;Tag=$g;Status=$false} } }; [powershell]::Create().AddScript($code).AddArgument($ip).AddArgument($tag) }; $handles = foreach ($j in $jobs) { $j.BeginInvoke() }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; for ($i=0; $i -lt $jobs.Count; $i++) { $r = $jobs[$i].EndInvoke($handles[$i]); $st = if ($r.Status) { 'OK' } else { 'FAIL' }; if ($r.Status) { $listOK.Add($r.IP) } else { $listFAIL.Add($r.IP) }; $details.Add(($r.IP + '|' + $r.Tag + '|' + $st)); $jobs[$i].Dispose() }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
+
+set "DOT_DETAILS="
 if exist "%DOT_TMP%" (
-    for /f "tokens=1,2 delims==" %%A in (%DOT_TMP%) do (
+    for /f "usebackq tokens=1,2 delims==" %%A in ("%DOT_TMP%") do (
         if "%%A"=="OK"       set "DOT_OK=%%B"
         if "%%A"=="FAIL"     set "DOT_FAIL=%%B"
         if "%%A"=="FAILLIST" set "DOT_FAIL_LIST=%%B"
+        if "%%A"=="DETAILS"  set "DOT_DETAILS=%%B"
     )
     del /f /q "%DOT_TMP%" >nul 2>&1
 )
@@ -1146,18 +1137,52 @@ set "DOT_FAIL=%DOT_FAIL: =%"
 if "%DOT_OK%"=="" set "DOT_OK=0"
 if "%DOT_FAIL%"=="" set "DOT_FAIL=0"
 
+:: 3) Scrittura immediata dell'esito della fase e ricarica della UI complessiva
 if %DOT_FAIL% EQU 0 (
-    set "F14_RES=[      OK      ] DoT  >> Porta 853 raggiungibile su tutti gli upstream testati. Porta raggiungibile."
-    call :LOGSTEP "DoT" "OK: porta 853 OK su tutti gli upstream"
+    set "F14_RES=[      OK      ] DoT  >> Verifica eseguita con successo su tutti i resolver attivi."
+    call :LOGSTEP "DoT" "OK: Porta 853 aperta su tutti i resolver dinamici"
 ) else if %DOT_OK% EQU 0 (
     set "CONSOLE_COLOR=0C"
-    set "F14_RES=[    ERRORE    ] DoT  >> ALLARME: nessun upstream risponde su 853! Traffico in chiaro."
-    call :LOGFAIL "DoT" "ALLARME: porta 853 irraggiungibile su tutti gli upstream"
+    set "F14_RES=[    ERRORE    ] DoT  >> ALLARME: Nessun resolver risponde sulla porta 853!"
+    call :LOGFAIL "DoT" "ALLARME: Porta 853 irraggiungibile su tutti i resolver"
 ) else (
-    set "F14_RES=[     WARN     ] DoT  >> !DOT_OK! upstream OK, !DOT_FAIL! non risponde su 853: !DOT_FAIL_LIST!"
-    call :LOGSTEP "DoT" "WARN: !DOT_FAIL! upstream non raggiungibili su 853: !DOT_FAIL_LIST!"
+    set "F14_RES=[     WARN     ] DoT  >> Verifica eseguita: !DOT_OK! resolver OK, !DOT_FAIL! falliti."
+    call :LOGSTEP "DoT" "WARN: !DOT_FAIL! resolver non raggiungibili su 853: !DOT_FAIL_LIST!"
 )
+
+:: Ricarica lo schermo mostrando lo stato definitivo [OK][cite: 2]
 call :UPDATE_UI 100
+
+:: 4) Disegna la tabella dei dettagli staccata sotto l'interfaccia principale
+echo.
+echo   --------------------------------------------------------------------------------------------------
+echo    RESOLVER IP ADDRESS               GESTORE / TAG                             PORT     STATUS      
+echo   --------------------------------------------------------------------------------------------------
+if defined DOT_DETAILS (
+    for %%X in ("%DOT_DETAILS:;=" "%") do (
+        set "RAW_ITEM=%%~X"
+        for /f "tokens=1,2,3 delims=|" %%A in ("!RAW_ITEM!") do (
+            set "IP_CLEAN=%%A"
+            set "TAG_CLEAN=%%B"
+            set "STATUS_CLEAN=%%C"
+            
+            set "PAD_IP=!IP_CLEAN!                                 "
+            set "PAD_IP=!PAD_IP:~0,33!"
+            
+            set "PAD_TAG=!TAG_CLEAN!                                         "
+            set "PAD_TAG=!PAD_TAG:~0,41!"
+            
+            if "!STATUS_CLEAN!"=="OK" (
+                echo    !PAD_IP! !PAD_TAG! 853      %ESC%[32m[   OK   ]%ESC%[0m
+            ) else (
+                echo    !PAD_IP! !PAD_TAG! 853      %ESC%[91m[ FALLITO ]%ESC%[0m
+            )
+        )
+    )
+)
+echo   --------------------------------------------------------------------------------------------------
+echo.
+
 call :RACCOLTA_STATISTICHE APPEND
 goto :FINALIZZAZIONE
 
