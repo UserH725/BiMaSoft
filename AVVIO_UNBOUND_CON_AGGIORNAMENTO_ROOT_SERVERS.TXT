@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=722.00"
+set "LOCAL_VER=723.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -672,6 +672,13 @@ if "%SKIP_MAINTENANCE%"=="1" (
     :: dalla FASE 1 e questo percorso di skip non la disattivava mai.
     call :DNS_FALLBACK_OFF
     call :UPDATE_UI 100
+    :: [CHIRURGICO] Snapshot mancante su questo ramo: si arriva qui solo se
+    :: SKIP_MAINTENANCE=1, cioe' un run --scheduled NON e' il primo della
+    :: giornata (LAST_UPD_FILE gia' aggiornato a oggi). Il reset di sessione
+    :: e' quindi gia' avvenuto sul primo run delle 06:00: qui va fatto un
+    :: APPEND normale (niente SESSION_RESET) per non perdere questo delta e
+    :: non azzerare due volte la stessa sessione giornaliera.
+    call :RACCOLTA_STATISTICHE APPEND
     goto :FINALIZZAZIONE
 )
 
@@ -1152,7 +1159,15 @@ if %DOT_FAIL% EQU 0 (
 
 :: [CHIRURGICO] Spostiamo la raccolta statistiche QUI, PRIMA di stampare l'output a video. 
 :: In questo modo l'eventuale attesa di unbound-control avviene "al buio".
-call :RACCOLTA_STATISTICHE APPEND
+:: La sessione (TOTALE SESSIONE) si azzera SOLO sul run pianificato delle 06:00
+:: (--scheduled), non su boot/avvio manuale/refresh, cosi' la finestra e' 06:00-06:00
+:: (o boot-successivo->prossime 06:00 se il boot avviene dopo le 06:00, dato che in
+:: quel caso non c'e' un run --scheduled successivo che la azzeri di nuovo lo stesso giorno).
+if "%~1"=="--scheduled" (
+    call :RACCOLTA_STATISTICHE APPEND SESSION_RESET
+) else (
+    call :RACCOLTA_STATISTICHE APPEND
+)
 
 :: Ricarica lo schermo mostrando la UI definitiva al 100%
 call :UPDATE_UI 100
@@ -1757,6 +1772,12 @@ if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
 
 set "STATS_FILE=%STATS_DIR%\%GIORNO%.log"
 
+:: Flag di reset sessione: propagato SOLO quando il chiamante passa
+:: "SESSION_RESET" come secondo parametro (vedi call sul run --scheduled).
+set "SESSION_RESET_FLAG=0"
+if /i "%~2"=="SESSION_RESET" set "SESSION_RESET_FLAG=1"
+set "SESSION_FILE=%STATS_DIR%\session_totale.dat"
+
 if /i "%~1"=="RESET" (
     if exist "%STATS_FILE%" del /f /q "%STATS_FILE%" >nul 2>&1
     >>"%STATS_FILE%" echo ============================================================
@@ -1801,20 +1822,62 @@ powershell -NoProfile -Command ^
   "$rtavg = G 'total.recursion.time.avg'; $rtmed = G 'total.recursion.time.median'; $rlavg = G 'total.requestlist.avg'; $rlmax = G 'total.requestlist.max'; " ^
   "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
   "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$accFile = '%SESSION_FILE%'; $sessReset = '%SESSION_RESET_FLAG%'; $accH = @{}; " ^
+  "if ($sessReset -ne '1' -and (Test-Path $accFile)) { Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } } }; " ^
+  "function AGD($k) { if ($accH.ContainsKey($k)) { return [double]$accH[$k] } else { return 0 } }; " ^
+  "$sessStart = if ($sessReset -eq '1' -or -not $accH.ContainsKey('SESSION_START')) { Get-Date -Format 'yyyy-MM-dd HH:mm' } else { $accH['SESSION_START'] }; " ^
+  "$sQ = (AGD 'SESSION_Q') + $q; $sHit = (AGD 'SESSION_HIT') + $hit; $sMiss = (AGD 'SESSION_MISS') + $miss; " ^
+  "$sPct = if (($sHit + $sMiss) -gt 0) { [math]::Round(($sHit / ($sHit + $sMiss)) * 100, 1) } else { 0 }; " ^
+  "$sPrefetch = (AGD 'SESSION_PREFETCH') + [double]$prefetch; $sZerottl = (AGD 'SESSION_ZEROTTL') + [double]$zerottl; " ^
+  "$sRcOk = (AGD 'SESSION_RCOK') + [double]$rcOk; $sRcNx = (AGD 'SESSION_RCNX') + [double]$rcNx; " ^
+  "$sRcSf = (AGD 'SESSION_RCSF') + [double]$rcSf; $sRcRe = (AGD 'SESSION_RCRE') + [double]$rcRe; " ^
+  "$sSec = (AGD 'SESSION_SEC') + [double]$sec; $sBog = (AGD 'SESSION_BOG') + [double]$bog; $sRrbog = (AGD 'SESSION_RRBOG') + [double]$rrbog; " ^
+  "$sUnwq = (AGD 'SESSION_UNWQ') + [double]$unwq; $sUnwr = (AGD 'SESSION_UNWR') + [double]$unwr; " ^
+  "$accLines = @(); " ^
+  "$accLines += ('SESSION_START={0}' -f $sessStart); " ^
+  "$accLines += ('SESSION_Q={0}' -f $sQ); $accLines += ('SESSION_HIT={0}' -f $sHit); $accLines += ('SESSION_MISS={0}' -f $sMiss); " ^
+  "$accLines += ('SESSION_PREFETCH={0}' -f $sPrefetch); $accLines += ('SESSION_ZEROTTL={0}' -f $sZerottl); " ^
+  "$accLines += ('SESSION_RCOK={0}' -f $sRcOk); $accLines += ('SESSION_RCNX={0}' -f $sRcNx); " ^
+  "$accLines += ('SESSION_RCSF={0}' -f $sRcSf); $accLines += ('SESSION_RCRE={0}' -f $sRcRe); " ^
+  "$accLines += ('SESSION_SEC={0}' -f $sSec); $accLines += ('SESSION_BOG={0}' -f $sBog); $accLines += ('SESSION_RRBOG={0}' -f $sRrbog); " ^
+  "$accLines += ('SESSION_UNWQ={0}' -f $sUnwq); $accLines += ('SESSION_UNWR={0}' -f $sUnwr); " ^
+  "Set-Content -Path $accFile -Value $accLines; " ^
   "$lines = @(); " ^
   "$lines += ''; " ^
   "$lines += '------------------------------------------------------------'; " ^
   "$lines += ('[{0}] Snapshot ultimo intervallo' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')); " ^
   "$lines += '------------------------------------------------------------'; " ^
   "$lines += (' TRAFFICO     Query totali: {0}  TCP: {1}  IPv6: {2}  EDNS: {3}  DO/DNSSEC: {4}' -f $q,$tcp,$ipv6q,$edns,$ednsdo); " ^
+  "$lines += '   > Quante domande DNS sono arrivate in queste 2 ore (Query totali), quante via TCP invece di UDP, quante IPv6, quante con EDNS e DNSSEC attivi.'; " ^
   "$lines += (' TIPI QUERY   A: {0}  AAAA: {1}  HTTPS: {2}  PTR: {3}  TXT: {4}  MX: {5}  NS: {6}' -f $ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns); " ^
+  "$lines += '   > Che tipo di informazione veniva chiesta: A e AAAA sono indirizzi IP, PTR e la ricerca inversa da IP a nome, TXT MX NS sono altri tipi di record DNS.'; " ^
   "$lines += (' CACHE        Hit: {0}  Miss: {1}  Hit-rate: {2}%%  Prefetch: {3}  Zero-TTL: {4}' -f $hit,$miss,$pct,$prefetch,$zerottl); " ^
+  "$lines += '   > Hit e la risposta gia in memoria, veloce, niente uscita su internet. Miss e quando serviva chiedere fuori. Hit-rate e la percentuale risolta dalla cache. Prefetch sono le voci rinnovate in anticipo prima di scadere.'; " ^
   "$lines += (' CACHE(voci)  Messaggi: {0}  RRset: {1}  Infra: {2}  Key: {3}' -f $msgN,$rrN,$infraN,$keyN); " ^
+  "$lines += '   > Quante voci sono salvate adesso nelle cache di Unbound: messaggi, RRset, infrastruttura di rete, chiavi DNSSEC.'; " ^
   "$lines += (' CACHE(mem)   Messaggi: {0}MB  RRset: {1}MB' -f $memMsg,$memRR); " ^
+  "$lines += '   > Quanta memoria RAM occupano le cache di messaggi e RRset.'; " ^
   "$lines += (' DNSSEC       Valide: {0}  Bogus: {1}  RRset bogus: {2}' -f $sec,$bog,$rrbog); " ^
+  "$lines += '   > Valide sono le risposte verificate come autentiche. Bogus sono risposte sospette o falsificate scartate, deve restare a 0.'; " ^
   "$lines += (' SICUREZZA    Query indesiderate: {0}  Risposte indesiderate: {1}' -f $unwq,$unwr); " ^
+  "$lines += '   > Query e risposte indesiderate sono traffico anomalo o non richiesto arrivato da fuori, deve restare a 0.'; " ^
   "$lines += (' RISPOSTE     NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $rcOk,$rcNx,$rcSf,$rcRe); " ^
+  "$lines += '   > NOERROR e risposta valida. NXDOMAIN significa che il dominio non esiste, normale, es. errore di battitura. SERVFAIL e REFUSED sono errori o rifiuti, devono restare a 0.'; " ^
   "$lines += (' PERFORMANCE  Ricorsione media: {0}ms  mediana: {1}ms  Coda media: {2}  Coda max: {3}' -f $rtavg,$rtmed,$rlavg,$rlmax); " ^
+  "$lines += '   > Tempo medio e mediano impiegato da Unbound per risolvere una domanda, e quante richieste erano in coda in attesa, in media e al picco massimo.'; " ^
+  "$lines += ''; " ^
+  "$lines += '============================================================'; " ^
+  "$lines += (' TOTALE SESSIONE (dal {0}, azzerata al run delle 06:00)' -f $sessStart); " ^
+  "$lines += '============================================================'; " ^
+  "$lines += '   > Da qui in poi i numeri non sono delle ultime 2 ore ma la somma di tutti gli intervalli dalle 06:00 ad ora, per avere il quadro di tutta la sessione.'; " ^
+  "$lines += (' TRAFFICO     Query totali: {0}  DNSSEC valide: {1}  Bogus: {2}' -f $sQ,$sSec,$sBog); " ^
+  "$lines += '   > Somma di tutte le domande DNS ricevute dalle 06:00 ad ora in questa sessione, con il totale delle risposte verificate DNSSEC e di quelle sospette.'; " ^
+  "$lines += (' CACHE        Hit: {0}  Miss: {1}  Hit-rate: {2}%%  Prefetch: {3}  Zero-TTL: {4}' -f $sHit,$sMiss,$sPct,$sPrefetch,$sZerottl); " ^
+  "$lines += '   > Stessi concetti del blocco sopra, Hit Miss Hit-rate Prefetch, ma sommati su tutta la sessione invece che sulle sole ultime 2 ore.'; " ^
+  "$lines += (' RISPOSTE     NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $sRcOk,$sRcNx,$sRcSf,$sRcRe); " ^
+  "$lines += '   > Somma di tutte le risposte NOERROR, NXDOMAIN, SERVFAIL e REFUSED registrate durante la sessione.'; " ^
+  "$lines += (' SICUREZZA    Query indesiderate: {0}  Risposte indesiderate: {1}' -f $sUnwq,$sUnwr); " ^
+  "$lines += '   > Somma di query e risposte indesiderate registrate durante la sessione, deve restare a 0.'; " ^
   "Add-Content -Path '%STATS_FILE%' -Value $lines"
 
 del /f /q "%STATS_TMP%" >nul 2>&1
