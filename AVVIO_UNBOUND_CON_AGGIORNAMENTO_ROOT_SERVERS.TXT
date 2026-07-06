@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=721.00"
+set "LOCAL_VER=722.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1607,6 +1607,12 @@ if not errorlevel 1 (
 if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 
+:: [CHIRURGICO] Raccolta statistiche PRIMA di un eventuale riavvio del servizio.
+:: Se lo snapshot venisse preso DOPO il riavvio (net start + timeout /t 2),
+:: i contatori runtime di Unbound risultano azzerati dal riavvio stesso e lo
+:: snapshot cattura solo i ~2 secondi post-avvio invece delle 2 ore trascorse.
+call :RACCOLTA_STATISTICHE APPEND
+
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -1628,7 +1634,6 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
-call :RACCOLTA_STATISTICHE APPEND
 exit /b
 
 :CONFIG_ERROR
