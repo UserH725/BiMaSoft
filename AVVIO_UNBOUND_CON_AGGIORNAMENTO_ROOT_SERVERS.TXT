@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=724.00"
+set "LOCAL_VER=725.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -2352,15 +2352,15 @@ if !TOTAL_RAM_GB! leq 5 (
     :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
     set "MSG_CACHE=128m"
     set "RRSET_CACHE=256m"
-    set "SO_RCVBUF=4m"
-    set "SO_SNDBUF=4m"
+    set "SO_RCVBUF=8m"
+    set "SO_SNDBUF=8m"
     set "SLABS_MAX=4"
 ) else (
     :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "MSG_CACHE=512m"
     set "RRSET_CACHE=1024m"
-    set "SO_RCVBUF=8m"
-    set "SO_SNDBUF=8m"
+    set "SO_RCVBUF=16m"
+    set "SO_SNDBUF=16m"
     set "SLABS_MAX=8"
 )
 
