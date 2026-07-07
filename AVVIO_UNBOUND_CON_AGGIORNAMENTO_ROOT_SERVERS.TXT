@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=723.00"
+set "LOCAL_VER=724.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1847,37 +1847,183 @@ powershell -NoProfile -Command ^
   "$lines += '------------------------------------------------------------'; " ^
   "$lines += ('[{0}] Snapshot ultimo intervallo' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')); " ^
   "$lines += '------------------------------------------------------------'; " ^
-  "$lines += (' TRAFFICO     Query totali: {0}  TCP: {1}  IPv6: {2}  EDNS: {3}  DO/DNSSEC: {4}' -f $q,$tcp,$ipv6q,$edns,$ednsdo); " ^
-  "$lines += '   > Quante domande DNS sono arrivate in queste 2 ore (Query totali), quante via TCP invece di UDP, quante IPv6, quante con EDNS e DNSSEC attivi.'; " ^
-  "$lines += (' TIPI QUERY   A: {0}  AAAA: {1}  HTTPS: {2}  PTR: {3}  TXT: {4}  MX: {5}  NS: {6}' -f $ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns); " ^
-  "$lines += '   > Che tipo di informazione veniva chiesta: A e AAAA sono indirizzi IP, PTR e la ricerca inversa da IP a nome, TXT MX NS sono altri tipi di record DNS.'; " ^
-  "$lines += (' CACHE        Hit: {0}  Miss: {1}  Hit-rate: {2}%%  Prefetch: {3}  Zero-TTL: {4}' -f $hit,$miss,$pct,$prefetch,$zerottl); " ^
-  "$lines += '   > Hit e la risposta gia in memoria, veloce, niente uscita su internet. Miss e quando serviva chiedere fuori. Hit-rate e la percentuale risolta dalla cache. Prefetch sono le voci rinnovate in anticipo prima di scadere.'; " ^
-  "$lines += (' CACHE(voci)  Messaggi: {0}  RRset: {1}  Infra: {2}  Key: {3}' -f $msgN,$rrN,$infraN,$keyN); " ^
-  "$lines += '   > Quante voci sono salvate adesso nelle cache di Unbound: messaggi, RRset, infrastruttura di rete, chiavi DNSSEC.'; " ^
-  "$lines += (' CACHE(mem)   Messaggi: {0}MB  RRset: {1}MB' -f $memMsg,$memRR); " ^
-  "$lines += '   > Quanta memoria RAM occupano le cache di messaggi e RRset.'; " ^
-  "$lines += (' DNSSEC       Valide: {0}  Bogus: {1}  RRset bogus: {2}' -f $sec,$bog,$rrbog); " ^
-  "$lines += '   > Valide sono le risposte verificate come autentiche. Bogus sono risposte sospette o falsificate scartate, deve restare a 0.'; " ^
-  "$lines += (' SICUREZZA    Query indesiderate: {0}  Risposte indesiderate: {1}' -f $unwq,$unwr); " ^
-  "$lines += '   > Query e risposte indesiderate sono traffico anomalo o non richiesto arrivato da fuori, deve restare a 0.'; " ^
-  "$lines += (' RISPOSTE     NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $rcOk,$rcNx,$rcSf,$rcRe); " ^
-  "$lines += '   > NOERROR e risposta valida. NXDOMAIN significa che il dominio non esiste, normale, es. errore di battitura. SERVFAIL e REFUSED sono errori o rifiuti, devono restare a 0.'; " ^
-  "$lines += (' PERFORMANCE  Ricorsione media: {0}ms  mediana: {1}ms  Coda media: {2}  Coda max: {3}' -f $rtavg,$rtmed,$rlavg,$rlmax); " ^
-  "$lines += '   > Tempo medio e mediano impiegato da Unbound per risolvere una domanda, e quante richieste erano in coda in attesa, in media e al picco massimo.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' TRAFFICO'; " ^
+  "$lines += ('   Query totali: {0}' -f $q); " ^
+  "$lines += '     > Numero totale di richieste DNS ricevute dai dispositivi della rete in queste due ore. Include sia le richieste risolte dalla cache sia quelle inoltrate a server esterni.'; " ^
+  "$lines += ('   TCP: {0}' -f $tcp); " ^
+  "$lines += '     > Quante di queste query sono arrivate tramite il protocollo TCP invece del piu comune UDP. Il TCP viene usato per risposte troppo grandi per un singolo pacchetto UDP o per trasferimenti di zona: un valore diverso da zero e normale amministrazione DNS, non un problema.'; " ^
+  "$lines += ('   IPv6: {0}' -f $ipv6q); " ^
+  "$lines += '     > Quante query sono arrivate su indirizzo IPv6 invece che IPv4. Indica quali dispositivi della rete stanno effettivamente usando IPv6 per contattare il resolver.'; " ^
+  "$lines += ('   EDNS: {0}' -f $edns); " ^
+  "$lines += '     > Quante query includevano lestensione EDNS(0), che permette pacchetti DNS piu grandi del limite classico di 512 byte e trasporta informazioni aggiuntive come il supporto DNSSEC. Praticamente tutti i client moderni la usano di default.'; " ^
+  "$lines += ('   DO/DNSSEC: {0}' -f $ednsdo); " ^
+  "$lines += '     > Quante di queste query avevano il bit DO (DNSSEC OK) attivo, cioe il client ha esplicitamente chiesto la verifica crittografica DNSSEC della risposta.'; " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+
+powershell -NoProfile -Command ^
+  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
+  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
+  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
+  "$ta = G 'num.query.type.A'; $taaaa = G 'num.query.type.AAAA'; $thttps = G 'num.query.type.HTTPS'; " ^
+  "$tptr = G 'num.query.type.PTR'; $ttxt = G 'num.query.type.TXT'; $tmx = G 'num.query.type.MX'; $tns = G 'num.query.type.NS'; " ^
+  "$lines = @(); " ^
+  "$lines += ''; " ^
+  "$lines += ' TIPI QUERY'; " ^
+  "$lines += ('   A: {0}' -f $ta); " ^
+  "$lines += '     > Richieste di indirizzo IPv4 (record A): il tipo di query piu comune, es. risoluzione di un nome a dominio in un indirizzo IPv4.'; " ^
+  "$lines += ('   AAAA: {0}' -f $taaaa); " ^
+  "$lines += '     > Richieste di indirizzo IPv6 (record AAAA), equivalenti alle A ma per IPv6.'; " ^
+  "$lines += ('   HTTPS: {0}' -f $thttps); " ^
+  "$lines += '     > Richieste di record HTTPS/SVCB, usate dai browser moderni per scoprire in anticipo parametri di connessione come HTTP/3 prima di aprire la connessione vera e propria.'; " ^
+  "$lines += ('   PTR: {0}' -f $tptr); " ^
+  "$lines += '     > Richieste di ricerca inversa (da indirizzo IP a nome host), tipiche di log, firewall o strumenti di rete che risolvono chi si nasconde dietro un IP.'; " ^
+  "$lines += ('   TXT: {0}' -f $ttxt); " ^
+  "$lines += '     > Richieste di record TXT, spesso usati per verifiche di dominio, SPF/DKIM per la posta o altre informazioni testuali associate al dominio.'; " ^
+  "$lines += ('   MX: {0}' -f $tmx); " ^
+  "$lines += '     > Richieste di record MX, cioe quali server gestiscono la posta elettronica in arrivo per un dominio.'; " ^
+  "$lines += ('   NS: {0}' -f $tns); " ^
+  "$lines += '     > Richieste di record NS, cioe quali server sono autoritativi (cioe la fonte ufficiale delle risposte) per un dominio.'; " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+
+powershell -NoProfile -Command ^
+  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
+  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
+  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
+  "function GD($k) { return [double](G $k) }; " ^
+  "$hit = GD 'total.num.cachehits'; $miss = GD 'total.num.cachemiss'; $tot = $hit + $miss; " ^
+  "$pct = if ($tot -gt 0) { [math]::Round(($hit / $tot) * 100, 1) } else { 0 }; " ^
+  "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
+  "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
+  "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$lines = @(); " ^
+  "$lines += ''; " ^
+  "$lines += ' CACHE'; " ^
+  "$lines += ('   Hit: {0}' -f $hit); " ^
+  "$lines += '     > Risposte gia presenti in memoria e restituite subito, senza dover contattare nulla su internet: velocissime e senza traffico esterno.'; " ^
+  "$lines += ('   Miss: {0}' -f $miss); " ^
+  "$lines += '     > Risposte non trovate in cache, per cui Unbound ha dovuto interrogare un server esterno (i forwarder configurati o i root server).'; " ^
+  "$lines += ('   Hit-rate: {0}%%' -f $pct); " ^
+  "$lines += '     > Percentuale di richieste risolte direttamente dalla cache rispetto al totale (Hit / (Hit+Miss)). Piu e alto, meno traffico esce verso internet e piu veloci sono le risposte.'; " ^
+  "$lines += ('   Prefetch: {0}' -f $prefetch); " ^
+  "$lines += '     > Voci di cache che Unbound ha rinnovato in anticipo, poco prima della scadenza del TTL, cosi che il prossimo client trovi gia una risposta fresca invece di aspettare un nuovo giro esterno.'; " ^
+  "$lines += ('   Zero-TTL: {0}' -f $zerottl); " ^
+  "$lines += '     > Risposte con TTL pari a zero, cioe che non possono essere messe in cache e vanno richieste di nuovo ogni volta (tipico di alcuni servizi che aggiornano indirizzi molto di frequente).'; " ^
+  "$lines += ''; " ^
+  "$lines += ' CACHE (voci in memoria)'; " ^
+  "$lines += ('   Messaggi: {0}' -f $msgN); " ^
+  "$lines += '     > Quante risposte DNS complete sono attualmente salvate nella cache dei messaggi di Unbound.'; " ^
+  "$lines += ('   RRset: {0}' -f $rrN); " ^
+  "$lines += '     > Quanti singoli set di record DNS (RRset) sono salvati in cache: sono i mattoncini con cui Unbound compone le risposte ai messaggi.'; " ^
+  "$lines += ('   Infra: {0}' -f $infraN); " ^
+  "$lines += '     > Quante voci sono salvate nella cache infrastrutturale, che memorizza informazioni sui server verso cui Unbound ha gia parlato, come tempi di risposta e capacita EDNS, per ottimizzare le richieste successive.'; " ^
+  "$lines += ('   Key: {0}' -f $keyN); " ^
+  "$lines += '     > Quante chiavi crittografiche DNSSEC sono attualmente salvate in cache, usate per verificare lautenticita delle risposte firmate.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' CACHE (memoria occupata)'; " ^
+  "$lines += ('   Messaggi: {0}MB' -f $memMsg); " ^
+  "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei messaggi DNS.'; " ^
+  "$lines += ('   RRset: {0}MB' -f $memRR); " ^
+  "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei set di record DNS (RRset).'; " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+
+powershell -NoProfile -Command ^
+  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
+  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
+  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
+  "$sec = G 'num.answer.secure'; $bog = G 'num.answer.bogus'; $rrbog = G 'num.rrset.bogus'; " ^
+  "$unwq = G 'unwanted.queries'; $unwr = G 'unwanted.replies'; " ^
+  "$rcOk = G 'num.answer.rcode.NOERROR'; $rcNx = G 'num.answer.rcode.NXDOMAIN'; $rcSf = G 'num.answer.rcode.SERVFAIL'; $rcRe = G 'num.answer.rcode.REFUSED'; " ^
+  "$rtavg = G 'total.recursion.time.avg'; $rtmed = G 'total.recursion.time.median'; $rlavg = G 'total.requestlist.avg'; $rlmax = G 'total.requestlist.max'; " ^
+  "$lines = @(); " ^
+  "$lines += ''; " ^
+  "$lines += ' DNSSEC'; " ^
+  "$lines += ('   Valide: {0}' -f $sec); " ^
+  "$lines += '     > Risposte verificate crittograficamente e confermate autentiche tramite DNSSEC: la firma digitale del dominio corrisponde.'; " ^
+  "$lines += ('   Bogus: {0}' -f $bog); " ^
+  "$lines += '     > Risposte che hanno fallito la verifica DNSSEC e sono state scartate perche sospette o falsificate. Deve restare sempre a 0: un valore diverso da 0 indica un tentativo di manomissione o un problema di configurazione del dominio remoto.'; " ^
+  "$lines += ('   RRset bogus: {0}' -f $rrbog); " ^
+  "$lines += '     > Come sopra ma contati a livello di singolo set di record (RRset) invece che di risposta completa. Deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' SICUREZZA'; " ^
+  "$lines += ('   Query indesiderate: {0}' -f $unwq); " ^
+  "$lines += '     > Richieste arrivate da fuori la rete che Unbound non doveva ricevere (traffico anomalo o non autorizzato verso il resolver). Deve restare a 0.'; " ^
+  "$lines += ('   Risposte indesiderate: {0}' -f $unwr); " ^
+  "$lines += '     > Risposte arrivate da server esterni che Unbound non aveva richiesto, un possibile segnale di spoofing o traffico anomalo. Deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' RISPOSTE (rcode)'; " ^
+  "$lines += ('   NOERROR: {0}' -f $rcOk); " ^
+  "$lines += '     > Risposte valide, cioe il dominio esiste ed e stato risolto correttamente. E il codice di risposta normale nella stragrande maggioranza dei casi.'; " ^
+  "$lines += ('   NXDOMAIN: {0}' -f $rcNx); " ^
+  "$lines += '     > Il dominio richiesto non esiste. E normale, capita ad esempio con errori di battitura o domini scaduti, non e sintomo di un problema al resolver.'; " ^
+  "$lines += ('   SERVFAIL: {0}' -f $rcSf); " ^
+  "$lines += '     > Errore nella risoluzione (es. il server remoto non ha risposto o la validazione DNSSEC e fallita). Deve restare a 0 o comunque molto basso.'; " ^
+  "$lines += ('   REFUSED: {0}' -f $rcRe); " ^
+  "$lines += '     > La richiesta e stata rifiutata dal resolver (es. per policy di accesso). Deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' PERFORMANCE'; " ^
+  "$lines += ('   Ricorsione media: {0}ms' -f $rtavg); " ^
+  "$lines += '     > Tempo medio impiegato da Unbound per risolvere una domanda che ha richiesto una interrogazione esterna (esclude gli hit di cache, che sono istantanei).'; " ^
+  "$lines += ('   Ricorsione mediana: {0}ms' -f $rtmed); " ^
+  "$lines += '     > Tempo mediano di risoluzione: meno influenzato da eventuali picchi isolati rispetto alla media, da unidea piu stabile del tempo di risposta tipico.'; " ^
+  "$lines += ('   Coda media: {0}' -f $rlavg); " ^
+  "$lines += '     > Numero medio di richieste in attesa di essere processate contemporaneamente durante lintervallo.'; " ^
+  "$lines += ('   Coda massima: {0}' -f $rlmax); " ^
+  "$lines += '     > Il picco massimo di richieste in coda contemporaneamente nellintervallo: piu e alto, piu il resolver era sotto pressione in quel momento.'; " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+
+powershell -NoProfile -Command ^
+  "$accFile = '%SESSION_FILE%'; $accH = @{}; " ^
+  "Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } }; " ^
+  "function AG($k) { if ($accH.ContainsKey($k)) { return $accH[$k] } else { return '0' } }; " ^
+  "$sessStart = AG 'SESSION_START'; $sQ = AG 'SESSION_Q'; $sHit = AG 'SESSION_HIT'; $sMiss = AG 'SESSION_MISS'; " ^
+  "$sPrefetch = AG 'SESSION_PREFETCH'; $sZerottl = AG 'SESSION_ZEROTTL'; " ^
+  "$sRcOk = AG 'SESSION_RCOK'; $sRcNx = AG 'SESSION_RCNX'; $sRcSf = AG 'SESSION_RCSF'; $sRcRe = AG 'SESSION_RCRE'; " ^
+  "$sSec = AG 'SESSION_SEC'; $sBog = AG 'SESSION_BOG'; $sUnwq = AG 'SESSION_UNWQ'; $sUnwr = AG 'SESSION_UNWR'; " ^
+  "$sHitD = [double]$sHit; $sMissD = [double]$sMiss; $sTot = $sHitD + $sMissD; " ^
+  "$sPct = if ($sTot -gt 0) { [math]::Round(($sHitD / $sTot) * 100, 1) } else { 0 }; " ^
+  "$lines = @(); " ^
   "$lines += ''; " ^
   "$lines += '============================================================'; " ^
   "$lines += (' TOTALE SESSIONE (dal {0}, azzerata al run delle 06:00)' -f $sessStart); " ^
   "$lines += '============================================================'; " ^
   "$lines += '   > Da qui in poi i numeri non sono delle ultime 2 ore ma la somma di tutti gli intervalli dalle 06:00 ad ora, per avere il quadro di tutta la sessione.'; " ^
-  "$lines += (' TRAFFICO     Query totali: {0}  DNSSEC valide: {1}  Bogus: {2}' -f $sQ,$sSec,$sBog); " ^
-  "$lines += '   > Somma di tutte le domande DNS ricevute dalle 06:00 ad ora in questa sessione, con il totale delle risposte verificate DNSSEC e di quelle sospette.'; " ^
-  "$lines += (' CACHE        Hit: {0}  Miss: {1}  Hit-rate: {2}%%  Prefetch: {3}  Zero-TTL: {4}' -f $sHit,$sMiss,$sPct,$sPrefetch,$sZerottl); " ^
-  "$lines += '   > Stessi concetti del blocco sopra, Hit Miss Hit-rate Prefetch, ma sommati su tutta la sessione invece che sulle sole ultime 2 ore.'; " ^
-  "$lines += (' RISPOSTE     NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $sRcOk,$sRcNx,$sRcSf,$sRcRe); " ^
-  "$lines += '   > Somma di tutte le risposte NOERROR, NXDOMAIN, SERVFAIL e REFUSED registrate durante la sessione.'; " ^
-  "$lines += (' SICUREZZA    Query indesiderate: {0}  Risposte indesiderate: {1}' -f $sUnwq,$sUnwr); " ^
-  "$lines += '   > Somma di query e risposte indesiderate registrate durante la sessione, deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' TRAFFICO'; " ^
+  "$lines += ('   Query totali: {0}' -f $sQ); " ^
+  "$lines += '     > Somma di tutte le domande DNS ricevute dalle 06:00 ad ora in questa sessione.'; " ^
+  "$lines += ('   DNSSEC valide: {0}' -f $sSec); " ^
+  "$lines += '     > Somma delle risposte verificate con successo tramite DNSSEC durante tutta la sessione.'; " ^
+  "$lines += ('   Bogus: {0}' -f $sBog); " ^
+  "$lines += '     > Somma delle risposte sospette o falsificate scartate durante tutta la sessione. Deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' CACHE'; " ^
+  "$lines += ('   Hit: {0}' -f $sHit); " ^
+  "$lines += '     > Somma di tutte le risposte servite dalla cache durante lintera sessione.'; " ^
+  "$lines += ('   Miss: {0}' -f $sMiss); " ^
+  "$lines += '     > Somma di tutte le risposte che hanno richiesto uninterrogazione esterna durante lintera sessione.'; " ^
+  "$lines += ('   Hit-rate: {0}%%' -f $sPct); " ^
+  "$lines += '     > Percentuale complessiva di richieste risolte dalla cache su tutta la sessione (stesso calcolo del blocco Hit-rate sopra, ma cumulativo).'; " ^
+  "$lines += ('   Prefetch: {0}' -f $sPrefetch); " ^
+  "$lines += '     > Somma delle voci di cache rinnovate in anticipo durante lintera sessione.'; " ^
+  "$lines += ('   Zero-TTL: {0}' -f $sZerottl); " ^
+  "$lines += '     > Somma delle risposte non memorizzabili in cache (TTL zero) durante lintera sessione.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' RISPOSTE (rcode)'; " ^
+  "$lines += ('   NOERROR: {0}' -f $sRcOk); " ^
+  "$lines += '     > Somma di tutte le risposte valide registrate durante la sessione.'; " ^
+  "$lines += ('   NXDOMAIN: {0}' -f $sRcNx); " ^
+  "$lines += '     > Somma di tutte le risposte di dominio inesistente registrate durante la sessione.'; " ^
+  "$lines += ('   SERVFAIL: {0}' -f $sRcSf); " ^
+  "$lines += '     > Somma di tutti gli errori di risoluzione registrati durante la sessione. Deve restare basso.'; " ^
+  "$lines += ('   REFUSED: {0}' -f $sRcRe); " ^
+  "$lines += '     > Somma di tutte le richieste rifiutate registrate durante la sessione. Deve restare a 0.'; " ^
+  "$lines += ''; " ^
+  "$lines += ' SICUREZZA'; " ^
+  "$lines += ('   Query indesiderate: {0}' -f $sUnwq); " ^
+  "$lines += '     > Somma di tutte le query indesiderate arrivate durante la sessione. Deve restare a 0.'; " ^
+  "$lines += ('   Risposte indesiderate: {0}' -f $sUnwr); " ^
+  "$lines += '     > Somma di tutte le risposte indesiderate arrivate durante la sessione. Deve restare a 0.'; " ^
   "Add-Content -Path '%STATS_FILE%' -Value $lines"
 
 del /f /q "%STATS_TMP%" >nul 2>&1
