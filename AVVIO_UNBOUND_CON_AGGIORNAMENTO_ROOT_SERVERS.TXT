@@ -506,9 +506,9 @@ if exist "%UB_DIR%\service.conf" (
         set "HYPERLOCAL_ACTIVE=1"
         set /a FWD_COUNT+=1
         if "!FWD_LIST!"=="" (
-            set "FWD_LIST=ICANN Root Servers (Hyperlocal Fallback)"
+            set "FWD_LIST=Root Servers (Hyperlocal Fallback)"
         ) else (
-            set "FWD_LIST=!FWD_LIST!, ICANN Root Servers (Hyperlocal Fallback)"
+            set "FWD_LIST=!FWD_LIST!, Root Servers (Hyperlocal Fallback)"
         )
     )
 )
