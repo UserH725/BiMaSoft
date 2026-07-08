@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=750.00"
+set "LOCAL_VER=751.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -2080,15 +2080,13 @@ echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
 echo ======================================================================================================================================================
-echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8%
+echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
 echo ======================================================================================================================================================
-echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! 
-echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER!
-echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
-echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
-echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
-echo  PROFILO HARDWARE: !PROFILE_NAME! - outgoing-range: !OUT_RANGE! - num-queries-per-thread: !NUM_Q_THREAD! - key-cache: !KEY_CACHE! - neg-cache: !NEG_CACHE! - infra-hosts: !INFRA_HOSTS! - tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
-echo  WORKING SET PROCESSO: MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
+echo Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** RAM: !RAW_RAM! GB - N.Processori: !THREADS! N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
+echo Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
+echo Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
+echo                                                      *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
+echo FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ======================================================================================================================================================
