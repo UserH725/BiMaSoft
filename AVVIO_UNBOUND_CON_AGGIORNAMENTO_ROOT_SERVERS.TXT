@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=730.00"
+set "LOCAL_VER=750.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -559,8 +559,12 @@ call :UPDATE_UI 20
 set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
 reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbound.exe" /v "DumpType" /t REG_DWORD /d 0 /f >nul 2>&1
-set "F3_RES=[      OK      ] REG  >> Priorità CPU impostata e dump locali disattivati."
-call :LOGSTEP "REG" "Priorita CPU e dump configurati"
+
+:: --- AUTO-RESTART SU CRASH (mitiga il sintomo: SCM riavvia il servizio da solo, non risolve la causa del crash) ---
+sc failure unbound reset= 86400 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
+
+set "F3_RES=[      OK      ] REG  >> Priorità CPU impostata, dump locali disattivati, auto-restart su crash configurato."
+call :LOGSTEP "REG" "Priorita CPU, dump e auto-restart su crash (SCM) configurati"
 
 :: FASE 4 - Azione
 set "F4_ACT=[...in corso...] REG  >> Policy DNS: Spengo Smart Name Res, multicast, DoH e forzo Punycode anti-omografo."
@@ -1690,7 +1694,10 @@ pause
 goto :FINALIZZAZIONE
 
 :FINALIZZAZIONE
-powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]838860800; $p.MaxWorkingSet = [IntPtr]2147483648 }; [System.GC]::Collect()" >nul 2>&1
+:: Working set scalato dinamicamente sul profilo hardware rilevato in AUTO_TUNING_HARDWARE (fallback 800MB/2GB se non valorizzato)
+if "!MIN_WS!"=="" set "MIN_WS=838860800"
+if "!MAX_WS!"=="" set "MAX_WS=2147483648"
+powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]!MIN_WS!; $p.MaxWorkingSet = [IntPtr]!MAX_WS! }; [System.GC]::Collect()" >nul 2>&1
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
@@ -2081,6 +2088,7 @@ echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
 echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
 echo  PROFILO HARDWARE: !PROFILE_NAME! - outgoing-range: !OUT_RANGE! - num-queries-per-thread: !NUM_Q_THREAD! - key-cache: !KEY_CACHE! - neg-cache: !NEG_CACHE! - infra-hosts: !INFRA_HOSTS! - tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
+echo  WORKING SET PROCESSO: MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ======================================================================================================================================================
@@ -2372,6 +2380,8 @@ if !TOTAL_RAM_GB! leq 5 (
     set "INCOMING_TCP=100"
     set "OUTGOING_TCP=50"
     set "STREAM_WAIT=2m"
+    set "MIN_WS=134217728"
+    set "MAX_WS=536870912"
 ) else if !TOTAL_RAM_GB! leq 9 (
     :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
     set "PROFILE_NAME=LIGHT"
@@ -2388,6 +2398,8 @@ if !TOTAL_RAM_GB! leq 5 (
     set "INCOMING_TCP=250"
     set "OUTGOING_TCP=100"
     set "STREAM_WAIT=4m"
+    set "MIN_WS=268435456"
+    set "MAX_WS=1073741824"
 ) else if !TOTAL_RAM_GB! leq 24 (
     :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
     set "PROFILE_NAME=STANDARD"
@@ -2404,6 +2416,8 @@ if !TOTAL_RAM_GB! leq 5 (
     set "INCOMING_TCP=500"
     set "OUTGOING_TCP=200"
     set "STREAM_WAIT=8m"
+    set "MIN_WS=838860800"
+    set "MAX_WS=2147483648"
 ) else (
     :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "PROFILE_NAME=ULTRA"
@@ -2420,6 +2434,8 @@ if !TOTAL_RAM_GB! leq 5 (
     set "INCOMING_TCP=1000"
     set "OUTGOING_TCP=400"
     set "STREAM_WAIT=16m"
+    set "MIN_WS=1610612736"
+    set "MAX_WS=4294967296"
 )
 
 :: 4. Calcolo dinamico intelligente degli Slabs condizionato dal profilo RAM
@@ -2455,7 +2471,7 @@ echo     incoming-num-tcp: !INCOMING_TCP! >> "%HW_CONF%"
 echo     outgoing-num-tcp: !OUTGOING_TCP! >> "%HW_CONF%"
 echo     stream-wait-size: !STREAM_WAIT! >> "%HW_CONF%"
 
-echo [     OK      ] Ottimizzazione hardware completata: Profilo=!PROFILE_NAME! Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB)
+echo [     OK      ] Ottimizzazione hardware completata: Profilo=!PROFILE_NAME! Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB), WorkingSet=!MIN_WS!/!MAX_WS!
 exit /b
 
 :: ==================================================================
