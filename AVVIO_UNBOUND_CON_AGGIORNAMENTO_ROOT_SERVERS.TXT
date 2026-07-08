@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=725.00"
+set "LOCAL_VER=730.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -189,6 +189,9 @@ if "!UPDATE_NEEDED!"=="1" (
         echo   Aggiornamento rimandato. Proseguo con la versione attuale v!LOCAL_VER!...
         echo.
     )
+) else (
+    echo !ESC![32m  [OK] Script BAT aggiornato alla versione attuale v!LOCAL_VER!.!ESC![0m
+    echo.
 )
 
 :: --- SERVICE.CONF UPDATE: confronta versione locale con cloud ---
@@ -296,6 +299,9 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
         echo   Aggiornamento service.conf rimandato. Proseguo con la versione attuale v!LOCAL_SVC_VER!...
         echo.
     )
+) else (
+    echo !ESC![32m  [OK] service.conf e' aggiornato alla versione attuale v!LOCAL_SVC_VER!.!ESC![0m
+    echo.
 )
 
 :: =======================================================================
@@ -1126,7 +1132,7 @@ set "PS_ARGS=!PS_ARGS:~0,-1!"
 
 :: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$targets = @(%PS_ARGS%); $jobs = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; $code = { param($i, $g) try { $fam = [System.Net.IPAddress]::Parse($i).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $conn = $tcp.BeginConnect($i, 853, $null, $null); $hit = $conn.AsyncWaitHandle.WaitOne(2000, $false); $tcp.Close(); [PSCustomObject]@{IP=$i;Tag=$g;Status=$hit} } catch { [PSCustomObject]@{IP=$i;Tag=$g;Status=$false} } }; [powershell]::Create().AddScript($code).AddArgument($ip).AddArgument($tag) }; $handles = foreach ($j in $jobs) { $j.BeginInvoke() }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; for ($i=0; $i -lt $jobs.Count; $i++) { $r = $jobs[$i].EndInvoke($handles[$i]); $st = if ($r.Status) { 'OK' } else { 'FAIL' }; if ($r.Status) { $listOK.Add($r.IP) } else { $listFAIL.Add($r.IP) }; $details.Add(($r.IP + '|' + $r.Tag + '|' + $st)); $jobs[$i].Dispose() }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
+  "$targets = @(%PS_ARGS%); $conns = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; try { $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $ar = $tcp.BeginConnect($ip, 853, $null, $null); [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$tcp;AR=$ar;Done=$false;Ok=$false} } catch { [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$null;AR=$null;Done=$true;Ok=$false} } }; $sw = [System.Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 2000 -and (($conns | Where-Object { -not $_.Done }).Count -gt 0)) { foreach ($c in $conns) { if ((-not $c.Done) -and $c.AR -and $c.AR.IsCompleted) { try { $c.Tcp.EndConnect($c.AR); $c.Ok = $c.Tcp.Connected } catch { $c.Ok = $false }; $c.Done = $true } }; Start-Sleep -Milliseconds 25 }; foreach ($c in $conns) { if ($c.Tcp) { try { $c.Tcp.Close() } catch {} } }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; foreach ($c in $conns) { $st = if ($c.Ok) { 'OK' } else { 'FAIL' }; if ($c.Ok) { $listOK.Add($c.IP) } else { $listFAIL.Add($c.IP) }; $details.Add(($c.IP + '|' + $c.Tag + '|' + $st)) }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
 
 set "DOT_DETAILS="
 if exist "%DOT_TMP%" (
@@ -1896,6 +1902,9 @@ powershell -NoProfile -Command ^
   "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
   "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
   "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$memIter = [math]::Round((GD 'mem.mod.iterator') / 1MB, 1); $memVal = [math]::Round((GD 'mem.mod.validator') / 1MB, 1); " ^
+  "$memRespip = [math]::Round((GD 'mem.mod.respip') / 1MB, 1); $memStream = [math]::Round((GD 'mem.streamwait') / 1MB, 1); " ^
+  "$memTotal = [math]::Round((GD 'mem.total.sbrk') / 1MB, 1); " ^
   "$lines = @(); " ^
   "$lines += ''; " ^
   "$lines += ' CACHE'; " ^
@@ -1925,6 +1934,18 @@ powershell -NoProfile -Command ^
   "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei messaggi DNS.'; " ^
   "$lines += ('   RRset: {0}MB' -f $memRR); " ^
   "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei set di record DNS (RRset).'; " ^
+  "$lines += ''; " ^
+  "$lines += ' MEMORIA PROCESSO (reale, non stimata)'; " ^
+  "$lines += ('   Iterator: {0}MB' -f $memIter); " ^
+  "$lines += '     > Memoria usata dal modulo che gestisce la risoluzione ricorsiva vera e propria (interrogazione dei server esterni).'; " ^
+  "$lines += ('   Validator: {0}MB' -f $memVal); " ^
+  "$lines += '     > Memoria usata dal modulo che verifica crittograficamente le firme DNSSEC delle risposte.'; " ^
+  "$lines += ('   Respip: {0}MB' -f $memRespip); " ^
+  "$lines += '     > Memoria usata dal modulo che applica le liste RPZ (HaGeZi, Spamhaus) per bloccare o riscrivere le risposte indesiderate.'; " ^
+  "$lines += ('   Stream-wait (TCP/DoT): {0}MB' -f $memStream); " ^
+  "$lines += '     > Memoria riservata ai buffer delle connessioni TCP e DoT in attesa, dimensionata dal parametro stream-wait-size del profilo hardware attivo.'; " ^
+  "$lines += ('   TOTALE PROCESSO: {0}MB' -f $memTotal); " ^
+  "$lines += '     > Memoria realmente allocata da unbound.exe in questo momento (somma di tutte le cache, moduli e buffer sopra elencati piu overhead interno). E il numero da guardare per sapere davvero quanta RAM sta usando il Bunker sul profilo hardware attivo.'; " ^
   "Add-Content -Path '%STATS_FILE%' -Value $lines"
 
 powershell -NoProfile -Command ^
@@ -2059,6 +2080,7 @@ echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER!
 echo  RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE! - Cache record rrset-cache-size.: !RRSET_CACHE!
 echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
+echo  PROFILO HARDWARE: !PROFILE_NAME! - outgoing-range: !OUT_RANGE! - num-queries-per-thread: !NUM_Q_THREAD! - key-cache: !KEY_CACHE! - neg-cache: !NEG_CACHE! - infra-hosts: !INFRA_HOSTS! - tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ======================================================================================================================================================
@@ -2336,32 +2358,68 @@ if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=4"
 :: 3. Assegnazione dei Profili in base alle soglie di RAM reali (4, 6, 8, 12, 16, 32)
 if !TOTAL_RAM_GB! leq 5 (
     :: --- PROFILO MICRO (<= 4GB RAM) ---
+    set "PROFILE_NAME=MICRO"
     set "MSG_CACHE=8m"
     set "RRSET_CACHE=16m"
     set "SO_RCVBUF=1m"
     set "SO_SNDBUF=1m"
     set "SLABS_MAX=1"
+    set "OUT_RANGE=512"
+    set "NUM_Q_THREAD=256"
+    set "KEY_CACHE=4m"
+    set "NEG_CACHE=8m"
+    set "INFRA_HOSTS=2000"
+    set "INCOMING_TCP=100"
+    set "OUTGOING_TCP=50"
+    set "STREAM_WAIT=2m"
 ) else if !TOTAL_RAM_GB! leq 9 (
     :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
+    set "PROFILE_NAME=LIGHT"
     set "MSG_CACHE=32m"
     set "RRSET_CACHE=64m"
     set "SO_RCVBUF=2m"
     set "SO_SNDBUF=2m"
     set "SLABS_MAX=2"
+    set "OUT_RANGE=2048"
+    set "NUM_Q_THREAD=768"
+    set "KEY_CACHE=8m"
+    set "NEG_CACHE=16m"
+    set "INFRA_HOSTS=5000"
+    set "INCOMING_TCP=250"
+    set "OUTGOING_TCP=100"
+    set "STREAM_WAIT=4m"
 ) else if !TOTAL_RAM_GB! leq 24 (
     :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
+    set "PROFILE_NAME=STANDARD"
     set "MSG_CACHE=128m"
     set "RRSET_CACHE=256m"
     set "SO_RCVBUF=8m"
     set "SO_SNDBUF=8m"
     set "SLABS_MAX=4"
+    set "OUT_RANGE=8192"
+    set "NUM_Q_THREAD=2048"
+    set "KEY_CACHE=16m"
+    set "NEG_CACHE=32m"
+    set "INFRA_HOSTS=10000"
+    set "INCOMING_TCP=500"
+    set "OUTGOING_TCP=200"
+    set "STREAM_WAIT=8m"
 ) else (
     :: --- PROFILO ULTRA (>= 32GB RAM) ---
+    set "PROFILE_NAME=ULTRA"
     set "MSG_CACHE=512m"
     set "RRSET_CACHE=1024m"
     set "SO_RCVBUF=16m"
     set "SO_SNDBUF=16m"
     set "SLABS_MAX=8"
+    set "OUT_RANGE=12288"
+    set "NUM_Q_THREAD=3072"
+    set "KEY_CACHE=32m"
+    set "NEG_CACHE=64m"
+    set "INFRA_HOSTS=20000"
+    set "INCOMING_TCP=1000"
+    set "OUTGOING_TCP=400"
+    set "STREAM_WAIT=16m"
 )
 
 :: 4. Calcolo dinamico intelligente degli Slabs condizionato dal profilo RAM
@@ -2377,7 +2435,7 @@ if !SLABS! gtr !SLABS_MAX! set "SLABS=!SLABS_MAX!"
 set "HW_CONF=C:\Program Files\Unbound\hardware.conf"
 
 echo # CONFIGURAZIONE GENERATA AUTOMATICAMENTE DAL BUNKER MANAGER > "%HW_CONF%"
-echo # Rilevati: !TOTAL_RAM_GB! GB RAM ^| !THREADS! CPU Thread >> "%HW_CONF%"
+echo # Rilevati: !TOTAL_RAM_GB! GB RAM ^| !THREADS! CPU Thread ^| Profilo: !PROFILE_NAME! >> "%HW_CONF%"
 echo server: >> "%HW_CONF%"
 echo     num-threads: !THREADS! >> "%HW_CONF%"
 echo     msg-cache-slabs: !SLABS! >> "%HW_CONF%"
@@ -2388,8 +2446,16 @@ echo     msg-cache-size: !MSG_CACHE! >> "%HW_CONF%"
 echo     rrset-cache-size: !RRSET_CACHE! >> "%HW_CONF%"
 echo     so-rcvbuf: !SO_RCVBUF! >> "%HW_CONF%"
 echo     so-sndbuf: !SO_SNDBUF! >> "%HW_CONF%"
+echo     outgoing-range: !OUT_RANGE! >> "%HW_CONF%"
+echo     num-queries-per-thread: !NUM_Q_THREAD! >> "%HW_CONF%"
+echo     key-cache-size: !KEY_CACHE! >> "%HW_CONF%"
+echo     neg-cache-size: !NEG_CACHE! >> "%HW_CONF%"
+echo     infra-cache-numhosts: !INFRA_HOSTS! >> "%HW_CONF%"
+echo     incoming-num-tcp: !INCOMING_TCP! >> "%HW_CONF%"
+echo     outgoing-num-tcp: !OUTGOING_TCP! >> "%HW_CONF%"
+echo     stream-wait-size: !STREAM_WAIT! >> "%HW_CONF%"
 
-echo [     OK      ] Ottimizzazione hardware completata: Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB)
+echo [     OK      ] Ottimizzazione hardware completata: Profilo=!PROFILE_NAME! Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB)
 exit /b
 
 :: ==================================================================
@@ -2566,7 +2632,7 @@ echo.
 goto :UB_END
 
 :UB_OK
-echo      [OK] Il motore Unbound e' aggiornato all'ultima versione.
+echo !ESC![32m     [OK] Il motore Unbound e' aggiornato all'ultima versione.!ESC![0m
 echo ==================================================================
 echo.
 
