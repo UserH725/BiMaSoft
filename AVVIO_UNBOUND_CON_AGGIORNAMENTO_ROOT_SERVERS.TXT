@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=751.00"
+set "LOCAL_VER=752.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -506,9 +506,9 @@ if exist "%UB_DIR%\service.conf" (
         set "HYPERLOCAL_ACTIVE=1"
         set /a FWD_COUNT+=1
         if "!FWD_LIST!"=="" (
-            set "FWD_LIST=Root Servers (Hyperlocal Fallback)"
+            set "FWD_LIST=ICANN Root Servers (Hyperlocal Fallback)"
         ) else (
-            set "FWD_LIST=!FWD_LIST!, Root Servers (Hyperlocal Fallback)"
+            set "FWD_LIST=!FWD_LIST!, ICANN Root Servers (Hyperlocal Fallback)"
         )
     )
 )
@@ -1224,6 +1224,7 @@ goto :FINALIZZAZIONE_RAPIDA
 :: ============================================================================
 :STATS_RESET_ONLY
 call :RACCOLTA_STATISTICHE RESET
+call :RIEPILOGO_BLOCCHI_RPZ
 exit /b
 
 :: ============================================================================
@@ -1814,7 +1815,11 @@ if not exist "%STATS_TMP%" (
     exit /b
 )
 
-:: Estrae un ampio set di contatori e li scrive come blocco multi-riga.
+:: Estrae i contatori chiave e scrive uno snapshot compatto (una riga per
+:: categoria, senza spiegazioni), aggiornando in parallelo l'accumulatore
+:: di sessione (SESSION_FILE) con gli stessi campi, incluse le nuove
+:: categorie RPZ (num.rpz.action.*, disponibili gratis grazie a
+:: extended-statistics:yes, aggregate su tutte le zone RPZ insieme).
 :: statistics-cumulative:no in service.conf => "stats" restituisce il
 :: delta dall'ultima lettura, quindi ogni blocco rappresenta l'attivita'
 :: del solo intervallo trascorso (biorario), non il totale cumulativo.
@@ -1825,181 +1830,63 @@ powershell -NoProfile -Command ^
   "function GD($k) { return [double](G $k) }; " ^
   "$q = GD 'total.num.queries'; $hit = GD 'total.num.cachehits'; $miss = GD 'total.num.cachemiss'; " ^
   "$tot = $hit + $miss; $pct = if ($tot -gt 0) { [math]::Round(($hit / $tot) * 100, 1) } else { 0 }; " ^
-  "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
   "$tcp = G 'num.query.tcp'; $ipv6q = G 'num.query.ipv6'; $edns = G 'num.query.edns.present'; $ednsdo = G 'num.query.edns.DO'; " ^
   "$ta = G 'num.query.type.A'; $taaaa = G 'num.query.type.AAAA'; $thttps = G 'num.query.type.HTTPS'; " ^
   "$tptr = G 'num.query.type.PTR'; $ttxt = G 'num.query.type.TXT'; $tmx = G 'num.query.type.MX'; $tns = G 'num.query.type.NS'; " ^
+  "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
+  "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$memIter = [math]::Round((GD 'mem.mod.iterator') / 1MB, 1); $memVal = [math]::Round((GD 'mem.mod.validator') / 1MB, 1); " ^
+  "$memRespip = [math]::Round((GD 'mem.mod.respip') / 1MB, 1); $memStream = [math]::Round((GD 'mem.streamwait') / 1MB, 1); " ^
+  "$memTotal = [math]::Round((GD 'mem.total.sbrk') / 1MB, 1); " ^
   "$sec = G 'num.answer.secure'; $bog = G 'num.answer.bogus'; $rrbog = G 'num.rrset.bogus'; " ^
   "$unwq = G 'unwanted.queries'; $unwr = G 'unwanted.replies'; " ^
   "$rcOk = G 'num.answer.rcode.NOERROR'; $rcNx = G 'num.answer.rcode.NXDOMAIN'; $rcSf = G 'num.answer.rcode.SERVFAIL'; $rcRe = G 'num.answer.rcode.REFUSED'; " ^
   "$rtavg = G 'total.recursion.time.avg'; $rtmed = G 'total.recursion.time.median'; $rlavg = G 'total.requestlist.avg'; $rlmax = G 'total.requestlist.max'; " ^
-  "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
-  "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
+  "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
+  "$rpzNx = G 'num.rpz.action.nxdomain'; $rpzNo = G 'num.rpz.action.nodata'; $rpzDrop = G 'num.rpz.action.drop'; " ^
+  "$rpzPass = G 'num.rpz.action.passthru'; $rpzTcp = G 'num.rpz.action.tcp-only'; $rpzLocal = G 'num.rpz.action.local-data'; " ^
+  "$rpzDis = G 'num.rpz.action.disabled'; $rpzCname = G 'num.rpz.action.cname-override'; " ^
   "$accFile = '%SESSION_FILE%'; $sessReset = '%SESSION_RESET_FLAG%'; $accH = @{}; " ^
   "if ($sessReset -ne '1' -and (Test-Path $accFile)) { Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } } }; " ^
   "function AGD($k) { if ($accH.ContainsKey($k)) { return [double]$accH[$k] } else { return 0 } }; " ^
   "$sessStart = if ($sessReset -eq '1' -or -not $accH.ContainsKey('SESSION_START')) { Get-Date -Format 'yyyy-MM-dd HH:mm' } else { $accH['SESSION_START'] }; " ^
   "$sQ = (AGD 'SESSION_Q') + $q; $sHit = (AGD 'SESSION_HIT') + $hit; $sMiss = (AGD 'SESSION_MISS') + $miss; " ^
-  "$sPct = if (($sHit + $sMiss) -gt 0) { [math]::Round(($sHit / ($sHit + $sMiss)) * 100, 1) } else { 0 }; " ^
   "$sPrefetch = (AGD 'SESSION_PREFETCH') + [double]$prefetch; $sZerottl = (AGD 'SESSION_ZEROTTL') + [double]$zerottl; " ^
   "$sRcOk = (AGD 'SESSION_RCOK') + [double]$rcOk; $sRcNx = (AGD 'SESSION_RCNX') + [double]$rcNx; " ^
   "$sRcSf = (AGD 'SESSION_RCSF') + [double]$rcSf; $sRcRe = (AGD 'SESSION_RCRE') + [double]$rcRe; " ^
-  "$sSec = (AGD 'SESSION_SEC') + [double]$sec; $sBog = (AGD 'SESSION_BOG') + [double]$bog; $sRrbog = (AGD 'SESSION_RRBOG') + [double]$rrbog; " ^
+  "$sSec = (AGD 'SESSION_SEC') + [double]$sec; $sBog = (AGD 'SESSION_BOG') + [double]$bog; " ^
   "$sUnwq = (AGD 'SESSION_UNWQ') + [double]$unwq; $sUnwr = (AGD 'SESSION_UNWR') + [double]$unwr; " ^
+  "$sRpzNx = (AGD 'SESSION_RPZNX') + [double]$rpzNx; $sRpzNo = (AGD 'SESSION_RPZNO') + [double]$rpzNo; " ^
+  "$sRpzDrop = (AGD 'SESSION_RPZDROP') + [double]$rpzDrop; $sRpzPass = (AGD 'SESSION_RPZPASS') + [double]$rpzPass; " ^
   "$accLines = @(); " ^
   "$accLines += ('SESSION_START={0}' -f $sessStart); " ^
   "$accLines += ('SESSION_Q={0}' -f $sQ); $accLines += ('SESSION_HIT={0}' -f $sHit); $accLines += ('SESSION_MISS={0}' -f $sMiss); " ^
   "$accLines += ('SESSION_PREFETCH={0}' -f $sPrefetch); $accLines += ('SESSION_ZEROTTL={0}' -f $sZerottl); " ^
   "$accLines += ('SESSION_RCOK={0}' -f $sRcOk); $accLines += ('SESSION_RCNX={0}' -f $sRcNx); " ^
   "$accLines += ('SESSION_RCSF={0}' -f $sRcSf); $accLines += ('SESSION_RCRE={0}' -f $sRcRe); " ^
-  "$accLines += ('SESSION_SEC={0}' -f $sSec); $accLines += ('SESSION_BOG={0}' -f $sBog); $accLines += ('SESSION_RRBOG={0}' -f $sRrbog); " ^
+  "$accLines += ('SESSION_SEC={0}' -f $sSec); $accLines += ('SESSION_BOG={0}' -f $sBog); " ^
   "$accLines += ('SESSION_UNWQ={0}' -f $sUnwq); $accLines += ('SESSION_UNWR={0}' -f $sUnwr); " ^
+  "$accLines += ('SESSION_RPZNX={0}' -f $sRpzNx); $accLines += ('SESSION_RPZNO={0}' -f $sRpzNo); " ^
+  "$accLines += ('SESSION_RPZDROP={0}' -f $sRpzDrop); $accLines += ('SESSION_RPZPASS={0}' -f $sRpzPass); " ^
   "Set-Content -Path $accFile -Value $accLines; " ^
   "$lines = @(); " ^
   "$lines += ''; " ^
   "$lines += '------------------------------------------------------------'; " ^
   "$lines += ('[{0}] Snapshot ultimo intervallo' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')); " ^
   "$lines += '------------------------------------------------------------'; " ^
-  "$lines += ''; " ^
-  "$lines += ' TRAFFICO'; " ^
-  "$lines += ('   Query totali: {0}' -f $q); " ^
-  "$lines += '     > Numero totale di richieste DNS ricevute dai dispositivi della rete in queste due ore. Include sia le richieste risolte dalla cache sia quelle inoltrate a server esterni.'; " ^
-  "$lines += ('   TCP: {0}' -f $tcp); " ^
-  "$lines += '     > Quante di queste query sono arrivate tramite il protocollo TCP invece del piu comune UDP. Il TCP viene usato per risposte troppo grandi per un singolo pacchetto UDP o per trasferimenti di zona: un valore diverso da zero e normale amministrazione DNS, non un problema.'; " ^
-  "$lines += ('   IPv6: {0}' -f $ipv6q); " ^
-  "$lines += '     > Quante query sono arrivate su indirizzo IPv6 invece che IPv4. Indica quali dispositivi della rete stanno effettivamente usando IPv6 per contattare il resolver.'; " ^
-  "$lines += ('   EDNS: {0}' -f $edns); " ^
-  "$lines += '     > Quante query includevano lestensione EDNS(0), che permette pacchetti DNS piu grandi del limite classico di 512 byte e trasporta informazioni aggiuntive come il supporto DNSSEC. Praticamente tutti i client moderni la usano di default.'; " ^
-  "$lines += ('   DO/DNSSEC: {0}' -f $ednsdo); " ^
-  "$lines += '     > Quante di queste query avevano il bit DO (DNSSEC OK) attivo, cioe il client ha esplicitamente chiesto la verifica crittografica DNSSEC della risposta.'; " ^
+  "$lines += (' TRAFFICO       Query: {0}   Cache-hit: {1}%%   TCP: {2}   IPv6: {3}   EDNS: {4}   DO: {5}' -f $q,$pct,$tcp,$ipv6q,$edns,$ednsdo); " ^
+  "$lines += (' TIPI QUERY     A: {0}  AAAA: {1}  HTTPS: {2}  PTR: {3}  TXT: {4}  MX: {5}  NS: {6}' -f $ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns); " ^
+  "$lines += (' CACHE          Msg: {0}  RRset: {1}  Infra: {2}  Key: {3}   (RAM msg {4}MB / rrset {5}MB)' -f $msgN,$rrN,$infraN,$keyN,$memMsg,$memRR); " ^
+  "$lines += (' DNSSEC         Valide: {0}   Bogus: {1}   RRset bogus: {2}' -f $sec,$bog,$rrbog); " ^
+  "$lines += (' SICUREZZA      Query indes.: {0}   Risposte indes.: {1}' -f $unwq,$unwr); " ^
+  "$lines += (' RISPOSTE       NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $rcOk,$rcNx,$rcSf,$rcRe); " ^
+  "$lines += (' RPZ / BLOCCHI  NXDOMAIN: {0}  NODATA: {1}  DROP: {2}  Passthru: {3}  TCP-only: {4}  Local: {5}  Disabled: {6}  CNAME: {7}' -f $rpzNx,$rpzNo,$rpzDrop,$rpzPass,$rpzTcp,$rpzLocal,$rpzDis,$rpzCname); " ^
+  "$lines += (' PERFORMANCE    Ricorsione media: {0}ms  mediana: {1}ms  Coda media: {2}  Coda max: {3}' -f $rtavg,$rtmed,$rlavg,$rlmax); " ^
+  "$lines += (' MEMORIA        Iterator: {0}MB  Validator: {1}MB  Respip: {2}MB  Stream: {3}MB  TOTALE: {4}MB' -f $memIter,$memVal,$memRespip,$memStream,$memTotal); " ^
   "Add-Content -Path '%STATS_FILE%' -Value $lines"
 
-powershell -NoProfile -Command ^
-  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
-  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
-  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
-  "$ta = G 'num.query.type.A'; $taaaa = G 'num.query.type.AAAA'; $thttps = G 'num.query.type.HTTPS'; " ^
-  "$tptr = G 'num.query.type.PTR'; $ttxt = G 'num.query.type.TXT'; $tmx = G 'num.query.type.MX'; $tns = G 'num.query.type.NS'; " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += ' TIPI QUERY'; " ^
-  "$lines += ('   A: {0}' -f $ta); " ^
-  "$lines += '     > Richieste di indirizzo IPv4 (record A): il tipo di query piu comune, es. risoluzione di un nome a dominio in un indirizzo IPv4.'; " ^
-  "$lines += ('   AAAA: {0}' -f $taaaa); " ^
-  "$lines += '     > Richieste di indirizzo IPv6 (record AAAA), equivalenti alle A ma per IPv6.'; " ^
-  "$lines += ('   HTTPS: {0}' -f $thttps); " ^
-  "$lines += '     > Richieste di record HTTPS/SVCB, usate dai browser moderni per scoprire in anticipo parametri di connessione come HTTP/3 prima di aprire la connessione vera e propria.'; " ^
-  "$lines += ('   PTR: {0}' -f $tptr); " ^
-  "$lines += '     > Richieste di ricerca inversa (da indirizzo IP a nome host), tipiche di log, firewall o strumenti di rete che risolvono chi si nasconde dietro un IP.'; " ^
-  "$lines += ('   TXT: {0}' -f $ttxt); " ^
-  "$lines += '     > Richieste di record TXT, spesso usati per verifiche di dominio, SPF/DKIM per la posta o altre informazioni testuali associate al dominio.'; " ^
-  "$lines += ('   MX: {0}' -f $tmx); " ^
-  "$lines += '     > Richieste di record MX, cioe quali server gestiscono la posta elettronica in arrivo per un dominio.'; " ^
-  "$lines += ('   NS: {0}' -f $tns); " ^
-  "$lines += '     > Richieste di record NS, cioe quali server sono autoritativi (cioe la fonte ufficiale delle risposte) per un dominio.'; " ^
-  "Add-Content -Path '%STATS_FILE%' -Value $lines"
-
-powershell -NoProfile -Command ^
-  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
-  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
-  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
-  "function GD($k) { return [double](G $k) }; " ^
-  "$hit = GD 'total.num.cachehits'; $miss = GD 'total.num.cachemiss'; $tot = $hit + $miss; " ^
-  "$pct = if ($tot -gt 0) { [math]::Round(($hit / $tot) * 100, 1) } else { 0 }; " ^
-  "$prefetch = G 'total.num.prefetch'; $zerottl = G 'total.num.zero_ttl'; " ^
-  "$msgN = G 'msg.cache.count'; $rrN = G 'rrset.cache.count'; $infraN = G 'infra.cache.count'; $keyN = G 'key.cache.count'; " ^
-  "$memMsg = [math]::Round((GD 'mem.cache.message') / 1MB, 1); $memRR = [math]::Round((GD 'mem.cache.rrset') / 1MB, 1); " ^
-  "$memIter = [math]::Round((GD 'mem.mod.iterator') / 1MB, 1); $memVal = [math]::Round((GD 'mem.mod.validator') / 1MB, 1); " ^
-  "$memRespip = [math]::Round((GD 'mem.mod.respip') / 1MB, 1); $memStream = [math]::Round((GD 'mem.streamwait') / 1MB, 1); " ^
-  "$memTotal = [math]::Round((GD 'mem.total.sbrk') / 1MB, 1); " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += ' CACHE'; " ^
-  "$lines += ('   Hit: {0}' -f $hit); " ^
-  "$lines += '     > Risposte gia presenti in memoria e restituite subito, senza dover contattare nulla su internet: velocissime e senza traffico esterno.'; " ^
-  "$lines += ('   Miss: {0}' -f $miss); " ^
-  "$lines += '     > Risposte non trovate in cache, per cui Unbound ha dovuto interrogare un server esterno (i forwarder configurati o i root server).'; " ^
-  "$lines += ('   Hit-rate: {0}%%' -f $pct); " ^
-  "$lines += '     > Percentuale di richieste risolte direttamente dalla cache rispetto al totale (Hit / (Hit+Miss)). Piu e alto, meno traffico esce verso internet e piu veloci sono le risposte.'; " ^
-  "$lines += ('   Prefetch: {0}' -f $prefetch); " ^
-  "$lines += '     > Voci di cache che Unbound ha rinnovato in anticipo, poco prima della scadenza del TTL, cosi che il prossimo client trovi gia una risposta fresca invece di aspettare un nuovo giro esterno.'; " ^
-  "$lines += ('   Zero-TTL: {0}' -f $zerottl); " ^
-  "$lines += '     > Risposte con TTL pari a zero, cioe che non possono essere messe in cache e vanno richieste di nuovo ogni volta (tipico di alcuni servizi che aggiornano indirizzi molto di frequente).'; " ^
-  "$lines += ''; " ^
-  "$lines += ' CACHE (voci in memoria)'; " ^
-  "$lines += ('   Messaggi: {0}' -f $msgN); " ^
-  "$lines += '     > Quante risposte DNS complete sono attualmente salvate nella cache dei messaggi di Unbound.'; " ^
-  "$lines += ('   RRset: {0}' -f $rrN); " ^
-  "$lines += '     > Quanti singoli set di record DNS (RRset) sono salvati in cache: sono i mattoncini con cui Unbound compone le risposte ai messaggi.'; " ^
-  "$lines += ('   Infra: {0}' -f $infraN); " ^
-  "$lines += '     > Quante voci sono salvate nella cache infrastrutturale, che memorizza informazioni sui server verso cui Unbound ha gia parlato, come tempi di risposta e capacita EDNS, per ottimizzare le richieste successive.'; " ^
-  "$lines += ('   Key: {0}' -f $keyN); " ^
-  "$lines += '     > Quante chiavi crittografiche DNSSEC sono attualmente salvate in cache, usate per verificare lautenticita delle risposte firmate.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' CACHE (memoria occupata)'; " ^
-  "$lines += ('   Messaggi: {0}MB' -f $memMsg); " ^
-  "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei messaggi DNS.'; " ^
-  "$lines += ('   RRset: {0}MB' -f $memRR); " ^
-  "$lines += '     > Quanta memoria RAM occupa attualmente la cache dei set di record DNS (RRset).'; " ^
-  "$lines += ''; " ^
-  "$lines += ' MEMORIA PROCESSO (reale, non stimata)'; " ^
-  "$lines += ('   Iterator: {0}MB' -f $memIter); " ^
-  "$lines += '     > Memoria usata dal modulo che gestisce la risoluzione ricorsiva vera e propria (interrogazione dei server esterni).'; " ^
-  "$lines += ('   Validator: {0}MB' -f $memVal); " ^
-  "$lines += '     > Memoria usata dal modulo che verifica crittograficamente le firme DNSSEC delle risposte.'; " ^
-  "$lines += ('   Respip: {0}MB' -f $memRespip); " ^
-  "$lines += '     > Memoria usata dal modulo che applica le liste RPZ (HaGeZi, Spamhaus) per bloccare o riscrivere le risposte indesiderate.'; " ^
-  "$lines += ('   Stream-wait (TCP/DoT): {0}MB' -f $memStream); " ^
-  "$lines += '     > Memoria riservata ai buffer delle connessioni TCP e DoT in attesa, dimensionata dal parametro stream-wait-size del profilo hardware attivo.'; " ^
-  "$lines += ('   TOTALE PROCESSO: {0}MB' -f $memTotal); " ^
-  "$lines += '     > Memoria realmente allocata da unbound.exe in questo momento (somma di tutte le cache, moduli e buffer sopra elencati piu overhead interno). E il numero da guardare per sapere davvero quanta RAM sta usando il Bunker sul profilo hardware attivo.'; " ^
-  "Add-Content -Path '%STATS_FILE%' -Value $lines"
-
-powershell -NoProfile -Command ^
-  "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
-  "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
-  "function G($k) { if ($h.ContainsKey($k)) { return $h[$k] } else { return '0' } }; " ^
-  "$sec = G 'num.answer.secure'; $bog = G 'num.answer.bogus'; $rrbog = G 'num.rrset.bogus'; " ^
-  "$unwq = G 'unwanted.queries'; $unwr = G 'unwanted.replies'; " ^
-  "$rcOk = G 'num.answer.rcode.NOERROR'; $rcNx = G 'num.answer.rcode.NXDOMAIN'; $rcSf = G 'num.answer.rcode.SERVFAIL'; $rcRe = G 'num.answer.rcode.REFUSED'; " ^
-  "$rtavg = G 'total.recursion.time.avg'; $rtmed = G 'total.recursion.time.median'; $rlavg = G 'total.requestlist.avg'; $rlmax = G 'total.requestlist.max'; " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += ' DNSSEC'; " ^
-  "$lines += ('   Valide: {0}' -f $sec); " ^
-  "$lines += '     > Risposte verificate crittograficamente e confermate autentiche tramite DNSSEC: la firma digitale del dominio corrisponde.'; " ^
-  "$lines += ('   Bogus: {0}' -f $bog); " ^
-  "$lines += '     > Risposte che hanno fallito la verifica DNSSEC e sono state scartate perche sospette o falsificate. Deve restare sempre a 0: un valore diverso da 0 indica un tentativo di manomissione o un problema di configurazione del dominio remoto.'; " ^
-  "$lines += ('   RRset bogus: {0}' -f $rrbog); " ^
-  "$lines += '     > Come sopra ma contati a livello di singolo set di record (RRset) invece che di risposta completa. Deve restare a 0.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' SICUREZZA'; " ^
-  "$lines += ('   Query indesiderate: {0}' -f $unwq); " ^
-  "$lines += '     > Richieste arrivate da fuori la rete che Unbound non doveva ricevere (traffico anomalo o non autorizzato verso il resolver). Deve restare a 0.'; " ^
-  "$lines += ('   Risposte indesiderate: {0}' -f $unwr); " ^
-  "$lines += '     > Risposte arrivate da server esterni che Unbound non aveva richiesto, un possibile segnale di spoofing o traffico anomalo. Deve restare a 0.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' RISPOSTE (rcode)'; " ^
-  "$lines += ('   NOERROR: {0}' -f $rcOk); " ^
-  "$lines += '     > Risposte valide, cioe il dominio esiste ed e stato risolto correttamente. E il codice di risposta normale nella stragrande maggioranza dei casi.'; " ^
-  "$lines += ('   NXDOMAIN: {0}' -f $rcNx); " ^
-  "$lines += '     > Il dominio richiesto non esiste. E normale, capita ad esempio con errori di battitura o domini scaduti, non e sintomo di un problema al resolver.'; " ^
-  "$lines += ('   SERVFAIL: {0}' -f $rcSf); " ^
-  "$lines += '     > Errore nella risoluzione (es. il server remoto non ha risposto o la validazione DNSSEC e fallita). Deve restare a 0 o comunque molto basso.'; " ^
-  "$lines += ('   REFUSED: {0}' -f $rcRe); " ^
-  "$lines += '     > La richiesta e stata rifiutata dal resolver (es. per policy di accesso). Deve restare a 0.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' PERFORMANCE'; " ^
-  "$lines += ('   Ricorsione media: {0}ms' -f $rtavg); " ^
-  "$lines += '     > Tempo medio impiegato da Unbound per risolvere una domanda che ha richiesto una interrogazione esterna (esclude gli hit di cache, che sono istantanei).'; " ^
-  "$lines += ('   Ricorsione mediana: {0}ms' -f $rtmed); " ^
-  "$lines += '     > Tempo mediano di risoluzione: meno influenzato da eventuali picchi isolati rispetto alla media, da unidea piu stabile del tempo di risposta tipico.'; " ^
-  "$lines += ('   Coda media: {0}' -f $rlavg); " ^
-  "$lines += '     > Numero medio di richieste in attesa di essere processate contemporaneamente durante lintervallo.'; " ^
-  "$lines += ('   Coda massima: {0}' -f $rlmax); " ^
-  "$lines += '     > Il picco massimo di richieste in coda contemporaneamente nellintervallo: piu e alto, piu il resolver era sotto pressione in quel momento.'; " ^
-  "Add-Content -Path '%STATS_FILE%' -Value $lines"
-
+:: Blocco TOTALE SESSIONE compatto (dalle 06:00 ad ora, azzerato al run
+:: pianificato delle 06:00): stessa filosofia, una riga per categoria.
 powershell -NoProfile -Command ^
   "$accFile = '%SESSION_FILE%'; $accH = @{}; " ^
   "Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } }; " ^
@@ -2008,53 +1895,96 @@ powershell -NoProfile -Command ^
   "$sPrefetch = AG 'SESSION_PREFETCH'; $sZerottl = AG 'SESSION_ZEROTTL'; " ^
   "$sRcOk = AG 'SESSION_RCOK'; $sRcNx = AG 'SESSION_RCNX'; $sRcSf = AG 'SESSION_RCSF'; $sRcRe = AG 'SESSION_RCRE'; " ^
   "$sSec = AG 'SESSION_SEC'; $sBog = AG 'SESSION_BOG'; $sUnwq = AG 'SESSION_UNWQ'; $sUnwr = AG 'SESSION_UNWR'; " ^
+  "$sRpzNx = AG 'SESSION_RPZNX'; $sRpzNo = AG 'SESSION_RPZNO'; $sRpzDrop = AG 'SESSION_RPZDROP'; $sRpzPass = AG 'SESSION_RPZPASS'; " ^
   "$sHitD = [double]$sHit; $sMissD = [double]$sMiss; $sTot = $sHitD + $sMissD; " ^
   "$sPct = if ($sTot -gt 0) { [math]::Round(($sHitD / $sTot) * 100, 1) } else { 0 }; " ^
   "$lines = @(); " ^
   "$lines += ''; " ^
   "$lines += '============================================================'; " ^
-  "$lines += (' TOTALE SESSIONE (dal {0}, azzerata al run delle 06:00)' -f $sessStart); " ^
+  "$lines += (' TOTALE SESSIONE dal {0} (azzerata alle 06:00)' -f $sessStart); " ^
   "$lines += '============================================================'; " ^
-  "$lines += '   > Da qui in poi i numeri non sono delle ultime 2 ore ma la somma di tutti gli intervalli dalle 06:00 ad ora, per avere il quadro di tutta la sessione.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' TRAFFICO'; " ^
-  "$lines += ('   Query totali: {0}' -f $sQ); " ^
-  "$lines += '     > Somma di tutte le domande DNS ricevute dalle 06:00 ad ora in questa sessione.'; " ^
-  "$lines += ('   DNSSEC valide: {0}' -f $sSec); " ^
-  "$lines += '     > Somma delle risposte verificate con successo tramite DNSSEC durante tutta la sessione.'; " ^
-  "$lines += ('   Bogus: {0}' -f $sBog); " ^
-  "$lines += '     > Somma delle risposte sospette o falsificate scartate durante tutta la sessione. Deve restare a 0.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' CACHE'; " ^
-  "$lines += ('   Hit: {0}' -f $sHit); " ^
-  "$lines += '     > Somma di tutte le risposte servite dalla cache durante lintera sessione.'; " ^
-  "$lines += ('   Miss: {0}' -f $sMiss); " ^
-  "$lines += '     > Somma di tutte le risposte che hanno richiesto uninterrogazione esterna durante lintera sessione.'; " ^
-  "$lines += ('   Hit-rate: {0}%%' -f $sPct); " ^
-  "$lines += '     > Percentuale complessiva di richieste risolte dalla cache su tutta la sessione (stesso calcolo del blocco Hit-rate sopra, ma cumulativo).'; " ^
-  "$lines += ('   Prefetch: {0}' -f $sPrefetch); " ^
-  "$lines += '     > Somma delle voci di cache rinnovate in anticipo durante lintera sessione.'; " ^
-  "$lines += ('   Zero-TTL: {0}' -f $sZerottl); " ^
-  "$lines += '     > Somma delle risposte non memorizzabili in cache (TTL zero) durante lintera sessione.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' RISPOSTE (rcode)'; " ^
-  "$lines += ('   NOERROR: {0}' -f $sRcOk); " ^
-  "$lines += '     > Somma di tutte le risposte valide registrate durante la sessione.'; " ^
-  "$lines += ('   NXDOMAIN: {0}' -f $sRcNx); " ^
-  "$lines += '     > Somma di tutte le risposte di dominio inesistente registrate durante la sessione.'; " ^
-  "$lines += ('   SERVFAIL: {0}' -f $sRcSf); " ^
-  "$lines += '     > Somma di tutti gli errori di risoluzione registrati durante la sessione. Deve restare basso.'; " ^
-  "$lines += ('   REFUSED: {0}' -f $sRcRe); " ^
-  "$lines += '     > Somma di tutte le richieste rifiutate registrate durante la sessione. Deve restare a 0.'; " ^
-  "$lines += ''; " ^
-  "$lines += ' SICUREZZA'; " ^
-  "$lines += ('   Query indesiderate: {0}' -f $sUnwq); " ^
-  "$lines += '     > Somma di tutte le query indesiderate arrivate durante la sessione. Deve restare a 0.'; " ^
-  "$lines += ('   Risposte indesiderate: {0}' -f $sUnwr); " ^
-  "$lines += '     > Somma di tutte le risposte indesiderate arrivate durante la sessione. Deve restare a 0.'; " ^
+  "$lines += (' TRAFFICO   Query: {0}   Cache-hit: {1}%%   Prefetch: {2}   Zero-TTL: {3}' -f $sQ,$sPct,$sPrefetch,$sZerottl); " ^
+  "$lines += (' RISPOSTE   NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $sRcOk,$sRcNx,$sRcSf,$sRcRe); " ^
+  "$lines += (' DNSSEC     Valide: {0}   Bogus: {1}' -f $sSec,$sBog); " ^
+  "$lines += (' RPZ        NXDOMAIN: {0}  NODATA: {1}  DROP: {2}  Passthru: {3}' -f $sRpzNx,$sRpzNo,$sRpzDrop,$sRpzPass); " ^
+  "$lines += (' SICUREZZA  Query indes.: {0}   Risposte indes.: {1}' -f $sUnwq,$sUnwr); " ^
   "Add-Content -Path '%STATS_FILE%' -Value $lines"
 
 del /f /q "%STATS_TMP%" >nul 2>&1
+exit /b
+
+:: ============================================================================
+:: RIEPILOGO_BLOCCHI_RPZ - una volta al giorno (00:00, dal task StatsReset).
+:: Legge il log RPZ "vivo" (solo le due zone a nome-dominio, HaGeZi Pro Plus
+:: e TIF: rpz-log:yes + rpz-log-name in service.conf), aggrega i blocchi per
+:: zona e dominio, e appende il riepilogo sintetico (domini unici, blocchi
+:: totali, top 5) al file statistiche del giorno APPENA CONCLUSO - non quello
+:: nuovo che RACCOLTA_STATISTICHE RESET sta per azzerare. Poi svuota il log
+:: vivo e forza Unbound a rilasciare/riaprire il file (log_reopen): i nomi
+:: dominio grezzi non restano mai su disco piu' di 24 ore, resta solo il
+:: riepilogo aggregato, con la stessa rotazione settimanale a 7 file degli
+:: altri log. Le zone RPZ-IP (Spamhaus, TIF-IPS) restano rpz-log:no - bloccano
+:: indirizzi IP non nomi, il conteggio aggregato nello snapshot biorario basta.
+:: ============================================================================
+:RIEPILOGO_BLOCCHI_RPZ
+set "RPZ_LIVE_LOG=%UB_DIR%\rpz-live.log"
+if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
+
+set "DOW_IERI="
+set "GIORNO_IERI="
+for /f %%D in ('powershell -NoProfile -Command "(Get-Date).AddDays(-1).DayOfWeek.value__"') do set "DOW_IERI=%%D"
+if "%DOW_IERI%"=="0" set "GIORNO_IERI=Domenica"
+if "%DOW_IERI%"=="1" set "GIORNO_IERI=Lunedi"
+if "%DOW_IERI%"=="2" set "GIORNO_IERI=Martedi"
+if "%DOW_IERI%"=="3" set "GIORNO_IERI=Mercoledi"
+if "%DOW_IERI%"=="4" set "GIORNO_IERI=Giovedi"
+if "%DOW_IERI%"=="5" set "GIORNO_IERI=Venerdi"
+if "%DOW_IERI%"=="6" set "GIORNO_IERI=Sabato"
+if "%GIORNO_IERI%"=="" (
+    call :LOGFAIL "STATS" "RIEPILOGO_BLOCCHI_RPZ: giorno precedente non determinato (DOW_IERI='%DOW_IERI%')"
+    exit /b
+)
+set "RPZ_TARGET_FILE=%STATS_DIR%\%GIORNO_IERI%.log"
+
+if not exist "%RPZ_LIVE_LOG%" (
+    exit /b
+)
+
+powershell -NoProfile -Command ^
+  "$raw = Get-Content -Path '%RPZ_LIVE_LOG%' -ErrorAction SilentlyContinue; " ^
+  "if (-not $raw -or $raw.Count -eq 0) { exit }; " ^
+  "$zones = @{}; " ^
+  "foreach ($l in $raw) { " ^
+  "  if ($l -match 'RPZ\s*(?:applied|:\s*applied)\s*\[(?<zone>[^\]]+)\]\s+(?<qname>\S+)\s+(?:rpz-)?(?<action>[a-z-]+)\s+\S+@') { " ^
+  "    $zone = $matches['zone']; $qname = $matches['qname'].TrimEnd('.'); " ^
+  "    if (-not $zones.ContainsKey($zone)) { $zones[$zone] = @{} }; " ^
+  "    if (-not $zones[$zone].ContainsKey($qname)) { $zones[$zone][$qname] = 0 }; " ^
+  "    $zones[$zone][$qname]++; " ^
+  "  } " ^
+  "}; " ^
+  "if ($zones.Count -eq 0) { exit }; " ^
+  "$lines = @(); " ^
+  "$lines += ''; " ^
+  "$lines += '============================================================'; " ^
+  "$lines += (' RIEPILOGO BLOCCHI RPZ - {0}' -f (Get-Date).AddDays(-1).ToString('dd/MM/yyyy')); " ^
+  "$lines += '============================================================'; " ^
+  "foreach ($zone in ($zones.Keys | Sort-Object)) { " ^
+  "  $domains = $zones[$zone]; " ^
+  "  $totBlocchi = ($domains.Values | Measure-Object -Sum).Sum; " ^
+  "  $uniq = $domains.Count; " ^
+  "  $top = $domains.GetEnumerator() | Sort-Object -Property Value -Descending | Select-Object -First 5; " ^
+  "  $topStr = ($top | ForEach-Object { '{0} ({1})' -f $_.Key, $_.Value }) -join ', '; " ^
+  "  $lines += (' {0}   Domini unici: {1}   Blocchi tot: {2}' -f $zone.ToUpper(), $uniq, $totBlocchi); " ^
+  "  $lines += ('   Top: {0}' -f $topStr); " ^
+  "}; " ^
+  "Add-Content -Path '%RPZ_TARGET_FILE%' -Value $lines"
+
+:: Svuota il log vivo (troncamento a 0 byte) e forza Unbound a rilasciare
+:: e riaprire il file, cosi' non resta un handle agganciato al file vecchio.
+type nul > "%RPZ_LIVE_LOG%" 2>nul
+if exist "%UB_DIR%\unbound-control.exe" (
+    "%UB_DIR%\unbound-control.exe" -c "%SERVICE_CONF%" log_reopen >nul 2>&1
+)
 exit /b
 
 :UPDATE_UI
@@ -2082,7 +2012,7 @@ echo !ESC![92m
 echo ======================================================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
 echo ======================================================================================================================================================
-echo Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** RAM: !RAW_RAM! GB - N.Processori: !THREADS! N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
+echo Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
 echo Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
 echo Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
 echo                                                      *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
