@@ -3,7 +3,11 @@
 ::         UNBOUND BUNKER MANAGER  -  INFORMAZIONI OPERATIVE DI EMERGENZA
 :: ==================================================================================
 :: CODICE STRUTTURATO PER ELIMINAZIONE SFARFALLIO (ZERO POWERSHELL NELL'UI LOOP).
-:: MODIFICATO: Rimossa completamente la telemetria, l'analisi e la scrittura log su disco.
+:: FUNZIONAMENTO IN CASO DI BLACKOUT RETE:
+:: 1. Se Unbound è fermo o in errore, lo script forza temporaneamente i DNS pubblici
+::    (1.1.1.1/9.9.9.9) sulle schede per completare i download di root e filtri.
+:: 2. Se viene rilevato un errore di sintassi nel file service.conf, la subroutine 
+::    :CONFIG_ERROR ripristina all'istante l'ultimo backup funzionante (.BKP).
 :: ==================================================================================
 setlocal enabledelayedexpansion
 chcp 65001 >nul
@@ -14,8 +18,7 @@ if %errorLevel% neq 0 goto :ELEVATE_NOW
 goto :ADMIN_VERIFIED
 
 :ELEVATE_NOW
-echo [!] Servono privilegi di amministratore.
-echo Sto rilanciando lo script con elevazione...
+echo [!] Servono privilegi di amministratore. Sto rilanciando lo script con elevazione...
 powershell -Command "Start-Process '%~f0' -Verb RunAs"
 exit /b
 
@@ -44,17 +47,19 @@ exit
 call :AUTO_TUNING_HARDWARE
 
 :: --- DNS BOOTSTRAP ANTICIPATO: imposto 1.1.1.1/9.9.9.9 subito, prima di tutto
+:: (Unbound non è ancora avviato, WARP/WireGuard potrebbero non essere pronti)
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
 
 :: Abilita i codici di escape ANSI per i colori
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
+:: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
 set "FLAG_LINE=%ESC%[42m                                                  %ESC%[0m%ESC%[47m                                                  %ESC%[0m%ESC%[41m                                                  %ESC%[0m%ESC%[0m"
 mode con: cols=150 lines=65
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=801.00"
+set "LOCAL_VER=802.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -129,14 +134,20 @@ if "!UPDATE_NEEDED!"=="1" (
 
         if exist "!UPDATE_TMP!" if exist "!SHA_TMP!" (
             echo   [..] Verifica integrita' SHA256 in corso...
+            
+            :: Estrae l'hash atteso dal file .sha256 (prende la prima stringa di 64 caratteri esadecimali)
             for /f "tokens=1" %%A in ('type "!SHA_TMP!"') do set "EXPECTED_SHA=%%A"
+            
+            :: Calcola l'hash locale del file appena scaricato
             set "LOCAL_SHA="
             for /f "skip=1 delims=" %%A in ('certutil -hashfile "!UPDATE_TMP!" SHA256 ^| findstr /v "CertUtil"') do (
                 set "LOCAL_SHA=%%A"
                 set "LOCAL_SHA=!LOCAL_SHA: =!"
             )
+            
             del /f /q "!SHA_TMP!" >nul 2>&1
 
+            :: Confronto formale degli hash
             if /i "!LOCAL_SHA!"=="!EXPECTED_SHA!" (
                 echo   [OK] Hash SHA256 verificato con successo.
                 for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
@@ -238,14 +249,20 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 
         if exist "!SVC_TMP!" if exist "!SVC_SHA_TMP!" (
             echo   [..] Verifica integrita' SHA256 in corso...
+            
+            :: Estrae l'hash atteso dal file .sha256
             for /f "tokens=1" %%A in ('type "!SVC_SHA_TMP!"') do set "EXPECTED_SVC_SHA=%%A"
+            
+            :: Calcola l'hash locale di service.conf.tmp
             set "LOCAL_SVC_SHA="
             for /f "skip=1 delims=" %%A in ('certutil -hashfile "!SVC_TMP!" SHA256 ^| findstr /v "CertUtil"') do (
                 set "LOCAL_SVC_SHA=%%A"
                 set "LOCAL_SVC_SHA=!LOCAL_SVC_SHA: =!"
             )
+            
             del /f /q "!SVC_SHA_TMP!" >nul 2>&1
 
+            :: Confronto formale degli hash
             if /i "!LOCAL_SVC_SHA!"=="!EXPECTED_SVC_SHA!" (
                 echo   [OK] Hash SHA256 verificato con successo.
                 for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
@@ -307,8 +324,15 @@ echo [+] Creazione del task pianificato giornaliero...
 schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
 :CHECK_OLD_HOURLY
+:: Pulizia vecchio task orario se rimasto
 schtasks /query /tn "Unbound_Bunker_Hourly" >nul 2>&1
 if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
+
+:: Pulizia vecchio task StatsReset se rimasto da una versione precedente:
+:: il flag --stats-reset non e' piu' gestito (sistema statistiche eliminato),
+:: quindi il task va rimosso per non far scattare la sequenza completa a vuoto.
+schtasks /query /tn "Unbound_Bunker_StatsReset" >nul 2>&1
+if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_StatsReset" /f >nul 2>&1
 
 :: 2. CONTROLLO E CREAZIONE TASK BIORARIO
 schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
@@ -333,7 +357,6 @@ if %errorLevel% NEQ 0 (
     schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /ru "%USERNAME%" /rl highest /f >nul 2>&1
 )
 
-:: Rimossi i controlli e la creazione del task di azzeramento statistiche (Unbound_Bunker_StatsReset) per azzerare le scritture su disco.
 :TASKS_DONE
 
 set "CONSOLE_COLOR=0A"
@@ -371,6 +394,7 @@ set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
 
 set "CURL_CA=--ipv4 --location --max-time 60"
 title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
+:: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 
 :: Inizializza tutte le variabili delle fasi come vuote
@@ -403,8 +427,11 @@ set "NOW_H=%time:~0,2%"
 set "NOW_M=%time:~3,2%"
 set /a "NOW_MINS=NOW_H*60+NOW_M"
 
+:: ==================================================================
+:: FLAG --refresh: aggiorna solo HaGeZi + root hints, poi riavvia
+:: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
+:: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
-if "%~1"=="--stats-reset" goto :STATS_RESET_ONLY
 
 set "SKIP_MAINTENANCE=0"
 if "%~1"=="--scheduled" (
@@ -414,7 +441,7 @@ if "%~1"=="--scheduled" (
     )
 )
 
-:: Lettura parametri cache dal service.conf
+:: Lettura parametri cache dal service.conf (una volta sola all'avvio)
 set "CONF_MSG_CACHE=N/A"
 set "CONF_RRSET_CACHE=N/A"
 if exist "%UB_DIR%\service.conf" (
@@ -426,7 +453,10 @@ if exist "%UB_DIR%\service.conf" (
     )
 )
 
-:: --- Lettura dinamica dei FORWARDER dal service.conf ---
+:: --- Lettura dinamica dei FORWARDER dal service.conf (una volta sola all'avvio) ---
+:: Scansiona tutte le righe "forward-addr:" ed estrae il nome host dopo il "#",
+:: deduplicandolo. Se aggiungi/rimuovi un forward-addr nel service.conf, questo
+:: elenco si aggiorna da solo al riavvio dello script, senza toccare il .bat.
 set "FWD_LIST="
 set "FWD_COUNT=0"
 set "HYPERLOCAL_ACTIVE=0"
@@ -434,6 +464,7 @@ set "FALLBACK_ENABLED=no"
 set "FOR_UPSTREAM=no"
 
 if exist "%UB_DIR%\service.conf" (
+    :: Scansione Forwarder tradizionali DoT
     for /f "tokens=2 delims=#" %%H in ('findstr /i /c:"forward-addr:" "%UB_DIR%\service.conf"') do (
         set "FWD_NAME=%%H"
         set "FWD_DUP=0"
@@ -447,6 +478,8 @@ if exist "%UB_DIR%\service.conf" (
             )
         )
     )
+    
+    :: Verifica se la zona auth-zone per "." ha il fallback attivo su Hyperlocal
     for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"fallback-enabled:" "%UB_DIR%\service.conf"') do set "FALLBACK_ENABLED=%%V"
     for /f "tokens=2 delims=: " %%V in ('findstr /i /c:"for-upstream:" "%UB_DIR%\service.conf"') do set "FOR_UPSTREAM=%%V"
     
@@ -462,6 +495,8 @@ if exist "%UB_DIR%\service.conf" (
 )
 if "!FWD_LIST!"=="" set "FWD_LIST=N/A"
 
+:: Pulisce lo schermo dai log di backup/aggiornamento (self-update BAT + service.conf)
+:: prima di disegnare il primo frame della UI a barra fissa.
 cls
 
 :: FASE 1 - Azione
@@ -478,8 +513,9 @@ if errorlevel 1 (
     goto :NET_RETRY
 )
 set "CONSOLE_COLOR=0A"
-set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza."
+set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza.       "
 call :LOGSTEP "NET" "Connettivita verificata"
+:: Garantisce resolver esterno per tutti i download successivi
 call :DNS_FALLBACK_ON
 
 :: FASE 2 - Azione
@@ -493,6 +529,8 @@ if not exist "%UB_DIR%" (
     pause
     exit /b
 )
+
+
 set "F2_RES=[      OK      ] FS   >> Cartella Unbound verificata."
 call :LOGSTEP "FS" "Directory Unbound trovata"
 
@@ -502,7 +540,10 @@ call :UPDATE_UI 20
 set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
 reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbound.exe" /v "DumpType" /t REG_DWORD /d 0 /f >nul 2>&1
+
+:: --- AUTO-RESTART SU CRASH (mitiga il sintomo: SCM riavvia il servizio da solo, non risolve la causa del crash) ---
 sc failure unbound reset= 86400 actions= restart/5000/restart/10000/restart/30000 >nul 2>&1
+
 set "F3_RES=[      OK      ] REG  >> Priorità CPU impostata, dump locali disattivati, auto-restart su crash configurato."
 call :LOGSTEP "REG" "Priorita CPU, dump e auto-restart su crash (SCM) configurati"
 
@@ -511,10 +552,16 @@ set "F4_ACT=[...in corso...] REG  >> Policy DNS: Spengo Smart Name Res, multicas
 call :UPDATE_UI 30
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableSmartNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v "TurnOffMulticastNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
+
+:: --- [PARANOICO] BLOCCO TOTALE DI AGENTI E RESOLVER NASCONTI DI WINDOWS ---
+:: Impedisce a Windows di usare i server DNS configurati sulla scheda di rete se non rispondono (evita leak verso i DNS del provider)
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters" /v "QueryRouter" /t REG_DWORD /d 0 /f >nul 2>&1
+:: Disattiva il fallback automatico sulla telemetria NCSI (Network Connectivity Status Indicator) che fa query DNS fantasma a Microsoft
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\NclSvc\Parameters" /v "UseGlobalDNS" /t REG_DWORD /d 0 /f >nul 2>&1
+:: Blocco del DNS parallelo (Windows non distribuirà le query ad altre schede se Unbound risponde)
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableParallelQueries" /t REG_DWORD /d 1 /f >nul 2>&1
 
+:: --- DISATTIVAZIONE DoH NEI BROWSER ---
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
@@ -528,6 +575,7 @@ reg add "HKLM\SOFTWARE\Policies\Opera" /v "BuiltInDnsClientEnabled" /t REG_DWORD
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "DnsOverHttpsMode" /t REG_SZ /d "off" /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "BuiltInDnsClientEnabled" /t REG_DWORD /d 0 /f >nul 2>&1
 
+:: --- HARDENING ANTI-OMOGRAFO IDN (FORZA VISUALIZZAZIONE PUNYCODE) ---
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Mozilla\Firefox\Preferences" /v "network.IDN_show_punycode" /t REG_DWORD /d 1 /f >nul 2>&1
@@ -535,10 +583,14 @@ reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v "IDNPolicy" /t REG_DWORD
 reg add "HKLM\SOFTWARE\Policies\Opera" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "IDNPolicy" /t REG_DWORD /d 1 /f >nul 2>&1
 
+:: --- DISATTIVAZIONE LLMNR ---
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" /v "EnableMulticast" /t REG_DWORD /d 0 /f >nul 2>&1
+
+:: --- DISATTIVAZIONE WPAD ---
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v "AutoDetect" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" /v "AutoDetect" /t REG_DWORD /d 0 /f >nul 2>&1
 
+:: --- CNAME CLOAKING E PREFETCH DNS BROWSER ---
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
@@ -554,20 +606,22 @@ reg add "HKLM\SOFTWARE\Policies\Opera" /v "NetworkPredictionOptions" /t REG_DWOR
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "DnsCanonicalNameMode" /t REG_DWORD /d 0 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Vivaldi" /v "NetworkPredictionOptions" /t REG_DWORD /d 2 /f >nul 2>&1
 
-set "F4_RES=[      OK      ] REG  >> Policy active: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
+set "F4_RES=[      OK      ] REG  >> Policy attive: i browser non bypassano Unbound e mostrano i domini IDN in Punycode."
 call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
 
 :: FASE 5 - Azione
 set "F5_ACT=[...in corso...] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
+
+:: --- DNS IPV6 SU ::1 (esclude WireGuard/WARP) ---
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 
 set "F5_RES=[      OK      ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati."
 call :LOGSTEP "SECU/NET" "Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati"
 
 :: FASE 6 - Azione
-set "F5_ACT=[...in corso...] TIME >> Sincronizzo l'orologio di sistema per evitare problemi con DNSSEC."
+set "F6_ACT=[...in corso...] TIME >> Sincronizzo l'orologio di sistema per evitare problemi con DNSSEC."
 call :UPDATE_UI 50
 sc config w32time start= auto >nul 2>&1
 net start w32time >nul 2>&1
@@ -577,9 +631,8 @@ set "F6_RES=[      OK      ] TIME >> Orologio sincronizzato correttamente - ora 
 call :LOGSTEP "TIME" "w32time sincronizzato - ora: %NOW_TIME%"
 
 :: FASE 7 - Azione
-set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici."
+set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
-:: Rimossa la rotazione e il controllo dimensione di logfile.log per azzerare l'I/O
 if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone" call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
@@ -605,9 +658,10 @@ if "%SKIP_MAINTENANCE%"=="1" (
     taskkill /f /im unbound.exe >nul 2>&1
     net start unbound >nul 2>&1
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    :: [FIX] Ripristina il DNS su 127.0.0.1: DNS_FALLBACK_ON era già attiva
+    :: dalla FASE 1 e questo percorso di skip non la disattivava mai.
     call :DNS_FALLBACK_OFF
     call :UPDATE_UI 100
-    :: Rimossa la chiamata a RACCOLTA_STATISTICHE
     goto :FINALIZZAZIONE
 )
 
@@ -618,22 +672,29 @@ net stop unbound >nul 2>&1
 taskkill /f /im unbound.exe >nul 2>&1
 set "F8_RES=[      OK      ] CORE >> Servizio fermato e pronto per assestare aggiornamenti ed impostazioni sicure."
 call :LOGSTEP "CORE" "Unbound fermato"
+:: DNS bootstrap: Unbound è fermo, serve resolver esterno per i download
 call :DNS_FALLBACK_ON
+
 
 :: -------------------------------------------------------
 :: F9 — named.cache
 :: -------------------------------------------------------
 set "F9_ACT=[...in corso...] NET  >> Scarico file NAMED.CACHE da www.internic.net..."
 call :UPDATE_UI 80
+
 set "NC_URL=https://www.internic.net/domain/named.cache"
 set "NC_TMP=%UB_DIR%\named.cache.tmp"
 
+:: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\named.cache" (
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
     set "F9_RES=[     SKIP     ] NET  >> NAMED.CACHE gia' presente: !DT_NC!"
     goto :NC_DONE
 )
+
+:: Se non esiste, prova a scaricarlo
 if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
+
 curl -s -f %CURL_CA% -o "%NC_TMP%" "%NC_URL%" >nul 2>&1
 if errorlevel 1 (
     if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
@@ -669,15 +730,20 @@ call :LOGSTEP "NET" "!F9_RES!"
 :: -------------------------------------------------------
 set "F9B_ACT=[...in corso...] NET  >> Scarico ROOT.ZONE da www.internic.net..."
 call :UPDATE_UI 82
+
 set "RZ_URL=https://www.internic.net/domain/root.zone"
 set "RZ_TMP=%UB_DIR%\root.zone.tmp"
 
+:: Se il file esiste già, mostra SKIP e la data, salta il download
 if exist "%UB_DIR%\root.zone" (
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
     set "F9B_RES=[     SKIP     ] NET  >> ROOT.ZONE gia' presente: !DT_RZ!"
     goto :RZ_DONE
 )
+
+:: Se non esiste, prova a scaricarlo
 if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
+
 curl -s -f %CURL_CA% -o "%RZ_TMP%" "%RZ_URL%" >nul 2>&1
 if errorlevel 1 (
     if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
@@ -709,13 +775,15 @@ call :UPDATE_UI 83
 call :LOGSTEP "NET" "!F9B_RES!"
 
 :: ================================================================
-:: F10 — HAGEZI PRO PLUS
+:: F10 — HAGEZI PRO PLUS (SCARICA E IMPOSTA SEMPRE LA VERSIONE PRO)
 :: ================================================================
-set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo como RPZ attiva."
+set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+:: Scarica sempre la versione Pro Plus
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
 if errorlevel 1 (
     if exist "%HZ_PRO_PLUS_BAK%" (
@@ -766,6 +834,7 @@ call :UPDATE_UI 87
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
 if errorlevel 1 (
     if exist "%HZ_TIF_BAK%" (
@@ -783,7 +852,7 @@ if errorlevel 1 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
             for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF, 1"
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
             )
         )
         if "!SKIP_TIF!"=="0" (
@@ -808,13 +877,15 @@ if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10B_RES!"
 
 :: ================================================================
-:: F10C — HAGEZI TIF-IPS
+:: F10C — HAGEZI TIF-IPS (IP companion: blocca connessioni dirette
+:: a IP malware/phishing/C2 che bypassano del tutto il DNS)
 :: ================================================================
 set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
 call :UPDATE_UI 88
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
 if errorlevel 1 (
     if exist "%HZ_TIF_IPS_BAK%" (
@@ -857,10 +928,11 @@ if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10C_RES!"
 
 :: ================================================================
-:: F10D — SPAMHAUS DROP
+:: F10D — SPAMHAUS DROP (Hijacked Netblocks / Botnet C2 - IP based)
 :: ================================================================
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
+
 curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
 if errorlevel 1 (
     if exist "%SH_DROP_BAK%" (
@@ -905,10 +977,11 @@ if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10D_RES!"
 
 :: ================================================================
-:: F10E — SPAMHAUS DROPv6
+:: F10E — SPAMHAUS DROPv6 (Hijacked Netblocks / Botnet C2 - IPv6 based)
 :: ================================================================
 set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
 call :UPDATE_UI 89
+
 curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
 if errorlevel 1 (
     if exist "%SH_DROP6_BAK%" (
@@ -952,6 +1025,7 @@ if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10E_RES!"
 
+
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
 call :UPDATE_UI 90
@@ -973,7 +1047,6 @@ icacls "%HZ_TIF%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F)
 icacls "%HZ_TIF_IPS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%SH_DROP%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
-:: Rimossa la riga dei permessi su LOG_FILE in quanto inesistente.
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
 
@@ -984,17 +1057,20 @@ if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 "%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
 if %errorLevel% neq 0 goto :CONFIG_ERROR
 
+:: Ripristina 127.0.0.1 prima di avviare Unbound
 call :DNS_FALLBACK_OFF
 net start unbound >nul 2>&1
+:: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
 timeout /t 2 >nul
 sc query unbound | find "RUNNING" >nul 2>&1
 if %errorLevel% neq 0 goto :START_ERROR
+:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
 echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
-:: FASE 14 - Verifica DoT
+:: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo e dinamico con Gestore - OTTIMIZZATO NEI TEMPI)
 set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream attivi nel conf..."
 call :UPDATE_UI 100
 
@@ -1004,6 +1080,7 @@ set "DOT_FAIL_LIST="
 set "DOT_TMP=%TEMP%\ub_dot_check.txt"
 if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 
+:: 1) Parsing dei resolver direttamente in Batch per evitare sfarfallio e conflitti RegEx in PowerShell
 set "PS_ARGS="
 if exist "C:\Program Files\Unbound\service.conf" (
     for /f "tokens=1,2* delims=#" %%A in ('findstr /i /c:"forward-addr:" "C:\Program Files\Unbound\service.conf"') do (
@@ -1015,6 +1092,7 @@ if exist "C:\Program Files\Unbound\service.conf" (
         set "TAG_ONLY=%%B"
         if not defined TAG_ONLY set "TAG_ONLY=Unknown"
         set "TAG_ONLY=!TAG_ONLY: =!"
+        
         set "PS_ARGS=!PS_ARGS! '!IP_ONLY!|!TAG_ONLY!',"
     )
 )
@@ -1025,22 +1103,12 @@ if not defined PS_ARGS (
     goto :FINALIZZAZIONE_RAPIDA
 )
 
+:: Rimuove la virgola finale dagli argomenti passati a PowerShell
 set "PS_ARGS=!PS_ARGS:~0,-1!"
 
+:: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$targets = @(%PS_ARGS%);" ^
-  "$conns = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1];" ^
-  "try { $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $ar = $tcp.BeginConnect($ip, 853, $null, $null);" ^
-  "[PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$tcp;AR=$ar;Done=$false;Ok=$false} } catch { [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$null;AR=$null;Done=$true;Ok=$false} } }; $sw = [System.Diagnostics.Stopwatch]::StartNew();" ^
-  "while ($sw.ElapsedMilliseconds -lt 2000 -and (($conns | Where-Object { -not $_.Done }).Count -gt 0)) { foreach ($c in $conns) { if ((-not $c.Done) -and $c.AR -and $c.AR.IsCompleted) { try { $c.Tcp.EndConnect($c.AR);" ^
-  "$c.Ok = $c.Tcp.Connected } catch { $c.Ok = $false }; $c.Done = $true } }; Start-Sleep -Milliseconds 25 };" ^
-  "foreach ($c in $conns) { if ($c.Tcp) { try { $c.Tcp.Close() } catch {} } }; $listOK = New-Object System.Collections.Generic.List[string];" ^
-  "$listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; foreach ($c in $conns) { $st = if ($c.Ok) { 'OK' } else { 'FAIL' };" ^
-  "if ($c.Ok) { $listOK.Add($c.IP) } else { $listFAIL.Add($c.IP) }; $details.Add(($c.IP + '|' + $c.Tag + '|' + $st)) };" ^
-  "'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii;" ^
-  "'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii;" ^
-  "'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii;" ^
-  "'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
+  "$targets = @(%PS_ARGS%); $conns = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; try { $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $ar = $tcp.BeginConnect($ip, 853, $null, $null); [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$tcp;AR=$ar;Done=$false;Ok=$false} } catch { [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$null;AR=$null;Done=$true;Ok=$false} } }; $sw = [System.Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 2000 -and (($conns | Where-Object { -not $_.Done }).Count -gt 0)) { foreach ($c in $conns) { if ((-not $c.Done) -and $c.AR -and $c.AR.IsCompleted) { try { $c.Tcp.EndConnect($c.AR); $c.Ok = $c.Tcp.Connected } catch { $c.Ok = $false }; $c.Done = $true } }; Start-Sleep -Milliseconds 25 }; foreach ($c in $conns) { if ($c.Tcp) { try { $c.Tcp.Close() } catch {} } }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; foreach ($c in $conns) { $st = if ($c.Ok) { 'OK' } else { 'FAIL' }; if ($c.Ok) { $listOK.Add($c.IP) } else { $listFAIL.Add($c.IP) }; $details.Add(($c.IP + '|' + $c.Tag + '|' + $st)) }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
 
 set "DOT_DETAILS="
 if exist "%DOT_TMP%" (
@@ -1058,6 +1126,7 @@ set "DOT_FAIL=%DOT_FAIL: =%"
 if "%DOT_OK%"=="" set "DOT_OK=0"
 if "%DOT_FAIL%"=="" set "DOT_FAIL=0"
 
+:: 3) Scrittura immediata dell'esito della fase
 if %DOT_FAIL% EQU 0 (
     set "F14_RES=[      OK      ] DoT  >> Verifica eseguita con successo su tutti i resolver attivi."
     call :LOGSTEP "DoT" "OK: Porta 853 aperta su tutti i resolver dinamici"
@@ -1070,10 +1139,10 @@ if %DOT_FAIL% EQU 0 (
     call :LOGSTEP "DoT" "WARN: !DOT_FAIL! resolver non raggiungibili su 853: !DOT_FAIL_LIST!"
 )
 
-:: Rimossa l'intera chiamata a RACCOLTA_STATISTICHE
-
+:: Ricarica lo schermo mostrando la UI definitiva al 100%
 call :UPDATE_UI 100
 
+:: 4) Disegna la tabella dei dettagli a schermo
 echo.
 echo   --------------------------------------------------------------------------------------------------
 echo    RESOLVER IP ADDRESS               GESTORE / TAG                             PORT     STATUS      
@@ -1085,10 +1154,13 @@ if defined DOT_DETAILS (
             set "IP_CLEAN=%%A"
             set "TAG_CLEAN=%%B"
             set "STATUS_CLEAN=%%C"
+            
             set "PAD_IP=!IP_CLEAN!                                 "
             set "PAD_IP=!PAD_IP:~0,33!"
+            
             set "PAD_TAG=!TAG_CLEAN!                                         "
             set "PAD_TAG=!PAD_TAG:~0,41!"
+            
             if "!STATUS_CLEAN!"=="OK" (
                 echo    !PAD_IP! !PAD_TAG! 853      %ESC%[32m[   OK   ]%ESC%[0m
             ) else (
@@ -1100,13 +1172,17 @@ if defined DOT_DETAILS (
 echo   --------------------------------------------------------------------------------------------------
 echo.
 
+:: Salto diretto alla nuova finalizzazione rapida senza attese intermedie
 goto :FINALIZZAZIONE_RAPIDA
 
-:STATS_RESET_ONLY
-exit /b
-
+:: ============================================================================
+:: REFRESH BIORARIO: BAT, SERVICE.CONF, HaGeZi, named.cache, root.zone, riavvio
+:: Non tocca registry, mitigazioni, time sync, permessi, checkconf.
+:: ============================================================================
 :REFRESH_FILES_ONLY
 title UNBOUND BUNKER - REFRESH BIORARIO
+
+:: Abilita i codici di escape ANSI per i colori (nel caso non siano già attivi)
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 
 ping -n 1 8.8.8.8 >nul 2>&1
@@ -1115,11 +1191,13 @@ if errorlevel 1 (
     call :LOGFAIL "REFRESH" "Rete non raggiungibile, refresh saltato"
     exit /b
 )
+
 if not exist "%UB_DIR%" (
-    call :LOGFAIL "REFRESH" "Directory Unbound non trovato"
+    call :LOGFAIL "REFRESH" "Directory Unbound non trovata"
     exit /b
 )
 
+:: --- SILENT UPDATE CONTROLLO (BAT) VIA REFRESH ---
 set "VER_TMP=%TEMP%\ub_cloud_ver.txt"
 if exist "%VER_TMP%" del /f /q "%VER_TMP%" >nul 2>&1
 powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
@@ -1144,7 +1222,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
         )
         set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
-        call :PRUNE_BKP LOG "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+        call :PRUNE_BKP "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
         
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
@@ -1179,6 +1257,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
 )
 
 set "CHANGED=0"
+:: --- SILENT UPDATE CONTROLLO (SERVICE.CONF) VIA REFRESH ---
 powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
     set /p SVC_VER=<"%VER_TMP%"
@@ -1188,6 +1267,7 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
     set "LOCAL_SVC_VER=N/A"
     if exist "!LOCAL_SVC_VER_FILE!" set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
+    
     set "SVC_UPDATE_NEEDED=0"
     if not "!LOCAL_SVC_VER!"=="N/A" (
         set "LOC_SVC_INT=!LOCAL_SVC_VER:.=!"
@@ -1196,15 +1276,19 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
     ) else (
         set "SVC_UPDATE_NEEDED=1"
     )
+    
     if "!SVC_UPDATE_NEEDED!"=="1" (
         call :LOGSTEP "REFRESH" "ATTENZIONE, rilevato aggiornamento del file service.conf: v!LOCAL_SVC_VER! -> v!SVC_VER!"
         set "SVC_BAK=%UB_DIR%\service_v!LOCAL_SVC_VER!.conf.BKP"
         if exist "!SERVICE_CONF!" copy /y "!SERVICE_CONF!" "!SVC_BAK!" >nul 2>&1
         call :PRUNE_BKP "%UB_DIR%" "service_v*.conf.BKP"
+        
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
+        
         if exist "!SVC_TMP!" (
             for %%I in ("!SVC_TMP!") do if %%~zI GTR 0 (
+                :: ← NUOVO: valida prima di sovrascrivere
                 "%UB_DIR%\unbound-checkconf.exe" "!SVC_TMP!" >nul 2>&1
                 if !errorlevel! neq 0 (
                     del /f /q "!SVC_TMP!" >nul 2>&1
@@ -1214,13 +1298,14 @@ if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
                     echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
                     set "LOCAL_SVC_VER=!SVC_VER!"
                     set "CHANGED=1"
-                    call :LOGSTEP "REFRESH" "Il file service.conf è stato aggiornato con successo alla v!SVC_VER!"
+                    call :LOGSTEP "REFRESH" "Il file service.conf è stato aggiornato con successo alla  v!SVC_VER!"
                 )
             )
         )
     )
 )
 
+:: Backup prima di sovrascrivere (con rotazione a 3 versioni)
 if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
@@ -1236,7 +1321,8 @@ if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"  
 if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
 if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
 
-:: named.cache (refresh)
+
+:: named.cache (refresh biorario)
 if exist "%UB_DIR%\named.cache" (
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
     call :LOGSTEP "REFRESH" "named.cache gia' presente: !DT_NC!"
@@ -1269,7 +1355,7 @@ if exist "%UB_DIR%\named.cache" (
     if exist "%NC_TMP_R%" del /f /q "%NC_TMP_R%" >nul 2>&1
 )
 
-:: root.zone (refresh)
+:: root.zone (refresh biorario)
 if exist "%UB_DIR%\root.zone" (
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
     call :LOGSTEP "REFRESH" "root.zone gia' presente: !DT_RZ!"
@@ -1302,10 +1388,11 @@ if exist "%UB_DIR%\root.zone" (
     if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
 )
 
-:: HaGeZi Pro Plus (refresh)
+:: HaGeZi Pro Plus (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
@@ -1340,10 +1427,11 @@ if not errorlevel 1 (
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 
-:: HaGeZi TIF (refresh)
+:: HaGeZi TIF (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
@@ -1371,17 +1459,18 @@ if not errorlevel 1 (
     if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[      WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
     ) else (
         call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 
-:: HaGeZi TIF-IPS (refresh)
+:: HaGeZi TIF-IPS (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
 curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
@@ -1409,14 +1498,16 @@ if not errorlevel 1 (
     if exist "%HZ_TIF_IPS_BAK%" (
         copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-        call :LOGSTEP "REFRESH" "[      WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
     ) else (
         call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF-IPS non scaricabile e nessun backup disponibile!"
     )
 )
 if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 
-:: Spamhaus DROP (refresh)
+:: Spamhaus DROP (refresh biorario)
+:: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
+:: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
 curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
@@ -1453,7 +1544,7 @@ if not errorlevel 1 (
 if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 
-:: Spamhaus DROPv6 (refresh)
+:: Spamhaus DROPv6 (refresh biorario)
 curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
 if not errorlevel 1 (
     for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
@@ -1490,14 +1581,15 @@ if not errorlevel 1 (
 if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 
-:: Rimossa la chiamata a RACCOLTA_STATISTICHE
-
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
+    :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
     call :DNS_FALLBACK_ON
     net start unbound >nul 2>&1
+    :: Verifica stabilità: attendo 2 secondi affinché Unbound sia pronto ad accettare query
     timeout /t 2 >nul
+    :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
     call :DNS_FALLBACK_OFF
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
@@ -1505,7 +1597,10 @@ if "!CHANGED!"=="1" (
     call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
 )
 
+:: Salva timestamp del refresh
 echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
+:: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
+:: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
 exit /b
 
@@ -1524,7 +1619,10 @@ if exist "%SH_DROP_BAK%" copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul
 if exist "%ROOTKEY_BAK%" copy /y "%ROOTKEY_BAK%" "%UB_DIR%\root.key" >nul
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
+:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+:: [FIX] Ripristina il DNS su 127.0.0.1 anche in caso di errore di configurazione:
+:: DNS_FALLBACK_ON era attiva e questo percorso di emergenza non la disattivava.
 call :DNS_FALLBACK_OFF
 pause
 goto :FINALIZZAZIONE
@@ -1539,6 +1637,7 @@ pause
 goto :FINALIZZAZIONE
 
 :FINALIZZAZIONE
+:: Working set scalato dinamicamente sul profilo hardware rilevato in AUTO_TUNING_HARDWARE (fallback 800MB/2GB se non valorizzato)
 if "!MIN_WS!"=="" set "MIN_WS=838860800"
 if "!MAX_WS!"=="" set "MAX_WS=2147483648"
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]!MIN_WS!; $p.MaxWorkingSet = [IntPtr]!MAX_WS! }; [System.GC]::Collect()" >nul 2>&1
@@ -1554,17 +1653,31 @@ echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
-echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED!
-echo secondi.      Chiusura automatica....
+echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 1 >nul
 exit
 
+:: ==================================================================
+:: SUBROUTINE: risolve un hostname via DNS esterno
+:: Uso: call :RESOLVE_HOST <hostname> <variabile_risultato>
+:: ==================================================================
+
+:: ==================================================================
+:: SUBROUTINE: imposta DNS di sistema su resolver pubblico temporaneo
+:: Uso: call :DNS_FALLBACK_ON
+:: ==================================================================
 :DNS_FALLBACK_ON
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
+call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 9.9.9.9"
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: ripristina DNS di sistema su 127.0.0.1 (Unbound locale)
+:: Uso: call :DNS_FALLBACK_OFF
+:: ==================================================================
 :DNS_FALLBACK_OFF
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '127.0.0.1'" >nul 2>&1
+call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1"
 exit /b
 
 :RESOLVE_HOST
@@ -1575,24 +1688,27 @@ if "!%~2!"=="" (
 )
 exit /b
 
-:: Svuotate le subroutine log per azzerare totalmente l'I/O su disco
+:: LOGSTEP e LOGFAIL: disattivate su richiesta (nessuna scrittura di log su
+:: disco). Le funzioni restano come no-op innocui perche' richiamate da
+:: decine di punti nello script: rimuovere ogni "call" avrebbe significato
+:: toccare troppi punti del codice per nessun beneficio pratico.
 :LOGSTEP
 exit /b
 
 :LOGFAIL
 exit /b
 
-:: Rimosse integralmente le subroutine obsolete RACCOLTA_STATISTICHE e RIEPILOGO_BLOCCHI_RPZ
-
 :UPDATE_UI
 set "P_VAL=%~1"
 set /a "BLOCKS=P_VAL * 131 / 100"
 set /a "EMPTY=131 - BLOCKS"
 
+:: Generazione della barra IN MEMORIA (Nativa e istantanea, zero impatto CPU)
 set "BARRA="
 for /L %%K in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
 for /L %%K in (1,1,%EMPTY%)  do set "BARRA=!BARRA!░"
 
+:: Riporta il cursore in alto a sinistra senza cancellare lo sfondo (Addio sfarfallio)
 echo !ESC![H
 if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
     color !CONSOLE_COLOR!
@@ -1675,6 +1791,7 @@ set /a "PB_START=%~2"
 set /a "PB_END=%~3"
 set /a "PB_RANGE=PB_END - PB_START"
 if %PB_RANGE% LEQ 0 set "PB_RANGE=1"
+
 if %P_VAL% GEQ %PB_END% (
     set /a "PB_FILL=10"
     set /a "PB_PCT=100"
@@ -1686,13 +1803,17 @@ if %P_VAL% GEQ %PB_END% (
     set /a "PB_PCT=(P_VAL - PB_START) * 100 / PB_RANGE"
 )
 set /a "PB_EMPTY=10 - PB_FILL"
+
+:: Ciclo for nativo (Evita la chiamata PowerShell a ogni step dell'interfaccia)
 set "PB_BAR="
 for /L %%K in (1,1,%PB_FILL%)  do set "PB_BAR=!PB_BAR!█"
 for /L %%K in (1,1,%PB_EMPTY%) do set "PB_BAR=!PB_BAR!░"
+
 set "PB_PCTS= %PB_PCT%%%"
 if %PB_PCT% EQU 100 set "PB_PCTS=100%%"
 if %PB_PCT% LSS 10  set "PB_PCTS=  %PB_PCT%%%"
 if %PB_PCT% LSS 100 if %PB_PCT% GEQ 10 set "PB_PCTS= %PB_PCT%%%"
+
 set "UI_PB=[!PB_BAR!] !PB_PCTS!"
 exit /b
 
@@ -1701,6 +1822,7 @@ set /a "PB_START=%~2"
 set /a "PB_END=%~3"
 set /a "PB_RANGE=PB_END - PB_START"
 if %PB_RANGE% LEQ 0 set "PB_RANGE=1"
+
 if %P_VAL% GEQ %PB_END% (
     set /a "PB_FILL=17"
 ) else if %P_VAL% LEQ %PB_START% (
@@ -1709,17 +1831,33 @@ if %P_VAL% GEQ %PB_END% (
     set /a "PB_FILL=(P_VAL - PB_START) * 17 / PB_RANGE"
 )
 set /a "PB_EMPTY=17 - PB_FILL"
+
+:: Ciclo for nativo anche per le frecce dell'esito
 set "PB_ARROW="
 for /L %%K in (1,1,%PB_FILL%)  do set "PB_ARROW=!PB_ARROW!>"
 for /L %%K in (1,1,%PB_EMPTY%) do set "PB_ARROW=!PB_ARROW!."
+
 set "UI_ARROW=!PB_ARROW!"
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: ruota i backup a 3 versioni (bak1=piu' recente, bak3=piu' vecchio)
+:: Uso: call :ROTATE_BAK <bak1> <bak2> <bak3>
+:: Da chiamare SUBITO PRIMA di scrivere il nuovo .bak1.
+:: ==================================================================
 :ROTATE_BAK
 if exist "%~2" copy /y "%~2" "%~3" >nul 2>&1
 if exist "%~1" copy /y "%~1" "%~2" >nul 2>&1
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: mantiene solo i 3 file .BKP piu' recenti (per data di
+:: modifica) corrispondenti al pattern indicato, elimina i piu' vecchi.
+:: Usata dopo ogni self-update di BAT/service.conf (il nome include
+:: il numero di versione, quindi qui si pota per data, non per shift).
+:: Uso: call :PRUNE_BKP "<cartella>" "<pattern_glob>"
+:: Esempio: call :PRUNE_BKP "%UB_DIR%" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+:: ==================================================================
 :PRUNE_BKP
 set "PB_DIR=%~1"
 set "PB_PATTERN=%~2"
@@ -1729,6 +1867,10 @@ for /f "skip=%PB_KEEP% delims=" %%F in ('dir /b /o-d "%PB_DIR%\%PB_PATTERN%" 2^>
 )
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: legge data/ora ultima modifica di un file
+:: Uso: call :FILE_DATE <percorso_file> <variabile_risultato>
+:: ==================================================================
 :FILE_DATE
 set "%~2=N/A"
 set "FD_TMP=%TEMP%\ub_filedate.txt"
@@ -1740,6 +1882,13 @@ if exist "%FD_TMP%" (
 )
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: converte Spamhaus DROP v4 (JSON Lines, campo "cidr")
+:: in zona RPZ-IP per Unbound, equivalente al contrib/drop2rpz ufficiale
+:: aggiornato al nuovo formato JSON pubblicato da Spamhaus.
+:: Uso: call :DROP_TO_RPZ <file_drop_v4.json_in> <file_rpz_out>
+:: Formato per record: <bit-len>.<o4>.<o3>.<o2>.<o1>.rpz-ip CNAME .
+:: ==================================================================
 :DROP_TO_RPZ
 set "DR_IN=%~1"
 set "DR_OUT=%~2"
@@ -1758,6 +1907,15 @@ powershell -NoProfile -Command ^
   "[System.IO.File]::WriteAllLines('%DR_OUT%', $lines)" >nul 2>&1
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: converte Spamhaus DROPv6 (JSON Lines, campo "cidr")
+:: in zona RPZ-IP per Unbound. Conversione bit-esatta: nessun
+:: arrotondamento del prefisso, compressione "zz" applicata solo
+:: ai gruppi interi completamente fuori dal prefisso (mai a un
+:: gruppo parziale, per non perdere precisione sul bit-len).
+:: Uso: call :DROP_TO_RPZ_V6 <file_drop_v6.json_in> <file_rpz_out>
+:: Formato per record: <bit-len>.<gruppi-invertiti[.zz]>.rpz-ip CNAME .
+:: ==================================================================
 :DROP_TO_RPZ_V6
 set "DR6_IN=%~1"
 set "DR6_OUT=%~2"
@@ -1799,10 +1957,16 @@ powershell -NoProfile -Command ^
   "[System.IO.File]::WriteAllLines('%DR6_OUT%', $lines)" >nul 2>&1
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: colora l'esito in base al prefisso
+:: Uso: call :RES_COLOR "stringa_esito"
+:: Risultato in variabile RES_COLORED
+:: ==================================================================
 :RES_COLOR
 set "RES_STR=%~1"
 set "RES_COLORED=%RES_STR%"
 set "RES_PREFIX=%RES_STR:~0,16%"
+
 if "%RES_PREFIX%"=="[      OK      ]" (
     set "RES_COLORED=%ESC%[32m%RES_STR%%ESC%[0m"
 ) else if "%RES_PREFIX%"=="[     WARN     ]" (
@@ -1816,12 +1980,19 @@ if "%RES_PREFIX%"=="[      OK      ]" (
 )
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: RILEVAMENTO HARDWARE E AUTO-TUNING DINAMICO (RECALIBRATO)
+:: Genera hardware.conf adattando millimetricamente cache e slabs
+:: ==================================================================
 :AUTO_TUNING_HARDWARE
 echo [+] Analisi hardware in corso per ottimizzazione Bunker...
+
+:: 1. Rilevamento Core Logici (CPU)
 set "THREADS=2"
 for /f %%A in ('powershell -NoProfile -Command "[Environment]::ProcessorCount"') do set "THREADS=%%A"
 if "!THREADS!"=="" set "THREADS=2"
 
+:: 2. Rilevamento RAM Totale Reale
 set "TOTAL_RAM_GB=8"
 for /f "delims=" %%A in ('powershell -NoProfile -Command "[int][math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)"') do (
     set "RAW_RAM=%%A"
@@ -1831,7 +2002,9 @@ for /f "delims=" %%A in ('powershell -NoProfile -Command "[int][math]::Round((Ge
 )
 if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=4"
 
+:: 3. Assegnazione dei Profili in base alle soglie di RAM reali (4, 6, 8, 12, 16, 32)
 if !TOTAL_RAM_GB! leq 5 (
+    :: --- PROFILO MICRO (<= 4GB RAM) ---
     set "PROFILE_NAME=MICRO"
     set "MSG_CACHE=8m"
     set "RRSET_CACHE=16m"
@@ -1849,6 +2022,7 @@ if !TOTAL_RAM_GB! leq 5 (
     set "MIN_WS=134217728"
     set "MAX_WS=536870912"
 ) else if !TOTAL_RAM_GB! leq 9 (
+    :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
     set "PROFILE_NAME=LIGHT"
     set "MSG_CACHE=32m"
     set "RRSET_CACHE=64m"
@@ -1866,6 +2040,7 @@ if !TOTAL_RAM_GB! leq 5 (
     set "MIN_WS=268435456"
     set "MAX_WS=1073741824"
 ) else if !TOTAL_RAM_GB! leq 24 (
+    :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
     set "PROFILE_NAME=STANDARD"
     set "MSG_CACHE=128m"
     set "RRSET_CACHE=256m"
@@ -1883,6 +2058,7 @@ if !TOTAL_RAM_GB! leq 5 (
     set "MIN_WS=838860800"
     set "MAX_WS=2147483648"
 ) else (
+    :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "PROFILE_NAME=ULTRA"
     set "MSG_CACHE=512m"
     set "RRSET_CACHE=1024m"
@@ -1901,13 +2077,18 @@ if !TOTAL_RAM_GB! leq 5 (
     set "MAX_WS=4294967296"
 )
 
+:: 4. Calcolo dinamico intelligente degli Slabs condizionato dal profilo RAM
 set "SLABS=1"
 if !THREADS! geq 2 set "SLABS=2"
 if !THREADS! geq 4 set "SLABS=4"
 if !THREADS! geq 8 set "SLABS=8"
+
+:: Forza il tetto massimo degli slabs per non sprecare memoria sui profili bassi
 if !SLABS! gtr !SLABS_MAX! set "SLABS=!SLABS_MAX!"
 
+:: 5. Scrittura del file hardware.conf
 set "HW_CONF=C:\Program Files\Unbound\hardware.conf"
+
 echo # CONFIGURAZIONE GENERATA AUTOMATICAMENTE DAL BUNKER MANAGER > "%HW_CONF%"
 echo # Rilevati: !TOTAL_RAM_GB! GB RAM ^| !THREADS! CPU Thread ^| Profilo: !PROFILE_NAME! >> "%HW_CONF%"
 echo server: >> "%HW_CONF%"
@@ -1928,16 +2109,25 @@ echo     infra-cache-numhosts: !INFRA_HOSTS! >> "%HW_CONF%"
 echo     incoming-num-tcp: !INCOMING_TCP! >> "%HW_CONF%"
 echo     outgoing-num-tcp: !OUTGOING_TCP! >> "%HW_CONF%"
 echo     stream-wait-size: !STREAM_WAIT! >> "%HW_CONF%"
+
+echo [     OK      ] Ottimizzazione hardware completata: Profilo=!PROFILE_NAME! Slabs=!SLABS!, Cache=!MSG_CACHE!/!RRSET_CACHE! (RAM: !TOTAL_RAM_GB!GB), WorkingSet=!MIN_WS!/!MAX_WS!
 exit /b
 
+:: ==================================================================
+:: SUBROUTINE: CONTROLLO VERSIONE BINARI UNBOUND (LOCAL VS CLOUD)
+:: ==================================================================
 :CHECK_UNBOUND_VERSION
 set "UB_LOCAL_VER=N/A"
 set "UB_CLOUD_VER=N/A"
 set "UB_OUT_TMP=%TEMP%\ub_core_check.txt"
 if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
+:: 1. Esecuzione PowerShell su una singola riga piatta
+::    FIX: usa # come separatore invece di ^| per evitare l'errore di sintassi
+::         causato dall'interpretazione del pipe da parte di CMD
 powershell -NoProfile -Command "$l='N/A'; $c='N/A'; $u='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch {}; ($l + '#' + $c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
 
+:: 2. Lettura del risultato (3 token: versione locale # versione cloud # url download)
 if not exist "%UB_OUT_TMP%" goto :UB_OUTPUT
 for /f "usebackq tokens=1,2,3 delims=#" %%A in ("%UB_OUT_TMP%") do (
     set "UB_LOCAL_VER=%%A"
@@ -1957,52 +2147,77 @@ echo ==================================================================
 echo      Versione installata nel Bunker: !UB_LOCAL_VER!
 echo      Ultima versione stabile sul sito: !UB_CLOUD_VER!
 echo.
+
+:: 3. Logica Condizionale Forzata (Se coincidono va avanti, in TUTTI gli altri casi si ferma)
 if "!UB_LOCAL_VER!"=="!UB_CLOUD_VER!" goto :UB_OK
 
 :UB_NEW
 if "!UB_CLOUD_VER!"=="N/A" (
-    echo      [INFO] Versione cloud non verificabile (rete assente o timeout). Proseguo.
+    echo      [INFO] Versione cloud non verificabile ^(rete assente o timeout^). Proseguo.
+    call :LOGSTEP "CORE" "Unbound cloud ver N/A - controllo saltato, rete non disponibile"
     goto :UB_END
 )
-if "%~1"=="--scheduled" goto :UB_END
-if "%~1"=="--refresh" goto :UB_END
 
+:: In modalita' automatica: avvisa solo nel log e prosegue senza interazione
+if "%~1"=="--scheduled" (
+    call :LOGSTEP "CORE" "Unbound aggiornamento disponibile: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER! (avvio manuale per installare)"
+    goto :UB_END
+)
+if "%~1"=="--refresh" (
+    call :LOGSTEP "CORE" "Unbound aggiornamento disponibile: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER! (avvio manuale per installare)"
+    goto :UB_END
+)
+
+:: === MODALITA' INTERATTIVA: offre download e installazione ===
 echo !ESC![1;33m    [!] AGGIORNAMENTO DISPONIBILE: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!!ESC![0m
 echo.
-echo      L'installer verra' scaricato, verificato con SHA256 e pronto per l'avvio con un tasto.
+echo      L'installer verra' scaricato, verificato con SHA256 e
+echo      pronto per l'avvio con un tasto.
 echo.
 
 if "!UB_DL_URL!"=="N/A" (
     echo !ESC![1;31m    [ERRORE] URL di download non trovato nella release GitHub.!ESC![0m
-    echo      Scarica manualmente da: https://nlnetlabs.nl/projects/unbound/download/
+    echo      Scarica manualmente da:
+    echo      -> https://nlnetlabs.nl/projects/unbound/download/
+    echo      -> https://github.com/NLnetLabs/unbound/releases/latest
     echo.
+    call :LOGFAIL "CORE" "URL installer Unbound v!UB_CLOUD_VER! non trovato nella release"
+    echo ==================================================================
+    echo !ESC![1;36m    [i] Il Manager e' in attesa. Verifica i file, poi premi un tasto.!ESC![0m
     pause
     goto :UB_END
 )
 
+:: Mostra l'URL che sta per essere scaricato
 echo      Fonte: !UB_DL_URL!
 echo.
+
+:: Estrae il nome del file dall'URL
 set "UB_INSTALLER_NAME=unbound_setup_!UB_CLOUD_VER!.exe"
 for %%F in ("!UB_DL_URL!") do set "UB_INSTALLER_NAME=%%~nxF"
 set "UB_INSTALLER_PATH=!UB_DIR!\!UB_INSTALLER_NAME!"
 set "UB_SHA_PATH=!UB_INSTALLER_PATH!.sha256"
 set "UB_SHA_URL=!UB_DL_URL!.sha256"
 
+:: Scarica il file installer
 echo      [..] Download installer Unbound v!UB_CLOUD_VER! in corso...
 if exist "!UB_INSTALLER_PATH!" del /f /q "!UB_INSTALLER_PATH!" >nul 2>&1
 powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!UB_DL_URL!', '!UB_INSTALLER_PATH!') } catch { exit 1 }"
 
 if not exist "!UB_INSTALLER_PATH!" (
-    echo !ESC![1;31m    [ERRORE] Download fallito.!ESC![0m
+    echo !ESC![1;31m    [ERRORE] Download fallito. Verificare la connessione e riprovare.!ESC![0m
+    call :LOGFAIL "CORE" "Download installer Unbound v!UB_CLOUD_VER! fallito"
     echo      Proseguo con la versione attuale v!UB_LOCAL_VER!...
     echo.
     goto :UB_END
 )
 
+:: Scarica il file SHA256 per la verifica integrita' (GitHub pubblica il .sha256 accanto all'exe)
 echo      [..] Download hash SHA256 per verifica integrita'...
 if exist "!UB_SHA_PATH!" del /f /q "!UB_SHA_PATH!" >nul 2>&1
 powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!UB_SHA_URL!', '!UB_SHA_PATH!') } catch { exit 1 }" >nul 2>&1
 
+:: Verifica integrita' SHA256
 set "UB_SHA_OK=0"
 if exist "!UB_SHA_PATH!" (
     echo      [..] Verifica integrita' SHA256 in corso...
@@ -2018,39 +2233,55 @@ if exist "!UB_SHA_PATH!" (
     if /i "!UB_LOCAL_SHA!"=="!UB_EXPECTED_SHA!" (
         set "UB_SHA_OK=1"
         echo      [OK] Hash SHA256 verificato con successo.
+        call :LOGSTEP "CORE" "Installer Unbound v!UB_CLOUD_VER! scaricato e verificato SHA256"
     ) else (
-        echo !ESC![1;31m    [ERRORE CRITICO] Mismatch SHA256!!ESC![0m
+        echo !ESC![1;31m    [ERRORE CRITICO] Mismatch SHA256 - file potenzialmente corrotto o manomesso!!ESC![0m
+        echo      Atteso:  !UB_EXPECTED_SHA!
+        echo      Locale:  !UB_LOCAL_SHA!
         del /f /q "!UB_INSTALLER_PATH!" >nul 2>&1
+        call :LOGFAIL "CORE" "SHA256 mismatch installer Unbound v!UB_CLOUD_VER! - file eliminato per sicurezza"
         echo      Proseguo con la versione attuale v!UB_LOCAL_VER!...
         echo.
         goto :UB_END
     )
 ) else (
+    :: File .sha256 non disponibile su GitHub: avvisa ma non blocca
     echo !ESC![1;33m    [WARN] File SHA256 non disponibile su GitHub per questa release.!ESC![0m
+    echo           Impossibile verificare l'integrita'. Il file potrebbe essere autentico
+    echo           ma non e' possibile confermarlo crittograficamente.
+    echo.
     set "UB_SHA_OK=2"
+    call :LOGSTEP "CORE" "WARN: SHA256 non disponibile per Unbound v!UB_CLOUD_VER! - verifica manuale consigliata"
 )
 
+:: Riepilogo e richiesta conferma prima di avviare il setup
 echo.
 echo ==================================================================
 echo   INSTALLER PRONTO: !UB_INSTALLER_NAME!
 echo   Percorso:         !UB_INSTALLER_PATH!
 if "!UB_SHA_OK!"=="1" echo   Integrita':       [OK] SHA256 verificato
-if "!UB_SHA_OK!"=="2" echo   Integrita':       [WARN] SHA256 non disponibile
+if "!UB_SHA_OK!"=="2" echo   Integrita':       [WARN] SHA256 non disponibile - non verificato
 echo ==================================================================
 echo.
 echo !ESC![1;36m    [i] Vuoi avviare l'installer adesso?!ESC![0m
-echo         Il servizio Unbound e' gia' fermo.
+echo         Il servizio Unbound e' gia' fermo (gestito dal Bunker).
+echo         Al termine dell'installazione lo script ripartira' normalmente.
 echo.
 choice /c SN /d N /t 30 /m "     [S=Avvia installer / N=Salta, manuale dopo, default N in 30 sec]"
 if !errorlevel! EQU 1 (
     echo.
     echo      [..] Avvio installer Unbound v!UB_CLOUD_VER!...
+    call :LOGSTEP "CORE" "Avvio installer Unbound v!UB_CLOUD_VER! confermato dall'utente"
     start /wait "" "!UB_INSTALLER_PATH!"
     echo.
     echo      [OK] Installer completato. Il Bunker prosegue con la sequenza normale.
+    call :LOGSTEP "CORE" "Installer Unbound v!UB_CLOUD_VER! completato"
 ) else (
     echo.
-    echo      [INFO] Installazione rimandata. L'installer e' salvato in: !UB_INSTALLER_PATH!
+    echo      [INFO] Installazione rimandata. L'installer e' salvato in:
+    echo             !UB_INSTALLER_PATH!
+    echo      Puoi avviarlo manualmente dopo la chiusura del Bunker.
+    call :LOGSTEP "CORE" "Installazione Unbound v!UB_CLOUD_VER! rimandata dall'utente - file conservato in UB_DIR"
 )
 echo.
 goto :UB_END
@@ -2059,8 +2290,10 @@ goto :UB_END
 echo !ESC![32m     [OK] Il motore Unbound e' aggiornato all'ultima versione.!ESC![0m
 echo ==================================================================
 echo.
+
 :UB_END
 exit /b
+
 
 :FINALIZZAZIONE_RAPIDA
 set "END_TIME=%time%"
@@ -2075,7 +2308,6 @@ echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m
 echo !ESC![92m
-echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED!
-echo secondi.      Chiusura automatica....
+echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 3 >nul
 exit
