@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=752.00"
+set "LOCAL_VER=760.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1757,15 +1757,19 @@ set "LOG_TS=%date% %time%"
 exit /b
 
 :: ============================================================================
-:: RACCOLTA_STATISTICHE - Log giornaliero dell'attivita' del Bunker con
-:: rotazione settimanale automatica: 7 file, uno per giorno della settimana
-:: (Lunedi.log ... Domenica.log). Il file del giorno viene azzerato alla
-:: prima esecuzione della giornata (--scheduled, ore 06:00) e aggiornato in
-:: append dai refresh biorari (--refresh), cosi' che ogni file mostri la
-:: cronologia della giornata corrente e venga interamente sovrascritto la
-:: settimana successiva, senza bisogno di cancellazioni manuali.
+:: RACCOLTA_STATISTICHE - Campionamento dati DNS in formato CSV, con
+:: rotazione settimanale automatica: 7 file (Lunedi.csv ... Domenica.csv),
+:: uno per giorno della settimana. Ogni riga porta un timestamp completo
+:: (aaaa-mm-gg hh:mm), quindi la finestra "ultimi 7 giorni" della dashboard
+:: e' calcolata sul timestamp reale e non sul nome del file. Il file del
+:: giorno viene azzerato (nuovo header) alla prima esecuzione della giornata
+:: (--scheduled, ore 06:00) e riceve una riga in append ad ogni refresh
+:: biorario (--refresh). Ogni riga e' il DELTA dell'intervallo trascorso
+:: (statistics-cumulative:no in service.conf): la dashboard somma le righe
+:: del giorno per i totali "oggi", quindi non serve piu' un accumulatore di
+:: sessione separato. Al termine rigenera sempre dashboard.html.
 :: Uso: call :RACCOLTA_STATISTICHE RESET    (nuovo giorno, azzera il file)
-::      call :RACCOLTA_STATISTICHE APPEND   (aggiunge uno snapshot)
+::      call :RACCOLTA_STATISTICHE APPEND   (aggiunge una riga)
 :: ============================================================================
 :RACCOLTA_STATISTICHE
 :: Giorno della settimana calcolato via .NET (indipendente dalla lingua di sistema)
@@ -1784,23 +1788,17 @@ if "%GIORNO%"=="" (
 )
 if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
 
-set "STATS_FILE=%STATS_DIR%\%GIORNO%.log"
-
-:: Flag di reset sessione: propagato SOLO quando il chiamante passa
-:: "SESSION_RESET" come secondo parametro (vedi call sul run --scheduled).
-set "SESSION_RESET_FLAG=0"
-if /i "%~2"=="SESSION_RESET" set "SESSION_RESET_FLAG=1"
-set "SESSION_FILE=%STATS_DIR%\session_totale.dat"
+set "STATS_FILE=%STATS_DIR%\%GIORNO%.csv"
+set "CSV_HEADER=timestamp,queries,cachehit_pct,tcp,ipv6,edns,edns_do,type_a,type_aaaa,type_https,type_ptr,type_txt,type_mx,type_ns,cache_msg,cache_rrset,cache_infra,cache_key,mem_msg_mb,mem_rrset_mb,mem_iter_mb,mem_val_mb,mem_respip_mb,mem_stream_mb,mem_total_mb,dnssec_secure,dnssec_bogus,rrset_bogus,unwanted_q,unwanted_r,rc_noerror,rc_nxdomain,rc_servfail,rc_refused,recursion_avg_ms,recursion_median_ms,reqlist_avg,reqlist_max,prefetch,zero_ttl,rpz_nxdomain,rpz_nodata,rpz_drop,rpz_passthru,rpz_tcponly,rpz_local,rpz_disabled,rpz_cname"
 
 if /i "%~1"=="RESET" (
-    if exist "%STATS_FILE%" del /f /q "%STATS_FILE%" >nul 2>&1
-    >>"%STATS_FILE%" echo ============================================================
-    >>"%STATS_FILE%" echo  BUNKER - Attivita' di %GIORNO% ^(rotazione settimanale, 7 file^)
-    >>"%STATS_FILE%" echo ============================================================
+    >"%STATS_FILE%" echo %CSV_HEADER%
+)
+if not exist "%STATS_FILE%" (
+    >"%STATS_FILE%" echo %CSV_HEADER%
 )
 
 if not exist "%UB_DIR%\unbound-control.exe" (
-    >>"%STATS_FILE%" echo [%date% %time%] unbound-control.exe non trovato in "%UB_DIR%" - snapshot saltato.
     call :LOGFAIL "STATS" "unbound-control.exe non trovato in %UB_DIR%"
     exit /b
 )
@@ -1810,19 +1808,13 @@ if exist "%STATS_TMP%" del /f /q "%STATS_TMP%" >nul 2>&1
 "%UB_DIR%\unbound-control.exe" -c "%SERVICE_CONF%" stats > "%STATS_TMP%" 2>nul
 
 if not exist "%STATS_TMP%" (
-    >>"%STATS_FILE%" echo [%date% %time%] Snapshot non disponibile: unbound-control non ha risposto.
     call :LOGFAIL "STATS" "unbound-control.exe non ha risposto (servizio fermo o control-port bloccata?)"
     exit /b
 )
 
-:: Estrae i contatori chiave e scrive uno snapshot compatto (una riga per
-:: categoria, senza spiegazioni), aggiornando in parallelo l'accumulatore
-:: di sessione (SESSION_FILE) con gli stessi campi, incluse le nuove
-:: categorie RPZ (num.rpz.action.*, disponibili gratis grazie a
-:: extended-statistics:yes, aggregate su tutte le zone RPZ insieme).
-:: statistics-cumulative:no in service.conf => "stats" restituisce il
-:: delta dall'ultima lettura, quindi ogni blocco rappresenta l'attivita'
-:: del solo intervallo trascorso (biorario), non il totale cumulativo.
+:: Estrae i contatori chiave e scrive UNA RIGA CSV (nessun testo esplicativo
+:: qui: alla presentazione ci pensa dashboard.html). extended-statistics:yes
+:: sblocca anche i contatori num.rpz.action.* usati per i blocchi RPZ.
 powershell -NoProfile -Command ^
   "$raw = Get-Content -Path '%STATS_TMP%' -ErrorAction SilentlyContinue; " ^
   "$h = @{}; foreach ($l in $raw) { if ($l -match '^(\S+)=(\S+)$') { $h[$matches[1]] = $matches[2] } }; " ^
@@ -1846,85 +1838,28 @@ powershell -NoProfile -Command ^
   "$rpzNx = G 'num.rpz.action.nxdomain'; $rpzNo = G 'num.rpz.action.nodata'; $rpzDrop = G 'num.rpz.action.drop'; " ^
   "$rpzPass = G 'num.rpz.action.passthru'; $rpzTcp = G 'num.rpz.action.tcp-only'; $rpzLocal = G 'num.rpz.action.local-data'; " ^
   "$rpzDis = G 'num.rpz.action.disabled'; $rpzCname = G 'num.rpz.action.cname-override'; " ^
-  "$accFile = '%SESSION_FILE%'; $sessReset = '%SESSION_RESET_FLAG%'; $accH = @{}; " ^
-  "if ($sessReset -ne '1' -and (Test-Path $accFile)) { Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } } }; " ^
-  "function AGD($k) { if ($accH.ContainsKey($k)) { return [double]$accH[$k] } else { return 0 } }; " ^
-  "$sessStart = if ($sessReset -eq '1' -or -not $accH.ContainsKey('SESSION_START')) { Get-Date -Format 'yyyy-MM-dd HH:mm' } else { $accH['SESSION_START'] }; " ^
-  "$sQ = (AGD 'SESSION_Q') + $q; $sHit = (AGD 'SESSION_HIT') + $hit; $sMiss = (AGD 'SESSION_MISS') + $miss; " ^
-  "$sPrefetch = (AGD 'SESSION_PREFETCH') + [double]$prefetch; $sZerottl = (AGD 'SESSION_ZEROTTL') + [double]$zerottl; " ^
-  "$sRcOk = (AGD 'SESSION_RCOK') + [double]$rcOk; $sRcNx = (AGD 'SESSION_RCNX') + [double]$rcNx; " ^
-  "$sRcSf = (AGD 'SESSION_RCSF') + [double]$rcSf; $sRcRe = (AGD 'SESSION_RCRE') + [double]$rcRe; " ^
-  "$sSec = (AGD 'SESSION_SEC') + [double]$sec; $sBog = (AGD 'SESSION_BOG') + [double]$bog; " ^
-  "$sUnwq = (AGD 'SESSION_UNWQ') + [double]$unwq; $sUnwr = (AGD 'SESSION_UNWR') + [double]$unwr; " ^
-  "$sRpzNx = (AGD 'SESSION_RPZNX') + [double]$rpzNx; $sRpzNo = (AGD 'SESSION_RPZNO') + [double]$rpzNo; " ^
-  "$sRpzDrop = (AGD 'SESSION_RPZDROP') + [double]$rpzDrop; $sRpzPass = (AGD 'SESSION_RPZPASS') + [double]$rpzPass; " ^
-  "$accLines = @(); " ^
-  "$accLines += ('SESSION_START={0}' -f $sessStart); " ^
-  "$accLines += ('SESSION_Q={0}' -f $sQ); $accLines += ('SESSION_HIT={0}' -f $sHit); $accLines += ('SESSION_MISS={0}' -f $sMiss); " ^
-  "$accLines += ('SESSION_PREFETCH={0}' -f $sPrefetch); $accLines += ('SESSION_ZEROTTL={0}' -f $sZerottl); " ^
-  "$accLines += ('SESSION_RCOK={0}' -f $sRcOk); $accLines += ('SESSION_RCNX={0}' -f $sRcNx); " ^
-  "$accLines += ('SESSION_RCSF={0}' -f $sRcSf); $accLines += ('SESSION_RCRE={0}' -f $sRcRe); " ^
-  "$accLines += ('SESSION_SEC={0}' -f $sSec); $accLines += ('SESSION_BOG={0}' -f $sBog); " ^
-  "$accLines += ('SESSION_UNWQ={0}' -f $sUnwq); $accLines += ('SESSION_UNWR={0}' -f $sUnwr); " ^
-  "$accLines += ('SESSION_RPZNX={0}' -f $sRpzNx); $accLines += ('SESSION_RPZNO={0}' -f $sRpzNo); " ^
-  "$accLines += ('SESSION_RPZDROP={0}' -f $sRpzDrop); $accLines += ('SESSION_RPZPASS={0}' -f $sRpzPass); " ^
-  "Set-Content -Path $accFile -Value $accLines; " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += '------------------------------------------------------------'; " ^
-  "$lines += ('[{0}] Snapshot ultimo intervallo' -f (Get-Date -Format 'yyyy-MM-dd HH:mm')); " ^
-  "$lines += '------------------------------------------------------------'; " ^
-  "$lines += (' TRAFFICO       Query: {0}   Cache-hit: {1}%%   TCP: {2}   IPv6: {3}   EDNS: {4}   DO: {5}' -f $q,$pct,$tcp,$ipv6q,$edns,$ednsdo); " ^
-  "$lines += (' TIPI QUERY     A: {0}  AAAA: {1}  HTTPS: {2}  PTR: {3}  TXT: {4}  MX: {5}  NS: {6}' -f $ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns); " ^
-  "$lines += (' CACHE          Msg: {0}  RRset: {1}  Infra: {2}  Key: {3}   (RAM msg {4}MB / rrset {5}MB)' -f $msgN,$rrN,$infraN,$keyN,$memMsg,$memRR); " ^
-  "$lines += (' DNSSEC         Valide: {0}   Bogus: {1}   RRset bogus: {2}' -f $sec,$bog,$rrbog); " ^
-  "$lines += (' SICUREZZA      Query indes.: {0}   Risposte indes.: {1}' -f $unwq,$unwr); " ^
-  "$lines += (' RISPOSTE       NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $rcOk,$rcNx,$rcSf,$rcRe); " ^
-  "$lines += (' RPZ / BLOCCHI  NXDOMAIN: {0}  NODATA: {1}  DROP: {2}  Passthru: {3}  TCP-only: {4}  Local: {5}  Disabled: {6}  CNAME: {7}' -f $rpzNx,$rpzNo,$rpzDrop,$rpzPass,$rpzTcp,$rpzLocal,$rpzDis,$rpzCname); " ^
-  "$lines += (' PERFORMANCE    Ricorsione media: {0}ms  mediana: {1}ms  Coda media: {2}  Coda max: {3}' -f $rtavg,$rtmed,$rlavg,$rlmax); " ^
-  "$lines += (' MEMORIA        Iterator: {0}MB  Validator: {1}MB  Respip: {2}MB  Stream: {3}MB  TOTALE: {4}MB' -f $memIter,$memVal,$memRespip,$memStream,$memTotal); " ^
-  "Add-Content -Path '%STATS_FILE%' -Value $lines"
-
-:: Blocco TOTALE SESSIONE compatto (dalle 06:00 ad ora, azzerato al run
-:: pianificato delle 06:00): stessa filosofia, una riga per categoria.
-powershell -NoProfile -Command ^
-  "$accFile = '%SESSION_FILE%'; $accH = @{}; " ^
-  "Get-Content -Path $accFile -ErrorAction SilentlyContinue | ForEach-Object { if ($_ -match '^(\S+)=(\S+)$') { $accH[$matches[1]] = $matches[2] } }; " ^
-  "function AG($k) { if ($accH.ContainsKey($k)) { return $accH[$k] } else { return '0' } }; " ^
-  "$sessStart = AG 'SESSION_START'; $sQ = AG 'SESSION_Q'; $sHit = AG 'SESSION_HIT'; $sMiss = AG 'SESSION_MISS'; " ^
-  "$sPrefetch = AG 'SESSION_PREFETCH'; $sZerottl = AG 'SESSION_ZEROTTL'; " ^
-  "$sRcOk = AG 'SESSION_RCOK'; $sRcNx = AG 'SESSION_RCNX'; $sRcSf = AG 'SESSION_RCSF'; $sRcRe = AG 'SESSION_RCRE'; " ^
-  "$sSec = AG 'SESSION_SEC'; $sBog = AG 'SESSION_BOG'; $sUnwq = AG 'SESSION_UNWQ'; $sUnwr = AG 'SESSION_UNWR'; " ^
-  "$sRpzNx = AG 'SESSION_RPZNX'; $sRpzNo = AG 'SESSION_RPZNO'; $sRpzDrop = AG 'SESSION_RPZDROP'; $sRpzPass = AG 'SESSION_RPZPASS'; " ^
-  "$sHitD = [double]$sHit; $sMissD = [double]$sMiss; $sTot = $sHitD + $sMissD; " ^
-  "$sPct = if ($sTot -gt 0) { [math]::Round(($sHitD / $sTot) * 100, 1) } else { 0 }; " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += '============================================================'; " ^
-  "$lines += (' TOTALE SESSIONE dal {0} (azzerata alle 06:00)' -f $sessStart); " ^
-  "$lines += '============================================================'; " ^
-  "$lines += (' TRAFFICO   Query: {0}   Cache-hit: {1}%%   Prefetch: {2}   Zero-TTL: {3}' -f $sQ,$sPct,$sPrefetch,$sZerottl); " ^
-  "$lines += (' RISPOSTE   NOERROR: {0}  NXDOMAIN: {1}  SERVFAIL: {2}  REFUSED: {3}' -f $sRcOk,$sRcNx,$sRcSf,$sRcRe); " ^
-  "$lines += (' DNSSEC     Valide: {0}   Bogus: {1}' -f $sSec,$sBog); " ^
-  "$lines += (' RPZ        NXDOMAIN: {0}  NODATA: {1}  DROP: {2}  Passthru: {3}' -f $sRpzNx,$sRpzNo,$sRpzDrop,$sRpzPass); " ^
-  "$lines += (' SICUREZZA  Query indes.: {0}   Risposte indes.: {1}' -f $sUnwq,$sUnwr); " ^
-  "Add-Content -Path '%STATS_FILE%' -Value $lines"
+  "$ts = Get-Date -Format 'yyyy-MM-dd HH:mm'; " ^
+  "$row = @($ts,$q,$pct,$tcp,$ipv6q,$edns,$ednsdo,$ta,$taaaa,$thttps,$tptr,$ttxt,$tmx,$tns,$msgN,$rrN,$infraN,$keyN,$memMsg,$memRR,$memIter,$memVal,$memRespip,$memStream,$memTotal,$sec,$bog,$rrbog,$unwq,$unwr,$rcOk,$rcNx,$rcSf,$rcRe,$rtavg,$rtmed,$rlavg,$rlmax,$prefetch,$zerottl,$rpzNx,$rpzNo,$rpzDrop,$rpzPass,$rpzTcp,$rpzLocal,$rpzDis,$rpzCname) -join ','; " ^
+  "Add-Content -Path '%STATS_FILE%' -Value $row"
 
 del /f /q "%STATS_TMP%" >nul 2>&1
+call :GENERA_DASHBOARD_HTML
 exit /b
 
 :: ============================================================================
 :: RIEPILOGO_BLOCCHI_RPZ - una volta al giorno (00:00, dal task StatsReset).
 :: Legge il log RPZ "vivo" (solo le due zone a nome-dominio, HaGeZi Pro Plus
 :: e TIF: rpz-log:yes + rpz-log-name in service.conf), aggrega i blocchi per
-:: zona e dominio, e appende il riepilogo sintetico (domini unici, blocchi
-:: totali, top 5) al file statistiche del giorno APPENA CONCLUSO - non quello
-:: nuovo che RACCOLTA_STATISTICHE RESET sta per azzerare. Poi svuota il log
-:: vivo e forza Unbound a rilasciare/riaprire il file (log_reopen): i nomi
-:: dominio grezzi non restano mai su disco piu' di 24 ore, resta solo il
-:: riepilogo aggregato, con la stessa rotazione settimanale a 7 file degli
-:: altri log. Le zone RPZ-IP (Spamhaus, TIF-IPS) restano rpz-log:no - bloccano
-:: indirizzi IP non nomi, il conteggio aggregato nello snapshot biorario basta.
+:: zona e dominio, e scrive il riepilogo sintetico (domini unici, blocchi
+:: totali, top 5) in formato JSON per il giorno APPENA CONCLUSO - non quello
+:: nuovo che RACCOLTA_STATISTICHE RESET sta per azzerare. Il file JSON viene
+:: SOVRASCRITTO (non accodato) ad ogni esecuzione, con la stessa rotazione
+:: settimanale a 7 file (rpz_top_<Giorno>.json) usata per i CSV. Poi svuota
+:: il log vivo e forza Unbound a rilasciare/riaprire il file (log_reopen): i
+:: nomi dominio grezzi non restano mai su disco piu' di 24 ore, resta solo il
+:: riepilogo aggregato, letto dalla dashboard per la tabella "top bloccati".
+:: Le zone RPZ-IP (Spamhaus, TIF-IPS) restano rpz-log:no - bloccano indirizzi
+:: IP non nomi, il conteggio aggregato nello snapshot biorario (CSV) basta.
 :: ============================================================================
 :RIEPILOGO_BLOCCHI_RPZ
 set "RPZ_LIVE_LOG=%UB_DIR%\rpz-live.log"
@@ -1944,7 +1879,7 @@ if "%GIORNO_IERI%"=="" (
     call :LOGFAIL "STATS" "RIEPILOGO_BLOCCHI_RPZ: giorno precedente non determinato (DOW_IERI='%DOW_IERI%')"
     exit /b
 )
-set "RPZ_TARGET_FILE=%STATS_DIR%\%GIORNO_IERI%.log"
+set "RPZ_TARGET_FILE=%STATS_DIR%\rpz_top_%GIORNO_IERI%.json"
 
 if not exist "%RPZ_LIVE_LOG%" (
     exit /b
@@ -1963,21 +1898,15 @@ powershell -NoProfile -Command ^
   "  } " ^
   "}; " ^
   "if ($zones.Count -eq 0) { exit }; " ^
-  "$lines = @(); " ^
-  "$lines += ''; " ^
-  "$lines += '============================================================'; " ^
-  "$lines += (' RIEPILOGO BLOCCHI RPZ - {0}' -f (Get-Date).AddDays(-1).ToString('dd/MM/yyyy')); " ^
-  "$lines += '============================================================'; " ^
+  "$out = [ordered]@{ date = (Get-Date).AddDays(-1).ToString('dd/MM/yyyy'); zones = [ordered]@{} }; " ^
   "foreach ($zone in ($zones.Keys | Sort-Object)) { " ^
   "  $domains = $zones[$zone]; " ^
   "  $totBlocchi = ($domains.Values | Measure-Object -Sum).Sum; " ^
   "  $uniq = $domains.Count; " ^
-  "  $top = $domains.GetEnumerator() | Sort-Object -Property Value -Descending | Select-Object -First 5; " ^
-  "  $topStr = ($top | ForEach-Object { '{0} ({1})' -f $_.Key, $_.Value }) -join ', '; " ^
-  "  $lines += (' {0}   Domini unici: {1}   Blocchi tot: {2}' -f $zone.ToUpper(), $uniq, $totBlocchi); " ^
-  "  $lines += ('   Top: {0}' -f $topStr); " ^
+  "  $top = $domains.GetEnumerator() | Sort-Object -Property Value -Descending | Select-Object -First 5 | ForEach-Object { [ordered]@{ domain = $_.Key; count = $_.Value } }; " ^
+  "  $out.zones[$zone] = [ordered]@{ unique = $uniq; total = $totBlocchi; top = @($top) }; " ^
   "}; " ^
-  "Add-Content -Path '%RPZ_TARGET_FILE%' -Value $lines"
+  "$out | ConvertTo-Json -Depth 5 | Set-Content -Path '%RPZ_TARGET_FILE%' -Encoding UTF8"
 
 :: Svuota il log vivo (troncamento a 0 byte) e forza Unbound a rilasciare
 :: e riaprire il file, cosi' non resta un handle agganciato al file vecchio.
@@ -1985,7 +1914,128 @@ type nul > "%RPZ_LIVE_LOG%" 2>nul
 if exist "%UB_DIR%\unbound-control.exe" (
     "%UB_DIR%\unbound-control.exe" -c "%SERVICE_CONF%" log_reopen >nul 2>&1
 )
+call :GENERA_DASHBOARD_HTML
 exit /b
+
+:: ============================================================================
+:: GENERA_DASHBOARD_HTML - Richiama lo script Genera-Dashboard-Unbound.ps1,
+:: che legge i CSV di rotazione settimanale (fino a 7 giorni di storico) e
+:: l'ultimo riepilogo RPZ, e ricostruisce stats\dashboard.html: pannello live
+:: con grafici SVG (traffico, cache-hit, blocchi RPZ, DNSSEC, memoria) e la
+:: tabella dei domini piu' bloccati. Nessuna chiamata di rete dalla pagina:
+:: i dati sono incorporati nell'HTML ad ogni rigenerazione. La pagina si
+:: auto-ricarica da sola ogni 5 minuti (meta refresh) mentre resta aperta nel
+:: browser, cosi' mostra sempre l'ultimo snapshot scritto su disco senza
+:: bisogno di premere F5. Viene chiamata sia da RACCOLTA_STATISTICHE (ad ogni
+:: snapshot biorario) sia da RIEPILOGO_BLOCCHI_RPZ (quando cambia la tabella
+:: dei domini bloccati), quindi la dashboard resta sempre coerente.
+:: ============================================================================
+:GENERA_DASHBOARD_HTML
+set "DASHBOARD_SCRIPT=%UB_DIR%\Genera-Dashboard-Unbound.ps1"
+if not exist "%DASHBOARD_SCRIPT%" call :SCRIVI_DASHBOARD_SCRIPT
+if not exist "%DASHBOARD_SCRIPT%" (
+    call :LOGFAIL "STATS" "Genera-Dashboard-Unbound.ps1 non scrivibile in %UB_DIR% - dashboard non aggiornata"
+    exit /b
+)
+if not exist "%STATS_DIR%" mkdir "%STATS_DIR%" >nul 2>&1
+call :CREA_COLLEGAMENTO_DASHBOARD
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DASHBOARD_SCRIPT%" -StatsDir "%STATS_DIR%" -Days 7 -AutoRefreshSeconds 300 2>nul
+if errorlevel 1 call :LOGFAIL "STATS" "Generazione dashboard.html fallita (vedi output PowerShell)"
+exit /b
+
+:: ============================================================================
+:: CREA_COLLEGAMENTO_DASHBOARD - Crea (una sola volta) un collegamento sul
+:: Desktop pubblico (%PUBLIC%\Desktop, visibile a tutti gli utenti che
+:: accedono alla macchina) che punta a stats\dashboard.html. Necessario perche'
+:: i task pianificati che generano la dashboard (--refresh, --scheduled,
+:: --stats-reset) girano come SYSTEM: un collegamento scritto sul "Desktop"
+:: normale finirebbe nel profilo di SYSTEM, invisibile a te. Il collegamento
+:: viene creato una sola volta (se manca) tramite l'oggetto COM WScript.Shell,
+:: nessun tool esterno richiesto. Se lo cancelli, viene ricreato al prossimo
+:: snapshot (self-healing, stesso principio dello script .ps1 della dashboard).
+:: ============================================================================
+:CREA_COLLEGAMENTO_DASHBOARD
+set "DASH_LNK=%PUBLIC%\Desktop\Unbound Bunker - Dashboard.lnk"
+if exist "%DASH_LNK%" exit /b
+powershell -NoProfile -Command ^
+  "$ws = New-Object -ComObject WScript.Shell; " ^
+  "$lnk = $ws.CreateShortcut('%DASH_LNK%'); " ^
+  "$lnk.TargetPath = '%STATS_DIR%\dashboard.html'; " ^
+  "$lnk.WorkingDirectory = '%STATS_DIR%'; " ^
+  "$lnk.Description = 'Unbound Bunker - Dashboard statistiche live'; " ^
+  "$lnk.IconLocation = '%SystemRoot%\System32\imageres.dll,15'; " ^
+  "$lnk.Save()" 2>nul
+if errorlevel 1 (
+    call :LOGFAIL "STATS" "Creazione collegamento Desktop dashboard fallita"
+    exit /b
+)
+call :LOGSTEP "STATS" "Collegamento Desktop 'Unbound Bunker - Dashboard' creato in %PUBLIC%\Desktop"
+exit /b
+
+:: ============================================================================
+:: SCRIVI_DASHBOARD_SCRIPT - Materializza Genera-Dashboard-Unbound.ps1 in
+:: %UB_DIR% a partire da un blocco Base64 incorporato in questo stesso BAT:
+:: cosi' il file .ps1 non va copiato manualmente, lo scrive lo script stesso
+:: alla prima esecuzione utile (self-healing: se lo cancelli, viene riscritto
+:: automaticamente al prossimo snapshot). Decodifica fatta in nativo con
+:: [Convert]::FromBase64String / [IO.File]::WriteAllBytes (NON certutil -decode:
+:: e' un pattern LOLBin che alcuni AV, tipo Bitdefender ATC, segnalano come
+:: sospetto - stesso motivo per cui e' stato evitato nel report email).
+:: ============================================================================
+:SCRIVI_DASHBOARD_SCRIPT
+set "B64="
+set "B64=!B64!PCMKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CiBHZW5lcmEtRGFzaGJvYXJkLVVuYm91bmQucHMxCiBDb3N0cnVpc2NlIHN0YXRzXGRhc2hib2FyZC5odG1sOiBwYW5uZWxsbyBsaXZlIGNvbiBzdG9yaWNvIDcgZ2lvcm5pIGRlbGxlCiBzdGF0aXN0aWNoZSBVbmJvdW5kLCBsZXR0byBkYWkgQ1NWIHNldHRpbWFuYWxpIChMdW5lZGkuY3N2Li4uRG9tZW5pY2EuY3N2KQogc2NyaXR0aSBkYSA6UkFDQ09MVEFfU1RBVElTVElDSEUsIHBp"
+set "B64=!B64!dScgaWwgcmllcGlsb2dvIGRvbWluaSBibG9jY2F0aSBSUFoKIChycHpfdG9wXzxHaW9ybm8+Lmpzb24pIHNjcml0dG8gZGEgOlJJRVBJTE9HT19CTE9DQ0hJX1JQWi4KIE5lc3N1bmEgbGlicmVyaWEgZXN0ZXJuYTogU1ZHIGUgSlMgc2NyaXR0aSBhIG1hbm8sIG5lc3N1bmEgY2hpYW1hdGEgZGkgcmV0ZQogZGFsbGEgcGFnaW5hIChjb2VyZW50ZSBjb24gbGEgZmlsb3NvZmlhICJ6ZXJvIHRlbGVtZXRyaWEiIGRlbCBCdW5rZXIpLgogUmljaGlhbWF0byBkYSBBVlZJT19VTkJPVU5EX0NPTl9BR0dJT1JOQU1FTlRPX1JPT1RfU0VS"
+set "B64=!B64!VkVSUy5CQVQgYWQgb2duaQogc25hcHNob3Qgc3RhdGlzdGljaGUgKG9nbmkgMiBvcmUpIGUgYWQgb2duaSByaWVwaWxvZ28gUlBaICgwMDowMCkuCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojPgpwYXJhbSgKICAgIFtQYXJhbWV0ZXIoTWFuZGF0b3J5ID0gJHRydWUpXVtzdHJpbmddJFN0YXRzRGlyLAogICAgW2ludF0kRGF5cyA9IDcsCiAgICBbaW50XSRBdXRvUmVmcmVzaFNlY29uZHMgPSAzMDAKKQoKJEVycm9yQWN0aW9uUHJl"
+set "B64=!B64!ZmVyZW5jZSA9ICdTdG9wJwoKIyAtLS0gMS4gQ2FyaWNhIHR1dHRlIGxlIHJpZ2hlIENTViBkYWkgKGZpbm8gYSkgNyBmaWxlIGRpIHJvdGF6aW9uZSBzZXR0aW1hbmFsZSwKIyAgICAgICAgZmlsdHJhbmRvIHN1Z2xpIHVsdGltaSAkRGF5cyBnaW9ybmkgaW4gYmFzZSBhbCB0aW1lc3RhbXAgcmVhbGUgZGVsbGEKIyAgICAgICAgcmlnYSAobm9uIGFsIG5vbWUgZGVsIGZpbGUsIGNoZSBlJyBzb2xvIGlsIGdpb3JubyBkZWxsYSBzZXR0aW1hbmEpLiAtLS0KJGN1dG9mZiA9IChHZXQtRGF0ZSkuQWRkRGF5cygtJERheXMpCiRyb3dz"
+set "B64=!B64!ID0gQCgpCiRjc3ZGaWxlcyA9IEdldC1DaGlsZEl0ZW0gLVBhdGggJFN0YXRzRGlyIC1GaWx0ZXIgJyouY3N2JyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZQpmb3JlYWNoICgkZiBpbiAkY3N2RmlsZXMpIHsKICAgICRkYXRhID0gSW1wb3J0LUNzdiAtUGF0aCAkZi5GdWxsTmFtZSAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZQogICAgZm9yZWFjaCAoJHIgaW4gJGRhdGEpIHsKICAgICAgICAkdHMgPSAkbnVsbAogICAgICAgIGlmIChbRGF0ZVRpbWVdOjpUcnlQYXJzZSgkci50aW1lc3RhbXAsIFtyZWZdJHRzKSkg"
+set "B64=!B64!ewogICAgICAgICAgICBpZiAoJHRzIC1nZSAkY3V0b2ZmKSB7CiAgICAgICAgICAgICAgICAkciB8IEFkZC1NZW1iZXIgLU5vdGVQcm9wZXJ0eU5hbWUgJ19kdCcgLU5vdGVQcm9wZXJ0eVZhbHVlICR0cyAtRm9yY2UKICAgICAgICAgICAgICAgICRyb3dzICs9ICRyCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9Cn0KJHJvd3MgPSAkcm93cyB8IFNvcnQtT2JqZWN0IF9kdAoKIyAtLS0gMi4gQWdncmVnYXRpICJvZ2dpIiAoc29tbWEgZGVpIGRlbHRhIGRpIHR1dHRlIGxlIHJpZ2hlIGRlbGxhIGRhdGEgb2RpZXJuYSkgLS0t"
+set "B64=!B64!CiR0b2RheSA9IChHZXQtRGF0ZSkuRGF0ZQokdG9kYXlSb3dzID0gJHJvd3MgfCBXaGVyZS1PYmplY3QgeyAkXy5fZHQuRGF0ZSAtZXEgJHRvZGF5IH0KZnVuY3Rpb24gU3VtRmllbGQoJHNldCwgJGZpZWxkKSB7CiAgICBpZiAoLW5vdCAkc2V0IC1vciAkc2V0LkNvdW50IC1lcSAwKSB7IHJldHVybiAwIH0KICAgICgkc2V0IHwgRm9yRWFjaC1PYmplY3QgeyBbZG91YmxlXSRfLiRmaWVsZCB9IHwgTWVhc3VyZS1PYmplY3QgLVN1bSkuU3VtCn0KJHRvZGF5UXVlcmllcyAgID0gU3VtRmllbGQgJHRvZGF5Um93cyAncXVlcmllcycK"
+set "B64=!B64!JHRvZGF5UnB6QmxvY2tzID0gKFN1bUZpZWxkICR0b2RheVJvd3MgJ3Jwel9ueGRvbWFpbicpICsgKFN1bUZpZWxkICR0b2RheVJvd3MgJ3Jwel9ub2RhdGEnKSArIChTdW1GaWVsZCAkdG9kYXlSb3dzICdycHpfZHJvcCcpCiR0b2RheUJvZ3VzICAgICA9IFN1bUZpZWxkICR0b2RheVJvd3MgJ2Ruc3NlY19ib2d1cycKJHRvZGF5VW53YW50ZWQgID0gKFN1bUZpZWxkICR0b2RheVJvd3MgJ3Vud2FudGVkX3EnKSArIChTdW1GaWVsZCAkdG9kYXlSb3dzICd1bndhbnRlZF9yJykKJHRvZGF5SGl0QXZnID0gMAppZiAoJHRvZGF5Um93"
+set "B64=!B64!cyAtYW5kICR0b2RheVJvd3MuQ291bnQgLWd0IDApIHsKICAgICR0b2RheUhpdEF2ZyA9IFttYXRoXTo6Um91bmQoKCgkdG9kYXlSb3dzIHwgRm9yRWFjaC1PYmplY3QgeyBbZG91YmxlXSRfLmNhY2hlaGl0X3BjdCB9KSB8IE1lYXN1cmUtT2JqZWN0IC1BdmVyYWdlKS5BdmVyYWdlLCAxKQp9CgojIC0tLSAzLiBVbHRpbW8gc25hcHNob3QgZGlzcG9uaWJpbGUgKHN0YXRvIGNvcnJlbnRlKSAtLS0KJGxhc3QgPSAkbnVsbAppZiAoJHJvd3MgLWFuZCAkcm93cy5Db3VudCAtZ3QgMCkgeyAkbGFzdCA9ICRyb3dzWy0xXSB9CgojIC0t"
+set "B64=!B64!LSA0LiBSaWVwaWxvZ28gUlBaIHBpdScgcmVjZW50ZSAodG9wIGRvbWluaSBibG9jY2F0aSkgLS0tCiRycHpKc29uRmlsZSA9IEdldC1DaGlsZEl0ZW0gLVBhdGggJFN0YXRzRGlyIC1GaWx0ZXIgJ3Jwel90b3BfKi5qc29uJyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8CiAgICBTb3J0LU9iamVjdCBMYXN0V3JpdGVUaW1lIC1EZXNjZW5kaW5nIHwgU2VsZWN0LU9iamVjdCAtRmlyc3QgMQokcnB6RGF0YSA9ICRudWxsCmlmICgkcnB6SnNvbkZpbGUpIHsKICAgIHRyeSB7ICRycHpEYXRhID0gR2V0LUNvbnRlbnQgLVBh"
+set "B64=!B64!dGggJHJwekpzb25GaWxlLkZ1bGxOYW1lIC1SYXcgfCBDb252ZXJ0RnJvbS1Kc29uIH0gY2F0Y2ggeyAkcnB6RGF0YSA9ICRudWxsIH0KfQoKIyAtLS0gNS4gU2VyaWFsaXp6YSBsYSBzZXJpZSBzdG9yaWNhIHBlciBpbCBncmFmaWNvIEpTIChjYW1waSBudW1lcmljaSBlc3NlbnppYWxpKSAtLS0KJHNlcmllcyA9ICRyb3dzIHwgRm9yRWFjaC1PYmplY3QgewogICAgW29yZGVyZWRdQHsKICAgICAgICB0ICAgICAgICA9ICRfLl9kdC5Ub1N0cmluZygneXl5eS1NTS1kZFRISDptbTpzcycpCiAgICAgICAgcSAgICAgICAgPSBbZG91"
+set "B64=!B64!YmxlXSRfLnF1ZXJpZXMKICAgICAgICBoaXQgICAgICA9IFtkb3VibGVdJF8uY2FjaGVoaXRfcGN0CiAgICAgICAgcnB6ICAgICAgPSBbZG91YmxlXSRfLnJwel9ueGRvbWFpbiArIFtkb3VibGVdJF8ucnB6X25vZGF0YSArIFtkb3VibGVdJF8ucnB6X2Ryb3AKICAgICAgICBib2d1cyAgICA9IFtkb3VibGVdJF8uZG5zc2VjX2JvZ3VzCiAgICAgICAgc2VjdXJlICAgPSBbZG91YmxlXSRfLmRuc3NlY19zZWN1cmUKICAgICAgICBtZW10b3RhbCA9IFtkb3VibGVdJF8ubWVtX3RvdGFsX21iCiAgICAgICAgdW53YW50ZWQgPSBbZG91"
+set "B64=!B64!YmxlXSRfLnVud2FudGVkX3EgKyBbZG91YmxlXSRfLnVud2FudGVkX3IKICAgIH0KfQokZGF0YUpzb24gPSBpZiAoJHNlcmllcy5Db3VudCAtZ3QgMCkgeyAoJHNlcmllcyB8IENvbnZlcnRUby1Kc29uIC1EZXB0aCA0IC1Db21wcmVzcykgfSBlbHNlIHsgJ1tdJyB9CiRycHpKc29uICA9IGlmICgkcnB6RGF0YSkgeyAoJHJwekRhdGEgfCBDb252ZXJ0VG8tSnNvbiAtRGVwdGggNSAtQ29tcHJlc3MpIH0gZWxzZSB7ICdudWxsJyB9CgokZ2VuZXJhdGVkQXQgPSBHZXQtRGF0ZSAtRm9ybWF0ICdkZC9NTS95eXl5IEhIOm1tOnNzJwok"
+set "B64=!B64!b2xkZXN0VHMgPSBpZiAoJHJvd3MuQ291bnQgLWd0IDApIHsgJHJvd3NbMF0uX2R0LlRvU3RyaW5nKCdkZC9NTSBISDptbScpIH0gZWxzZSB7ICctJyB9CgojIC0tLSA2LiBUZW1wbGF0ZSBIVE1MIGF1dG9ub21vIChuaWVudGUgQ0ROLCBuaWVudGUgZmV0Y2g6IGRhdGkgaW5jb3Jwb3JhdGkpIC0tLQokaHRtbCA9IEAnCjwhRE9DVFlQRSBodG1sPgo8aHRtbCBsYW5nPSJpdCI+CjxoZWFkPgo8bWV0YSBjaGFyc2V0PSJVVEYtOCI+CjxtZXRhIGh0dHAtZXF1aXY9InJlZnJlc2giIGNvbnRlbnQ9Il9fUkVGUkVTSF9fIj4KPHRpdGxl"
+set "B64=!B64!PlVuYm91bmQgQnVua2VyIC0gRGFzaGJvYXJkIExpdmU8L3RpdGxlPgo8c3R5bGU+CiAgOnJvb3R7CiAgICAtLWJnOiMwYjBmMGM7IC0tcGFuZWw6IzEwMTYxMTY2OyAtLXBhbmVsLXNvbGlkOiMxMTE4MTM7IC0tYm9yZGVyOiMxZjJlMjI7CiAgICAtLWdyZWVuOiM0MmUzN2M7IC0tZ3JlZW4tZGltOiMyYThmNTI7IC0tY3lhbjojNGZkNmQ2OyAtLWFtYmVyOiNlM2IzNDI7CiAgICAtLXJlZDojZTM0ZjRmOyAtLXRleHQ6I2Q4ZWRlMDsgLS1tdXRlZDojN2ZhMzhjOwogIH0KICAqe2JveC1zaXppbmc6Ym9yZGVyLWJveDt9CiAgYm9k"
+set "B64=!B64!eXsKICAgIG1hcmdpbjowOyBwYWRkaW5nOjI0cHg7IGJhY2tncm91bmQ6dmFyKC0tYmcpOyBjb2xvcjp2YXIoLS10ZXh0KTsKICAgIGZvbnQtZmFtaWx5OiJDYXNjYWRpYSBDb2RlIiwiQ29uc29sYXMiLG1vbm9zcGFjZTsgZm9udC1zaXplOjE0cHg7CiAgfQogIGgxe2NvbG9yOnZhcigtLWdyZWVuKTsgZm9udC1zaXplOjIwcHg7IGxldHRlci1zcGFjaW5nOjFweDsgbWFyZ2luOjAgMCA0cHggMDt9CiAgLnN1Yntjb2xvcjp2YXIoLS1tdXRlZCk7IG1hcmdpbi1ib3R0b206MjBweDt9CiAgLmdyaWR7CiAgICBkaXNwbGF5OmdyaWQ7"
+set "B64=!B64!IGdyaWQtdGVtcGxhdGUtY29sdW1uczpyZXBlYXQoYXV0by1maXQsbWlubWF4KDIyMHB4LDFmcikpOwogICAgZ2FwOjE0cHg7IG1hcmdpbi1ib3R0b206MjJweDsKICB9CiAgLmNhcmR7CiAgICBiYWNrZ3JvdW5kOnZhcigtLXBhbmVsLXNvbGlkKTsgYm9yZGVyOjFweCBzb2xpZCB2YXIoLS1ib3JkZXIpOwogICAgYm9yZGVyLXJhZGl1czo4cHg7IHBhZGRpbmc6MTRweCAxNnB4OwogIH0KICAuY2FyZCAubGFiZWx7Y29sb3I6dmFyKC0tbXV0ZWQpOyBmb250LXNpemU6MTFweDsgdGV4dC10cmFuc2Zvcm06dXBwZXJjYXNlOyBsZXR0"
+set "B64=!B64!ZXItc3BhY2luZzoxcHg7fQogIC5jYXJkIC52YWx1ZXtjb2xvcjp2YXIoLS1ncmVlbik7IGZvbnQtc2l6ZToyNnB4OyBmb250LXdlaWdodDo2MDA7IG1hcmdpbi10b3A6NHB4O30KICAuY2FyZCAudmFsdWUuYW1iZXJ7Y29sb3I6dmFyKC0tYW1iZXIpO30KICAuY2FyZCAudmFsdWUucmVke2NvbG9yOnZhcigtLXJlZCk7fQogIC5jYXJkIC52YWx1ZS5jeWFue2NvbG9yOnZhcigtLWN5YW4pO30KICBzZWN0aW9uewogICAgYmFja2dyb3VuZDp2YXIoLS1wYW5lbC1zb2xpZCk7IGJvcmRlcjoxcHggc29saWQgdmFyKC0tYm9yZGVyKTsK"
+set "B64=!B64!ICAgIGJvcmRlci1yYWRpdXM6OHB4OyBwYWRkaW5nOjE2cHg7IG1hcmdpbi1ib3R0b206MjBweDsKICB9CiAgc2VjdGlvbiBoMntjb2xvcjp2YXIoLS1jeWFuKTsgZm9udC1zaXplOjE0cHg7IG1hcmdpbjowIDAgMTBweCAwOyBsZXR0ZXItc3BhY2luZzoxcHg7fQogIHN2Z3t3aWR0aDoxMDAlOyBoZWlnaHQ6YXV0bzsgZGlzcGxheTpibG9jazt9CiAgdGFibGV7d2lkdGg6MTAwJTsgYm9yZGVyLWNvbGxhcHNlOmNvbGxhcHNlOyBmb250LXNpemU6MTNweDt9CiAgdGgsdGR7dGV4dC1hbGlnbjpsZWZ0OyBwYWRkaW5nOjVweCA4cHg7"
+set "B64=!B64!IGJvcmRlci1ib3R0b206MXB4IHNvbGlkIHZhcigtLWJvcmRlcik7fQogIHRoe2NvbG9yOnZhcigtLW11dGVkKTsgZm9udC13ZWlnaHQ6bm9ybWFsOyB0ZXh0LXRyYW5zZm9ybTp1cHBlcmNhc2U7IGZvbnQtc2l6ZToxMXB4O30KICB0ZC5udW17dGV4dC1hbGlnbjpyaWdodDsgY29sb3I6dmFyKC0tYW1iZXIpO30KICAuem9uZS10aXRsZXtjb2xvcjp2YXIoLS1ncmVlbik7IGZvbnQtd2VpZ2h0OjYwMDsgbWFyZ2luLXRvcDoxMnB4O30KICAuZW1wdHl7Y29sb3I6dmFyKC0tbXV0ZWQpOyBmb250LXN0eWxlOml0YWxpYzt9CiAgZm9v"
+set "B64=!B64!dGVye2NvbG9yOnZhcigtLW11dGVkKTsgZm9udC1zaXplOjExcHg7IG1hcmdpbi10b3A6MTBweDt9CiAgLmxlZ2VuZHtkaXNwbGF5OmZsZXg7IGdhcDoxNnB4OyBtYXJnaW4tYm90dG9tOjhweDsgZm9udC1zaXplOjEycHg7IGNvbG9yOnZhcigtLW11dGVkKTt9CiAgLmxlZ2VuZCBzcGFue2Rpc3BsYXk6aW5saW5lLWZsZXg7IGFsaWduLWl0ZW1zOmNlbnRlcjsgZ2FwOjVweDt9CiAgLmRvdHt3aWR0aDo5cHg7IGhlaWdodDo5cHg7IGJvcmRlci1yYWRpdXM6NTAlOyBkaXNwbGF5OmlubGluZS1ibG9jazt9Cjwvc3R5bGU+CjwvaGVh"
+set "B64=!B64!ZD4KPGJvZHk+CjxoMT4mIzEyODczNzsgVU5CT1VORCBCVU5LRVIgJm1kYXNoOyBEQVNIQk9BUkQgTElWRTwvaDE+CjxkaXYgY2xhc3M9InN1YiI+R2VuZXJhdGEgaWwgX19HRU5FUkFURURfXyAmbmJzcDt8Jm5ic3A7IFN0b3JpY28gZGFsIF9fT0xERVNUX18gYWQgb2dnaSAmbmJzcDt8Jm5ic3A7IEF1dG8tcmVmcmVzaCBvZ25pIF9fUkVGUkVTSE1JTl9fIG1pbjwvZGl2PgoKPGRpdiBjbGFzcz0iZ3JpZCI+CiAgPGRpdiBjbGFzcz0iY2FyZCI+PGRpdiBjbGFzcz0ibGFiZWwiPlF1ZXJ5IG9nZ2k8L2Rpdj48ZGl2IGNsYXNzPSJ2"
+set "B64=!B64!YWx1ZSI+X19UT0RBWV9RX188L2Rpdj48L2Rpdj4KICA8ZGl2IGNsYXNzPSJjYXJkIj48ZGl2IGNsYXNzPSJsYWJlbCI+Q2FjaGUtaGl0IG1lZGlvIG9nZ2k8L2Rpdj48ZGl2IGNsYXNzPSJ2YWx1ZSBjeWFuIj5fX1RPREFZX0hJVF9fJTwvZGl2PjwvZGl2PgogIDxkaXYgY2xhc3M9ImNhcmQiPjxkaXYgY2xhc3M9ImxhYmVsIj5CbG9jY2hpIFJQWiBvZ2dpPC9kaXY+PGRpdiBjbGFzcz0idmFsdWUgYW1iZXIiPl9fVE9EQVlfUlBaX188L2Rpdj48L2Rpdj4KICA8ZGl2IGNsYXNzPSJjYXJkIj48ZGl2IGNsYXNzPSJsYWJlbCI+RE5T"
+set "B64=!B64!U0VDIGJvZ3VzIG9nZ2k8L2Rpdj48ZGl2IGNsYXNzPSJ2YWx1ZSByZWQiPl9fVE9EQVlfQk9HVVNfXzwvZGl2PjwvZGl2PgogIDxkaXYgY2xhc3M9ImNhcmQiPjxkaXYgY2xhc3M9ImxhYmVsIj5UcmFmZmljbyBpbmRlc2lkZXJhdG8gb2dnaTwvZGl2PjxkaXYgY2xhc3M9InZhbHVlIj5fX1RPREFZX1VOV19fPC9kaXY+PC9kaXY+CiAgPGRpdiBjbGFzcz0iY2FyZCI+PGRpdiBjbGFzcz0ibGFiZWwiPlVsdGltbyBzbmFwc2hvdDwvZGl2PjxkaXYgY2xhc3M9InZhbHVlIiBzdHlsZT0iZm9udC1zaXplOjE2cHg7Ij5fX0xBU1RfVFNf"
+set "B64=!B64!XzwvZGl2PjwvZGl2Pgo8L2Rpdj4KCjxzZWN0aW9uPgogIDxoMj5UUkFGRklDTyAmYW1wOyBDQUNIRS1ISVQgKHVsdGltaSBfX0RBWVNfXyBnaW9ybmkpPC9oMj4KICA8ZGl2IGNsYXNzPSJsZWdlbmQiPgogICAgPHNwYW4+PGkgY2xhc3M9ImRvdCIgc3R5bGU9ImJhY2tncm91bmQ6IzQyZTM3YyI+PC9pPlF1ZXJ5IHBlciBpbnRlcnZhbGxvPC9zcGFuPgogICAgPHNwYW4+PGkgY2xhc3M9ImRvdCIgc3R5bGU9ImJhY2tncm91bmQ6IzRmZDZkNiI+PC9pPkNhY2hlLWhpdCAlPC9zcGFuPgogIDwvZGl2PgogIDxkaXYgaWQ9ImNoYXJ0"
+set "B64=!B64!LXRyYWZmaWMiPjwvZGl2Pgo8L3NlY3Rpb24+Cgo8c2VjdGlvbj4KICA8aDI+QkxPQ0NISSBSUFogKHVsdGltaSBfX0RBWVNfXyBnaW9ybmkpPC9oMj4KICA8ZGl2IGlkPSJjaGFydC1ycHoiPjwvZGl2Pgo8L3NlY3Rpb24+Cgo8c2VjdGlvbj4KICA8aDI+RE5TU0VDOiBSSVNQT1NURSBWQUxJREUgVlMgQk9HVVMgKHVsdGltaSBfX0RBWVNfXyBnaW9ybmkpPC9oMj4KICA8ZGl2IGNsYXNzPSJsZWdlbmQiPgogICAgPHNwYW4+PGkgY2xhc3M9ImRvdCIgc3R5bGU9ImJhY2tncm91bmQ6IzQyZTM3YyI+PC9pPlZhbGlkZTwvc3Bhbj4K"
+set "B64=!B64!ICAgIDxzcGFuPjxpIGNsYXNzPSJkb3QiIHN0eWxlPSJiYWNrZ3JvdW5kOiNlMzRmNGYiPjwvaT5Cb2d1czwvc3Bhbj4KICA8L2Rpdj4KICA8ZGl2IGlkPSJjaGFydC1kbnNzZWMiPjwvZGl2Pgo8L3NlY3Rpb24+Cgo8c2VjdGlvbj4KICA8aDI+TUVNT1JJQSBUT1RBTEUgVU5CT1VORCAoTUIsIHVsdGltaSBfX0RBWVNfXyBnaW9ybmkpPC9oMj4KICA8ZGl2IGlkPSJjaGFydC1tZW0iPjwvZGl2Pgo8L3NlY3Rpb24+Cgo8c2VjdGlvbj4KICA8aDI+VE9QIERPTUlOSSBCTE9DQ0FUSSAmbWRhc2g7IHVsdGltbyBnaW9ybm8gY29uY2x1"
+set "B64=!B64!c28gX19SUFpfREFURV9fPC9oMj4KICA8ZGl2IGlkPSJycHotdGFibGUiPjwvZGl2Pgo8L3NlY3Rpb24+Cgo8Zm9vdGVyPlVuYm91bmQgQnVua2VyIGJ5IE1hdXJvIEJpZ29uaSAmbWRhc2g7IGRhdGkgbG9jYWxpLCBuZXNzdW5hIGNoaWFtYXRhIGVzdGVybmEgZGEgcXVlc3RhIHBhZ2luYS48L2Zvb3Rlcj4KCjxzY3JpcHQ+CmNvbnN0IERBVEEgPSBfX0RBVEFfSlNPTl9fOwpjb25zdCBSUFogID0gX19SUFpfSlNPTl9fOwoKZnVuY3Rpb24gc3ZnTGluZUNoYXJ0KGNvbnRhaW5lcklkLCBzZXJpZXMsIG9wdHMpewogIGNvbnN0IGVs"
+set "B64=!B64!ID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoY29udGFpbmVySWQpOwogIGlmKCFzZXJpZXMgfHwgc2VyaWVzLmxlbmd0aCA9PT0gMCl7IGVsLmlubmVySFRNTCA9ICc8ZGl2IGNsYXNzPSJlbXB0eSI+TmVzc3VuIGRhdG8gYW5jb3JhIGRpc3BvbmliaWxlIHBlciBxdWVzdG8gZ3JhZmljby48L2Rpdj4nOyByZXR1cm47IH0KICBjb25zdCBXID0gOTAwLCBIID0gMjIwLCBwYWRMID0gNDAsIHBhZFIgPSAxMCwgcGFkVCA9IDEwLCBwYWRCID0gMjY7CiAgY29uc3QgbiA9IHNlcmllcy5sZW5ndGg7CiAgY29uc3QgeHMgPSBpID0+IHBh"
+set "B64=!B64!ZEwgKyAoaS8oTWF0aC5tYXgobi0xLDEpKSkgKiAoVyAtIHBhZEwgLSBwYWRSKTsKICBmdW5jdGlvbiBidWlsZFBhdGgodmFsdWVzLCBtYXhWKXsKICAgIGxldCBkID0gJyc7CiAgICB2YWx1ZXMuZm9yRWFjaCgodixpKT0+ewogICAgICBjb25zdCB4ID0geHMoaSk7CiAgICAgIGNvbnN0IHkgPSBIIC0gcGFkQiAtICh2IC8gKG1heFYgfHwgMSkpICogKEggLSBwYWRUIC0gcGFkQik7CiAgICAgIGQgKz0gKGk9PT0wID8gJ00nIDogJ0wnKSArIHgudG9GaXhlZCgxKSArICcsJyArIHkudG9GaXhlZCgxKSArICcgJzsKICAgIH0pOwog"
+set "B64=!B64!ICAgcmV0dXJuIGQ7CiAgfQogIGxldCBzdmcgPSAnPHN2ZyB2aWV3Qm94PSIwIDAgJyArIFcgKyAnICcgKyBIICsgJyIgcHJlc2VydmVBc3BlY3RSYXRpbz0ibm9uZSI+JzsKICBzdmcgKz0gJzxsaW5lIHgxPSInK3BhZEwrJyIgeTE9IicrKEgtcGFkQikrJyIgeDI9IicrKFctcGFkUikrJyIgeTI9IicrKEgtcGFkQikrJyIgc3Ryb2tlPSIjMWYyZTIyIi8+JzsKICBvcHRzLmxpbmVzLmZvckVhY2gobGluZT0+ewogICAgY29uc3QgbWF4ViA9IE1hdGgubWF4KC4uLmxpbmUudmFsdWVzLCAxKSAqIDEuMTU7CiAgICBzdmcgKz0gJzxw"
+set "B64=!B64!YXRoIGQ9IicrYnVpbGRQYXRoKGxpbmUudmFsdWVzLCBtYXhWKSsnIiBmaWxsPSJub25lIiBzdHJva2U9IicrbGluZS5jb2xvcisnIiBzdHJva2Utd2lkdGg9IjIiLz4nOwogIH0pOwogIGNvbnN0IHRpY2tDb3VudCA9IE1hdGgubWluKDYsIG4pOwogIGZvcihsZXQgaz0wO2s8dGlja0NvdW50O2srKyl7CiAgICBjb25zdCBpZHggPSBNYXRoLnJvdW5kKGsqKG4tMSkvTWF0aC5tYXgodGlja0NvdW50LTEsMSkpOwogICAgY29uc3QgbGFiZWwgPSBzZXJpZXNbaWR4XS50LnJlcGxhY2UoJ1QnLCcgJykuc3Vic3RyaW5nKDUsMTYpOwog"
+set "B64=!B64!ICAgc3ZnICs9ICc8dGV4dCB4PSInK3hzKGlkeCkudG9GaXhlZCgxKSsnIiB5PSInKyhILTYpKyciIGZpbGw9IiM3ZmEzOGMiIGZvbnQtc2l6ZT0iMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPicrbGFiZWwrJzwvdGV4dD4nOwogIH0KICBzdmcgKz0gJzwvc3ZnPic7CiAgZWwuaW5uZXJIVE1MID0gc3ZnOwp9CgpzdmdMaW5lQ2hhcnQoJ2NoYXJ0LXRyYWZmaWMnLCBEQVRBLCB7IGxpbmVzOiBbCiAgeyB2YWx1ZXM6IERBVEEubWFwKGQ9PmQucSksIGNvbG9yOiAnIzQyZTM3YycgfSwKICB7IHZhbHVlczogREFUQS5tYXAoZD0+ZC5o"
+set "B64=!B64!aXQpLCBjb2xvcjogJyM0ZmQ2ZDYnIH0KXX0pOwoKc3ZnTGluZUNoYXJ0KCdjaGFydC1ycHonLCBEQVRBLCB7IGxpbmVzOiBbCiAgeyB2YWx1ZXM6IERBVEEubWFwKGQ9PmQucnB6KSwgY29sb3I6ICcjZTNiMzQyJyB9Cl19KTsKCnN2Z0xpbmVDaGFydCgnY2hhcnQtZG5zc2VjJywgREFUQSwgeyBsaW5lczogWwogIHsgdmFsdWVzOiBEQVRBLm1hcChkPT5kLnNlY3VyZSksIGNvbG9yOiAnIzQyZTM3YycgfSwKICB7IHZhbHVlczogREFUQS5tYXAoZD0+ZC5ib2d1cyksIGNvbG9yOiAnI2UzNGY0ZicgfQpdfSk7CgpzdmdMaW5lQ2hh"
+set "B64=!B64!cnQoJ2NoYXJ0LW1lbScsIERBVEEsIHsgbGluZXM6IFsKICB7IHZhbHVlczogREFUQS5tYXAoZD0+ZC5tZW10b3RhbCksIGNvbG9yOiAnIzRmZDZkNicgfQpdfSk7CgooZnVuY3Rpb24gcmVuZGVyUnB6VGFibGUoKXsKICBjb25zdCBlbCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdycHotdGFibGUnKTsKICBpZighUlBaIHx8ICFSUFouem9uZXMpeyBlbC5pbm5lckhUTUwgPSAnPGRpdiBjbGFzcz0iZW1wdHkiPk5lc3N1biBibG9jY28gUlBaIHJlZ2lzdHJhdG8gbmVsIGdpb3JubyBjb25jbHVzby48L2Rpdj4nOyByZXR1cm47"
+set "B64=!B64!IH0KICBsZXQgb3V0ID0gJyc7CiAgT2JqZWN0LmtleXMoUlBaLnpvbmVzKS5mb3JFYWNoKHpvbmU9PnsKICAgIGNvbnN0IHogPSBSUFouem9uZXNbem9uZV07CiAgICBvdXQgKz0gJzxkaXYgY2xhc3M9InpvbmUtdGl0bGUiPicrem9uZS50b1VwcGVyQ2FzZSgpKycgJm1kYXNoOyBkb21pbmkgdW5pY2k6ICcrei51bmlxdWUrJyAmbmJzcDsgYmxvY2NoaSB0b3RhbGk6ICcrei50b3RhbCsnPC9kaXY+JzsKICAgIG91dCArPSAnPHRhYmxlPjx0aGVhZD48dHI+PHRoPkRvbWluaW88L3RoPjx0aD5CbG9jY2hpPC90aD48L3RyPjwvdGhl"
+set "B64=!B64!YWQ+PHRib2R5Pic7CiAgICAoei50b3AgfHwgW10pLmZvckVhY2godD0+ewogICAgICBvdXQgKz0gJzx0cj48dGQ+Jyt0LmRvbWFpbisnPC90ZD48dGQgY2xhc3M9Im51bSI+Jyt0LmNvdW50Kyc8L3RkPjwvdHI+JzsKICAgIH0pOwogICAgb3V0ICs9ICc8L3Rib2R5PjwvdGFibGU+JzsKICB9KTsKICBlbC5pbm5lckhUTUwgPSBvdXQgfHwgJzxkaXYgY2xhc3M9ImVtcHR5Ij5OZXNzdW4gYmxvY2NvIFJQWiByZWdpc3RyYXRvIG5lbCBnaW9ybm8gY29uY2x1c28uPC9kaXY+JzsKfSkoKTsKPC9zY3JpcHQ+CjwvYm9keT4KPC9odG1s"
+set "B64=!B64!PgonQAoKJHJlZnJlc2hNaW4gPSBbbWF0aF06OlJvdW5kKCRBdXRvUmVmcmVzaFNlY29uZHMgLyA2MCwgMSkKJHJwekRhdGVMYWJlbCA9IGlmICgkcnB6RGF0YSAtYW5kICRycHpEYXRhLmRhdGUpIHsgJHJwekRhdGEuZGF0ZSB9IGVsc2UgeyAnbi9kJyB9CgokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fUkVGUkVTSF9fJywgW3N0cmluZ10kQXV0b1JlZnJlc2hTZWNvbmRzKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fUkVGUkVTSE1JTl9fJywgW3N0cmluZ10kcmVmcmVzaE1pbikKJGh0bWwgPSAkaHRtbC5SZXBsYWNlKCdfX0dF"
+set "B64=!B64!TkVSQVRFRF9fJywgJGdlbmVyYXRlZEF0KQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fT0xERVNUX18nLCAkb2xkZXN0VHMpCiRodG1sID0gJGh0bWwuUmVwbGFjZSgnX19EQVlTX18nLCBbc3RyaW5nXSREYXlzKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fVE9EQVlfUV9fJywgW3N0cmluZ10oW21hdGhdOjpSb3VuZCgkdG9kYXlRdWVyaWVzKSkpCiRodG1sID0gJGh0bWwuUmVwbGFjZSgnX19UT0RBWV9ISVRfXycsIFtzdHJpbmddJHRvZGF5SGl0QXZnKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fVE9EQVlfUlBaX18nLCBb"
+set "B64=!B64!c3RyaW5nXShbbWF0aF06OlJvdW5kKCR0b2RheVJwekJsb2NrcykpKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fVE9EQVlfQk9HVVNfXycsIFtzdHJpbmddKFttYXRoXTo6Um91bmQoJHRvZGF5Qm9ndXMpKSkKJGh0bWwgPSAkaHRtbC5SZXBsYWNlKCdfX1RPREFZX1VOV19fJywgW3N0cmluZ10oW21hdGhdOjpSb3VuZCgkdG9kYXlVbndhbnRlZCkpKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fTEFTVF9UU19fJywgJChpZigkbGFzdCl7JGxhc3QudGltZXN0YW1wfWVsc2V7J24vZCd9KSkKJGh0bWwgPSAkaHRtbC5SZXBsYWNl"
+set "B64=!B64!KCdfX1JQWl9EQVRFX18nLCAkcnB6RGF0ZUxhYmVsKQokaHRtbCA9ICRodG1sLlJlcGxhY2UoJ19fREFUQV9KU09OX18nLCAkZGF0YUpzb24pCiRodG1sID0gJGh0bWwuUmVwbGFjZSgnX19SUFpfSlNPTl9fJywgJHJwekpzb24pCgpTZXQtQ29udGVudCAtUGF0aCAoSm9pbi1QYXRoICRTdGF0c0RpciAnZGFzaGJvYXJkLmh0bWwnKSAtVmFsdWUgJGh0bWwgLUVuY29kaW5nIFVURjgK"
+set "B64_TMP=%TEMP%\ub_dash_ps1.b64"
+>"%B64_TMP%" echo !B64!
+powershell -NoProfile -Command "[IO.File]::WriteAllBytes('%UB_DIR%\Genera-Dashboard-Unbound.ps1', [Convert]::FromBase64String((Get-Content -Path '%B64_TMP%' -Raw).Trim()))" 2>nul
+if errorlevel 1 (
+    call :LOGFAIL "STATS" "Scrittura di Genera-Dashboard-Unbound.ps1 fallita (decodifica Base64)"
+)
+del /f /q "%B64_TMP%" >nul 2>&1
+set "B64="
+exit /b
+
+
 
 :UPDATE_UI
 set "P_VAL=%~1"
