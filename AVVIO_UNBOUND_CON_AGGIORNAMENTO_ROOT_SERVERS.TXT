@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=802.00"
+set "LOCAL_VER=805.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -685,17 +685,22 @@ call :UPDATE_UI 80
 set "NC_URL=https://www.internic.net/domain/named.cache"
 set "NC_TMP=%UB_DIR%\named.cache.tmp"
 
-:: Se il file esiste già, mostra SKIP e la data, salta il download
+:: Se il file esiste ed e' aggiornato da meno di 24h, mostra SKIP e salta il download
 if exist "%UB_DIR%\named.cache" (
-    call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[     SKIP     ] NET  >> NAMED.CACHE gia' presente: !DT_NC!"
-    goto :NC_DONE
+    call :FILE_AGE_HOURS "%UB_DIR%\named.cache" NC_AGE
+    if !NC_AGE! LSS 24 (
+        call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+        set "F9_RES=[     SKIP     ] NET  >> NAMED.CACHE aggiornato !NC_AGE!h fa: !DT_NC!"
+        goto :NC_DONE
+    )
 )
 
-:: Se non esiste, prova a scaricarlo
+:: Se non esiste o e' scaduto (>=24h), prova a scaricarlo
 if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
 
-curl -s -f %CURL_CA% -o "%NC_TMP%" "%NC_URL%" >nul 2>&1
+call :CURL_RETRY "%NC_URL%" "%NC_TMP%" ""
+set "NC_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "NC_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
     if exist "%NCACHE_BAK%" (
@@ -718,7 +723,7 @@ if errorlevel 1 (
     )
     move /y "%NC_TMP%" "%UB_DIR%\named.cache" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    set "F9_RES=[      OK      ] NET  >> NAME.CACHE scaricato e installato: !DT_NC!"
+    set "F9_RES=[      OK      ] NET  >> NAME.CACHE scaricato e installato: !DT_NC!!NC_TRYNOTE!"
 )
 :NC_DONE
 if exist "%NC_TMP%" del /f /q "%NC_TMP%" >nul 2>&1
@@ -734,17 +739,22 @@ call :UPDATE_UI 82
 set "RZ_URL=https://www.internic.net/domain/root.zone"
 set "RZ_TMP=%UB_DIR%\root.zone.tmp"
 
-:: Se il file esiste già, mostra SKIP e la data, salta il download
+:: Se il file esiste ed e' aggiornato da meno di 12h, mostra SKIP e salta il download
 if exist "%UB_DIR%\root.zone" (
-    call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[     SKIP     ] NET  >> ROOT.ZONE gia' presente: !DT_RZ!"
-    goto :RZ_DONE
+    call :FILE_AGE_HOURS "%UB_DIR%\root.zone" RZ_AGE
+    if !RZ_AGE! LSS 12 (
+        call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
+        set "F9B_RES=[     SKIP     ] NET  >> ROOT.ZONE aggiornato !RZ_AGE!h fa: !DT_RZ!"
+        goto :RZ_DONE
+    )
 )
 
-:: Se non esiste, prova a scaricarlo
+:: Se non esiste o e' scaduto (>=12h), prova a scaricarlo
 if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
 
-curl -s -f %CURL_CA% -o "%RZ_TMP%" "%RZ_URL%" >nul 2>&1
+call :CURL_RETRY "%RZ_URL%" "%RZ_TMP%" ""
+set "RZ_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "RZ_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
     if exist "%RZONE_BAK%" (
@@ -767,7 +777,7 @@ if errorlevel 1 (
     )
     move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    set "F9B_RES=[      OK      ] NET  >> ROOT.ZONE scaricato e installato: !DT_RZ!"
+    set "F9B_RES=[      OK      ] NET  >> ROOT.ZONE scaricato e installato: !DT_RZ!!RZ_TRYNOTE!"
 )
 :RZ_DONE
 if exist "%RZ_TMP%" del /f /q "%RZ_TMP%" >nul 2>&1
@@ -784,7 +794,9 @@ set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 :: Scarica sempre la versione Pro Plus
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!"
+set "HZ_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "HZ_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_PRO_PLUS_BAK%" (
         copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
@@ -807,7 +819,7 @@ if errorlevel 1 (
         if "!SKIP_HZ!"=="0" (
             move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            set "F10_RES=[      OK      ] NET  >> HaGeZi Pro Plus - RPZ aggiornato: !DT_HZ!"
+            set "F10_RES=[      OK      ] NET  >> HaGeZi Pro Plus - RPZ aggiornato: !DT_HZ!!HZ_TRYNOTE!"
         ) else (
             del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
@@ -835,7 +847,9 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt" "%HZ_TIF%.tmp" "!RES_JSDELIVR!"
+set "TIF_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
@@ -858,7 +872,7 @@ if errorlevel 1 (
         if "!SKIP_TIF!"=="0" (
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10B_RES=[      OK      ] NET  >> HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+            set "F10B_RES=[      OK      ] NET  >> HaGeZi TIF - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -886,7 +900,9 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!"
+set "TIFIPS_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "TIFIPS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_TIF_IPS_BAK%" (
         copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
@@ -909,7 +925,7 @@ if errorlevel 1 (
         if "!SKIP_TIFIPS!"=="0" (
             move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
             call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-            set "F10C_RES=[      OK      ] NET  >> HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!"
+            set "F10C_RES=[      OK      ] NET  >> HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!!TIFIPS_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
@@ -933,7 +949,9 @@ call :LOGSTEP "NET" "!F10C_RES!"
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
-curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
+call :CURL_RETRY "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" ""
+set "DROP_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROP_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%SH_DROP_BAK%" (
         copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
@@ -957,7 +975,7 @@ if errorlevel 1 (
         if "!SKIP_DROP!"=="0" (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10D_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
+            set "F10D_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROP_TRYNOTE!"
         ) else (
             del /f /q "%SH_DROP%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
@@ -982,7 +1000,9 @@ call :LOGSTEP "NET" "!F10D_RES!"
 set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
-curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
+call :CURL_RETRY "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" ""
+set "DROP6_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROP6_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%SH_DROP6_BAK%" (
         copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
@@ -1006,7 +1026,7 @@ if errorlevel 1 (
         if "!SKIP_DROP6!"=="0" (
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            set "F10E_RES=[      OK      ] NET  >> Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!"
+            set "F10E_RES=[      OK      ] NET  >> Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6_TRYNOTE!"
         ) else (
             del /f /q "%SH_DROP6%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
@@ -1323,13 +1343,21 @@ if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%" 
 
 
 :: named.cache (refresh biorario)
+set "NC_NEEDS_DL=1"
 if exist "%UB_DIR%\named.cache" (
-    call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-    call :LOGSTEP "REFRESH" "named.cache gia' presente: !DT_NC!"
-) else (
+    call :FILE_AGE_HOURS "%UB_DIR%\named.cache" NC_AGE
+    if !NC_AGE! LSS 24 (
+        set "NC_NEEDS_DL=0"
+        call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
+        call :LOGSTEP "REFRESH" "named.cache aggiornato !NC_AGE!h fa: !DT_NC!"
+    )
+)
+if !NC_NEEDS_DL! EQU 1 (
     set "NC_TMP_R=%UB_DIR%\named.cache.tmp"
     if exist "%NC_TMP_R%" del /f /q "%NC_TMP_R%" >nul 2>&1
-    curl -s -f %CURL_CA% -o "%NC_TMP_R%" "https://www.internic.net/domain/named.cache" >nul 2>&1
+    call :CURL_RETRY "https://www.internic.net/domain/named.cache" "%NC_TMP_R%" ""
+    set "NCR_TRYNOTE="
+    if !CURL_TRY_NUM! GTR 1 set "NCR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
     if not errorlevel 1 (
         if exist "%NC_TMP_R%" (
             for %%I in ("%NC_TMP_R%") do set "NC_SZ=%%~zI"
@@ -1337,7 +1365,7 @@ if exist "%UB_DIR%\named.cache" (
                 move /y "%NC_TMP_R%" "%UB_DIR%\named.cache" >nul 2>&1
                 set "CHANGED=1"
                 call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
-                call :LOGSTEP "REFRESH" "named.cache scaricato: !DT_NC!"
+                call :LOGSTEP "REFRESH" "named.cache scaricato: !DT_NC!!NCR_TRYNOTE!"
             ) else (
                 del /f /q "%NC_TMP_R%" >nul 2>&1
                 call :LOGSTEP "REFRESH" "named.cache: file scaricato troppo piccolo"
@@ -1356,13 +1384,21 @@ if exist "%UB_DIR%\named.cache" (
 )
 
 :: root.zone (refresh biorario)
+set "RZ_NEEDS_DL=1"
 if exist "%UB_DIR%\root.zone" (
-    call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-    call :LOGSTEP "REFRESH" "root.zone gia' presente: !DT_RZ!"
-) else (
+    call :FILE_AGE_HOURS "%UB_DIR%\root.zone" RZ_AGE
+    if !RZ_AGE! LSS 12 (
+        set "RZ_NEEDS_DL=0"
+        call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
+        call :LOGSTEP "REFRESH" "root.zone aggiornato !RZ_AGE!h fa: !DT_RZ!"
+    )
+)
+if !RZ_NEEDS_DL! EQU 1 (
     set "RZ_TMP_R=%UB_DIR%\root.zone.tmp"
     if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
-    curl -s -f %CURL_CA% -o "%RZ_TMP_R%" "https://www.internic.net/domain/root.zone" >nul 2>&1
+    call :CURL_RETRY "https://www.internic.net/domain/root.zone" "%RZ_TMP_R%" ""
+    set "RZR_TRYNOTE="
+    if !CURL_TRY_NUM! GTR 1 set "RZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
     if not errorlevel 1 (
         if exist "%RZ_TMP_R%" (
             for %%I in ("%RZ_TMP_R%") do set "RZ_SZ=%%~zI"
@@ -1370,7 +1406,7 @@ if exist "%UB_DIR%\root.zone" (
                 move /y "%RZ_TMP_R%" "%UB_DIR%\root.zone" >nul 2>&1
                 set "CHANGED=1"
                 call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
-                call :LOGSTEP "REFRESH" "root.zone scaricato: !DT_RZ!"
+                call :LOGSTEP "REFRESH" "root.zone scaricato: !DT_RZ!!RZR_TRYNOTE!"
             ) else (
                 del /f /q "%RZ_TMP_R%" >nul 2>&1
                 call :LOGSTEP "REFRESH" "root.zone: file scaricato troppo piccolo"
@@ -1393,7 +1429,9 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_PRO_PLUS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!"
+set "HZR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
@@ -1406,7 +1444,7 @@ if not errorlevel 1 (
             move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro Plus- RPZ aggiornato: !DT_HZ!"
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro Plus- RPZ aggiornato: !DT_HZ!!HZR_TRYNOTE!"
         ) else (
             del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
@@ -1432,7 +1470,9 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt" "%HZ_TIF%.tmp" "!RES_JSDELIVR!"
+set "TIFR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "TIFR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
@@ -1445,7 +1485,7 @@ if not errorlevel 1 (
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF - RPZ aggiornato: !DT_TIF!"
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF - RPZ aggiornato: !DT_TIF!!TIFR_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -1471,7 +1511,9 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-curl -s -f %CURL_CA% !RES_JSDELIVR! -o "%HZ_TIF_IPS%.tmp" https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt >nul 2>&1
+call :CURL_RETRY "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!"
+set "TIFIPSR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
@@ -1484,7 +1526,7 @@ if not errorlevel 1 (
             move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!"
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!!TIFIPSR_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
@@ -1508,7 +1550,9 @@ if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 :: Spamhaus DROP (refresh biorario)
 :: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
 :: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
-curl -s -f %CURL_CA% -o "%SH_DROP%.raw.tmp" https://www.spamhaus.org/drop/drop_v4.json >nul 2>&1
+call :CURL_RETRY "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" ""
+set "DROPR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROPR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
         call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
@@ -1522,7 +1566,7 @@ if not errorlevel 1 (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!"
+            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROPR_TRYNOTE!"
         ) else (
             del /f /q "%SH_DROP%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
@@ -1545,7 +1589,9 @@ if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 
 :: Spamhaus DROPv6 (refresh biorario)
-curl -s -f %CURL_CA% -o "%SH_DROP6%.raw.tmp" https://www.spamhaus.org/drop/drop_v6.json >nul 2>&1
+call :CURL_RETRY "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" ""
+set "DROP6R_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROP6R_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
         call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
@@ -1559,7 +1605,7 @@ if not errorlevel 1 (
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!"
+            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6R_TRYNOTE!"
         ) else (
             del /f /q "%SH_DROP6%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
@@ -1871,6 +1917,34 @@ exit /b
 :: SUBROUTINE: legge data/ora ultima modifica di un file
 :: Uso: call :FILE_DATE <percorso_file> <variabile_risultato>
 :: ==================================================================
+:: ==================================================================
+:: SUBROUTINE: esegue un download con curl, con retry automatico.
+:: Fino a 3 tentativi totali, backoff progressivo (3s dopo il 1°
+:: fallimento, 6s dopo il 2°). Errorlevel 0 se un tentativo riesce,
+:: 1 se falliscono tutti e 3.
+:: CURL_TRY_NUM riporta il tentativo che ha avuto successo (1/2/3),
+:: oppure 0 se tutti i tentativi sono falliti. Va letta dal chiamante
+:: SUBITO dopo la call, prima di qualunque altra chiamata a curl.
+:: Uso: call :CURL_RETRY "<url>" "<file_output>" "<argomenti_extra>"
+:: ==================================================================
+:CURL_RETRY
+set "CRT_URL=%~1"
+set "CRT_OUT=%~2"
+set "CRT_ARGS=%~3"
+set "CURL_TRY_NUM=1"
+curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 3 /nobreak >nul
+set "CURL_TRY_NUM=2"
+curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 6 /nobreak >nul
+set "CURL_TRY_NUM=3"
+curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+set "CURL_TRY_NUM=0"
+exit /b 1
+
 :FILE_DATE
 set "%~2=N/A"
 set "FD_TMP=%TEMP%\ub_filedate.txt"
@@ -1879,6 +1953,24 @@ powershell -Command "if (Test-Path -LiteralPath '%FD_PATH%') { (Get-Item -Litera
 if exist "%FD_TMP%" (
     set /p %~2=<"%FD_TMP%"
     del /f /q "%FD_TMP%" >nul 2>&1
+)
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE: calcola l'eta' in ore intere (arrotondata per difetto)
+:: dell'ultima modifica di un file, tramite LastWriteTime.
+:: Se il file non esiste, ritorna 999999 (forza sempre il refresh).
+:: Uso: call :FILE_AGE_HOURS "percorso\file" VARIABILE_OUTPUT
+:: ==================================================================
+:FILE_AGE_HOURS
+set "%~2=999999"
+set "FA_TMP=%TEMP%\ub_fileage.txt"
+set "FA_PATH=%~1"
+if not exist "%FA_PATH%" exit /b
+powershell -Command "[math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%FA_PATH%').LastWriteTime).TotalHours) | Out-File -FilePath '%FA_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+if exist "%FA_TMP%" (
+    set /p %~2=<"%FA_TMP%"
+    del /f /q "%FA_TMP%" >nul 2>&1
 )
 exit /b
 
