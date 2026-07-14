@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=805.00"
+set "LOCAL_VER=807.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -502,16 +502,25 @@ cls
 :: FASE 1 - Azione
 set "F1_ACT=[...in corso...] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
+set "NET_RETRY_COUNT=0"
 :NET_RETRY
+set /a NET_RETRY_COUNT+=1 >nul
 ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
 if errorlevel 1 (
+    :: Dopo 3 ping falliti, prova un fallback TCP: alcune reti (hotspot, LAN aziendali)
+    :: filtrano l'ICMP pur avendo la connettivita' attiva, il che bloccherebbe il loop qui in eterno.
+    if !NET_RETRY_COUNT! GEQ 3 (
+        powershell -NoProfile -Command "exit [int](-not (Test-NetConnection -ComputerName 1.1.1.1 -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded)" >nul 2>&1
+        if not errorlevel 1 goto :NET_OK
+    )
     set "CONSOLE_COLOR=0C"
     set "F1_RES=[     WARN     ] NET  >> Internet non raggiungibile, nuovo tentativo tra 5 secondi... (Ctrl+C per annullare)"
     call :UPDATE_UI 0
     timeout /t 5 /nobreak >nul
     goto :NET_RETRY
 )
+:NET_OK
 set "CONSOLE_COLOR=0A"
 set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza.       "
 call :LOGSTEP "NET" "Connettivita verificata"
