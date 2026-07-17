@@ -40,6 +40,10 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
+title UNBOUND BUNKER
+:: --- BLOCCA CHIUSURA FINESTRA E INGRANDISCE IMMEDIATAMENTE A TUTTO SCHERMO ---
+powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000); $CS::ShowWindow($hwnd, 3); }" >nul 2>&1
+
 :: ==================================================================
 :: INIZIO SEQUENZA OPERATIVA DEL BUNKER
 :: ==================================================================
@@ -54,12 +58,12 @@ powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Obje
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 :: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
 set "FLAG_LINE=%ESC%[42m                                                  %ESC%[0m%ESC%[47m                                                  %ESC%[0m%ESC%[41m                                                  %ESC%[0m%ESC%[0m"
-mode con: cols=150 lines=65
+mode con: cols=150 lines=68
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=813.00"
+set "LOCAL_VER=815.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -394,8 +398,6 @@ set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
 
 set "CURL_CA=--ipv4 --location --max-time 60"
 title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
-:: --- BLOCCA CHIUSURA FINESTRA (pulsante X e menu) ---
-powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000) }" >nul 2>&1
 
 :: Inizializza tutte le variabili delle fasi come vuote
 for /L %%i in (1,1,13) do set "F%%i_ACT="
@@ -2661,6 +2663,7 @@ set /a "S_H=1%START_TIME:~0,2%-100, S_M=1%START_TIME:~3,2%-100, S_S=1%START_TIME
 set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~6,2%-100"
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
 if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
+echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m                  PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 3 >nul
