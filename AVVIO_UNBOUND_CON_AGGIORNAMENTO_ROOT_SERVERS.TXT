@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=811.00"
+set "LOCAL_VER=812.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -894,17 +894,65 @@ call :LOGSTEP "NET" "!F10_RES!"
 :: ================================================================
 :: F10B — HAGEZI TIF (Threat Intelligence Feeds)
 :: ================================================================
-set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (Threat Intelligence) e la preparo come RPZ attiva."
+set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt" "%HZ_TIF%.tmp" "!RES_JSDELIVR!" "%HZ_TIF%"
-if not exist "%HZ_TIF%.tmp" if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF%.tmp" >nul 2>&1
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+set "TIF_PARTS=0"
 set "TIF_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if errorlevel 1 (
+set "TIF_DL_ERROR=0"
+
+:TIF_LOOP
+set /a TIF_PARTS+=1
+set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
+set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
+
+call :CURL_RETRY_Z "!TIF_PART_URL!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
+set "CURL_ERR=!errorlevel!"
+
+if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
+
+:: Se il download fallisce (es. 404), interrompe il ciclo
+if !CURL_ERR! NEQ 0 (
+    if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_LOOP_END
+    ) else (
+        set "TIF_DL_ERROR=1"
+        goto :TIF_LOOP_END
+    )
+)
+
+:: Controllo che la singola parte non sia corrotta o vuota (minimo 1KB)
+set "PART_SIZE=0"
+for %%I in ("!TIF_PART_TMP!") do set "PART_SIZE=%%~zI"
+if !PART_SIZE! LSS 1024 (
+    del /f /q "!TIF_PART_TMP!" >nul 2>&1
+    if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_LOOP_END
+    ) else (
+        set "TIF_DL_ERROR=1"
+        goto :TIF_LOOP_END
+    )
+)
+
+if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito con retry]"
+
+:: AGGIUNTI SPAZI IN FONDO PER CANCELLARE IL TESTO PRECEDENTE PIÙ LUNGO
+set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF... (Trovati !TIF_PARTS! file finora)                               "
+call :UPDATE_UI 87
+
+:: Limite di sicurezza massimo 20 parti per evitare loop infiniti in caso di anomalie server
+if !TIF_PARTS! LSS 20 goto :TIF_LOOP
+
+:TIF_LOOP_END
+
+if "!TIF_DL_ERROR!"=="1" (
     if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -916,6 +964,15 @@ if errorlevel 1 (
         set "F10B_RES=[ERR ] NET  >> HaGeZi TIF non scaricabile e nessun backup disponibile!"
     )
 ) else (
+    if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+    :: Unisce tutte le parti valide
+    for /L %%N in (1,1,!TIF_PARTS!) do (
+        type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
+        echo.>> "%HZ_TIF%.tmp"
+        move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
+    )
+
+    :: Controllo sul file totale assemblato (minimo 10KB)
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
@@ -926,18 +983,18 @@ if errorlevel 1 (
         if "!SKIP_TIF!"=="0" (
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10B_RES=[      OK      ] NET  >> HaGeZi TIF - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
+            set "F10B_RES=[      OK      ] NET  >> HaGeZi TIF (!TIF_PARTS! files) - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF (!TIF_PARTS! files) - RPZ gia' aggiornato: !DT_TIF!"
         )
     ) else (
         if exist "%HZ_TIF%" (
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
+            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - file unificato piccolo, uso esistente: !DT_TIF!"
         ) else (
-            set "F10B_RES=[    ERRORE    ] NET  >> HaGeZi TIF - file scaricato troppo piccolo e nessun backup!"
+            set "F10B_RES=[    ERRORE    ] NET  >> HaGeZi TIF - file unificato troppo piccolo e nessun backup!"
         )
     )
 )
@@ -1566,11 +1623,66 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif.txt" "%HZ_TIF%.tmp" "!RES_JSDELIVR!" "%HZ_TIF%"
-if not exist "%HZ_TIF%.tmp" if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF%.tmp" >nul 2>&1
-set "TIFR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "TIFR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+set "TIF_PARTS=0"
+set "TIF_TRYNOTE="
+set "TIF_DL_ERROR=0"
+
+:TIF_REFRESH_LOOP
+set /a TIF_PARTS+=1
+set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
+set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
+
+call :CURL_RETRY_Z "!TIF_PART_URL!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
+set "CURL_ERR=!errorlevel!"
+
+if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
+
+if !CURL_ERR! NEQ 0 (
+    if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_REFRESH_LOOP_END
+    ) else (
+        set "TIF_DL_ERROR=1"
+        goto :TIF_REFRESH_LOOP_END
+    )
+)
+
+set "PART_SIZE=0"
+for %%I in ("!TIF_PART_TMP!") do set "PART_SIZE=%%~zI"
+if !PART_SIZE! LSS 1024 (
+    del /f /q "!TIF_PART_TMP!" >nul 2>&1
+    if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_REFRESH_LOOP_END
+    ) else (
+        set "TIF_DL_ERROR=1"
+        goto :TIF_REFRESH_LOOP_END
+    )
+)
+
+if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito con retry]"
+if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
+
+:TIF_REFRESH_LOOP_END
+
+if "!TIF_DL_ERROR!"=="1" (
+    if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+    for /L %%N in (1,1,!TIF_PARTS!) do (
+        type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
+        echo.>> "%HZ_TIF%.tmp"
+        move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
+    )
+
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
@@ -1582,23 +1694,15 @@ if not errorlevel 1 (
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF - RPZ aggiornato: !DT_TIF!!TIFR_TRYNOTE!"
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF (!TIF_PARTS! files) - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
         ) else (
             del /f /q "%HZ_TIF%.tmp" >nul 2>&1
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - RPZ gia' aggiornato: !DT_TIF!"
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF (!TIF_PARTS! files) - RPZ gia' aggiornato: !DT_TIF!"
         )
     ) else (
         call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - file scaricato piccolo, uso esistente: !DT_TIF!"
-    )
-) else (
-    if exist "%HZ_TIF_BAK%" (
-        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
-        call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - file unificato piccolo, uso esistente: !DT_TIF!"
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
