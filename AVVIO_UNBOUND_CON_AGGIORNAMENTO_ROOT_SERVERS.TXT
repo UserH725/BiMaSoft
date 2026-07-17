@@ -59,7 +59,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=812.00"
+set "LOCAL_VER=813.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -454,9 +454,8 @@ if exist "%UB_DIR%\service.conf" (
 )
 
 :: --- Lettura dinamica dei FORWARDER dal service.conf (una volta sola all'avvio) ---
-:: Scansiona tutte le righe "forward-addr:" ed estrae il nome host dopo il "#",
-:: deduplicandolo. Se aggiungi/rimuovi un forward-addr nel service.conf, questo
-:: elenco si aggiorna da solo al riavvio dello script, senza toccare il .bat.
+:: Scansiona le righe usando filtri nativi di stringa e deduplica i nodi tramite
+:: indicizzazione dinamica, garantendo un conteggio reale e l'assenza di doppioni nella UI.
 set "FWD_LIST="
 set "FWD_COUNT=0"
 set "HYPERLOCAL_ACTIVE=0"
@@ -464,17 +463,56 @@ set "FALLBACK_ENABLED=no"
 set "FOR_UPSTREAM=no"
 
 if exist "%UB_DIR%\service.conf" (
-    :: Scansione Forwarder tradizionali DoT
-    for /f "tokens=2 delims=#" %%H in ('findstr /i /c:"forward-addr:" "%UB_DIR%\service.conf"') do (
-        set "FWD_NAME=%%H"
-        set "FWD_DUP=0"
-        echo !FWD_LIST! | findstr /i /c:"!FWD_NAME!" >nul 2>&1 && set "FWD_DUP=1"
-        if "!FWD_DUP!"=="0" (
-            set /a FWD_COUNT+=1
-            if "!FWD_LIST!"=="" (
-                set "FWD_LIST=!FWD_NAME!"
-            ) else (
-                set "FWD_LIST=!FWD_LIST!, !FWD_NAME!"
+    set "LAST_RES_NAME="
+    for /f "usebackq tokens=* delims=" %%L in ("%UB_DIR%\service.conf") do (
+        set "CUR_LINE=%%L"
+        set "FIRST_CHAR=!CUR_LINE:~0,1!"
+        
+        :: Rileva in modo nativo se la riga contiene il commento speciale "NOME RESOLVER:"
+        if "!CUR_LINE:NOME RESOLVER:=!" NEQ "!CUR_LINE!" (
+            for /f "tokens=2 delims=:" %%R in ("!CUR_LINE!") do (
+                set "TMP_NAME=%%R"
+                for /f "tokens=*" %%T in ("!TMP_NAME!") do set "LAST_RES_NAME=%%T"
+            )
+        ) else (
+            :: Se incontra un commento generico differente, resetta la memoria del nome
+            if "!FIRST_CHAR!"=="#" (
+                set "LAST_RES_NAME="
+            )
+        )
+        
+        :: Rileva se la riga contiene un record attivo "forward-addr:"
+        if "!CUR_LINE:forward-addr:=!" NEQ "!CUR_LINE!" (
+            if "!FIRST_CHAR!" NEQ "#" (
+                set "FWD_NAME="
+                if defined LAST_RES_NAME (
+                    set "FWD_NAME=!LAST_RES_NAME!"
+                ) else (
+                    :: Fallback sul tag classico dopo il cancelletto sulla stessa riga
+                    if "!CUR_LINE:#=!" NEQ "!CUR_LINE!" (
+                        for /f "tokens=2 delims=#" %%H in ("!CUR_LINE!") do (
+                            set "FWD_NAME=%%H"
+                        )
+                    )
+                )
+                
+                if defined FWD_NAME (
+                    for /f "tokens=*" %%T in ("!FWD_NAME!") do set "FWD_NAME=%%T"
+                    
+                    :: Controllo duplicati atomico basato sullo stato della variabile indicizzata
+                    set "FWD_DUP=0"
+                    if defined FWDFOUND_!FWD_NAME! set "FWD_DUP=1"
+                    
+                    if "!FWD_DUP!"=="0" (
+                        set "FWDFOUND_!FWD_NAME!=1"
+                        set /a FWD_COUNT+=1
+                        if "!FWD_LIST!"=="" (
+                            set "FWD_LIST=!FWD_NAME!"
+                        ) else (
+                            set "FWD_LIST=!FWD_LIST!, !FWD_NAME!"
+                        )
+                    )
+                )
             )
         )
     )
@@ -1961,25 +1999,20 @@ for /L %%K in (1,1,%BLOCKS%) do set "BARRA=!BARRA!█"
 for /L %%K in (1,1,%EMPTY%)  do set "BARRA=!BARRA!░"
 
 :: Riporta il cursore in alto a sinistra senza cancellare lo sfondo (Addio sfarfallio)
-echo !ESC![H
 if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
     color !CONSOLE_COLOR!
     set "LAST_COLOR=!CONSOLE_COLOR!"
 )
+echo !ESC![H!FLAG_LINE!
 echo !FLAG_LINE!
-echo !FLAG_LINE!
-echo !FLAG_LINE!
-echo !FLAG_LINE!
-echo !ESC![0m
-echo !ESC![92m
-echo ======================================================================================================================================================
+echo !ESC![0m!ESC![92m======================================================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
 echo ======================================================================================================================================================
-echo Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
-echo Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
-echo Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
+echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
+echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
+echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
 echo                                                      *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
-echo FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
+echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
 echo ======================================================================================================================================================
@@ -2620,7 +2653,6 @@ echo.
 :UB_END
 exit /b
 
-
 :FINALIZZAZIONE_RAPIDA
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -2630,10 +2662,6 @@ set /a "E_H=1%END_TIME:~0,2%-100,   E_M=1%END_TIME:~3,2%-100,   E_S=1%END_TIME:~
 set /a "ELAPSED=(E_H*3600+E_M*60+E_S)-(S_H*3600+S_M*60+S_S)"
 if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
 echo !FLAG_LINE!
-echo !FLAG_LINE!
-echo !FLAG_LINE!
-echo !ESC![0m
-echo !ESC![92m
-echo                                    PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
+echo !ESC![0m!ESC![92m                  PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 3 >nul
 exit
