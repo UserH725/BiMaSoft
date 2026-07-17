@@ -58,12 +58,12 @@ powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Obje
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 :: Pre-calcola la bandiera italiana come stringa ANSI (nessuna chiamata PowerShell nell'UI loop)
 set "FLAG_LINE=%ESC%[42m                                                  %ESC%[0m%ESC%[47m                                                  %ESC%[0m%ESC%[41m                                                  %ESC%[0m%ESC%[0m"
-mode con: cols=150 lines=68
+mode con: cols=150 lines=80
 set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=815.00"
+set "LOCAL_VER=816.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -984,7 +984,7 @@ if !PART_SIZE! LSS 1024 (
 if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito con retry]"
 
 :: AGGIUNTI SPAZI IN FONDO PER CANCELLARE IL TESTO PRECEDENTE PIÙ LUNGO
-set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF... (Trovati !TIF_PARTS! file finora)                               "
+set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF... (Trovati !TIF_PARTS! file)                                      "
 call :UPDATE_UI 87
 
 :: Limite di sicurezza massimo 20 parti per evitare loop infiniti in caso di anomalie server
