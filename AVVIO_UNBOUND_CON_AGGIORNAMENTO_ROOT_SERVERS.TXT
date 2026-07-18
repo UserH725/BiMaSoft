@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=816.00"
+set "LOCAL_VER=817.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -2013,7 +2013,7 @@ echo ===========================================================================
 echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
-echo                                                      *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
+echo                                                       *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
 echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
