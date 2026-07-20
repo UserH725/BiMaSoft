@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=817.00"
+set "LOCAL_VER=820.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -386,6 +386,18 @@ set "SH_DROP6=%UB_DIR%\spamhaus-drop-v6.conf"
 set "SH_DROP6_BAK=%SH_DROP6%.bak1"
 set "SH_DROP6_BAK2=%SH_DROP6%.bak2"
 set "SH_DROP6_BAK3=%SH_DROP6%.bak3"
+set "HZ_DYNDNS=%UB_DIR%\hagezi-dyndns.conf"
+set "HZ_DYNDNS_BAK=%HZ_DYNDNS%.bak1"
+set "HZ_DYNDNS_BAK2=%HZ_DYNDNS%.bak2"
+set "HZ_DYNDNS_BAK3=%HZ_DYNDNS%.bak3"
+set "HZ_HOSTER=%UB_DIR%\hagezi-hoster.conf"
+set "HZ_HOSTER_BAK=%HZ_HOSTER%.bak1"
+set "HZ_HOSTER_BAK2=%HZ_HOSTER%.bak2"
+set "HZ_HOSTER_BAK3=%HZ_HOSTER%.bak3"
+set "HZ_SPAMTLDS=%UB_DIR%\hagezi-spamtlds.conf"
+set "HZ_SPAMTLDS_BAK=%HZ_SPAMTLDS%.bak1"
+set "HZ_SPAMTLDS_BAK2=%HZ_SPAMTLDS%.bak2"
+set "HZ_SPAMTLDS_BAK3=%HZ_SPAMTLDS%.bak3"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak1"
 set "NCACHE_BAK2=%UB_DIR%\named.cache.bak2"
 set "NCACHE_BAK3=%UB_DIR%\named.cache.bak3"
@@ -414,6 +426,12 @@ set "F10D_ACT="
 set "F10D_RES="
 set "F10E_ACT="
 set "F10E_RES="
+set "F10F_ACT="
+set "F10F_RES="
+set "F10G_ACT="
+set "F10G_RES="
+set "F10H_ACT="
+set "F10H_RES="
 set "F14_ACT="
 set "F14_RES="
 
@@ -715,6 +733,14 @@ if exist "%HZ_TIF_IPS%" call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" 
 if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" >nul 2>&1
 if exist "%SH_DROP%" call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
 if exist "%SH_DROP%" copy /y "%SH_DROP%" "%SH_DROP_BAK%" >nul 2>&1
+if exist "%SH_DROP6%" call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
+if exist "%SH_DROP6%" copy /y "%SH_DROP6%" "%SH_DROP6_BAK%" >nul 2>&1
+if exist "%HZ_DYNDNS%" call :ROTATE_BAK "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS_BAK2%" "%HZ_DYNDNS_BAK3%"
+if exist "%HZ_DYNDNS%" copy /y "%HZ_DYNDNS%" "%HZ_DYNDNS_BAK%" >nul 2>&1
+if exist "%HZ_HOSTER%" call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
+if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" >nul 2>&1
+if exist "%HZ_SPAMTLDS%" call :ROTATE_BAK "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS_BAK2%" "%HZ_SPAMTLDS_BAK3%"
+if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -1201,6 +1227,171 @@ if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 call :LOGSTEP "NET" "!F10E_RES!"
 
+:: ================================================================
+:: F10F — HAGEZI DYNAMIC DNS (Protegge da abuso di servizi DDNS
+:: usati in campagne di phishing/C2 - complementa la lista TIF)
+:: ================================================================
+set "F10F_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Dynamic DNS e la preparo come RPZ attiva."
+call :UPDATE_UI 89
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
+if not exist "%HZ_DYNDNS%.tmp" if exist "%HZ_DYNDNS%" copy /y "%HZ_DYNDNS%" "%HZ_DYNDNS%.tmp" >nul 2>&1
+set "DYNDNS_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DYNDNS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if errorlevel 1 (
+    if exist "%HZ_DYNDNS_BAK%" (
+        copy /y "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS%" >nul 2>&1
+        call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+        set "F10F_RES=[     WARN     ] NET  >> HaGeZi DynDNS non scaricato, ripristinato dal backup: !DT_DYNDNS!"
+    ) else if exist "%HZ_DYNDNS%" (
+        call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+        set "F10F_RES=[     WARN     ] NET  >> HaGeZi DynDNS: download fallito, uso esistente: !DT_DYNDNS!"
+    ) else (
+        set "F10F_RES=[ERR ] NET  >> HaGeZi DynDNS non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_DYNDNS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_DYNDNS=0"
+        if exist "%HZ_DYNDNS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_DYNDNS%') { (Get-FileHash '%HZ_DYNDNS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_DYNDNS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_DYNDNS=1"
+            )
+        )
+        if "!SKIP_DYNDNS!"=="0" (
+            move /y "%HZ_DYNDNS%.tmp" "%HZ_DYNDNS%" >nul 2>&1
+            call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+            set "F10F_RES=[      OK      ] NET  >> HaGeZi DynDNS - RPZ aggiornato: !DT_DYNDNS!!DYNDNS_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+            set "F10F_RES=[     SKIP     ] NET  >> HaGeZi DynDNS - RPZ gia' aggiornato: !DT_DYNDNS!"
+        )
+    ) else (
+        if exist "%HZ_DYNDNS%" (
+            call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+            set "F10F_RES=[     SKIP     ] NET  >> HaGeZi DynDNS - file scaricato piccolo, uso esistente: !DT_DYNDNS!"
+        ) else (
+            set "F10F_RES=[    ERRORE    ] NET  >> HaGeZi DynDNS - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_DYNDNS%.tmp" del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
+call :UPDATE_UI 89
+call :LOGSTEP "NET" "!F10F_RES!"
+
+:: ================================================================
+:: F10G — HAGEZI BADWARE HOSTER (Protegge dall'uso malevolo di
+:: servizi di hosting spesso citati nei feed di threat intelligence)
+:: ================================================================
+set "F10G_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Badware Hoster e la preparo come RPZ attiva."
+call :UPDATE_UI 89
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
+if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
+set "HOSTER_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "HOSTER_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if errorlevel 1 (
+    if exist "%HZ_HOSTER_BAK%" (
+        copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        set "F10G_RES=[     WARN     ] NET  >> HaGeZi Badware Hoster non scaricato, ripristinato dal backup: !DT_HOSTER!"
+    ) else if exist "%HZ_HOSTER%" (
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        set "F10G_RES=[     WARN     ] NET  >> HaGeZi Badware Hoster: download fallito, uso esistente: !DT_HOSTER!"
+    ) else (
+        set "F10G_RES=[ERR ] NET  >> HaGeZi Badware Hoster non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_HOSTER=0"
+        if exist "%HZ_HOSTER%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
+            )
+        )
+        if "!SKIP_HOSTER!"=="0" (
+            move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            set "F10G_RES=[      OK      ] NET  >> HaGeZi Badware Hoster - RPZ aggiornato: !DT_HOSTER!!HOSTER_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            set "F10G_RES=[     SKIP     ] NET  >> HaGeZi Badware Hoster - RPZ gia' aggiornato: !DT_HOSTER!"
+        )
+    ) else (
+        if exist "%HZ_HOSTER%" (
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            set "F10G_RES=[     SKIP     ] NET  >> HaGeZi Badware Hoster - file scaricato piccolo, uso esistente: !DT_HOSTER!"
+        ) else (
+            set "F10G_RES=[    ERRORE    ] NET  >> HaGeZi Badware Hoster - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+call :UPDATE_UI 89
+call :LOGSTEP "NET" "!F10G_RES!"
+
+:: ================================================================
+:: F10H — HAGEZI MOST ABUSED TLDs (Protegge dai TLD a piu' alto
+:: tasso di abuso - forte protezione anti-typosquatting/scam)
+:: ================================================================
+set "F10H_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Most Abused TLDs e la preparo come RPZ attiva."
+call :UPDATE_UI 90
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
+if not exist "%HZ_SPAMTLDS%.tmp" if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+set "SPAMTLDS_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "SPAMTLDS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if errorlevel 1 (
+    if exist "%HZ_SPAMTLDS_BAK%" (
+        copy /y "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS%" >nul 2>&1
+        call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+        set "F10H_RES=[     WARN     ] NET  >> HaGeZi Most Abused TLDs non scaricato, ripristinato dal backup: !DT_SPAMTLDS!"
+    ) else if exist "%HZ_SPAMTLDS%" (
+        call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+        set "F10H_RES=[     WARN     ] NET  >> HaGeZi Most Abused TLDs: download fallito, uso esistente: !DT_SPAMTLDS!"
+    ) else (
+        set "F10H_RES=[ERR ] NET  >> HaGeZi Most Abused TLDs non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%HZ_SPAMTLDS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_SPAMTLDS=0"
+        if exist "%HZ_SPAMTLDS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_SPAMTLDS%') { (Get-FileHash '%HZ_SPAMTLDS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_SPAMTLDS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_SPAMTLDS=1"
+            )
+        )
+        if "!SKIP_SPAMTLDS!"=="0" (
+            move /y "%HZ_SPAMTLDS%.tmp" "%HZ_SPAMTLDS%" >nul 2>&1
+            call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+            set "F10H_RES=[      OK      ] NET  >> HaGeZi Most Abused TLDs - RPZ aggiornato: !DT_SPAMTLDS!!SPAMTLDS_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+            set "F10H_RES=[     SKIP     ] NET  >> HaGeZi Most Abused TLDs - RPZ gia' aggiornato: !DT_SPAMTLDS!"
+        )
+    ) else (
+        if exist "%HZ_SPAMTLDS%" (
+            call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+            set "F10H_RES=[     SKIP     ] NET  >> HaGeZi Most Abused TLDs - file scaricato piccolo, uso esistente: !DT_SPAMTLDS!"
+        ) else (
+            set "F10H_RES=[    ERRORE    ] NET  >> HaGeZi Most Abused TLDs - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+call :UPDATE_UI 90
+call :LOGSTEP "NET" "!F10H_RES!"
+
 
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -1222,6 +1413,10 @@ icacls "%HZ_PRO_PLUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrator
 icacls "%HZ_TIF%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_TIF_IPS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%SH_DROP%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%SH_DROP6%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_DYNDNS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_HOSTER%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%HZ_SPAMTLDS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
@@ -1508,6 +1703,12 @@ if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%
 if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
 if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
 if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
+if exist "%HZ_DYNDNS%"          call :ROTATE_BAK "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS_BAK2%" "%HZ_DYNDNS_BAK3%"
+if exist "%HZ_DYNDNS%"          copy /y "%HZ_DYNDNS%"          "%HZ_DYNDNS_BAK%"    >nul 2>&1
+if exist "%HZ_HOSTER%"          call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
+if exist "%HZ_HOSTER%"          copy /y "%HZ_HOSTER%"          "%HZ_HOSTER_BAK%"    >nul 2>&1
+if exist "%HZ_SPAMTLDS%"        call :ROTATE_BAK "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS_BAK2%" "%HZ_SPAMTLDS_BAK3%"
+if exist "%HZ_SPAMTLDS%"        copy /y "%HZ_SPAMTLDS%"        "%HZ_SPAMTLDS_BAK%"  >nul 2>&1
 
 
 :: named.cache (refresh biorario)
@@ -1873,6 +2074,132 @@ if not errorlevel 1 (
 if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 
+:: HaGeZi Dynamic DNS (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
+if not exist "%HZ_DYNDNS%.tmp" if exist "%HZ_DYNDNS%" copy /y "%HZ_DYNDNS%" "%HZ_DYNDNS%.tmp" >nul 2>&1
+set "DYNDNSR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DYNDNSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_DYNDNS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_DYNDNS=0"
+        if exist "%HZ_DYNDNS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_DYNDNS%') { (Get-FileHash '%HZ_DYNDNS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_DYNDNS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_DYNDNS=1"
+            )
+        )
+        if "!SKIP_DYNDNS!"=="0" (
+            move /y "%HZ_DYNDNS%.tmp" "%HZ_DYNDNS%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi DynDNS - RPZ aggiornato: !DT_DYNDNS!!DYNDNSR_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi DynDNS - RPZ gia' aggiornato: !DT_DYNDNS!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi DynDNS - file scaricato piccolo, uso esistente: !DT_DYNDNS!"
+    )
+) else (
+    if exist "%HZ_DYNDNS_BAK%" (
+        copy /y "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS%" >nul 2>&1
+        call :FILE_DATE "%HZ_DYNDNS%" DT_DYNDNS
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi DynDNS non scaricato, ripristinato dal backup: !DT_DYNDNS!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi DynDNS non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_DYNDNS%.tmp" del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
+
+:: HaGeZi Badware Hoster (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
+if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
+set "HOSTERR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_HOSTER=0"
+        if exist "%HZ_HOSTER%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
+            )
+        )
+        if "!SKIP_HOSTER!"=="0" (
+            move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Badware Hoster - RPZ aggiornato: !DT_HOSTER!!HOSTERR_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - RPZ gia' aggiornato: !DT_HOSTER!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - file scaricato piccolo, uso esistente: !DT_HOSTER!"
+    )
+) else (
+    if exist "%HZ_HOSTER_BAK%" (
+        copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Badware Hoster non scaricato, ripristinato dal backup: !DT_HOSTER!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Badware Hoster non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+
+:: HaGeZi Most Abused TLDs (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
+if not exist "%HZ_SPAMTLDS%.tmp" if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+set "SPAMTLDSR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "SPAMTLDSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_SPAMTLDS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_SPAMTLDS=0"
+        if exist "%HZ_SPAMTLDS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_SPAMTLDS%') { (Get-FileHash '%HZ_SPAMTLDS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_SPAMTLDS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_SPAMTLDS=1"
+            )
+        )
+        if "!SKIP_SPAMTLDS!"=="0" (
+            move /y "%HZ_SPAMTLDS%.tmp" "%HZ_SPAMTLDS%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Most Abused TLDs - RPZ aggiornato: !DT_SPAMTLDS!!SPAMTLDSR_TRYNOTE!"
+        ) else (
+            del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Most Abused TLDs - RPZ gia' aggiornato: !DT_SPAMTLDS!"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Most Abused TLDs - file scaricato piccolo, uso esistente: !DT_SPAMTLDS!"
+    )
+) else (
+    if exist "%HZ_SPAMTLDS_BAK%" (
+        copy /y "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS%" >nul 2>&1
+        call :FILE_DATE "%HZ_SPAMTLDS%" DT_SPAMTLDS
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Most Abused TLDs non scaricato, ripristinato dal backup: !DT_SPAMTLDS!"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Most Abused TLDs non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -2057,20 +2384,32 @@ if defined F10B_RES ( call :ARROW_BAR 12 87 89 & call :RES_COLOR "!F10B_RES!" & 
 if defined F10C_ACT ( call :PHASE_BAR 13 89 91 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10C_ACT!%ESC%[0m )
 if defined F10C_RES ( call :ARROW_BAR 13 89 91 & call :RES_COLOR "!F10C_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10D_ACT ( call :PHASE_BAR 14 91 93 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10D_ACT!%ESC%[0m )
-if defined F10D_RES ( call :ARROW_BAR 14 91 93 & call :RES_COLOR "!F10D_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10D_ACT ( call :PHASE_BAR 14 91 92 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10D_ACT!%ESC%[0m )
+if defined F10D_RES ( call :ARROW_BAR 14 91 92 & call :RES_COLOR "!F10D_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F11_ACT  ( call :PHASE_BAR 15 93 96 & echo %ESC%[38;2;144;238;144m!UI_PB! !F11_ACT!%ESC%[0m )
-if defined F11_RES  ( call :ARROW_BAR 15 93 96 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10E_ACT ( call :PHASE_BAR 15 92 93 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10E_ACT!%ESC%[0m )
+if defined F10E_RES ( call :ARROW_BAR 15 92 93 & call :RES_COLOR "!F10E_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F12_ACT  ( call :PHASE_BAR 16 96 98 & echo %ESC%[38;2;144;238;144m!UI_PB! !F12_ACT!%ESC%[0m )
-if defined F12_RES  ( call :ARROW_BAR 16 96 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10F_ACT ( call :PHASE_BAR 16 93 94 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10F_ACT!%ESC%[0m )
+if defined F10F_RES ( call :ARROW_BAR 16 93 94 & call :RES_COLOR "!F10F_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F13_ACT  ( call :PHASE_BAR 17 98 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
-if defined F13_RES  ( call :ARROW_BAR 17 98 100 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10G_ACT ( call :PHASE_BAR 17 94 95 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10G_ACT!%ESC%[0m )
+if defined F10G_RES ( call :ARROW_BAR 17 94 95 & call :RES_COLOR "!F10G_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F14_ACT  ( call :PHASE_BAR 18 100 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F14_ACT!%ESC%[0m )
-if defined F14_RES  ( call :ARROW_BAR 18 100 100 & call :RES_COLOR "!F14_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10H_ACT ( call :PHASE_BAR 18 95 96 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10H_ACT!%ESC%[0m )
+if defined F10H_RES ( call :ARROW_BAR 18 95 96 & call :RES_COLOR "!F10H_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F11_ACT  ( call :PHASE_BAR 19 96 97 & echo %ESC%[38;2;144;238;144m!UI_PB! !F11_ACT!%ESC%[0m )
+if defined F11_RES  ( call :ARROW_BAR 19 96 97 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F12_ACT  ( call :PHASE_BAR 20 97 98 & echo %ESC%[38;2;144;238;144m!UI_PB! !F12_ACT!%ESC%[0m )
+if defined F12_RES  ( call :ARROW_BAR 20 97 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F13_ACT  ( call :PHASE_BAR 21 98 99 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
+if defined F13_RES  ( call :ARROW_BAR 21 98 99 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F14_ACT  ( call :PHASE_BAR 22 99 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F14_ACT!%ESC%[0m )
+if defined F14_RES  ( call :ARROW_BAR 22 99 100 & call :RES_COLOR "!F14_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
 :PHASE_BAR
