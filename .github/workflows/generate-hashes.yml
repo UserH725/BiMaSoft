@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'service.conf'
-      - 'AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT'
+      - 'UnboundBunkerManager.TXT'
 
 jobs:
   hash:
@@ -15,7 +15,7 @@ jobs:
       - name: Genera hash SHA256
         run: |
           sha256sum service.conf | awk '{print $1}' > service.conf.sha256
-          sha256sum AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT | awk '{print $1}' > AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.sha256
+          sha256sum UnboundBunkerManager.TXT | awk '{print $1}' > UnboundBunkerManager.sha256
 
       - name: Commit e push degli hash
         run: |
