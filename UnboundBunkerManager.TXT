@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=821.00"
+set "LOCAL_VER=822.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -87,9 +87,9 @@ if exist "%VER_TMP%" (
 if "!SVC_VER!"=="" set "SVC_VER=N/A"
 
 :: --- SELF-UPDATE: confronta versione locale con cloud ---
-set "SELF_BAT=%UB_DIR%\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.BAT"
-set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.TXT"
-set "CLOUD_BAT_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS.sha256"
+set "SELF_BAT=%UB_DIR%\UnboundBunkerManager.BAT"
+set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerManager.TXT"
+set "CLOUD_BAT_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerManager.sha256"
 set "UPDATE_NEEDED=0"
 
 if not "!CLOUD_VER!"=="N/A" (
@@ -120,11 +120,11 @@ if "!UPDATE_NEEDED!"=="1" (
         )
         if "!VER_IN_FILE!"=="" set "VER_IN_FILE=unknown"
 
-        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
+        set "BAK_FILE=!UB_DIR!\UnboundBunkerManager_v!VER_IN_FILE!.BKP"
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!"
         if exist "!BAK_FILE!" (
             echo   [OK] Backup creato: !BAK_FILE!
-            call :PRUNE_BKP "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+            call :PRUNE_BKP "!UB_DIR!" "UnboundBunkerManager_v*.BKP"
         ) else (
             echo   [ERRORE] Backup fallito - verificare permessi su !UB_DIR!
         )
@@ -1603,9 +1603,9 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
             set /p VER_IN_FILE=<"!VER_TMP2!"
             del /f /q "!VER_TMP2!" >nul 2>&1
         )
-        set "BAK_FILE=!UB_DIR!\AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v!VER_IN_FILE!.BKP"
+        set "BAK_FILE=!UB_DIR!\UnboundBunkerManager_v!VER_IN_FILE!.BKP"
         copy /y "!FILE_TO_BAK!" "!BAK_FILE!" >nul 2>&1
-        call :PRUNE_BKP "!UB_DIR!" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+        call :PRUNE_BKP "!UB_DIR!" "UnboundBunkerManager_v*.BKP"
         
         set "CLD_VER_CLEAN=!CLOUD_VER:.=!"
         set "UPDATE_TMP=!UB_DIR!\UPDATE_!CLD_VER_CLEAN!.bat"
@@ -2482,7 +2482,7 @@ exit /b
 :: Usata dopo ogni self-update di BAT/service.conf (il nome include
 :: il numero di versione, quindi qui si pota per data, non per shift).
 :: Uso: call :PRUNE_BKP "<cartella>" "<pattern_glob>"
-:: Esempio: call :PRUNE_BKP "%UB_DIR%" "AVVIO_UNBOUND_CON_AGGIORNAMENTO_ROOT_SERVERS_v*.BKP"
+:: Esempio: call :PRUNE_BKP "%UB_DIR%" "UnboundBunkerManager_v*.BKP"
 :: ==================================================================
 :PRUNE_BKP
 set "PB_DIR=%~1"
