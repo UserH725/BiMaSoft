@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=822.00"
+set "LOCAL_VER=825.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -386,6 +386,9 @@ set "SH_DROP6=%UB_DIR%\spamhaus-drop-v6.conf"
 set "SH_DROP6_BAK=%SH_DROP6%.bak1"
 set "SH_DROP6_BAK2=%SH_DROP6%.bak2"
 set "SH_DROP6_BAK3=%SH_DROP6%.bak3"
+:: Eta' massima (in giorni) oltre la quale un file .raw.lastgood usato come
+:: fallback viene segnalato come dato potenzialmente obsoleto (vedi :LASTGOOD_AGE_WARN)
+set "LASTGOOD_MAX_AGE_DAYS=14"
 set "HZ_DYNDNS=%UB_DIR%\hagezi-dyndns.conf"
 set "HZ_DYNDNS_BAK=%HZ_DYNDNS%.bak1"
 set "HZ_DYNDNS_BAK2=%HZ_DYNDNS%.bak2"
@@ -1128,7 +1131,13 @@ set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la conve
 call :UPDATE_UI 89
 
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" "" "%SH_DROP%.raw.lastgood"
-if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
+set "USED_LASTGOOD_DROP=0"
+if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" (
+    copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP=1"
+)
+set "LG_WARN="
+if "!USED_LASTGOOD_DROP!"=="1" call :LASTGOOD_AGE_WARN "%SH_DROP%.raw.lastgood"
 set "DROP_TRYNOTE="
 if !CURL_TRY_NUM! GTR 1 set "DROP_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
@@ -1155,11 +1164,19 @@ if errorlevel 1 (
         if "!SKIP_DROP!"=="0" (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10D_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROP_TRYNOTE!"
+            if "!LG_WARN!"=="" (
+                set "F10D_RES=[      OK      ] NET  >> Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROP_TRYNOTE!"
+            ) else (
+                set "F10D_RES=[     WARN     ] NET  >> Spamhaus DROP - RPZ-IP da cache lastgood: !DT_DROP!!LG_WARN!"
+            )
         ) else (
             del /f /q "%SH_DROP%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+            if "!LG_WARN!"=="" (
+                set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+            ) else (
+                set "F10D_RES=[     WARN     ] NET  >> Spamhaus DROP - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP!!LG_WARN!"
+            )
         )
     ) else (
         if exist "%SH_DROP%" (
@@ -1181,7 +1198,16 @@ set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la con
 call :UPDATE_UI 89
 
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" "" "%SH_DROP6%.raw.lastgood"
-if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
+set "USED_LASTGOOD_DROP6=0"
+if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" (
+    copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP6=1"
+)
+set "LG_WARN6="
+if "!USED_LASTGOOD_DROP6!"=="1" (
+    call :LASTGOOD_AGE_WARN "%SH_DROP6%.raw.lastgood"
+    set "LG_WARN6=!LG_WARN!"
+)
 set "DROP6_TRYNOTE="
 if !CURL_TRY_NUM! GTR 1 set "DROP6_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
@@ -1208,11 +1234,19 @@ if errorlevel 1 (
         if "!SKIP_DROP6!"=="0" (
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            set "F10E_RES=[      OK      ] NET  >> Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6_TRYNOTE!"
+            if "!LG_WARN6!"=="" (
+                set "F10E_RES=[      OK      ] NET  >> Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6_TRYNOTE!"
+            ) else (
+                set "F10E_RES=[     WARN     ] NET  >> Spamhaus DROPv6 - RPZ-IP da cache lastgood: !DT_DROP6!!LG_WARN6!"
+            )
         ) else (
             del /f /q "%SH_DROP6%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+            if "!LG_WARN6!"=="" (
+                set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+            ) else (
+                set "F10E_RES=[     WARN     ] NET  >> Spamhaus DROPv6 - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP6!!LG_WARN6!"
+            )
         )
     ) else (
         if exist "%SH_DROP6%" (
@@ -1994,7 +2028,13 @@ if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 :: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
 :: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" "" "%SH_DROP%.raw.lastgood"
-if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
+set "USED_LASTGOOD_DROP=0"
+if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" (
+    copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP=1"
+)
+set "LG_WARN="
+if "!USED_LASTGOOD_DROP!"=="1" call :LASTGOOD_AGE_WARN "%SH_DROP%.raw.lastgood"
 set "DROPR_TRYNOTE="
 if !CURL_TRY_NUM! GTR 1 set "DROPR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
@@ -2011,11 +2051,19 @@ if not errorlevel 1 (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROPR_TRYNOTE!"
+            if "!LG_WARN!"=="" (
+                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROPR_TRYNOTE!"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP da cache lastgood: !DT_DROP!!LG_WARN!"
+            )
         ) else (
             del /f /q "%SH_DROP%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP%" DT_DROP
-            call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+            if "!LG_WARN!"=="" (
+                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP!!LG_WARN!"
+            )
         )
     ) else (
         call :FILE_DATE "%SH_DROP%" DT_DROP
@@ -2035,7 +2083,16 @@ if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 
 :: Spamhaus DROPv6 (refresh biorario)
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" "" "%SH_DROP6%.raw.lastgood"
-if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
+set "USED_LASTGOOD_DROP6=0"
+if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" (
+    copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP6=1"
+)
+set "LG_WARN6="
+if "!USED_LASTGOOD_DROP6!"=="1" (
+    call :LASTGOOD_AGE_WARN "%SH_DROP6%.raw.lastgood"
+    set "LG_WARN6=!LG_WARN!"
+)
 set "DROP6R_TRYNOTE="
 if !CURL_TRY_NUM! GTR 1 set "DROP6R_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
@@ -2052,11 +2109,19 @@ if not errorlevel 1 (
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6R_TRYNOTE!"
+            if "!LG_WARN6!"=="" (
+                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6R_TRYNOTE!"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP da cache lastgood: !DT_DROP6!!LG_WARN6!"
+            )
         ) else (
             del /f /q "%SH_DROP6%.tmp" >nul 2>&1
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+            if "!LG_WARN6!"=="" (
+                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP6!!LG_WARN6!"
+            )
         )
     ) else (
         call :FILE_DATE "%SH_DROP6%" DT_DROP6
@@ -2552,6 +2617,28 @@ curl -s -f %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
+
+:: ==================================================================
+:: LASTGOOD_AGE_WARN - Controlla l'eta' di un file .raw.lastgood usato
+:: come fallback (quando il download live fallisce o non e' necessario
+:: per via del controllo -z). Se l'eta' supera LASTGOOD_MAX_AGE_DAYS,
+:: valorizza LG_WARN con un suffisso di ATTENZIONE da accodare al
+:: messaggio di stato, cosi' il fallback non risulta piu' silenzioso.
+:: Uso: call :LASTGOOD_AGE_WARN "<percorso_file_lastgood>"
+:: Variabili di ritorno: LG_WARN (vuota se nessun problema), LG_AGE_DAYS
+:: ==================================================================
+:LASTGOOD_AGE_WARN
+set "LGW_FILE=%~1"
+set "LG_WARN="
+set "LG_AGE_DAYS="
+if not exist "%LGW_FILE%" exit /b 0
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "try { [math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%LGW_FILE%').LastWriteTime).TotalDays) } catch { '' }"`) do set "LG_AGE_DAYS=%%D"
+if not defined LG_AGE_DAYS exit /b 0
+if "!LG_AGE_DAYS!"=="" exit /b 0
+if !LG_AGE_DAYS! GEQ %LASTGOOD_MAX_AGE_DAYS% (
+    set "LG_WARN=  [ATTENZIONE: cache .lastgood vecchia di !LG_AGE_DAYS! giorni - Spamhaus irraggiungibile da tempo, verificare la connettivita']"
+)
+exit /b 0
 
 :FILE_DATE
 set "%~2=N/A"
