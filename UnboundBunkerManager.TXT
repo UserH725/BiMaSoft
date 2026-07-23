@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=825.00"
+set "LOCAL_VER=826.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -2325,6 +2325,10 @@ goto :FINALIZZAZIONE
 if "!MIN_WS!"=="" set "MIN_WS=838860800"
 if "!MAX_WS!"=="" set "MAX_WS=2147483648"
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]!MIN_WS!; $p.MaxWorkingSet = [IntPtr]!MAX_WS! }; [System.GC]::Collect()" >nul 2>&1
+
+:: --- INVIO TELEMETRIA TELEGRAM ---
+call :SEND_TELEGRAM_TELEMETRY
+
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
@@ -2912,7 +2916,7 @@ if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
 :: 1. Esecuzione PowerShell su una singola riga piatta
 ::    FIX: usa # come separatore invece di ^| per evitare l'errore di sintassi
 ::         causato dall'interpretazione del pipe da parte di CMD
-powershell -NoProfile -Command "$l='N/A'; $c='N/A'; $u='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch {}; ($l + '#' + $c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+powershell -NoProfile -Command "$l='N/A'; $c='N/A'; $u='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch {}; ($l + '#' + $c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
 
 :: 2. Lettura del risultato (3 token: versione locale # versione cloud # url download)
 if not exist "%UB_OUT_TMP%" goto :UB_OUTPUT
@@ -3082,6 +3086,9 @@ echo.
 exit /b
 
 :FINALIZZAZIONE_RAPIDA
+:: --- INVIO TELEMETRIA TELEGRAM ---
+call :SEND_TELEGRAM_TELEMETRY
+
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
@@ -3094,3 +3101,11 @@ echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m                  PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 3 >nul
 exit
+
+:: ==================================================================
+:: SUBROUTINE: INVIO TELEMETRIA A TELEGRAM
+:: ==================================================================
+:SEND_TELEGRAM_TELEMETRY
+:: Invio affidabile della telemetria a Telegram tramite PowerShell (singola riga)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $msg = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*' + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; try { [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10) } catch {}" >nul 2>&1
+exit /b
