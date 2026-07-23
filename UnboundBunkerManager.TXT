@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=826.00"
+set "LOCAL_VER=827.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -3106,6 +3106,16 @@ exit
 :: SUBROUTINE: INVIO TELEMETRIA A TELEGRAM
 :: ==================================================================
 :SEND_TELEGRAM_TELEMETRY
-:: Invio affidabile della telemetria a Telegram tramite PowerShell (singola riga)
+:: Verifica se la risoluzione DNS locale verso api.telegram.org e' funzionante
+set "TG_DNS_RESET=0"
+powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('api.telegram.org') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    :: Se il DNS locale (127.0.0.1) non risponde o AdGuard non e' attivo, usa temporaneamente 1.1.1.1
+    call :DNS_FALLBACK_ON
+    set "TG_DNS_RESET=1"
+)
+
 powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $msg = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*' + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; try { [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10) } catch {}" >nul 2>&1
+
+if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
