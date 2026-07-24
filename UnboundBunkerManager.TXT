@@ -1,6 +1,6 @@
 @echo off
 :: ==================================================================
-:: = UNBOUND BUNKER MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA   =
+:: =  UNBOUND BUNKER MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA  =
 :: ==================================================================
 :: CODICE STRUTTURATO PER ELIMINAZIONE SFARFALLIO (ZERO POWERSHELL NELL'UI LOOP).
 :: FUNZIONAMENTO IN CASO DI BLACKOUT RETE:
