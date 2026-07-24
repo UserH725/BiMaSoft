@@ -1,14 +1,14 @@
 @echo off
-:: ==================================================================================
+:: ==================================================================
 :: =        UNBOUND BUNKER MANAGER  -  INFORMAZIONI OPERATIVE DI EMERGENZA          =
-:: ==================================================================================
+:: ==================================================================
 :: CODICE STRUTTURATO PER ELIMINAZIONE SFARFALLIO (ZERO POWERSHELL NELL'UI LOOP).
 :: FUNZIONAMENTO IN CASO DI BLACKOUT RETE:
 :: 1. Se Unbound è fermo o in errore, lo script forza temporaneamente i DNS pubblici
 ::    (1.1.1.1/9.9.9.9) sulle schede per completare i download di root e filtri.
 :: 2. Se viene rilevato un errore di sintassi nel file service.conf, la subroutine 
 ::    :CONFIG_ERROR ripristina all'istante l'ultimo backup funzionante (.BKP).
-:: ==================================================================================
+:: ==================================================================
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=828.00"
+set "LOCAL_VER=829.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -957,6 +957,10 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+if exist "%HZ_PRO_PLUS%" (
+    call :GET_RPZ_LINES "%HZ_PRO_PLUS%" RPZ_L_CNT
+    set "F10_RES=!F10_RES! [!RPZ_L_CNT! righe]"
+)
 call :UPDATE_UI 85
 call :LOGSTEP "NET" "!F10_RES!"
 
@@ -1068,6 +1072,10 @@ if "!TIF_DL_ERROR!"=="1" (
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+if exist "%HZ_TIF%" (
+    call :GET_RPZ_LINES "%HZ_TIF%" RPZ_L_CNT
+    set "F10B_RES=!F10B_RES! [!RPZ_L_CNT! righe]"
+)
 call :LOGSTEP "NET" "!F10B_RES!"
 
 :: ================================================================
@@ -1122,6 +1130,10 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+if exist "%HZ_TIF_IPS%" (
+    call :GET_RPZ_LINES "%HZ_TIF_IPS%" RPZ_L_CNT
+    set "F10C_RES=!F10C_RES! [!RPZ_L_CNT! righe]"
+)
 call :LOGSTEP "NET" "!F10C_RES!"
 
 :: ================================================================
@@ -1189,6 +1201,10 @@ if errorlevel 1 (
 )
 if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
+if exist "%SH_DROP%" (
+    call :GET_RPZ_LINES "%SH_DROP%" RPZ_L_CNT
+    set "F10D_RES=!F10D_RES! [!RPZ_L_CNT! righe]"
+)
 call :LOGSTEP "NET" "!F10D_RES!"
 
 :: ================================================================
@@ -1259,6 +1275,10 @@ if errorlevel 1 (
 )
 if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+if exist "%SH_DROP6%" (
+    call :GET_RPZ_LINES "%SH_DROP6%" RPZ_L_CNT
+    set "F10E_RES=!F10E_RES! [!RPZ_L_CNT! righe]"
+)
 call :LOGSTEP "NET" "!F10E_RES!"
 
 :: ================================================================
@@ -1313,6 +1333,10 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_DYNDNS%.tmp" del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
+if exist "%HZ_DYNDNS%" (
+    call :GET_RPZ_LINES "%HZ_DYNDNS%" RPZ_L_CNT
+    set "F10F_RES=!F10F_RES! [!RPZ_L_CNT! righe]"
+)
 call :UPDATE_UI 89
 call :LOGSTEP "NET" "!F10F_RES!"
 
@@ -1368,6 +1392,10 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+if exist "%HZ_HOSTER%" (
+    call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_L_CNT
+    set "F10G_RES=!F10G_RES! [!RPZ_L_CNT! righe]"
+)
 call :UPDATE_UI 89
 call :LOGSTEP "NET" "!F10G_RES!"
 
@@ -1423,6 +1451,10 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
+if exist "%HZ_SPAMTLDS%" (
+    call :GET_RPZ_LINES "%HZ_SPAMTLDS%" RPZ_L_CNT
+    set "F10H_RES=!F10H_RES! [!RPZ_L_CNT! righe]"
+)
 call :UPDATE_UI 90
 call :LOGSTEP "NET" "!F10H_RES!"
 
@@ -1680,7 +1712,7 @@ if exist "%VER_TMP%" (
     set /p SVC_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
 )
-if not "!SVC_VER!"=="" if not "!SVC_VER!"=="N/A" (
+if not "!SVC_VER!"="" if not "!SVC_VER!"=="N/A" (
     set "LOCAL_SVC_VER=N/A"
     if exist "!LOCAL_SVC_VER_FILE!" set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
@@ -2326,8 +2358,8 @@ if "!MIN_WS!"=="" set "MIN_WS=838860800"
 if "!MAX_WS!"=="" set "MAX_WS=2147483648"
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]!MIN_WS!; $p.MaxWorkingSet = [IntPtr]!MAX_WS! }; [System.GC]::Collect()" >nul 2>&1
 
-:: --- INVIO TELEMETRIA TELEGRAM ---
-call :SEND_TELEGRAM_TELEMETRY
+:: --- INVIO TELEMETRIA TELEGRAM (ASINCRONO / FIRE-AND-FORGET) ---
+start /b "" powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $msg = $hdr + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + $st; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 5) } catch {}" >nul 2>&1
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -3086,8 +3118,8 @@ echo.
 exit /b
 
 :FINALIZZAZIONE_RAPIDA
-:: --- INVIO TELEMETRIA TELEGRAM ---
-call :SEND_TELEGRAM_TELEMETRY
+:: --- INVIO TELEMETRIA TELEGRAM (ASINCRONO / FIRE-AND-FORGET) ---
+start /b "" powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $msg = $hdr + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + $st; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 5) } catch {}" >nul 2>&1
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -3118,4 +3150,14 @@ if errorlevel 1 (
 powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' } else { $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; $st = '🟢 *STATO:* Sistema perfettamente operativo' }; $msg = $hdr + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + $st + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; try { [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10) } catch {}" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE CHIRURGICA: Conteggio righe RPZ istantaneo (Memoria Zero)
+:: Uso: call :GET_RPZ_LINES "<percorso_file>" VAR_DESTINAZIONE
+:: ==================================================================
+:GET_RPZ_LINES
+set "%~2=0"
+if not exist "%~1" exit /b
+for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "try { [Linq.Enumerable]::Count([System.IO.File]::ReadLines('%~1')).ToString('N0') } catch { '0' }"`) do set "%~2=%%C"
 exit /b
