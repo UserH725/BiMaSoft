@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=827.00"
+set "LOCAL_VER=828.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -782,7 +782,7 @@ call :UPDATE_UI 80
 set "NC_URL=https://www.internic.net/domain/named.cache"
 set "NC_TMP=%UB_DIR%\named.cache.tmp"
 
-:: Se il file esiste ed e' aggiornato da meno di 24h, mostra SKIP e salta il download
+:: Se il file existe ed e' aggiornato da meno di 24h, mostra SKIP e salta il download
 if exist "%UB_DIR%\named.cache" (
     call :FILE_AGE_HOURS "%UB_DIR%\named.cache" NC_AGE
     if !NC_AGE! LSS 24 (
@@ -1452,7 +1452,7 @@ icacls "%HZ_DYNDNS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:
 icacls "%HZ_HOSTER%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_SPAMTLDS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
-set "F12_RES=[      OK      ] ACL  >> Permessi applicati ai file di lavoro."
+set "F12_RES=[      OK      ] SECU >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
 
 :: FASE 13 - Azione
@@ -3103,7 +3103,7 @@ timeout /t 3 >nul
 exit
 
 :: ==================================================================
-:: SUBROUTINE: INVIO TELEMETRIA A TELEGRAM
+:: SUBROUTINE: INVIO TELEMETRIA E SEGNALAZIONE ANOMALIE A TELEGRAM
 :: ==================================================================
 :SEND_TELEGRAM_TELEMETRY
 :: Verifica se la risoluzione DNS locale verso api.telegram.org e' funzionante
@@ -3115,7 +3115,7 @@ if errorlevel 1 (
     set "TG_DNS_RESET=1"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $msg = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*' + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; try { [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10) } catch {}" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' } else { $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; $st = '🟢 *STATO:* Sistema perfettamente operativo' }; $msg = $hdr + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + $st + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; try { [void](Invoke-RestMethod -Uri ('https://api.telegram.org/bot' + $token + '/sendMessage') -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10) } catch {}" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
