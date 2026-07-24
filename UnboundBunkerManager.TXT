@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=830.00"
+set "LOCAL_VER=831.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -313,10 +313,11 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 :: =======================================================================
 call :CHECK_UNBOUND_VERSION
 
-:: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO + TASK LOGON ---
+:: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO + TASK LOGON + TASK REPORT 23:59 ---
 set "TASK_NAME=Unbound_Bunker_Daily"
 set "TASK_NAME_2H=Unbound_Bunker_2h"
 set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
+set "TASK_NAME_REPORT=Unbound_Bunker_DailyReport"
 
 :: 1. CONTROLLO E CREAZIONE TASK GIORNALIERO
 schtasks /query /tn "%TASK_NAME%" >nul 2>&1
@@ -351,7 +352,7 @@ schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c \"\"%~f0\" --refresh\"" /s
 :: 3. CONTROLLO E CREAZIONE TASK DI AVVIO A VIDEO AL LOGON
 schtasks /query /tn "%TASK_NAME_BOOT%" >nul 2>&1
 if %errorLevel% NEQ 0 goto :MAKE_BOOT_TASK
-goto :TASKS_DONE
+goto :CHECK_REPORT_TASK
 
 :MAKE_BOOT_TASK
 echo [+] Creazione del task pianificato all'accesso utente (A VIDEO)...
@@ -360,6 +361,16 @@ if %errorLevel% NEQ 0 (
     echo [WARN] Task boot con gruppo Users fallito, fallback su utente corrente...
     schtasks /create /tn "%TASK_NAME_BOOT%" /tr "cmd.exe /c \"\"%~f0\"\"" /sc onlogon /ru "%USERNAME%" /rl highest /f >nul 2>&1
 )
+
+:CHECK_REPORT_TASK
+:: 4. CONTROLLO E CREAZIONE TASK REPORT STATISTICO GIORNALIERO (23:59)
+schtasks /query /tn "%TASK_NAME_REPORT%" >nul 2>&1
+if %errorLevel% NEQ 0 goto :MAKE_REPORT_TASK
+goto :TASKS_DONE
+
+:MAKE_REPORT_TASK
+echo [+] Creazione del task pianificato per il report statistico delle 23:59...
+schtasks /create /tn "%TASK_NAME_REPORT%" /tr "cmd.exe /c \"\"%~f0\" --dailyreport\"" /sc daily /st 23:59 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
 :TASKS_DONE
 
@@ -455,6 +466,7 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
+if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
 
 set "SKIP_MAINTENANCE=0"
 if "%~1"=="--scheduled" (
@@ -2318,6 +2330,108 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
+exit /b
+
+:: ============================================================================
+:: REPORT STATISTICO GIORNALIERO (23:59): query totali, blocchi RPZ, cache hit.
+:: Legge unbound-control stats (il comando "stats" resetta i contatori dopo la
+:: lettura, quindi il prossimo report parte da zero) e conta i blocchi per
+:: lista dal log RPZ (formato "rpz: applied [nome-lista] ..."), poi invia il
+:: riepilogo su Telegram e svuota il log per la giornata successiva, come
+:: previsto dal commento in service.conf ("svuotato ogni notte").
+:: ============================================================================
+:DAILY_REPORT_ONLY
+title UNBOUND BUNKER - REPORT GIORNALIERO 23:59
+
+if not exist "%UB_DIR%" (
+    call :LOGFAIL "REPORT" "Directory Unbound non trovata, report saltato"
+    exit /b
+)
+
+:: --- Data/ora leggibile e indipendente dal locale di sistema ---
+set "RPT_DT_TMP=%TEMP%\ub_rpt_dt.txt"
+if exist "%RPT_DT_TMP%" del /f /q "%RPT_DT_TMP%" >nul 2>&1
+powershell -NoProfile -Command "(Get-Date).ToString('dd.MM.yyyy - HH:mm') | Out-File -FilePath '%RPT_DT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+set "RPT_DT=N/D"
+if exist "%RPT_DT_TMP%" (
+    set /p RPT_DT=<"%RPT_DT_TMP%"
+    del /f /q "%RPT_DT_TMP%" >nul 2>&1
+)
+
+:: --- Query totali ed efficienza cache da unbound-control (reset incluso in "stats") ---
+set "UC_EXE=%UB_DIR%\unbound-control.exe"
+set "UC_TMP=%TEMP%\ub_stats.txt"
+if exist "%UC_TMP%" del /f /q "%UC_TMP%" >nul 2>&1
+set "TOT_QUERIES=0"
+set "TOT_CACHEHITS=0"
+if exist "%UC_EXE%" (
+    "%UC_EXE%" stats > "%UC_TMP%" 2>nul
+    if exist "%UC_TMP%" (
+        for /f "tokens=2 delims==" %%V in ('findstr /B /C:"total.num.queries=" "%UC_TMP%"') do set "TOT_QUERIES=%%V"
+        for /f "tokens=2 delims==" %%V in ('findstr /B /C:"total.num.cachehits=" "%UC_TMP%"') do set "TOT_CACHEHITS=%%V"
+        del /f /q "%UC_TMP%" >nul 2>&1
+    )
+) else (
+    call :LOGFAIL "REPORT" "unbound-control.exe non trovato, query totali non disponibili"
+)
+set "TOT_QUERIES=%TOT_QUERIES: =%"
+set "TOT_CACHEHITS=%TOT_CACHEHITS: =%"
+if "%TOT_QUERIES%"=="" set "TOT_QUERIES=0"
+if "%TOT_CACHEHITS%"=="" set "TOT_CACHEHITS=0"
+
+:: --- Conteggio blocchi per lista RPZ dal log (ricerca letterale con /L: le parentesi
+:: quadre sono metacaratteri per findstr, quindi vanno trattate come testo puro) ---
+set "RPZ_LOG=%UB_DIR%\unbound.log"
+set "BLK_PROPLUS=0"
+set "BLK_TIF=0"
+set "BLK_TIFIPS=0"
+set "BLK_SPAM4=0"
+set "BLK_SPAM6=0"
+set "BLK_DYNDNS=0"
+set "BLK_HOSTER=0"
+set "BLK_SPAMTLDS=0"
+if exist "%RPZ_LOG%" (
+    for /f %%C in ('findstr /L /C:"[hagezi-pro-plus]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_PROPLUS=%%C"
+    for /f %%C in ('findstr /L /C:"[hagezi-tif]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_TIF=%%C"
+    for /f %%C in ('findstr /L /C:"[hagezi-tif-ips]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_TIFIPS=%%C"
+    for /f %%C in ('findstr /L /C:"[spamhaus-drop-v4]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_SPAM4=%%C"
+    for /f %%C in ('findstr /L /C:"[spamhaus-drop-v6]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_SPAM6=%%C"
+    for /f %%C in ('findstr /L /C:"[hagezi-dyndns]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_DYNDNS=%%C"
+    for /f %%C in ('findstr /L /C:"[hagezi-hoster]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_HOSTER=%%C"
+    for /f %%C in ('findstr /L /C:"[hagezi-spamtlds]" "%RPZ_LOG%" ^| find /c /v ""') do set "BLK_SPAMTLDS=%%C"
+) else (
+    call :LOGFAIL "REPORT" "unbound.log non trovato, conteggio blocchi RPZ non disponibile"
+)
+set /a "SPAM_TOT=BLK_SPAM4+BLK_SPAM6"
+set /a "BLK_TOT=BLK_PROPLUS+BLK_TIF+BLK_TIFIPS+SPAM_TOT+BLK_DYNDNS+BLK_HOSTER+BLK_SPAMTLDS"
+
+:: --- Stato motore Unbound ---
+set "ENGINE_LINE=🟢 Stato Engine: Operativo senza anomalie"
+sc query unbound | find "RUNNING" >nul 2>&1
+if errorlevel 1 set "ENGINE_LINE=🔴 Stato Engine: SERVIZIO UNBOUND FERMO!"
+
+:: --- Verifica DNS verso api.telegram.org, con fallback come nella telemetria di avvio ---
+set "TG_LOG=%UB_DIR%\telegram_error.log"
+set "TG_DNS_RESET=0"
+powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('api.telegram.org') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    echo [%date% %time%] DNS locale non risolve api.telegram.org nel report giornaliero - fallback a 1.1.1.1 attivato >> "%TG_LOG%"
+    call :DNS_FALLBACK_ON
+    set "TG_DNS_RESET=1"
+)
+
+:: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $ic = [System.Globalization.CultureInfo]::InvariantCulture; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 UNBOUND BUNKER - REPORT GIORNALIERO' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '💻 Host: `' + $env:COMPUTERNAME + '`' + [char]10 + '------------------------------------------' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%)' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%`' + [char]10 + [char]10 + '🏆 DETTAGLIO INTERVENTO LISTE RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus: `!BLK_PROPLUS!` blocchi' + [char]10 + '• 🥈 HaGeZi TIF: `!BLK_TIF!` blocchi' + [char]10 + '• 🥉 HaGeZi TIF-IPS: `!BLK_TIFIPS!` blocchi' + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6): `!SPAM_TOT!` blocchi' + [char]10 + '• 🌐 HaGeZi DynDNS: `!BLK_DYNDNS!` blocchi' + [char]10 + '• 📦 HaGeZi Badware Hoster: `!BLK_HOSTER!` blocchi' + [char]10 + '• 🚫 HaGeZi Most Abused TLDs: `!BLK_SPAMTLDS!` blocchi' + [char]10 + [char]10 + '!ENGINE_LINE!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report giornaliero fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+
+if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
+
+:: --- Svuota il log RPZ per la nuova giornata (come previsto in service.conf) ---
+if exist "%RPZ_LOG%" (
+    type nul > "%RPZ_LOG%" 2>nul
+    call :LOGSTEP "REPORT" "Log RPZ svuotato dopo l'invio del report giornaliero"
+)
+
+call :LOGSTEP "REPORT" "Report giornaliero inviato: !TOT_QUERIES! query, !BLK_TOT! blocchi RPZ totali"
 exit /b
 
 :CONFIG_ERROR
