@@ -40,9 +40,9 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
-title UNBOUND BUNKER
-:: --- BLOCCA CHIUSURA FINESTRA E INGRANDISCE IMMEDIATAMENTE A TUTTO SCHERMO ---
-powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::DeleteMenu($menu, 0xF060, 0x00000000); $CS::ShowWindow($hwnd, 3); }" >nul 2>&1
+title UNBOUND BUNKER by Mauro Bigoni
+:: --- BLOCCA CHIUSURA, MINIMIZZA, INGRANDISCI E DOPPIO CLICK SULLA BARRA DEL TITOLO ---
+powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags); [DllImport(\"user32.dll\")] public static extern bool EnableMenuItem(IntPtr hMenu, uint uIDEnableItem, uint uEnable); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex); [DllImport(\"user32.dll\")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong); [DllImport(\"user32.dll\")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::EnableMenuItem($menu, 0xF120, 0x0001); $CS::EnableMenuItem($menu, 0xF030, 0x0001); $CS::EnableMenuItem($menu, 0xF020, 0x0001); $CS::EnableMenuItem($menu, 0xF060, 0x0001); $CS::DeleteMenu($menu, 0xF060, 0); $CS::DeleteMenu($menu, 0xF020, 0); $CS::DeleteMenu($menu, 0xF030, 0); $CS::DeleteMenu($menu, 0xF120, 0); $style = $CS::GetWindowLong($hwnd, -16); $style = $style -band (-bnot 0x00020000) -band (-bnot 0x00010000) -band (-bnot 0x00040000) -band (-bnot 0x00C00000); $CS::SetWindowLong($hwnd, -16, $style); $CS::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 0, 0, 0x0037); $CS::ShowWindow($hwnd, 3); }" >nul 2>&1
 
 :: ==================================================================
 :: INIZIO SEQUENZA OPERATIVA DEL BUNKER
@@ -63,7 +63,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=831.00"
+set "LOCAL_VER=832.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -971,7 +971,7 @@ if errorlevel 1 (
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 if exist "%HZ_PRO_PLUS%" (
     call :GET_RPZ_LINES "%HZ_PRO_PLUS%" RPZ_L_CNT
-    set "F10_RES=!F10_RES! [!RPZ_L_CNT! righe]"
+    set "F10_RES=!F10_RES! [!RPZ_L_CNT! elementi]"
 )
 call :UPDATE_UI 85
 call :LOGSTEP "NET" "!F10_RES!"
@@ -1086,7 +1086,7 @@ if "!TIF_DL_ERROR!"=="1" (
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 if exist "%HZ_TIF%" (
     call :GET_RPZ_LINES "%HZ_TIF%" RPZ_L_CNT
-    set "F10B_RES=!F10B_RES! [!RPZ_L_CNT! righe]"
+    set "F10B_RES=!F10B_RES! [!RPZ_L_CNT! elementi]"
 )
 call :LOGSTEP "NET" "!F10B_RES!"
 
@@ -1144,7 +1144,7 @@ if errorlevel 1 (
 if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
 if exist "%HZ_TIF_IPS%" (
     call :GET_RPZ_LINES "%HZ_TIF_IPS%" RPZ_L_CNT
-    set "F10C_RES=!F10C_RES! [!RPZ_L_CNT! righe]"
+    set "F10C_RES=!F10C_RES! [!RPZ_L_CNT! elementi]"
 )
 call :LOGSTEP "NET" "!F10C_RES!"
 
@@ -1215,7 +1215,7 @@ if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
 if exist "%SH_DROP%" (
     call :GET_RPZ_LINES "%SH_DROP%" RPZ_L_CNT
-    set "F10D_RES=!F10D_RES! [!RPZ_L_CNT! righe]"
+    set "F10D_RES=!F10D_RES! [!RPZ_L_CNT! elementi]"
 )
 call :LOGSTEP "NET" "!F10D_RES!"
 
@@ -1289,7 +1289,7 @@ if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
 if exist "%SH_DROP6%" (
     call :GET_RPZ_LINES "%SH_DROP6%" RPZ_L_CNT
-    set "F10E_RES=!F10E_RES! [!RPZ_L_CNT! righe]"
+    set "F10E_RES=!F10E_RES! [!RPZ_L_CNT! elementi]"
 )
 call :LOGSTEP "NET" "!F10E_RES!"
 
@@ -1347,7 +1347,7 @@ if errorlevel 1 (
 if exist "%HZ_DYNDNS%.tmp" del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
 if exist "%HZ_DYNDNS%" (
     call :GET_RPZ_LINES "%HZ_DYNDNS%" RPZ_L_CNT
-    set "F10F_RES=!F10F_RES! [!RPZ_L_CNT! righe]"
+    set "F10F_RES=!F10F_RES! [!RPZ_L_CNT! elementi]"
 )
 call :UPDATE_UI 89
 call :LOGSTEP "NET" "!F10F_RES!"
@@ -1406,7 +1406,7 @@ if errorlevel 1 (
 if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
 if exist "%HZ_HOSTER%" (
     call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_L_CNT
-    set "F10G_RES=!F10G_RES! [!RPZ_L_CNT! righe]"
+    set "F10G_RES=!F10G_RES! [!RPZ_L_CNT! elementi]"
 )
 call :UPDATE_UI 89
 call :LOGSTEP "NET" "!F10G_RES!"
@@ -1465,7 +1465,7 @@ if errorlevel 1 (
 if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 if exist "%HZ_SPAMTLDS%" (
     call :GET_RPZ_LINES "%HZ_SPAMTLDS%" RPZ_L_CNT
-    set "F10H_RES=!F10H_RES! [!RPZ_L_CNT! righe]"
+    set "F10H_RES=!F10H_RES! [!RPZ_L_CNT! elementi]"
 )
 call :UPDATE_UI 90
 call :LOGSTEP "NET" "!F10H_RES!"
@@ -3253,17 +3253,27 @@ exit
 :: ==================================================================
 :SEND_TELEGRAM_TELEMETRY
 set "TG_LOG=%UB_DIR%\telegram_error.log"
+
+:: Conteggio istantaneo degli elementi per tutte le 8 liste RPZ
+call :GET_RPZ_LINES "%HZ_PRO_PLUS%" RPZ_PROPLUS_CNT
+call :GET_RPZ_LINES "%HZ_TIF%" RPZ_TIF_CNT
+call :GET_RPZ_LINES "%HZ_TIF_IPS%" RPZ_TIFIPS_CNT
+call :GET_RPZ_LINES "%SH_DROP%" RPZ_DROP_CNT
+call :GET_RPZ_LINES "%SH_DROP6%" RPZ_DROP6_CNT
+call :GET_RPZ_LINES "%HZ_DYNDNS%" RPZ_DYNDNS_CNT
+call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_HOSTER_CNT
+call :GET_RPZ_LINES "%HZ_SPAMTLDS%" RPZ_SPAMTLDS_CNT
+
 :: Verifica se la risoluzione DNS locale verso api.telegram.org e' funzionante
 set "TG_DNS_RESET=0"
 powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('api.telegram.org') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    :: Se il DNS locale (127.0.0.1) non risponde o AdGuard non e' attivo, usa temporaneamente 1.1.1.1
     echo [%date% %time%] DNS locale non risolve api.telegram.org - fallback a 1.1.1.1 attivato >> "%TG_LOG%"
     call :DNS_FALLBACK_ON
     set "TG_DNS_RESET=1"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' } else { $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; $st = '🟢 *STATO:* Sistema perfettamente operativo' }; $msg = $hdr + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + $st + [char]10 + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!'; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '==========================================' + [char]10 + '• *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '==========================================' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '  - HaGeZi Pro Plus : !RPZ_PROPLUS_CNT! elementi' + [char]10 + '  - HaGeZi TIF      : !RPZ_TIF_CNT! elementi' + [char]10 + '  - HaGeZi TIF-IPS  : !RPZ_TIFIPS_CNT! elementi' + [char]10 + '  - Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '  - Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '  - HaGeZi DynDNS   : !RPZ_DYNDNS_CNT! elementi' + [char]10 + '  - HaGeZi Hoster   : !RPZ_HOSTER_CNT! elementi' + [char]10 + '  - HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '------------------------------------------' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '------------------------------------------' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
