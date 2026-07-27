@@ -1,14 +1,14 @@
 @echo off
-:: ==================================================================
-:: =  UNBOUND BUNKER MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA  =
-:: ==================================================================
+:: ===================================================================================
+:: =          UNBOUND BUNKER MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA           =
+:: ===================================================================================
 :: CODICE STRUTTURATO PER ELIMINAZIONE SFARFALLIO (ZERO POWERSHELL NELL'UI LOOP).
 :: FUNZIONAMENTO IN CASO DI BLACKOUT RETE:
 :: 1. Se Unbound è fermo o in errore, lo script forza temporaneamente i DNS pubblici
 ::    (1.1.1.1/9.9.9.9) sulle schede per completare i download di root e filtri.
 :: 2. Se viene rilevato un errore di sintassi nel file service.conf, la subroutine 
 ::    :CONFIG_ERROR ripristina all'istante l'ultimo backup funzionante (.BKP).
-:: ==================================================================
+:: ===================================================================================
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
