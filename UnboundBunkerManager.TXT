@@ -325,7 +325,7 @@ if "!SVC_UPDATE_NEEDED!"=="1" (
 :: =======================================================================
 call :CHECK_UNBOUND_VERSION
 
-:: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO + TASK LOGON + TASK REPORT 23:59 ---
+:: --- AUTO-PROVISIONING: TASK GIORNALIERO + TASK BIORARIO (con report statistico incluso) + TASK LOGON ---
 set "TASK_NAME=Unbound_Bunker_Daily"
 set "TASK_NAME_2H=Unbound_Bunker_2h"
 set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
@@ -376,30 +376,15 @@ if %errorLevel% NEQ 0 (
 )
 
 :CHECK_REPORT_TASK
-:: 4. CONTROLLO E CREAZIONE TASK REPORT STATISTICO GIORNALIERO (23:59)
-schtasks /query /tn "%TASK_NAME_REPORT%" >nul 2>&1
-if %errorLevel% NEQ 0 goto :MAKE_REPORT_TASK
-goto :CHECK_SHUTDOWN_REPORT_TASK
-
-:MAKE_REPORT_TASK
-echo [+] Creazione del task pianificato per il report statistico delle 23:59...
-schtasks /create /tn "%TASK_NAME_REPORT%" /tr "cmd.exe /c \"\"%~f0\" --dailyreport\"" /sc daily /st 23:59 /ru "SYSTEM" /rl highest /f >nul 2>&1
-
-:CHECK_SHUTDOWN_REPORT_TASK
-:: 5. CONTROLLO E CREAZIONE TASK REPORT ALLO SPEGNIMENTO/RIAVVIO DEL PC
-:: Aggancio all'Event ID 1074 (provider User32, log System): si genera nel
-:: momento in cui uno spegnimento/riavvio viene RICHIESTO, prima che Windows
-:: inizi a fermare i servizi, cosi' il report riesce a leggere le statistiche
-:: mentre Unbound e' ancora attivo. E' un meccanismo "best effort": in caso
-:: di spegnimento molto rapido o forzato, Windows puo' interrompere il task
-:: prima del completamento. Resta comunque garantito il report delle 23:59.
-schtasks /query /tn "%TASK_NAME_SHUTDOWN%" >nul 2>&1
-if %errorLevel% NEQ 0 goto :MAKE_SHUTDOWN_REPORT_TASK
+:: 4. [FIX] Il report statistico non e' piu' agganciato a un task dedicato
+:: delle 23:59 o allo spegnimento: ora gira dentro al ciclo biorario stesso
+:: (vedi :REFRESH_FILES_ONLY), cosi' l'azzeramento dei contatori avviene ogni
+:: 2 ore invece di dipendere da un evento che su un PC sempre acceso e mai
+:: spento/riavviato poteva non scattare mai. Elimino eventuali task residui
+:: di versioni precedenti dello script, per evitare invii duplicati fuori sincrono.
+schtasks /delete /tn "%TASK_NAME_REPORT%" /f >nul 2>&1
+schtasks /delete /tn "%TASK_NAME_SHUTDOWN%" /f >nul 2>&1
 goto :TASKS_DONE
-
-:MAKE_SHUTDOWN_REPORT_TASK
-echo [+] Creazione del task pianificato per il report allo spegnimento del PC...
-schtasks /create /tn "%TASK_NAME_SHUTDOWN%" /tr "cmd.exe /c \"\"%~f0\" --dailyreport\"" /sc onevent /ec System /mo "*[System[Provider[@Name='User32'] and EventID=1074]]" /ru "SYSTEM" /rl highest /f >nul 2>&1
 
 :TASKS_DONE
 
@@ -1555,6 +1540,7 @@ call :UPDATE_UI 100
 set "DOT_OK=0"
 set "DOT_FAIL=0"
 set "DOT_FAIL_LIST="
+set "DOT_FAIL_NAMES="
 set "DOT_TMP=%TEMP%\ub_dot_check.txt"
 if exist "%DOT_TMP%" del /f /q "%DOT_TMP%" >nul 2>&1
 
@@ -1586,7 +1572,7 @@ set "PS_ARGS=!PS_ARGS:~0,-1!"
 
 :: 2) Esecuzione del test TCP parallelo tramite chiamata PowerShell lineare
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$targets = @(%PS_ARGS%); $conns = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; try { $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $ar = $tcp.BeginConnect($ip, 853, $null, $null); [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$tcp;AR=$ar;Done=$false;Ok=$false} } catch { [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$null;AR=$null;Done=$true;Ok=$false} } }; $sw = [System.Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 2000 -and (($conns | Where-Object { -not $_.Done }).Count -gt 0)) { foreach ($c in $conns) { if ((-not $c.Done) -and $c.AR -and $c.AR.IsCompleted) { try { $c.Tcp.EndConnect($c.AR); $c.Ok = $c.Tcp.Connected } catch { $c.Ok = $false }; $c.Done = $true } }; Start-Sleep -Milliseconds 25 }; foreach ($c in $conns) { if ($c.Tcp) { try { $c.Tcp.Close() } catch {} } }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; foreach ($c in $conns) { $st = if ($c.Ok) { 'OK' } else { 'FAIL' }; if ($c.Ok) { $listOK.Add($c.IP) } else { $listFAIL.Add($c.IP) }; $details.Add(($c.IP + '|' + $c.Tag + '|' + $st)) }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
+  "$targets = @(%PS_ARGS%); $conns = foreach ($t in $targets) { $p = $t.Split('|'); $ip = $p[0]; $tag = $p[1]; try { $fam = [System.Net.IPAddress]::Parse($ip).AddressFamily; $tcp = New-Object System.Net.Sockets.TcpClient($fam); $ar = $tcp.BeginConnect($ip, 853, $null, $null); [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$tcp;AR=$ar;Done=$false;Ok=$false} } catch { [PSCustomObject]@{IP=$ip;Tag=$tag;Tcp=$null;AR=$null;Done=$true;Ok=$false} } }; $sw = [System.Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 2000 -and (($conns | Where-Object { -not $_.Done }).Count -gt 0)) { foreach ($c in $conns) { if ((-not $c.Done) -and $c.AR -and $c.AR.IsCompleted) { try { $c.Tcp.EndConnect($c.AR); $c.Ok = $c.Tcp.Connected } catch { $c.Ok = $false }; $c.Done = $true } }; Start-Sleep -Milliseconds 25 }; foreach ($c in $conns) { if ($c.Tcp) { try { $c.Tcp.Close() } catch {} } }; $listOK = New-Object System.Collections.Generic.List[string]; $listFAIL = New-Object System.Collections.Generic.List[string]; $listFAILNAMES = New-Object System.Collections.Generic.List[string]; $details = New-Object System.Collections.Generic.List[string]; foreach ($c in $conns) { $st = if ($c.Ok) { 'OK' } else { 'FAIL' }; if ($c.Ok) { $listOK.Add($c.IP) } else { $listFAIL.Add($c.IP); $listFAILNAMES.Add($c.Tag + ' - ' + $c.IP) }; $details.Add(($c.IP + '|' + $c.Tag + '|' + $st)) }; 'OK=' + $listOK.Count | Out-File '%DOT_TMP%' -Encoding ascii; 'FAIL=' + $listFAIL.Count | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILLIST=' + ($listFAIL -join ',') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'FAILNAMES=' + ($listFAILNAMES -join ', ') | Out-File '%DOT_TMP%' -Append -Encoding ascii; 'DETAILS=' + ($details -join ';') | Out-File '%DOT_TMP%' -Append -Encoding ascii" >nul 2>&1
 
 set "DOT_DETAILS="
 if exist "%DOT_TMP%" (
@@ -1594,6 +1580,7 @@ if exist "%DOT_TMP%" (
         if "%%A"=="OK"       set "DOT_OK=%%B"
         if "%%A"=="FAIL"     set "DOT_FAIL=%%B"
         if "%%A"=="FAILLIST" set "DOT_FAIL_LIST=%%B"
+        if "%%A"=="FAILNAMES" set "DOT_FAIL_NAMES=%%B"
         if "%%A"=="DETAILS"  set "DOT_DETAILS=%%B"
     )
     del /f /q "%DOT_TMP%" >nul 2>&1
@@ -1613,7 +1600,7 @@ if %DOT_FAIL% EQU 0 (
     set "F14_RES=[    ERRORE    ] DoT  >> ALLARME: Nessun resolver risponde sulla porta 853!"
     call :LOGFAIL "DoT" "ALLARME: Porta 853 irraggiungibile su tutti i resolver"
 ) else (
-    set "F14_RES=[     WARN     ] DoT  >> Verifica eseguita: !DOT_OK! resolver OK, !DOT_FAIL! falliti."
+    set "F14_RES=[     WARN     ] DoT  >> Verifica eseguita: !DOT_OK! resolver OK, !DOT_FAIL! falliti (!DOT_FAIL_NAMES!)."
     call :LOGSTEP "DoT" "WARN: !DOT_FAIL! resolver non raggiungibili su 853: !DOT_FAIL_LIST!"
 )
 
@@ -2339,38 +2326,6 @@ if not errorlevel 1 (
 if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 
 if "!CHANGED!"=="1" (
-    :: [FIX] Il riavvio di Unbound azzera i contatori interni (total.num.queries/cachehits).
-    :: Prima di perderli, li leggo con stats_noreset (non azzera) e li sommo al cumulativo
-    :: giornaliero, cosi' il report finale copre l'intera finestra e non solo l'ultimo riavvio.
-    set "QCUM_FILE=%UB_DIR%\query_cumulate.dat"
-    set "UC_EXE_R=%UB_DIR%\unbound-control.exe"
-    if exist "!UC_EXE_R!" (
-        set "UC_TMP_R=%TEMP%\ub_stats_refresh.txt"
-        if exist "!UC_TMP_R!" del /f /q "!UC_TMP_R!" >nul 2>&1
-        "!UC_EXE_R!" stats_noreset > "!UC_TMP_R!" 2>nul
-        set "QD=0"
-        set "CD=0"
-        if exist "!UC_TMP_R!" (
-            for /f "tokens=2 delims==" %%V in ('findstr /B /C:"total.num.queries=" "!UC_TMP_R!"') do set "QD=%%V"
-            for /f "tokens=2 delims==" %%V in ('findstr /B /C:"total.num.cachehits=" "!UC_TMP_R!"') do set "CD=%%V"
-            del /f /q "!UC_TMP_R!" >nul 2>&1
-        )
-        set "QD=!QD: =!"
-        set "CD=!CD: =!"
-        if "!QD!"=="" set "QD=0"
-        if "!CD!"=="" set "CD=0"
-        set "QCUM_PREV=0"
-        set "CCUM_PREV=0"
-        if exist "!QCUM_FILE!" (
-            for /f "tokens=1,2 delims=;" %%A in ('type "!QCUM_FILE!"') do (
-                set "QCUM_PREV=%%A"
-                set "CCUM_PREV=%%B"
-            )
-        )
-        set /a "QCUM_NEW=QCUM_PREV+QD"
-        set /a "CCUM_NEW=CCUM_PREV+CD"
-        > "!QCUM_FILE!" echo !QCUM_NEW!;!CCUM_NEW!
-    )
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
@@ -2391,28 +2346,36 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
+:: [FIX] Report statistico agganciato al ciclo biorario stesso: gira sempre,
+:: indipendentemente da CHANGED, cosi' l'azzeramento dei contatori (query,
+:: cache hit, blocchi RPZ) avviene ogni 2 ore con finestra fissa, invece di
+:: dipendere da un trigger delle 23:59/spegnimento che su un PC sempre acceso
+:: senza mai spegnersi o riavviarsi poteva restare inutilizzato per giorni.
+call :DAILY_REPORT_ONLY
 exit /b
 
 :: ============================================================================
-:: REPORT STATISTICO GIORNALIERO (23:59): query totali, blocchi RPZ, cache hit.
-:: Legge unbound-control stats (il comando "stats" resetta i contatori dopo la
+:: REPORT STATISTICO BIORARIO: query totali, blocchi RPZ, cache hit.
+:: Richiamato da :REFRESH_FILES_ONLY a ogni ciclo (ogni 2 ore). Legge
+:: unbound-control stats (il comando "stats" resetta i contatori dopo la
 :: lettura, quindi il prossimo report parte da zero) e conta i blocchi per
 :: lista dal log RPZ (formato "rpz: applied [nome-lista] ..."), poi invia il
-:: riepilogo su Telegram e svuota il log per la giornata successiva, come
-:: previsto dal commento in service.conf ("svuotato ogni notte").
+:: riepilogo su Telegram e svuota il log, cosi' ogni finestra di 2 ore parte
+:: pulita indipendentemente da quanto a lungo il PC resta acceso senza mai
+:: spegnersi o riavviarsi.
 :: ============================================================================
 :DAILY_REPORT_ONLY
-title UNBOUND BUNKER - REPORT GIORNALIERO 23:59
+title UNBOUND BUNKER - REPORT BIORARIO
 
 if not exist "%UB_DIR%" (
     call :LOGFAIL "REPORT" "Directory Unbound non trovata, report saltato"
     exit /b
 )
 
-:: --- Nota: nessuna guardia anti-doppio-invio. Il report puo' scattare piu' volte
-:: al giorno (spegnimenti multipli + le 23:59): query_cumulate.dat e RPZ_LOG
-:: vengono azzerati a ogni invio, quindi ciascun report copre correttamente solo
-:: la finestra dall'invio precedente, per quanti invii ci siano stati. ---
+:: --- Nota: nessuna guardia anti-doppio-invio necessaria. Il report gira
+:: incondizionatamente a ogni ciclo biorario (vedi :REFRESH_FILES_ONLY);
+:: RPZ_LOG viene azzerato a ogni invio, quindi ciascun report copre
+:: correttamente solo la finestra di 2 ore appena trascorsa. ---
 
 :: --- Data/ora leggibile e indipendente dal locale di sistema ---
 set "RPT_DT_TMP=%TEMP%\ub_rpt_dt.txt"
@@ -2444,25 +2407,6 @@ set "TOT_QUERIES=%TOT_QUERIES: =%"
 set "TOT_CACHEHITS=%TOT_CACHEHITS: =%"
 if "%TOT_QUERIES%"=="" set "TOT_QUERIES=0"
 if "%TOT_CACHEHITS%"=="" set "TOT_CACHEHITS=0"
-
-:: [FIX] "stats" appena letto sopra copre solo le query dall'ultimo riavvio di Unbound.
-:: Sommo il cumulativo salvato dai riavvii bi-orari precedenti (vedi :REFRESH_FILES_ONLY),
-:: cosi' TOT_QUERIES/TOT_CACHEHITS coprono la stessa finestra di 24h di BLK_TOT (RPZ_LOG),
-:: invece di confrontare query "recenti" con blocchi "di giornata".
-set "QCUM_FILE=%UB_DIR%\query_cumulate.dat"
-set "QCUM_PREV=0"
-set "CCUM_PREV=0"
-if exist "%QCUM_FILE%" (
-    for /f "tokens=1,2 delims=;" %%A in ('type "%QCUM_FILE%"') do (
-        set "QCUM_PREV=%%A"
-        set "CCUM_PREV=%%B"
-    )
-)
-set /a "TOT_QUERIES=TOT_QUERIES+QCUM_PREV"
-set /a "TOT_CACHEHITS=TOT_CACHEHITS+CCUM_PREV"
-:: Azzero il cumulativo: da qui riparte la prossima finestra, in sincronia col troncamento
-:: di RPZ_LOG piu' sotto (stessa cadenza, stesso momento logico di "fine giornata")
-> "%QCUM_FILE%" echo 0;0
 
 :: --- Conteggio blocchi per lista RPZ dal log (ricerca letterale con /L: le parentesi
 :: quadre sono metacaratteri per findstr, quindi vanno trattate come testo puro) ---
@@ -2506,7 +2450,7 @@ if errorlevel 1 (
 )
 
 :: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 UNBOUND BUNKER - REPORT GIORNALIERO' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '💻 Host: `' + $hostSafe + '`' + [char]10 + '====================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '====================================' + [char]10 + '🏆 BLOCCO LISTE RPZ ATTIVITA'' MALEVOLE:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus: `!BLK_PROPLUS!` blocchi' + [char]10 + '• 🥈 HaGeZi TIF: `!BLK_TIF!` blocchi' + [char]10 + '• 🥉 HaGeZi TIF-IPS: `!BLK_TIFIPS!` blocchi' + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6): `!SPAM_TOT!` blocchi' + [char]10 + '• 🌐 HaGeZi DynDNS: `!BLK_DYNDNS!` blocchi' + [char]10 + '• 📦 HaGeZi Badware Hoster: `!BLK_HOSTER!` blocchi' + [char]10 + '• 🚫 HaGeZi Most Abused TLDs: `!BLK_SPAMTLDS!` blocchi' + [char]10 + '====================================' + [char]10 + '!ENGINE_LINE!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 20); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report giornaliero fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 UNBOUND BUNKER - REPORT BIORARIO' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '💻 Host: `' + $hostSafe + '`' + [char]10 + '====================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '====================================' + [char]10 + '🏆 BLOCCO LISTE RPZ ATTIVITA'' MALEVOLE:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus: `!BLK_PROPLUS!` blocchi' + [char]10 + '• 🥈 HaGeZi TIF: `!BLK_TIF!` blocchi' + [char]10 + '• 🥉 HaGeZi TIF-IPS: `!BLK_TIFIPS!` blocchi' + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6): `!SPAM_TOT!` blocchi' + [char]10 + '• 🌐 HaGeZi DynDNS: `!BLK_DYNDNS!` blocchi' + [char]10 + '• 📦 HaGeZi Badware Hoster: `!BLK_HOSTER!` blocchi' + [char]10 + '• 🚫 HaGeZi Most Abused TLDs: `!BLK_SPAMTLDS!` blocchi' + [char]10 + '====================================' + [char]10 + '!ENGINE_LINE!'; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 20); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 
@@ -2518,7 +2462,7 @@ if exist "%RPZ_LOG%" (
 
 :: --- (rimosso il marcatore anti-doppio-invio: ogni invio e' ora legittimo) ---
 
-call :LOGSTEP "REPORT" "Report giornaliero inviato: !TOT_QUERIES! query, !BLK_TOT! blocchi RPZ totali"
+call :LOGSTEP "REPORT" "Report biorario inviato: !TOT_QUERIES! query, !BLK_TOT! blocchi RPZ totali"
 exit /b
 
 :CONFIG_ERROR
@@ -3360,7 +3304,7 @@ if errorlevel 1 (
     set "TG_DNS_RESET=1"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $token = '8408919107:AAESI1WWcj8q3g7IExNszob3fV1n0EZvQ5E'; $chatId = '84633473'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ chat_id = $chatId; text = $msg; parse_mode = 'Markdown' } | ConvertTo-Json; $uri = 'https://api.telegram.org/bot' + $token + '/sendMessage'; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
