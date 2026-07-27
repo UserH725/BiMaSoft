@@ -75,7 +75,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=842.00"
+set "LOCAL_VER=844.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -1647,6 +1647,18 @@ goto :FINALIZZAZIONE_RAPIDA
 :REFRESH_FILES_ONLY
 title UNBOUND BUNKER - REFRESH BIORARIO
 
+:: [FIX] Report statistico chiamato SUBITO, prima del controllo ping qui sotto:
+:: il report usa HTTPS verso api.telegram.org, non ICMP, quindi non ha nulla
+:: a che vedere con la raggiungibilita' di 8.8.8.8/1.1.1.1. Se restasse in
+:: fondo al ciclo, un ping fallito (frequente: molte reti bloccano/rallentano
+:: l'ICMP anche quando HTTPS funziona benissimo) lo avrebbe bloccato insieme
+:: all'aggiornamento delle blocklist, che invece ha davvero bisogno di rete
+:: stabile per i download. Il report e' gia' autosufficiente: verifica da solo
+:: l'esistenza di %UB_DIR% in testa, e l'invio Telegram ha il proprio
+:: try/catch con retry e logging indipendente in caso di fallimento.
+call :DAILY_REPORT_ONLY
+title UNBOUND BUNKER - REFRESH BIORARIO
+
 :: Abilita i codici di escape ANSI per i colori (nel caso non siano già attivi)
 for /F %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
 
@@ -2346,12 +2358,6 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
-:: [FIX] Report statistico agganciato al ciclo biorario stesso: gira sempre,
-:: indipendentemente da CHANGED, cosi' l'azzeramento dei contatori (query,
-:: cache hit, blocchi RPZ) avviene ogni 2 ore con finestra fissa, invece di
-:: dipendere da un trigger delle 23:59/spegnimento che su un PC sempre acceso
-:: senza mai spegnersi o riavviarsi poteva restare inutilizzato per giorni.
-call :DAILY_REPORT_ONLY
 exit /b
 
 :: ============================================================================
