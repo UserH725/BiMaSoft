@@ -75,7 +75,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=860.00"
+set "LOCAL_VER=865.00"
 set "UB_DIR=C:\Program Files\Unbound"
 set "CLOUD_VER=N/A"
 set "SVC_VER=N/A"
@@ -332,14 +332,12 @@ set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
 set "TASK_NAME_REPORT=Unbound_Bunker_DailyReport"
 set "TASK_NAME_SHUTDOWN=Unbound_Bunker_ShutdownReport"
 
-:: 1. CONTROLLO E CREAZIONE TASK GIORNALIERO
-schtasks /query /tn "%TASK_NAME%" >nul 2>&1
-if %errorLevel% NEQ 0 goto :MAKE_DAILY_TASK
-goto :CHECK_OLD_HOURLY
-
-:MAKE_DAILY_TASK
-echo [+] Creazione del task pianificato giornaliero...
-schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc daily /st 06:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
+:: 1. CREAZIONE/AGGIORNAMENTO TASK GIORNALIERO
+:: [FIX] Come per il task biorario: sempre sovrascritto (schtasks /f) ad ogni
+:: avvio invece che solo se assente, cosi' eventuali modifiche future a orario
+:: o comando si propagano da sole su tutti i PC senza intervento manuale.
+echo [+] Creazione/aggiornamento del task pianificato giornaliero...
+schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc daily /st 07:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
 :CHECK_OLD_HOURLY
 :: Pulizia vecchio task orario se rimasto
@@ -352,14 +350,15 @@ if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_Hourly" /f >nul 2>&1
 schtasks /query /tn "Unbound_Bunker_StatsReset" >nul 2>&1
 if %errorLevel% EQU 0 schtasks /delete /tn "Unbound_Bunker_StatsReset" /f >nul 2>&1
 
-:: 2. CONTROLLO E CREAZIONE TASK BIORARIO
-schtasks /query /tn "%TASK_NAME_2H%" >nul 2>&1
-if %errorLevel% NEQ 0 goto :MAKE_2H_TASK
-goto :CHECK_BOOT_TASK
-
-:MAKE_2H_TASK
-echo [+] Creazione del task pianificato ogni 2 ore...
-schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c \"\"%~f0\" --refresh\"" /sc hourly /mo 2 /ru "SYSTEM" /rl highest /f >nul 2>&1
+:: 2. CREAZIONE/AGGIORNAMENTO TASK BIORARIO
+:: [FIX] Prima veniva creato solo se assente, quindi restava ancorato all'orario
+:: della prima installazione (es. 07:00) e girava a xx:00, xx+2:00 ecc a scalare
+:: da li'. Ora e' sempre sovrascritto (schtasks /f) ad ogni avvio, cosi': 1) resta
+:: allineato alle ore esatte .00 grazie a /st 00:00 (00:00, 02:00, 04:00, ...);
+:: 2) eventuali modifiche future allo schedule/comando si propagano da sole su
+:: tutti i PC al prossimo avvio, senza dover ritoccare a mano il task su ciascuno.
+echo [+] Creazione/aggiornamento del task pianificato ogni 2 ore (allineato alle .00)...
+schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c \"\"%~f0\" --refresh\"" /sc hourly /mo 2 /st 00:00 /ru "SYSTEM" /rl highest /f >nul 2>&1
 
 :CHECK_BOOT_TASK
 :: 3. CONTROLLO E CREAZIONE TASK DI AVVIO A VIDEO AL LOGON
@@ -558,7 +557,7 @@ if exist "%UB_DIR%\service.conf" (
                         if "!FWD_LIST!"=="" (
                             set "FWD_LIST=!FWD_NAME!"
                         ) else (
-                            set "FWD_LIST=!FWD_LIST!, !FWD_NAME!"
+                            set "FWD_LIST=!FWD_LIST!,!FWD_NAME!"
                         )
                     )
                 )
@@ -576,7 +575,7 @@ if exist "%UB_DIR%\service.conf" (
         if "!FWD_LIST!"=="" (
             set "FWD_LIST=ICANN Root Servers (Hyperlocal Fallback)"
         ) else (
-            set "FWD_LIST=!FWD_LIST!, ICANN Root Servers (Hyperlocal Fallback)"
+            set "FWD_LIST=!FWD_LIST!,ICANN Root Servers (Hyperlocal Fallback)"
         )
     )
 )
@@ -2456,7 +2455,7 @@ if errorlevel 1 (
 )
 
 :: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 UNBOUND BUNKER - REPORT BIORARIO' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '💻 Host: `' + $hostSafe + '`' + [char]10 + '===========================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '===========================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6): `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '============================================' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 20); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 UNBOUND BUNKER - REPORT BIORARIO' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '💻 Host: `' + $hostSafe + '`' + [char]10 + '===========================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '===========================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6): `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '============================================' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 20); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 
@@ -2517,6 +2516,11 @@ powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if(
 :: --- INVIO TELEMETRIA TELEGRAM (con fallback DNS e log errori) ---
 call :SEND_TELEGRAM_TELEMETRY
 
+:: [FIX] Ripristina sempre il DNS su 127.0.0.1/::1 prima di chiudere il boot,
+:: indipendentemente dall'esito del check DNS interno a SEND_TELEGRAM_TELEMETRY:
+:: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
+call :DNS_FALLBACK_OFF
+
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
@@ -2553,7 +2557,10 @@ exit /b
 :: ==================================================================
 :DNS_FALLBACK_OFF
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '127.0.0.1'" >nul 2>&1
-call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1"
+:: [FIX] Riafferma anche l'IPv6 su ::1 ad ogni ripristino: prima veniva impostato
+:: una sola volta in Fase 5 e non si autoriparava mai se l'adattatore lo perdeva.
+powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
+call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1 / ::1"
 exit /b
 
 :RESOLVE_HOST
@@ -3277,6 +3284,11 @@ exit /b
 :: --- INVIO TELEMETRIA TELEGRAM (con fallback DNS e log errori) ---
 call :SEND_TELEGRAM_TELEMETRY
 
+:: [FIX] Ripristina sempre il DNS su 127.0.0.1/::1 prima di chiudere il boot,
+:: indipendentemente dall'esito del check DNS interno a SEND_TELEGRAM_TELEMETRY:
+:: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
+call :DNS_FALLBACK_OFF
+
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 set "END_TIME=%END_TIME: =0%"
@@ -3315,7 +3327,7 @@ if errorlevel 1 (
     set "TG_DNS_RESET=1"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
