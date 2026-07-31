@@ -3299,7 +3299,7 @@ if !ELAPSED! LSS 0 set /a "ELAPSED=ELAPSED+86400"
 echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m                  PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
-timeout /t 1 >nul
+timeout /t 3 >nul
 exit
 
 :: ==================================================================
@@ -3308,22 +3308,15 @@ exit
 :SEND_TELEGRAM_TELEMETRY
 set "TG_LOG=%UB_DIR%\telegram_error.log"
 
-:: Conteggio istantaneo degli elementi per tutte le 8 liste RPZ (chiamata PowerShell unica - OTTIMIZZATO NEI TEMPI)
-set "RPZ_CNT_TMP=%TEMP%\ub_rpz_counts.txt"
-if exist "%RPZ_CNT_TMP%" del /f /q "%RPZ_CNT_TMP%" >nul 2>&1
-powershell -NoProfile -Command "$items = @('%HZ_PRO_PLUS%|RPZ_PROPLUS_CNT','%HZ_TIF%|RPZ_TIF_CNT','%HZ_TIF_IPS%|RPZ_TIFIPS_CNT','%SH_DROP%|RPZ_DROP_CNT','%SH_DROP6%|RPZ_DROP6_CNT','%HZ_DYNDNS%|RPZ_DYNDNS_CNT','%HZ_HOSTER%|RPZ_HOSTER_CNT','%HZ_SPAMTLDS%|RPZ_SPAMTLDS_CNT'); $out = foreach ($it in $items) { $p = $it.Split('|'); $path = $p[0]; $var = $p[1]; $cnt = 0; if (Test-Path -LiteralPath $path) { try { $cnt = [Linq.Enumerable]::Count([System.IO.File]::ReadLines($path)) } catch { $cnt = 0 } }; $var + '=' + $cnt }; $out | Out-File '%RPZ_CNT_TMP%' -Encoding ascii" >nul 2>&1
-set "RPZ_PROPLUS_CNT=0"
-set "RPZ_TIF_CNT=0"
-set "RPZ_TIFIPS_CNT=0"
-set "RPZ_DROP_CNT=0"
-set "RPZ_DROP6_CNT=0"
-set "RPZ_DYNDNS_CNT=0"
-set "RPZ_HOSTER_CNT=0"
-set "RPZ_SPAMTLDS_CNT=0"
-if exist "%RPZ_CNT_TMP%" (
-    for /f "usebackq tokens=1,2 delims==" %%A in ("%RPZ_CNT_TMP%") do set "%%A=%%B"
-    del /f /q "%RPZ_CNT_TMP%" >nul 2>&1
-)
+:: Conteggio istantaneo degli elementi per tutte le 8 liste RPZ
+call :GET_RPZ_LINES "%HZ_PRO_PLUS%" RPZ_PROPLUS_CNT
+call :GET_RPZ_LINES "%HZ_TIF%" RPZ_TIF_CNT
+call :GET_RPZ_LINES "%HZ_TIF_IPS%" RPZ_TIFIPS_CNT
+call :GET_RPZ_LINES "%SH_DROP%" RPZ_DROP_CNT
+call :GET_RPZ_LINES "%SH_DROP6%" RPZ_DROP6_CNT
+call :GET_RPZ_LINES "%HZ_DYNDNS%" RPZ_DYNDNS_CNT
+call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_HOSTER_CNT
+call :GET_RPZ_LINES "%HZ_SPAMTLDS%" RPZ_SPAMTLDS_CNT
 
 :: Verifica se la risoluzione DNS locale verso api.telegram.org e' funzionante
 set "TG_DNS_RESET=0"
@@ -3337,4 +3330,14 @@ if errorlevel 1 (
 powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - TELEMETRIA CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
+exit /b
+
+:: ==================================================================
+:: SUBROUTINE CHIRURGICA: Conteggio righe RPZ istantaneo (Memoria Zero)
+:: Uso: call :GET_RPZ_LINES "<percorso_file>" VAR_DESTINAZIONE
+:: ==================================================================
+:GET_RPZ_LINES
+set "%~2=0"
+if not exist "%~1" exit /b
+for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "try { [Linq.Enumerable]::Count([System.IO.File]::ReadLines('%~1')).ToString('N0') } catch { '0' }"`) do set "%~2=%%C"
 exit /b
