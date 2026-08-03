@@ -202,7 +202,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Unbound Bunker - Dashboard Live</title>
+<title>Unbound Bunker - Dashboard Live - by Mauro Bigoni</title>
 <style>
   :root { --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
           --green:#3ddc84; --red:#ff5c5c; --amber:#ffb454; --accent:#4fb3ff; }
@@ -233,7 +233,7 @@ $HtmlPage = @'
 </style>
 </head>
 <body>
-<h1>🛡️ UNBOUND BUNKER - Dashboard Live</h1>
+<h1>🛡️ UNBOUND BUNKER - Dashboard Live - by Mauro Bigoni</h1>
 <div class="sub" id="subheader">Connessione in corso...</div>
 <div class="badges" id="badges"></div>
 
