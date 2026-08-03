@@ -1,7 +1,7 @@
 ﻿# ======================================================================================= #
 # UNBOUND BUNKER - DASHBOARD LIVE (sola lettura)                                          #
 # Script indipendente, non tocca alcun file di configurazione ne' processo esistente.     #
-# Espone una pagina HTML su http://127.0.0.1:8954/ con auto-refresh ogni 5 secondi.        #
+# Espone una pagina HTML su http://127.0.0.1:8954/ con auto-refresh ogni 1 secondi.       #
 # Legge: unbound-control stats_noreset, unbound.log (RPZ), hardware.conf,                 #
 #        session_totale.dat, bunker_health.json - tutti in sola lettura.                  #
 # ======================================================================================= #
