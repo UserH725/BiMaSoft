@@ -292,6 +292,7 @@ async function refresh() {
     listeDiv.innerHTML = '';
     (r.liste || []).forEach(l => {
       const det = document.createElement('details');
+      det.open = true;
       const sum = document.createElement('summary');
       sum.textContent = `${l.emoji} ${l.nome}: ${fmt(l.conteggio)} blocchi`;
       det.appendChild(sum);
