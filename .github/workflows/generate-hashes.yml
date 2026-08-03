@@ -5,6 +5,7 @@ on:
     paths:
       - 'service.conf'
       - 'UnboundBunkerManager.TXT'
+      - 'UnboundBunkerDashboard.ps1'      
 
 jobs:
   hash:
@@ -16,6 +17,7 @@ jobs:
         run: |
           sha256sum service.conf | awk '{print $1}' > service.conf.sha256
           sha256sum UnboundBunkerManager.TXT | awk '{print $1}' > UnboundBunkerManager.sha256
+          sha256sum UnboundBunkerDashboard.ps1 | awk '{print $1}' > UnboundBunkerDashboard.sha256
 
       - name: Commit e push degli hash
         run: |
