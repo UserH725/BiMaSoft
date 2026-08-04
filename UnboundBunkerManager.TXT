@@ -75,7 +75,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=961.00"
+set "LOCAL_VER=962.00"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -1089,10 +1089,11 @@ set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 :: Scarica sempre la versione Pro Plus
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
 if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 set "HZ_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "HZ_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "HZ_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HZ_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_PRO_PLUS_BAK%" (
         copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
@@ -1155,10 +1156,11 @@ set "TIF_DL_ERROR=0"
 :TIF_LOOP
 set /a TIF_PARTS+=1
 set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_URL_JS=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-!TIF_PARTS!.txt"
 set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
 set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
 
-call :CURL_RETRY_Z "!TIF_PART_URL!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
+call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
 set "CURL_ERR=!errorlevel!"
 
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
@@ -1188,7 +1190,8 @@ if !PART_SIZE! LSS 1024 (
     )
 )
 
-if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito con retry]"
+if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
 
 :: AGGIUNTI SPAZI IN FONDO PER CANCELLARE IL TESTO PRECEDENTE PIÙ LUNGO
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF... (Trovati !TIF_PARTS! file)                                      "
@@ -1262,10 +1265,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
 if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS%.tmp" >nul 2>&1
 set "TIFIPS_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "TIFIPS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "TIFIPS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIFIPS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_TIF_IPS_BAK%" (
         copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
@@ -1465,10 +1469,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
 if not exist "%HZ_DYNDNS%.tmp" if exist "%HZ_DYNDNS%" copy /y "%HZ_DYNDNS%" "%HZ_DYNDNS%.tmp" >nul 2>&1
 set "DYNDNS_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "DYNDNS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "DYNDNS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "DYNDNS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_DYNDNS_BAK%" (
         copy /y "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS%" >nul 2>&1
@@ -1524,10 +1529,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
 if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
 set "HOSTER_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "HOSTER_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "HOSTER_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HOSTER_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_HOSTER_BAK%" (
         copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
@@ -1583,10 +1589,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
 if not exist "%HZ_SPAMTLDS%.tmp" if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 set "SPAMTLDS_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "SPAMTLDS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "SPAMTLDS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "SPAMTLDS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if errorlevel 1 (
     if exist "%HZ_SPAMTLDS_BAK%" (
         copy /y "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS%" >nul 2>&1
@@ -2076,10 +2083,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
 if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS%.tmp" >nul 2>&1
 set "HZR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
@@ -2126,10 +2134,11 @@ set "TIF_DL_ERROR=0"
 :TIF_REFRESH_LOOP
 set /a TIF_PARTS+=1
 set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_URL_JS=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-!TIF_PARTS!.txt"
 set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
 set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
 
-call :CURL_RETRY_Z "!TIF_PART_URL!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
+call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
 set "CURL_ERR=!errorlevel!"
 
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
@@ -2157,7 +2166,8 @@ if !PART_SIZE! LSS 1024 (
     )
 )
 
-if !CURL_TRY_NUM! GTR 1 set "TIF_TRYNOTE=  [riuscito con retry]"
+if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
 if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
 
 :TIF_REFRESH_LOOP_END
@@ -2207,10 +2217,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
 if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS%.tmp" >nul 2>&1
 set "TIFIPSR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
@@ -2364,10 +2375,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/dyndns.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/dyndns.txt" "%HZ_DYNDNS%.tmp" "!RES_JSDELIVR!" "%HZ_DYNDNS%"
 if not exist "%HZ_DYNDNS%.tmp" if exist "%HZ_DYNDNS%" copy /y "%HZ_DYNDNS%" "%HZ_DYNDNS%.tmp" >nul 2>&1
 set "DYNDNSR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "DYNDNSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "DYNDNSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "DYNDNSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_DYNDNS%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_DYNDNS=0"
@@ -2406,10 +2418,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
 if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
 set "HOSTERR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_HOSTER=0"
@@ -2448,10 +2461,11 @@ call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
-call :CURL_RETRY_Z "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/spam-tlds-rpz.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/spam-tlds-rpz.txt" "%HZ_SPAMTLDS%.tmp" "!RES_JSDELIVR!" "%HZ_SPAMTLDS%"
 if not exist "%HZ_SPAMTLDS%.tmp" if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 set "SPAMTLDSR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "SPAMTLDSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if !CURL_TRY_NUM! GTR 3 set "SPAMTLDSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "SPAMTLDSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
 if not errorlevel 1 (
     for %%I in ("%HZ_SPAMTLDS%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_SPAMTLDS=0"
@@ -2965,6 +2979,52 @@ if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=3"
 curl -s -f %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+set "CURL_TRY_NUM=0"
+exit /b 1
+
+:: ==================================================================
+:: SUBROUTINE: come CURL_RETRY_Z, ma con doppia sorgente. Prova fino a
+::  3 tentativi (stesso backoff 3s/6s) sulla sorgente primaria; se
+::  falliscono tutti, prova altri 3 tentativi sulla sorgente secondaria
+::  prima di arrendersi. Solo a questo punto il chiamante ricade sul
+::  fallback locale (.bak/file esistente). Pensata per avere due mirror
+::  indipendenti della stessa lista RPZ (es. raw.githubusercontent.com
+::  come primaria e cdn.jsdelivr.net come secondaria), cosi' un disservizio
+::  o un blocco su una delle due fonti non impedisce l'aggiornamento.
+:: CURL_TRY_NUM riporta il tentativo che ha avuto successo: 1-3 = sorgente
+::  primaria, 4-6 = sorgente secondaria (fallback), 0 = falliti entrambi.
+:: Uso: call :CURL_RETRY_Z2 "<url_primario>" "<url_secondario>" "<file_output>" "<argomenti_extra_secondario>" "<file_riferimento>"
+:: ==================================================================
+:CURL_RETRY_Z2
+set "CRZ2_URL1=%~1"
+set "CRZ2_URL2=%~2"
+set "CRZ2_OUT=%~3"
+set "CRZ2_ARGS2=%~4"
+set "CRZ2_REF=%~5"
+set "CURL_TRY_NUM=1"
+curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 3 /nobreak >nul
+set "CURL_TRY_NUM=2"
+curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 6 /nobreak >nul
+set "CURL_TRY_NUM=3"
+curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+:: sorgente primaria esaurita, tento la secondaria (fallback)
+timeout /t 3 /nobreak >nul
+set "CURL_TRY_NUM=4"
+curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 3 /nobreak >nul
+set "CURL_TRY_NUM=5"
+curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+if not errorlevel 1 exit /b 0
+timeout /t 6 /nobreak >nul
+set "CURL_TRY_NUM=6"
+curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
