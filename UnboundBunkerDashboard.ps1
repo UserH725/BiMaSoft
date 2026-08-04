@@ -55,6 +55,57 @@ function Get-HardwareTier {
     return $result
 }
 
+function Get-BunkerVersions {
+    $result = [ordered]@{
+        unbound_local = "N/D"
+        unbound_cloud = "N/D"
+        conf_local    = "N/D"
+        conf_cloud    = "N/D"
+        bat_local     = "N/D"
+        bat_cloud     = "N/D"
+    }
+
+    # 1. Unbound Engine (Locale e Cloud)
+    $ubExe = Join-Path $UbDir "unbound.exe"
+    if (Test-Path $ubExe) {
+        try {
+            $raw = & $ubExe -h 2>&1 | Out-String
+            if ($raw -match 'Version\s+([0-9\.]+)') { $result.unbound_local = $matches[1] }
+        } catch {}
+    }
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+        $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 4).Content | ConvertFrom-Json
+        $v = $json.tag_name
+        if ($v -match 'release-(.*)') { $result.unbound_cloud = $matches[1] } else { $result.unbound_cloud = $v }
+    } catch {}
+
+    # 2. File service.conf (Locale e Cloud)
+    $svcVerFile = Join-Path $UbDir "versione_service_conf.txt"
+    if (Test-Path $svcVerFile) {
+        try { $result.conf_local = (Get-Content -LiteralPath $svcVerFile -Raw).Trim() } catch {}
+    }
+    try {
+        $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
+        if ($v) { $result.conf_cloud = $v }
+    } catch {}
+
+    # 3. Script BAT Manager (Locale e Cloud)
+    $batFile = Join-Path $UbDir "UnboundBunkerManager.BAT"
+    if (Test-Path $batFile) {
+        try {
+            $line = Get-Content -LiteralPath $batFile | Where-Object { $_ -match 'set .LOCAL_VER=([0-9]+\.[0-9]+)' } | Select-Object -First 1
+            if ($line -match '([0-9]+\.[0-9]+)') { $result.bat_local = $matches[1] }
+        } catch {}
+    }
+    try {
+        $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
+        if ($v) { $result.bat_cloud = $v }
+    } catch {}
+
+    return $result
+}
+
 function Get-EngineStatus {
     $svc = Get-Service -Name "unbound" -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -eq "Running") { return $true }
@@ -153,6 +204,7 @@ function Get-HealthSnapshot {
 
 function Get-BunkerStatusJson {
     $hw       = Get-HardwareTier
+    $versioni = Get-BunkerVersions
     $engineOn = Get-EngineStatus
     $stats    = Get-LiveStats
     $rpz      = Get-RpzBreakdown
@@ -175,6 +227,7 @@ function Get-BunkerStatusJson {
         generato_il = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
         host        = $env:COMPUTERNAME
         hardware    = $hw
+        versioni    = $versioni
         engine_attivo = $engineOn
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -205,16 +258,99 @@ $HtmlPage = @'
 <title>Unbound Bunker - Dashboard Live - by Mauro Bigoni</title>
 <style>
   :root { --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
-          --green:#3ddc84; --red:#ff5c5c; --amber:#ffb454; --accent:#4fb3ff; }
+          --green:#208b4c; --green-bright:#3ddc84; --red:#c0392b; --red-bright:#ff5c5c;
+          --amber:#d35400; --accent:#4fb3ff; }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font-family: "Consolas","Cascadia Mono",monospace;
          margin: 0; padding: 20px; }
-  h1 { font-size: 1.3em; margin: 0 0 4px 0; }
+  
+  .header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .header-left { flex: 1; }
+  
+  .clock-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    text-align: right;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .clock-time {
+    font-size: 2em;
+    font-weight: bold;
+    color: var(--accent);
+    line-height: 1.1;
+    letter-spacing: 1px;
+  }
+  .clock-date {
+    font-size: 0.95em;
+    color: var(--dim);
+    margin-top: 2px;
+    text-transform: capitalize;
+  }
+
+  /* TITOLO INGRANDITO E ANIMAZIONE ACCENTUATA (SHIMMER + NEON PULSE) */
+  h1 { 
+    font-size: 2em; 
+    font-weight: bold;
+    margin: 0 0 6px 0;
+    background: linear-gradient(90deg, #d7e2ec 0%, #0099ff 20%, #ffffff 50%, #0099ff 80%, #d7e2ec 100%);
+    background-size: 200% auto;
+    color: #d7e2ec;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: intenseShimmer 2.5s ease-in-out infinite;
+    display: inline-block;
+  }
+
+  @keyframes intenseShimmer {
+    0% { 
+      background-position: 0% center;
+      filter: drop-shadow(0 0 2px rgba(79, 179, 255, 0.2));
+    }
+    50% { 
+      background-position: 100% center;
+      filter: drop-shadow(0 0 14px rgba(79, 179, 255, 0.85));
+    }
+    100% { 
+      background-position: 200% center;
+      filter: drop-shadow(0 0 2px rgba(79, 179, 255, 0.2));
+    }
+  }
+
   .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 18px; }
-  .badges { display:flex; gap:10px; flex-wrap:wrap; margin-bottom: 18px; }
-  .badge { padding: 4px 10px; border-radius: 4px; font-size: 0.8em; border:1px solid var(--border); }
-  .ok { color: var(--green); border-color: var(--green); }
-  .bad { color: var(--red); border-color: var(--red); }
+  
+  /* BADGES AD ALTA VISIBILITÀ */
+  .badges { display:flex; gap:14px; flex-wrap:wrap; margin-bottom: 22px; }
+  .badge { 
+    padding: 10px 18px; 
+    border-radius: 6px; 
+    font-size: 1.15em; 
+    font-weight: bold; 
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+  }
+  .ok { 
+    background-color: rgba(32, 139, 76, 0.25); 
+    color: var(--green-bright); 
+    border: 2px solid var(--green-bright); 
+    text-shadow: 0 0 8px rgba(61, 220, 132, 0.4);
+  }
+  .bad { 
+    background-color: rgba(192, 57, 43, 0.3); 
+    color: #ffffff; 
+    border: 2px solid var(--red-bright); 
+    text-shadow: 0 0 8px rgba(255, 92, 92, 0.6);
+    box-shadow: 0 0 12px rgba(255, 92, 92, 0.3);
+  }
+
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px;
            padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
@@ -227,15 +363,30 @@ $HtmlPage = @'
   th { color: var(--dim); font-weight:normal; }
   details { margin-top:6px; }
   summary { cursor:pointer; color: var(--accent); }
-  .esito-warn { color: var(--red); }
-  .esito-ok { color: var(--green); }
+  .esito-warn { color: var(--red-bright); font-weight: bold; }
+  .esito-ok { color: var(--green-bright); }
   .muted { color: var(--dim); }
 </style>
 </head>
 <body>
-<h1>🛡️ UNBOUND BUNKER - Dashboard Live - by Mauro Bigoni</h1>
-<div class="sub" id="subheader">Connessione in corso...</div>
+
+<div class="header-container">
+  <div class="header-left">
+    <h1>🛡️ UNBOUND BUNKER - Dashboard Live - by Mauro Bigoni</h1>
+    <div class="sub" id="subheader">Connessione in corso...</div>
+  </div>
+  <div class="clock-box">
+    <div class="clock-time" id="clockTime">--:--:--</div>
+    <div class="clock-date" id="clockDate">-----------------</div>
+  </div>
+</div>
+
 <div class="badges" id="badges"></div>
+
+<div class="panel">
+  <h2>ℹ️ Versioni Componenti (Locale vs Cloud)</h2>
+  <div class="stats-grid" id="statsVersioni"></div>
+</div>
 
 <div class="panel">
   <h2>📊 Dall'ultimo report Telegram</h2>
@@ -259,6 +410,18 @@ function fmt(n) {
   return Number(n).toLocaleString('it-IT');
 }
 
+function updateClock() {
+  const now = new Date();
+  const optionsTime = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  const optionsDate = { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' };
+
+  document.getElementById('clockTime').textContent = now.toLocaleTimeString('it-IT', optionsTime);
+  document.getElementById('clockDate').textContent = now.toLocaleDateString('it-IT', optionsDate);
+}
+
+setInterval(updateClock, 1000);
+updateClock();
+
 async function refresh() {
   try {
     const res = await fetch('/api/status', { cache: 'no-store' });
@@ -273,12 +436,35 @@ async function refresh() {
     badges.innerHTML = '';
     const bEngine = document.createElement('span');
     bEngine.className = 'badge ' + (d.engine_attivo ? 'ok' : 'bad');
-    bEngine.textContent = d.engine_attivo ? '🟢 Servizio Unbound attivo' : '🔴 Servizio Unbound FERMO';
+    bEngine.textContent = d.engine_attivo ? '🟢 SERVIZIO UNBOUND ATTIVO' : '🔴 SERVIZIO UNBOUND FERMO';
     badges.appendChild(bEngine);
+    
     const bSalute = document.createElement('span');
     bSalute.className = 'badge ' + (d.salute_sistema.anomalie_rilevate ? 'bad' : 'ok');
-    bSalute.textContent = d.salute_sistema.anomalie_rilevate ? '⚠️ Anomalie rilevate' : '✅ Nessuna anomalia';
+    bSalute.textContent = d.salute_sistema.anomalie_rilevate ? '⚠️ ANOMALIE RILEVATE' : '✅ NESSUNA ANOMALIA';
     badges.appendChild(bSalute);
+
+    const v = d.versioni || {};
+    const verDiv = document.getElementById('statsVersioni');
+    if (verDiv) {
+      verDiv.innerHTML = `
+        <div class="stat">
+          <div class="lbl">Engine Unbound</div>
+          <div class="val" style="font-size:1.1em;">${v.unbound_local || 'N/D'}</div>
+          <div class="muted">Cloud: ${v.unbound_cloud || 'N/D'}</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Script BAT</div>
+          <div class="val" style="font-size:1.1em;">v${v.bat_local || 'N/D'}</div>
+          <div class="muted">Cloud: v${v.bat_cloud || 'N/D'}</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">File CONF</div>
+          <div class="val" style="font-size:1.1em;">v${v.conf_local || 'N/D'}</div>
+          <div class="muted">Cloud: v${v.conf_cloud || 'N/D'}</div>
+        </div>
+      `;
+    }
 
     const r = d.dall_ultimo_report;
     const statsDiv = document.getElementById('statsUltimoReport');
