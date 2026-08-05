@@ -1,5 +1,5 @@
 ﻿# ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - MODULO VERSIONI EVIDENZIATO) #
+# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - ICONA VERSIONI RESTYLING)     #
 # ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
@@ -521,9 +521,9 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- &#8505; MODULO VERSIONI COMPONENTI EVIDENZIATO -->
+<!-- &#128230; MODULO VERSIONI COMPONENTI EVIDENZIATO -->
 <div class="panel panel-versioni" style="margin-bottom: 16px;">
-  <h2>&#8505; Versioni Componenti (Locale vs Cloud)</h2>
+  <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
   <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 0;"></div>
 </div>
 
