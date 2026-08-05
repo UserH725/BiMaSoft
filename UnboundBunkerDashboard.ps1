@@ -769,7 +769,7 @@ async function refresh(forceVersions) {
     let realCachePct = Math.min(100, Math.round((cHits / qLecite) * 100));
     if (isNaN(realCachePct)) realCachePct = 0;
 
-    // 2. EFFICIENZA LATENZA (CURVA SCAGLIONATA OPTIMIZED PER DNS/DoT/WARP)
+    // 2. EFFICIENZA LATENZA
     let effectiveLat = latMs;
     if ((!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
@@ -819,23 +819,29 @@ async function refresh(forceVersions) {
       (healthScore * 0.10)
     );
 
-    // === CALCOLO STIMA BUNKER GAIN PERFORMANCES (%) ===
-    const ispBaselineMs = 40;
+    // === CALCOLO RICALIBRATO REALISTICO BUNKER GAIN (%) CON TEMPO RISPARMIATO ===
+    // Benchmark DNS standard ISP: ~45ms medio
+    const ispBaselineMs = 45;
     const displayLat = Math.max(0.5, effectiveLat);
-    const latGainPct = Math.max(0, ((ispBaselineMs - displayLat) / ispBaselineMs) * 130);
+    const msSaved = Math.max(0, Math.round(ispBaselineMs - displayLat));
 
+    // 1. Guadagno Latenza Reale (max +40%)
+    const latGainReal = Math.min(40, Math.round((msSaved / ispBaselineMs) * 40));
+
+    // 2. Guadagno RPZ Blocco Traccianti/Ads (max +20%)
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
-    const rpzGainPct = blkPct * 3.4;
+    const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
 
-    const ramGb = (d.hardware && d.hardware.ram_gb) ? d.hardware.ram_gb : 4;
-    const ramDiskGain = (d.ram_disk && d.ram_disk.attivo) ? 25 : 5;
-    const hwGain = Math.min(25, ramGb * 2.5);
+    // 3. Guadagno I/O RAM Disk R:\ (max +10%)
+    const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
 
-    const dotGain = (upOk > 0) ? (upOk * 5) + 15 : 0;
-    const prefetchGain = Math.min(20, Math.round(prefetchVal / 50));
+    // 4. Guadagno Cifratura DoT e Prefetch (max +10%)
+    const dotPrefetchGain = (upOk > 0 ? 5 : 0) + (prefetchVal > 0 ? 5 : 2);
 
-    let totalBunkerGain = Math.round(latGainPct + rpzGainPct + ramDiskGain + hwGain + dotGain + prefetchGain);
-    if (totalBunkerGain < 60) totalBunkerGain = 60;
+    // TOTALE RICALIBRATO (In genere tra +35% e +75%)
+    let totalBunkerGain = Math.round(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
+    if (totalBunkerGain < 25) totalBunkerGain = 25;
+    if (totalBunkerGain > 80) totalBunkerGain = 80;
 
     // AGGIORNAMENTO SOTTO-INDICATORI A GRADIENTE
     document.getElementById('valRealCache').textContent = realCachePct + '%';
@@ -903,10 +909,10 @@ async function refresh(forceVersions) {
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
 
-    // BUNKER GAIN
+    // BUNKER GAIN (PERCENTUALE RICALIBRATA + MS RISPARMIATI TANGIBILI)
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
-    bGain.innerHTML = '&#9889; BUNKER GAIN: <b>+' + totalBunkerGain + '%</b>';
+    bGain.innerHTML = '&#9889; BUNKER GAIN: <b>+' + totalBunkerGain + '%</b> <span style="font-size:0.85em; opacity:0.9; margin-left:4px;">(~' + msSaved + 'ms/req saved)</span>';
     badges.appendChild(bGain);
 
     // 3. STATISTICHE LIVE TRAFFICO
