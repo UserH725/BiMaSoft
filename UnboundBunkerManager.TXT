@@ -62,6 +62,44 @@ powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle
 :: Esegue l'Auto-Tuning Hardware prima di ogni altra operazione o controllo
 call :AUTO_TUNING_HARDWARE
 
+:: ==================================================================
+:: INIZIALIZZAZIONE RAM DISK (Zero Usura SSD per Log e Statistiche)
+:: ==================================================================
+set "RAM_DRIVE=R:"
+set "RAM_SIZE=50M"
+
+sc query imdsksvc >nul 2>&1
+if !errorlevel! NEQ 0 (
+    echo [+] Driver RAM Disk non trovato. Download e installazione automatica in corso...
+    set "IMD_ZIP=%TEMP%\imdisk_raw.zip"
+    set "IMD_DIR=%TEMP%\imdisk_raw"
+    
+    powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/UserH725/BiMaSoft/main/imdisk_raw.zip', '!IMD_ZIP!') } catch { exit 1 }" >nul 2>&1
+    
+    if exist "!IMD_ZIP!" (
+        powershell -NoProfile -Command "Expand-Archive -Path '!IMD_ZIP!' -DestinationPath '!IMD_DIR!' -Force" >nul 2>&1
+        cd /d "!IMD_DIR!"
+        :: Installazione nativa invisibile
+        rundll32 setupapi.dll,InstallHinfSection DefaultInstall 132 .\imdisk.inf >nul 2>&1
+        :: Avvio dei servizi in background del RAM Disk
+        net start imdsksvc >nul 2>&1
+        net start awealloc >nul 2>&1
+        cd /d "%UB_DIR%"
+        
+        del /f /q "!IMD_ZIP!" >nul 2>&1
+        rmdir /s /q "!IMD_DIR!" >nul 2>&1
+        echo   [OK] Driver RAM Disk installato correttamente.
+    ) else (
+        echo   [ERRORE] Download di ImDisk fallito. Impossibile creare il disco in RAM.
+    )
+)
+
+if not exist !RAM_DRIVE!\ (
+    imdisk -a -s !RAM_SIZE! -m !RAM_DRIVE! -p "/fs:ntfs /q /y /v:BunkerRAM" >nul 2>&1
+)
+:: ==================================================================
+
+
 :: --- DNS BOOTSTRAP ANTICIPATO: imposto 1.1.1.1/9.9.9.9 subito, prima di tutto
 :: (Unbound non è ancora avviato, WARP/WireGuard potrebbero non essere pronti)
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
@@ -75,7 +113,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=965.00"
+set "LOCAL_VER=999.00"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -2578,7 +2616,7 @@ if "%TOT_CACHEHITS%"=="" set "TOT_CACHEHITS=0"
 
 :: --- Conteggio blocchi per lista RPZ dal log (ricerca letterale con /L: le parentesi
 :: quadre sono metacaratteri per findstr, quindi vanno trattate come testo puro) ---
-set "RPZ_LOG=%UB_DIR%\unbound.log"
+set "RPZ_LOG=R:\unbound.log"
 set "BLK_PROPLUS=0"
 set "BLK_TIF=0"
 set "BLK_TIFIPS=0"
@@ -2643,7 +2681,7 @@ powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [N
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 
 :: [DASHBOARD LIVE] Accumulatore di sessione chirurgico (sola AGGIUNTA in append: legge le variabili gia' calcolate sopra, non modifica nulla, scrive PRIMA dello svuotamento log)
-powershell -NoProfile -Command "$f = '!UB_DIR!\session_totale.dat'; $cur = @{ query = 0; cachehits = 0; blocchi = 0; proplus = 0; tif = 0; tifips = 0; spam4 = 0; spam6 = 0; dyndns = 0; hoster = 0; spamtlds = 0; dal = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss') }; if (Test-Path $f) { try { $prev = Get-Content $f -Raw | ConvertFrom-Json; foreach ($k in @('query','cachehits','blocchi','proplus','tif','tifips','spam4','spam6','dyndns','hoster','spamtlds')) { if ($prev.PSObject.Properties.Name -contains $k) { $cur[$k] = [double]$prev.$k } }; if ($prev.PSObject.Properties.Name -contains 'dal') { $cur['dal'] = $prev.dal } } catch {} }; $cur['query'] += [double]!TOT_QUERIES!; $cur['cachehits'] += [double]!TOT_CACHEHITS!; $cur['blocchi'] += !BLK_TOT!; $cur['proplus'] += !BLK_PROPLUS!; $cur['tif'] += !BLK_TIF!; $cur['tifips'] += !BLK_TIFIPS!; $cur['spam4'] += !BLK_SPAM4!; $cur['spam6'] += !BLK_SPAM6!; $cur['dyndns'] += !BLK_DYNDNS!; $cur['hoster'] += !BLK_HOSTER!; $cur['spamtlds'] += !BLK_SPAMTLDS!; $cur['aggiornato'] = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); try { [pscustomobject]$cur | ConvertTo-Json | Out-File $f -Encoding utf8 } catch {}" >nul 2>&1
+powershell -NoProfile -Command "$f = 'R:\session_totale.dat'; $cur = @{ query = 0; cachehits = 0; blocchi = 0; proplus = 0; tif = 0; tifips = 0; spam4 = 0; spam6 = 0; dyndns = 0; hoster = 0; spamtlds = 0; dal = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss') }; if (Test-Path $f) { try { $prev = Get-Content $f -Raw | ConvertFrom-Json; foreach ($k in @('query','cachehits','blocchi','proplus','tif','tifips','spam4','spam6','dyndns','hoster','spamtlds')) { if ($prev.PSObject.Properties.Name -contains $k) { $cur[$k] = [double]$prev.$k } }; if ($prev.PSObject.Properties.Name -contains 'dal') { $cur['dal'] = $prev.dal } } catch {} }; $cur['query'] += [double]!TOT_QUERIES!; $cur['cachehits'] += [double]!TOT_CACHEHITS!; $cur['blocchi'] += !BLK_TOT!; $cur['proplus'] += !BLK_PROPLUS!; $cur['tif'] += !BLK_TIF!; $cur['tifips'] += !BLK_TIFIPS!; $cur['spam4'] += !BLK_SPAM4!; $cur['spam6'] += !BLK_SPAM6!; $cur['dyndns'] += !BLK_DYNDNS!; $cur['hoster'] += !BLK_HOSTER!; $cur['spamtlds'] += !BLK_SPAMTLDS!; $cur['aggiornato'] = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); try { [pscustomobject]$cur | ConvertTo-Json | Out-File $f -Encoding utf8 } catch {}" >nul 2>&1
 
 :: --- Svuota il log RPZ bypassando il Lock di Unbound (SetLength zero tramite FileShare.ReadWrite) ---
 if exist "%RPZ_LOG%" (
@@ -3562,7 +3600,7 @@ if errorlevel 1 (
 powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - AVVIO CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 10); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 :: [DASHBOARD LIVE] Snapshot chirurgico e non invasivo delle 14 fasi (sola AGGIUNTA in append: non modifica alcuna riga della logica esistente sopra)
-powershell -NoProfile -Command "$ord = @('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F11','F12','F13','F14'); $fasi = foreach ($code in $ord) { $actP = 'env:' + $code + '_ACT'; $resP = 'env:' + $code + '_RES'; $act = if (Test-Path $actP) { (Get-Item $actP).Value } else { '' }; $res = if (Test-Path $resP) { (Get-Item $resP).Value } else { '' }; if ($act -or $res) { [pscustomobject]@{ fase = $code; azione = $act; esito = $res } } }; $obj = [pscustomobject]@{ timestamp = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); fasi = @($fasi) }; try { $obj | ConvertTo-Json -Depth 4 | Out-File '!UB_DIR!\bunker_health.json' -Encoding utf8 } catch {}" >nul 2>&1
+powershell -NoProfile -Command "$ord = @('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F11','F12','F13','F14'); $fasi = foreach ($code in $ord) { $actP = 'env:' + $code + '_ACT'; $resP = 'env:' + $code + '_RES'; $act = if (Test-Path $actP) { (Get-Item $actP).Value } else { '' }; $res = if (Test-Path $resP) { (Get-Item $resP).Value } else { '' }; if ($act -or $res) { [pscustomobject]@{ fase = $code; azione = $act; esito = $res } } }; $obj = [pscustomobject]@{ timestamp = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); fasi = @($fasi) }; try { $obj | ConvertTo-Json -Depth 4 | Out-File 'R:\bunker_health.json' -Encoding utf8 } catch {}" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
