@@ -76,14 +76,14 @@ if !errorlevel! NEQ 0 (
     
     powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/UserH725/BiMaSoft/main/imdisk_raw.zip', '!IMD_ZIP!') } catch { exit 1 }" >nul 2>&1
     
-if exist "!IMD_ZIP!" (
+    if exist "!IMD_ZIP!" (
         powershell -NoProfile -Command "Expand-Archive -Path '!IMD_ZIP!' -DestinationPath '!IMD_DIR!' -Force" >nul 2>&1
-        cd /d "!IMD_DIR!"
-        :: Installazione nativa invisibile
-        rundll32 setupapi.dll,InstallHinfSection DefaultInstall 132 .\imdisk.inf >nul 2>&1
+        
+        :: Installazione nativa invisibile con PERCORSO ASSOLUTO (Fix bug System32)
+        rundll32 setupapi.dll,InstallHinfSection DefaultInstall 132 "!IMD_DIR!\imdisk.inf" >nul 2>&1
+        
         :: Avvio del servizio in background di ImDisk
         net start imdsksvc >nul 2>&1
-        cd /d "%UB_DIR%"
         
         del /f /q "!IMD_ZIP!" >nul 2>&1
         rmdir /s /q "!IMD_DIR!" >nul 2>&1
