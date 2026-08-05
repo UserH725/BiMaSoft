@@ -70,7 +70,7 @@ set "RAM_SIZE=50M"
 
 sc query imdsksvc >nul 2>&1
 if !errorlevel! NEQ 0 (
-    echo [+] Driver RAM Disk non trovato. Download e installazione automatica in corso...
+    echo [+] Driver RAM Disk non trovato. Download e installazione in corso...
     set "IMD_ZIP=%TEMP%\imdisk_raw.zip"
     set "IMD_DIR=%TEMP%\imdisk_raw"
     
@@ -79,17 +79,25 @@ if !errorlevel! NEQ 0 (
     if exist "!IMD_ZIP!" (
         powershell -NoProfile -Command "Expand-Archive -Path '!IMD_ZIP!' -DestinationPath '!IMD_DIR!' -Force" >nul 2>&1
         
-        :: Installazione nativa invisibile con PERCORSO ASSOLUTO (Fix bug System32)
-        rundll32 setupapi.dll,InstallHinfSection DefaultInstall 132 "!IMD_DIR!\imdisk.inf" >nul 2>&1
-        
-        :: Avvio del servizio in background di ImDisk
-        net start imdsksvc >nul 2>&1
+        if exist "!IMD_DIR!\install.bat" (
+            echo   [..] Avvio installer ImDisk in corso...
+            :: Imposta la cartella corrente su IMD_DIR affinche' install.bat trovi i file .cab
+            pushd "!IMD_DIR!"
+            start /wait "" "!IMD_DIR!\install.bat"
+            popd
+            
+            :: Avvio del servizio in background di ImDisk
+            net start imdsksvc >nul 2>&1
+            
+            echo   [OK] Procedura installazione ImDisk completata.
+        ) else (
+            echo   [ERRORE] File install.bat non trovato nello zip scaricato.
+        )
         
         del /f /q "!IMD_ZIP!" >nul 2>&1
         rmdir /s /q "!IMD_DIR!" >nul 2>&1
-        echo   [OK] Driver RAM Disk installato correttamente.
     ) else (
-        echo   [ERRORE] Download di ImDisk fallito. Impossibile creare il disco in RAM.
+        echo   [ERRORE] Download di imdisk_raw.zip fallito. Impossibile creare il disco in RAM.
     )
 )
 
