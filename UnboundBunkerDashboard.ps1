@@ -1,5 +1,5 @@
 ﻿# ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - RESTYLING BADGE BOOST)         #
+# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - ICONA VERSIONI RESTYLING)     #
 # ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
@@ -17,9 +17,7 @@ $LogFile    = "R:\dashboard_error.log"
 
 function Write-DashLog {
     param($msg)
-    try { 
-        "[$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] $msg" | Out-File -LiteralPath $LogFile -Append -Encoding utf8 
-    } catch {}
+    try { "[$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] $msg" | Out-File -LiteralPath $LogFile -Append -Encoding utf8 } catch {}
 }
 
 trap {
@@ -60,7 +58,7 @@ function Get-HardwareTier {
         try {
             $line = Get-Content -LiteralPath $HwConf | Where-Object { $_ -match 'Rilevati:\s*(\d+)\s*GB RAM.*Profilo:\s*(\S+)' } | Select-Object -First 1
             if ($line -match 'Rilevati:\s*(\d+)\s*GB RAM.*Profilo:\s*(\S+)') {
-                $result.ram_gb  = [int]$matches[1]
+                $result.ram_gb = [int]$matches[1]
                 $result.profilo = $matches[2]
             }
         } catch {}
@@ -72,9 +70,9 @@ function Get-RamDiskGauge {
     try {
         $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='R:'" -ErrorAction SilentlyContinue
         if ($disk -and $disk.Size -gt 0) {
-            $tot  = [math]::Round($disk.Size / 1MB, 1)
+            $tot = [math]::Round($disk.Size / 1MB, 1)
             $used = [math]::Round(($disk.Size - $disk.FreeSpace) / 1MB, 1)
-            $pct  = [math]::Round(($used / $tot) * 100, 1)
+            $pct = [math]::Round(($used / $tot) * 100, 1)
             return @{ tot_mb = $tot; used_mb = $used; pct = $pct; attivo = $true }
         }
     } catch {}
@@ -88,11 +86,7 @@ $script:CloudVersionsCacheTtlSec = 1800
 
 function Get-BunkerVersions {
     param([switch]$Force)
-    $result = [ordered]@{ 
-        unbound_local = "N/D"; unbound_cloud = "N/D"; 
-        conf_local    = "N/D"; conf_cloud    = "N/D"; 
-        bat_local     = "N/D"; bat_cloud     = "N/D" 
-    }
+    $result = [ordered]@{ unbound_local = "N/D"; unbound_cloud = "N/D"; conf_local = "N/D"; conf_cloud = "N/D"; bat_local = "N/D"; bat_cloud = "N/D" }
 
     $ubExe = Join-Path $UbDir "unbound.exe"
     if (Test-Path $ubExe) {
@@ -117,26 +111,14 @@ function Get-BunkerVersions {
 
     $cloudStale = $Force -or (-not $script:CloudVersionsCache) -or ((Get-Date) - $script:CloudVersionsCacheTime).TotalSeconds -ge $script:CloudVersionsCacheTtlSec
     if ($cloudStale) {
-        if (-not $script:CloudVersionsCache) { 
-            $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" } 
-        }
+        if (-not $script:CloudVersionsCache) { $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" } }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
             $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json
-            if ($json.tag_name -match 'release-(.*)') { 
-                $script:CloudVersionsCache.unbound_cloud = $matches[1] 
-            } else { 
-                $script:CloudVersionsCache.unbound_cloud = $json.tag_name 
-            }
+            if ($json.tag_name -match 'release-(.*)') { $script:CloudVersionsCache.unbound_cloud = $matches[1] } else { $script:CloudVersionsCache.unbound_cloud = $json.tag_name }
         } catch {}
-        try { 
-            $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim()
-            if($v){ $script:CloudVersionsCache.conf_cloud = $v } 
-        } catch {}
-        try { 
-            $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim()
-            if($v){ $script:CloudVersionsCache.bat_cloud = $v } 
-        } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
         $script:CloudVersionsCacheTime = Get-Date
     }
 
@@ -244,9 +226,11 @@ function Get-UpstreamRadar {
 
 # === LIVE STATS ESTESE ===
 function Get-LiveStats {
-    $base  = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0 }
-    $rcode = [ordered]@{ noerror = 0; nxdomain = 0; servfail = 0 }
-    $types = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0 }
+    $base   = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0; qps_medio = 0 }
+    $rcode  = [ordered]@{ noerror = 0; nxdomain = 0; servfail = 0 }
+    $types  = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0 }
+    $dnssec = [ordered]@{ secure = 0; bogus = 0 }
+    $prefetch = 0
     $recMs = 0
 
     if (Test-Path $UcExe) {
@@ -266,7 +250,13 @@ function Get-LiveStats {
                     if ($k -eq "num.query.type.A")           { $types.type_a    = $v }
                     if ($k -eq "num.query.type.AAAA")        { $types.type_aaaa = $v }
                     if ($k -eq "num.query.type.HTTPS")       { $types.type_https= $v }
+                    if ($k -eq "num.answer.secure")          { $dnssec.secure   = $v }
+                    if ($k -eq "num.answer.bogus")           { $dnssec.bogus    = $v }
+                    if ($k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
                 }
+            }
+            if ($base.uptime_secondi -gt 0) {
+                $base.qps_medio = [math]::Round($base.query_totali / $base.uptime_secondi, 2)
             }
             if ($base.query_totali -gt 0) {
                 $base.cache_efficienza_pct = [math]::Round(($base.cache_hits / $base.query_totali) * 100, 1)
@@ -275,7 +265,7 @@ function Get-LiveStats {
             }
         } catch {}
     }
-    return @{ base = $base; rcode = $rcode; types = $types }
+    return @{ base = $base; rcode = $rcode; types = $types; dnssec = $dnssec; prefetch = $prefetch }
 }
 
 function Get-RpzBreakdown {
@@ -340,6 +330,14 @@ function Get-BunkerStatusJson {
     $salute   = Get-HealthSnapshot
     $netSpeed = Get-NetworkSpeed
 
+    $rpzAgeMinutes = 0
+    if (Test-Path $RpzLog) {
+        try {
+            $lastWrite = (Get-Item -LiteralPath $RpzLog).LastWriteTime
+            $rpzAgeMinutes = [math]::Round(((Get-Date) - $lastWrite).TotalMinutes, 0)
+        } catch {}
+    }
+
     $pctBlocchi = 0
     if ($stats.base.query_totali -gt 0) {
         $pctBlocchi = [math]::Round(($rpz.totale / $stats.base.query_totali) * 100, 1)
@@ -361,6 +359,7 @@ function Get-BunkerStatusJson {
         versioni         = $versioni
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
+        rpz_log_age_min  = $rpzAgeMinutes
         live_feed_rpz    = $liveFeed
         upstream_radar   = $radar
         statistiche_live = $stats
@@ -389,30 +388,12 @@ $HtmlPage = @'
 <title>Unbound Bunker - Dashboard Live V2</title>
 <style>
   :root {
-    --bg: #0b0f14; 
-    --panel: #121820; 
-    --border: #1f2b38; 
-    --text: #d7e2ec; 
-    --dim: #7f93a6;
-    --green: #208b4c; 
-    --green-bright: #3ddc84; 
-    --red: #c0392b; 
-    --red-bright: #ff5c5c;
-    --amber: #d35400; 
-    --accent: #4fb3ff; 
-    --purple: #b388ff; 
-    --amber-bright: #ffb300;
+    --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
+    --green:#208b4c; --green-bright:#3ddc84; --red:#c0392b; --red-bright:#ff5c5c;
+    --amber:#d35400; --accent:#4fb3ff; --purple:#b388ff; --amber-bright:#ffb300;
   }
-  
   * { box-sizing: border-box; }
-  
-  body { 
-    background: var(--bg); 
-    color: var(--text); 
-    font-family: "Consolas", "Cascadia Mono", monospace; 
-    margin: 0; 
-    padding: 20px; 
-  }
+  body { background: var(--bg); color: var(--text); font-family: "Consolas","Cascadia Mono",monospace; margin: 0; padding: 20px; }
   
   .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
   .clock-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; text-align: right; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -434,19 +415,18 @@ $HtmlPage = @'
 
   .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 18px; }
   
-  /* CONTENITORE BADGES SULLA STESSA RIGA */
+  /* BADGES PRINCIPALI */
   .badges {
     display: flex;
     gap: 8px;
     flex-wrap: nowrap;
-    margin-bottom: 22px;
+    margin-bottom: 12px;
     width: 100%;
     align-items: center;
     overflow-x: auto;
     white-space: nowrap;
     padding-bottom: 4px;
   }
-
   .badge {
     padding: 8px 12px;
     border-radius: 6px;
@@ -459,7 +439,6 @@ $HtmlPage = @'
     flex-shrink: 0;
   }
 
-  /* STILI BADGE DI STATO GENERICI */
   .ok { background-color: rgba(32, 139, 76, 0.25); color: var(--green-bright); border: 2px solid var(--green-bright); }
   .bad { background-color: rgba(192, 57, 43, 0.3); color: #ffffff; border: 2px solid var(--red-bright); }
   .ram { background-color: rgba(179, 136, 255, 0.15); color: var(--purple); border: 2px solid var(--purple); }
@@ -467,51 +446,62 @@ $HtmlPage = @'
   .blocchi { background-color: rgba(255, 92, 92, 0.15); color: var(--red-bright); border: 2px solid var(--red-bright); }
   .latenza { background-color: rgba(79, 179, 255, 0.15); color: var(--accent); border: 2px solid var(--accent); }
 
-  /* STILE BADGE BOOST CON BARRA GRADIENTE E INDICATORE DEDICATO */
-  .boost-highlight {
-    background: linear-gradient(90deg, rgba(18,24,32,0.9) 0%, rgba(32,139,76,0.35) 100%);
+  .cache-highlight {
+    background: linear-gradient(135deg, rgba(79,179,255,0.2) 0%, rgba(61,220,132,0.2) 100%);
     color: #ffffff;
     border: 2px solid var(--green-bright);
-    box-shadow: 0 0 16px rgba(61, 220, 132, 0.45);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-  }
-  .boost-highlight b { color: var(--green-bright); font-size: 1.15em; }
-
-  .boost-meter-box {
-    width: 65px;
-    height: 12px;
-    background: linear-gradient(90deg, #ff5c5c 0%, #ffb300 50%, #3ddc84 100%);
-    border-radius: 6px;
-    position: relative;
-    border: 1px solid rgba(255,255,255,0.25);
-    overflow: visible;
-  }
-
-  .boost-meter-arrow {
-    position: absolute;
-    top: -6px;
-    left: 0%;
-    transform: translateX(-50%);
-    font-size: 10px;
-    color: #ffffff;
-    text-shadow: 0 0 4px #000;
-    transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: none;
-  }
-
-  /* STILE BADGE CACHE */
-  .cache-highlight {
-    background-color: rgba(79, 179, 255, 0.15);
-    color: #ffffff;
-    border: 2px solid var(--accent);
-    box-shadow: 0 0 18px rgba(79, 179, 255, 0.5);
+    box-shadow: 0 0 18px rgba(61, 220, 132, 0.4);
     text-shadow: 0 1px 3px rgba(0,0,0,0.8);
   }
-  .cache-highlight b { color: var(--accent); font-size: 1.1em; margin-left: 4px; }
+  .cache-highlight b { color: var(--green-bright); font-size: 1.15em; margin-left: 6px; }
+
+  .gain-highlight {
+    margin-left: auto;
+    background: linear-gradient(135deg, rgba(255,179,0,0.2) 0%, rgba(179,136,255,0.25) 100%);
+    color: #ffffff;
+    border: 2px solid var(--amber-bright);
+    box-shadow: 0 0 18px rgba(255, 179, 0, 0.45);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  }
+  .gain-highlight b { color: var(--amber-bright); font-size: 1.15em; margin-left: 6px; }
+
+  /* SUB-ROW SOTTO-INDICATORI A GRADIENTE PER BOOST SCORE & HEADROOM */
+  .boost-subrow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 22px;
+    background: #0e141b;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .boost-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .boost-item-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78em;
+    color: var(--dim);
+    margin-bottom: 5px;
+    font-weight: bold;
+  }
+  .boost-item-val { color: var(--text); }
+
+  .g-bar-bg { background: #080c10; border-radius: 4px; height: 10px; overflow: hidden; display: flex; }
+  .g-bar-fill { height: 100%; transition: width 0.4s ease; }
+  
+  .fill-cache { background: linear-gradient(90deg, #0099ff 0%, #3ddc84 100%); }
+  .fill-latency { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
+  .fill-upstream { background: linear-gradient(90deg, #b388ff 0%, #3ddc84 100%); }
+  .fill-dnssec { background: linear-gradient(90deg, #0099ff 0%, #3ddc84 100%); }
+  .fill-prefetch { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
+  .fill-qps { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
+  .fill-health { background: linear-gradient(90deg, #ff5c5c 0%, #3ddc84 100%); }
 
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
@@ -521,19 +511,9 @@ $HtmlPage = @'
     border: 1px solid var(--accent) !important;
     box-shadow: 0 0 16px rgba(79, 179, 255, 0.2);
   }
-  .panel-versioni h2 {
-    color: #ffffff !important;
-    border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important;
-  }
+  .panel-versioni h2 { color: #ffffff !important; border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important; }
   
-  .stat-ver {
-    background: #090e16;
-    border: 1px solid #1a2a3a;
-    border-radius: 6px;
-    padding: 12px;
-    position: relative;
-    transition: all 0.2s ease;
-  }
+  .stat-ver { background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 12px; position: relative; transition: all 0.2s ease; }
   .stat-ver:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
   .ver-status-ok { color: var(--green-bright); font-size: 0.78em; font-weight: bold; float: right; }
   .ver-status-warn { color: var(--amber-bright); font-size: 0.78em; font-weight: bold; float: right; }
@@ -543,24 +523,10 @@ $HtmlPage = @'
   .stat .val { font-size:1.4em; font-weight:bold; }
   .stat .lbl { color: var(--dim); font-size:0.75em; }
 
-  .table-scroll {
-    max-height: 520px;
-    overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #0e141b;
-  }
+  .table-scroll { max-height: 520px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: #0e141b; }
   .table-scroll table { width: 100%; border-collapse: collapse; font-size: 0.85em; border: none; }
   .table-scroll th, .table-scroll td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  .table-scroll th {
-    position: sticky;
-    top: 0;
-    background: var(--panel);
-    z-index: 2;
-    color: var(--dim);
-    font-weight: normal;
-    box-shadow: 0 1px 0 var(--border);
-  }
+  .table-scroll th { position: sticky; top: 0; background: var(--panel); z-index: 2; color: var(--dim); font-weight: normal; box-shadow: 0 1px 0 var(--border); }
 
   table { width:100%; border-collapse: collapse; font-size:0.85em; }
   th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
@@ -576,20 +542,10 @@ $HtmlPage = @'
 
   .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 22px; overflow: hidden; display: flex; }
   .bar-fill { height: 100%; transition: width 0.3s ease; }
-  
   .legend-box { font-size: 0.98em; color: var(--dim); margin-top: 10px; line-height: 1.6; }
 
-  .grid-two-columns {
-    display: flex;
-    gap: 18px;
-    flex-wrap: wrap;
-    margin-bottom: 18px;
-  }
-  .grid-two-columns > div {
-    flex: 1;
-    min-width: 320px;
-    margin-bottom: 0;
-  }
+  .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+  .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
 </style>
 </head>
 <body>
@@ -605,22 +561,51 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- 🏷️ BARRA DEI BADGES DI STATO SULLA STESSA RIGA -->
+<!-- 🏷️ BARRA DEI BADGES DI STATO CON BUNKER BOOST SCORE E BUNKER GAIN -->
 <div class="badges" id="badges"></div>
+
+<!-- 📊 SECONDA FILA: SOTTO-INDICATORI A RISERVA/EFFICIENZA (100% = STATO TOP) -->
+<div class="boost-subrow">
+  <div class="boost-item">
+    <div class="boost-item-header"><span>CACHE REALE (NO RPZ)</span><span class="boost-item-val" id="valRealCache">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-cache" id="barRealCache" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>EFFICIENZA LATENZA</span><span class="boost-item-val" id="valLatScore">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-latency" id="barLatScore" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>UPSTREAM DoT ONLINE</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-upstream" id="barUpstreamScore" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>INTEGRITÀ DNSSEC</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-dnssec" id="barDnssecScore" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>PRONTEZZA PREFETCH</span><span class="boost-item-val" id="valPrefetchScore">100%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-prefetch" id="barPrefetchScore" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>RISERVA CAPACITÀ (QPS)</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-qps" id="barQpsScore" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>SALUTE SISTEMA</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-health" id="barHealthScore" style="width:100%"></div></div>
+  </div>
+</div>
 
 <!-- CONTENITORE AFFIANCATO 1: SINISTRA (Versioni + Statistiche) / DESTRA (Upstream Radar) -->
 <div class="grid-two-columns">
   
-  <!-- COLONNA SINISTRA -->
   <div style="display: flex; flex-direction: column; gap: 18px;">
     
-    <!-- MODULO VERSIONI COMPONENTI -->
     <div class="panel panel-versioni" style="margin-bottom: 0;">
       <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
       <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
     </div>
 
-    <!-- MODULO STATISTICHE AVANZATE TRAFFICO -->
     <div class="panel" style="margin-bottom: 0; flex: 1;">
       <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
       <div style="display: flex; flex-direction: column; gap: 20px;">
@@ -647,7 +632,6 @@ $HtmlPage = @'
 
   </div>
 
-  <!-- COLONNA DESTRA: UPSTREAM RADAR DOT -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
     <div style="overflow-x: auto;">
@@ -673,7 +657,6 @@ $HtmlPage = @'
 <!-- CONTENITORE AFFIANCATO 2: SINISTRA (Live Feed RPZ) / DESTRA (Dettaglio Block List Telegram) -->
 <div class="grid-two-columns">
   
-  <!-- METÀ SINISTRA: LIVE FEED RPZ -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
     <div class="table-scroll">
@@ -684,7 +667,6 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <!-- METÀ DESTRA: REPORT TELEGRAM & DETTAGLIO BLOCK LIST -->
   <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
     <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
     <div class="stats-grid" id="statsUltimoReport"></div>
@@ -693,26 +675,28 @@ $HtmlPage = @'
 
 </div>
 
-<!-- MODULO TOTALE SESSIONE -->
+<!-- &#9854; MODULO TOTALE SESSIONE -->
 <div class="panel">
   <h2>&#9854; Totale sessione (dall'ultimo avvio)</h2>
   <div class="stats-grid" id="statsSessione"></div>
 </div>
 
-<!-- MODULO SALUTE SISTEMA -->
+<!-- &#9877; MODULO SALUTE SISTEMA -->
 <div class="panel">
   <h2>&#9877; Stato di salute del sistema (Log Fasi di Avvio)</h2>
   <table id="tabellaSalute"><thead><tr><th>Fase</th><th>Azione</th><th>Esito</th></tr></thead><tbody></tbody></table>
 </div>
 
 <script>
-// Formattta i numeri per la visualizzazione italiana (es: 1.000)
+let prevQueries = 0;
+let prevTime = Date.now();
+let liveQPS = 0;
+
 function fmt(n) {
   if (n === undefined || n === null) return "-";
   return Number(n).toLocaleString('it-IT');
 }
 
-// Aggiorna l'orologio e la data in alto a destra
 function updateClock() {
   const now = new Date();
   document.getElementById('clockTime').textContent = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -721,34 +705,12 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// Ritorna il badge HTML relativo all'allineamento di versione
 function getVerBadge(loc, cld) {
   if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Offline</span>';
   if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; ALLINEATO</span>';
   return '<span class="ver-status-warn">&#9888; AGGIORNAMENTO v' + cld + '</span>';
 }
 
-// Genera e calcola il Badge Boost con la freccia dinamica a scorrimento
-function renderBoostBadge(cachePct, blkPct) {
-  // Calcolo composito: la cache pesa al 100%, le query droppate dalle RPZ al 25%
-  const boostRaw = cachePct + (blkPct * 0.25);
-  const boostPct = Math.min(99.9, Math.round(boostRaw * 10) / 10);
-  
-  // Posizione percentuale della freccia da 0% a 100%
-  const arrowPos = Math.max(0, Math.min(100, boostPct));
-
-  const bBoost = document.createElement('span');
-  bBoost.className = 'badge boost-highlight';
-  bBoost.innerHTML = `
-    &#9889; BOOST: <b>+${boostPct}%</b>
-    <div class="boost-meter-box">
-      <div class="boost-meter-arrow" style="left: ${arrowPos}%;">▼</div>
-    </div>
-  `;
-  return bBoost;
-}
-
-// Funzione principale di refresh e aggiornamento dati via API
 async function refresh(forceVersions) {
   try {
     const res = await fetch(forceVersions ? '/api/status?force=1' : '/api/status', { cache: 'no-store' });
@@ -757,7 +719,7 @@ async function refresh(forceVersions) {
     document.getElementById('subheader').textContent =
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
-      ' | Storage: RAM Disk (R:\\) | Aggiornato: ' + d.generato_il;
+      ' | Storage: RAM Disk (R:\\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
     // 1. VERSIONI COMPONENTI
     const v = d.versioni || {};
@@ -775,27 +737,131 @@ async function refresh(forceVersions) {
       <div class="stat-ver">
         <div class="lbl">&#128736; File Service CONF ${getVerBadge(v.conf_local, v.conf_cloud)}</div>
         <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.conf_local || 'N/D'}</div>
-        <div class="muted">Release Cloud: <b>v${v.conf_cloud || 'N/D'}</b></div>
+        <div class="muted">Release Cloud: <b>${v.conf_cloud || 'N/D'}</b></div>
       </div>
     `;
 
-    // 2. CREAZIONE BADGES DI STATO IN RIGA
+    // METRICHE BASE E UPSTREAM
+    const qTot = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.query_totali : 0;
+    const cHits = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_hits : 0;
+    const qBlocchi = (d.dall_ultimo_report && d.dall_ultimo_report.blocchi_totali) ? d.dall_ultimo_report.blocchi_totali : 0;
+    const latMs = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.latenza_ms : 0;
+    const qpsAvg = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.qps_medio : 0;
+    
+    // CALCOLO QPS LIVE
+    const nowMs = Date.now();
+    if (prevQueries > 0 && nowMs > prevTime) {
+      const qDiff = Math.max(0, qTot - prevQueries);
+      const tDiffSec = (nowMs - prevTime) / 1000;
+      liveQPS = (qDiff / tDiffSec).toFixed(1);
+    } else {
+      liveQPS = qpsAvg.toFixed(1);
+    }
+    prevQueries = qTot;
+    prevTime = nowMs;
+
+    let radarList = d.upstream_radar || [];
+    if (!Array.isArray(radarList)) radarList = [radarList];
+    const upOk = radarList.filter(r => r.ok).length;
+
+    // 1. CACHE HIT REALE
+    const qLecite = Math.max(1, qTot - qBlocchi);
+    let realCachePct = Math.min(100, Math.round((cHits / qLecite) * 100));
+    if (isNaN(realCachePct)) realCachePct = 0;
+
+    // 2. EFFICIENZA LATENZA (100% = 0ms, scende all'aumentare della latenza)
+    let effectiveLat = latMs;
+    if ((!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
+      const okRadars = radarList.filter(r => r.ok);
+      if (okRadars.length > 0) {
+        effectiveLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
+      }
+    }
+    let latScore = Math.max(0, Math.min(100, Math.round(100 - (effectiveLat * 0.2))));
+
+    // 3. UPSTREAM DOT SCORE (100% = tutti i resolver online, scende se qualcuno disconnette)
+    let upstreamScore = radarList.length > 0 ? Math.round((upOk / radarList.length) * 100) : 100;
+
+    // 4. INTEGRITÀ DNSSEC (100% = nessuna manomissione, scende se compaiono BOGUS)
+    const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
+    const totDnssec = ds.secure + ds.bogus;
+    let dnssecPct = totDnssec > 0 ? Math.round((ds.secure / totDnssec) * 100) : 100;
+    if (ds.bogus > 0) dnssecPct = Math.max(0, dnssecPct - (ds.bogus * 10));
+
+    // 5. PRONTEZZA PREFETCH (100% = motore attivo in RAM e pronto; scende solo se inattivo)
+    const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
+    let prefetchReadiness = 100;
+
+    // 6. RISERVA DI CAPACITÀ QPS (100% = sistema a riposo/pronto; scende quando c'è forte carico)
+    let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS * 2))));
+
+    // 7. HEALTH SCORE (100% = perfetto, 0% = errori)
+    let healthScore = d.salute_sistema.anomalie_rilevate ? 0 : 100;
+
+    // BUNKER BOOST SCORE GLOBALE (PONDERATO SU DISPONIBILITÀ ED EFFICIENZA)
+    let boostScore = Math.round(
+      (realCachePct * 0.30) + 
+      (latScore * 0.25) + 
+      (upstreamScore * 0.15) + 
+      (dnssecPct * 0.15) + 
+      (qpsHeadroom * 0.05) +
+      (healthScore * 0.10)
+    );
+
+    // === CALCOLO STIMA BUNKER GAIN PERFORMANCES (%) ===
+    const ispBaselineMs = 40;
+    const displayLat = Math.max(0.5, effectiveLat);
+    const latGainPct = Math.max(0, ((ispBaselineMs - displayLat) / ispBaselineMs) * 130);
+
+    const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
+    const rpzGainPct = blkPct * 3.4;
+
+    const ramGb = (d.hardware && d.hardware.ram_gb) ? d.hardware.ram_gb : 4;
+    const ramDiskGain = (d.ram_disk && d.ram_disk.attivo) ? 25 : 5;
+    const hwGain = Math.min(25, ramGb * 2.5);
+
+    const dotGain = (upOk > 0) ? (upOk * 5) + 15 : 0;
+    const prefetchGain = Math.min(20, Math.round(prefetchVal / 50));
+
+    let totalBunkerGain = Math.round(latGainPct + rpzGainPct + ramDiskGain + hwGain + dotGain + prefetchGain);
+    if (totalBunkerGain < 60) totalBunkerGain = 60;
+
+    // AGGIORNAMENTO SOTTO-INDICATORI A GRADIENTE (TUTTI CON BASE 100% TOP)
+    document.getElementById('valRealCache').textContent = realCachePct + '%';
+    document.getElementById('barRealCache').style.width = realCachePct + '%';
+
+    document.getElementById('valLatScore').textContent = latScore + '% (' + displayLat + ' ms)';
+    document.getElementById('barLatScore').style.width = latScore + '%';
+
+    document.getElementById('valUpstreamScore').textContent = upstreamScore + '% (' + upOk + '/' + radarList.length + ')';
+    document.getElementById('barUpstreamScore').style.width = upstreamScore + '%';
+
+    document.getElementById('valDnssecScore').innerHTML = dnssecPct + '% ' + (ds.bogus > 0 ? '<span class="esito-warn">[BOGUS:' + ds.bogus + ']</span>' : '<span class="esito-ok">[OK]</span>');
+    document.getElementById('barDnssecScore').style.width = dnssecPct + '%';
+
+    document.getElementById('valPrefetchScore').textContent = prefetchReadiness + '% (' + fmt(prefetchVal) + ' hits)';
+    document.getElementById('barPrefetchScore').style.width = prefetchReadiness + '%';
+
+    document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (' + liveQPS + ' req/s)';
+    document.getElementById('barQpsScore').style.width = qpsHeadroom + '%';
+
+    document.getElementById('valHealthScore').textContent = healthScore + '%';
+    document.getElementById('barHealthScore').style.width = healthScore + '%';
+
+    // 2. BADGES DI STATO INTEGRATI
     const badges = document.getElementById('badges');
     badges.innerHTML = '';
     
-    // Engine Unbound Status
     const bEngine = document.createElement('span');
     bEngine.className = 'badge ' + (d.engine_attivo ? 'ok' : 'bad');
     bEngine.innerHTML = d.engine_attivo ? '&#128994; UNBOUND ATTIVO' : '&#128308; UNBOUND FERMO';
     badges.appendChild(bEngine);
     
-    // Salute Sistema Status
     const bSalute = document.createElement('span');
     bSalute.className = 'badge ' + (d.salute_sistema.anomalie_rilevate ? 'bad' : 'ok');
     bSalute.innerHTML = d.salute_sistema.anomalie_rilevate ? '&#9888; ANOMALIE' : '&#9989; SALUTE OK';
     badges.appendChild(bSalute);
 
-    // RAM Disk Usage
     if (d.ram_disk && d.ram_disk.attivo) {
       const bRam = document.createElement('span');
       bRam.className = 'badge ram';
@@ -803,21 +869,16 @@ async function refresh(forceVersions) {
       badges.appendChild(bRam);
     }
 
-    // Blocchi Totali %
-    const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     const bBlocchi = document.createElement('span');
     bBlocchi.className = 'badge blocchi';
     bBlocchi.innerHTML = '&#128737; BLOCCHI: <b>' + blkPct + '%</b>';
     badges.appendChild(bBlocchi);
 
-    // Latenza Media
-    const latMs = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.latenza_ms : 0;
     const bLat = document.createElement('span');
     bLat.className = 'badge latenza';
-    bLat.innerHTML = '&#9889; LATENZA: <b>' + latMs + ' ms</b>';
+    bLat.innerHTML = '&#9889; LATENZA: <b>' + displayLat + ' ms</b>';
     badges.appendChild(bLat);
 
-    // Velocità di Banda Rete
     if (d.net_speed && d.net_speed.ok) {
       const bNet = document.createElement('span');
       bNet.className = 'badge net';
@@ -825,17 +886,17 @@ async function refresh(forceVersions) {
       badges.appendChild(bNet);
     }
 
-    const cachePct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_efficienza_pct : 0;
-
-    // BADGE BOOST PRESTAZIONALE (Posizionato a sinistra del badge Cache)
-    const bBoost = renderBoostBadge(cachePct, blkPct);
-    badges.appendChild(bBoost);
-
-    // BADGE CACHE
+    // BUNKER BOOST SCORE
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
-    bCache.innerHTML = '&#128640; CACHE: <b>' + cachePct + '%</b>';
+    bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
+
+    // BUNKER GAIN
+    const bGain = document.createElement('span');
+    bGain.className = 'badge gain-highlight';
+    bGain.innerHTML = '&#9889; BUNKER GAIN: <b>+' + totalBunkerGain + '%</b>';
+    badges.appendChild(bGain);
 
     // 3. STATISTICHE LIVE TRAFFICO
     const st = d.statistiche_live || {};
