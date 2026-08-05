@@ -1,4 +1,4 @@
-﻿# ======================================================================================= #
+# ======================================================================================= #
 # UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - ICONA VERSIONI RESTYLING)     #
 # ======================================================================================= #
 
@@ -418,14 +418,14 @@ $HtmlPage = @'
   /* BADGES PRINCIPALI */
   .badges {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: nowrap;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     width: 100%;
     align-items: center;
     overflow-x: auto;
     white-space: nowrap;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
   }
   .badge {
     padding: 8px 12px;
@@ -455,15 +455,18 @@ $HtmlPage = @'
   }
   .cache-highlight b { color: var(--green-bright); font-size: 1.15em; margin-left: 6px; }
 
+  /* CSS EVIDENZIATORE INGRANDITO ED ELEGANTE PER IL BUNKER GAIN CON GRADIENTE REATTIVO VERDE */
   .gain-highlight {
     margin-left: auto;
-    background: linear-gradient(135deg, rgba(255,179,0,0.2) 0%, rgba(179,136,255,0.25) 100%);
-    color: #ffffff;
+    font-size: 1em;
+    padding: 10px 18px;
+    border-radius: 8px;
     border: 2px solid var(--amber-bright);
-    box-shadow: 0 0 18px rgba(255, 179, 0, 0.45);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    box-shadow: 0 0 24px rgba(255, 179, 0, 0.5);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    transition: all 0.4s ease-in-out;
   }
-  .gain-highlight b { color: var(--amber-bright); font-size: 1.15em; margin-left: 6px; }
+  .gain-highlight b { font-size: 1.32em; margin-left: 6px; }
 
   /* SUB-ROW SOTTO-INDICATORI A GRADIENTE PER BOOST SCORE & HEADROOM */
   .boost-subrow {
@@ -561,7 +564,7 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- 🏷️ BARRA DEI BADGES DI STATO CON BUNKER BOOST SCORE E BUNKER GAIN -->
+<!-- 🏷️ BARRA DEI BADGES DI STATO CON BUNKER BOOST SCORE E BUNKER GAIN INGRANDITO -->
 <div class="badges" id="badges"></div>
 
 <!-- 📊 SECONDA FILA: SOTTO-INDICATORI A RISERVA/EFFICIENZA (100% = STATO TOP) -->
@@ -820,25 +823,16 @@ async function refresh(forceVersions) {
     );
 
     // === CALCOLO RICALIBRATO REALISTICO BUNKER GAIN (%) CON TEMPO RISPARMIATO ===
-    // Benchmark DNS standard ISP: ~45ms medio
     const ispBaselineMs = 45;
     const displayLat = Math.max(0.5, effectiveLat);
     const msSaved = Math.max(0, Math.round(ispBaselineMs - displayLat));
 
-    // 1. Guadagno Latenza Reale (max +40%)
     const latGainReal = Math.min(40, Math.round((msSaved / ispBaselineMs) * 40));
-
-    // 2. Guadagno RPZ Blocco Traccianti/Ads (max +20%)
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
-
-    // 3. Guadagno I/O RAM Disk R:\ (max +10%)
     const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
-
-    // 4. Guadagno Cifratura DoT e Prefetch (max +10%)
     const dotPrefetchGain = (upOk > 0 ? 5 : 0) + (prefetchVal > 0 ? 5 : 2);
 
-    // TOTALE RICALIBRATO (In genere tra +35% e +75%)
     let totalBunkerGain = Math.round(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
@@ -909,10 +903,20 @@ async function refresh(forceVersions) {
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
 
-    // BUNKER GAIN (PERCENTUALE RICALIBRATA + MS RISPARMIATI TANGIBILI)
+    // === BUNKER GAIN INGRANDITO CON GRADIENTE DINAMICO REATTIVO DA AMBRA A VERDE SMERALDO ===
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
-    bGain.innerHTML = '&#9889; BUNKER GAIN: <b>+' + totalBunkerGain + '%</b> <span style="font-size:0.85em; opacity:0.9; margin-left:4px;">(~' + msSaved + 'ms/req saved)</span>';
+
+    // Calcolo tonalità HSL: da 38° (Ambra/Arancio per gain basso) fino a 138° (Verde Smeraldo per gain alto)
+    let gainRatio = Math.min(1, Math.max(0, (totalBunkerGain - 25) / 55));
+    let hueStart  = Math.round(38 + gainRatio * 92);
+    let hueEnd    = Math.round(58 + gainRatio * 80);
+
+    bGain.style.background = `linear-gradient(135deg, hsla(${hueStart}, 85%, 45%, 0.28) 0%, hsla(${hueEnd}, 90%, 48%, 0.38) 100%)`;
+    bGain.style.borderColor = `hsl(${hueEnd}, 90%, 50%)`;
+    bGain.style.boxShadow = `0 0 24px hsla(${hueEnd}, 90%, 50%, 0.6)`;
+
+    bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
     badges.appendChild(bGain);
 
     // 3. STATISTICHE LIVE TRAFFICO
