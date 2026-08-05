@@ -503,9 +503,24 @@ $HtmlPage = @'
   .latency { color: var(--accent); font-weight: bold; }
   .muted { color: var(--dim); }
 
-  .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 14px; overflow: hidden; display: flex; }
+  .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 22px; overflow: hidden; display: flex; }
   .bar-fill { height: 100%; transition: width 0.3s ease; }
-  .legend-box { font-size: 0.78em; color: var(--dim); margin-top: 8px; line-height: 1.5; }
+  
+  /* DIMENSIONE CARATTERE INGRANDITA ULTERIORMENTE PER STATISTICHE E LEGENDE */
+  .legend-box { font-size: 0.98em; color: var(--dim); margin-top: 10px; line-height: 1.6; }
+
+  /* CSS PER LAYOUT AFFIANCATO A DUE COLONNE */
+  .grid-two-columns {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .grid-two-columns > div {
+    flex: 1;
+    min-width: 320px;
+    margin-bottom: 0;
+  }
 </style>
 </head>
 <body>
@@ -521,65 +536,92 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- &#128230; MODULO VERSIONI COMPONENTI EVIDENZIATO -->
-<div class="panel panel-versioni" style="margin-bottom: 16px;">
-  <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-  <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 0;"></div>
-</div>
-
 <!-- 🏷️ BARRA DEI BADGES DI STATO SULLA STESSA RIGA -->
 <div class="badges" id="badges"></div>
 
-<!-- &#128202; MODULO STATISTICHE AVANZATE TRAFFICO -->
-<div class="panel">
-  <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
-  <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-    <div style="flex: 1; min-width: 280px;">
-      <div style="font-size: 0.85em; margin-bottom: 6px;" id="lblRcode">Codici Risposta (RCODE): --</div>
-      <div class="bar-bg" id="barRcode"></div>
-      <div class="legend-box">
-        &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
-        &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
-        &bull; <b style="color:var(--amber)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
+<!-- CONTENITORE AFFIANCATO 1: SINISTRA (Versioni + Statistiche) / DESTRA (Upstream Radar) -->
+<div class="grid-two-columns">
+  
+  <!-- COLONNA SINISTRA -->
+  <div style="display: flex; flex-direction: column; gap: 18px;">
+    
+    <!-- &#128230; MODULO VERSIONI COMPONENTI EVIDENZIATO -->
+    <div class="panel panel-versioni" style="margin-bottom: 0;">
+      <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
+      <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
+    </div>
+
+    <!-- &#128202; MODULO STATISTICHE AVANZATE TRAFFICO (CARATTERE ULTERIORMENTE INGRANDITO) -->
+    <div class="panel" style="margin-bottom: 0; flex: 1;">
+      <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div>
+          <div style="font-size: 1.18em; font-weight: bold; margin-bottom: 8px;" id="lblRcode">Codici Risposta (RCODE): --</div>
+          <div class="bar-bg" id="barRcode"></div>
+          <div class="legend-box">
+            &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
+            &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
+            &bull; <b style="color:var(--amber)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 1.18em; font-weight: bold; margin-bottom: 8px;" id="lblTypes">Tipologia Query (RR Type): --</div>
+          <div class="bar-bg" id="barTypes"></div>
+          <div class="legend-box">
+            &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
+            &bull; <b style="color:var(--purple)">AAAA (IPv6)</b>: Risoluzioni IPv6<br>
+            &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
+          </div>
+        </div>
       </div>
     </div>
-    <div style="flex: 1; min-width: 280px;">
-      <div style="font-size: 0.85em; margin-bottom: 6px;" id="lblTypes">Tipologia Query (RR Type): --</div>
-      <div class="bar-bg" id="barTypes"></div>
-      <div class="legend-box">
-        &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
-        &bull; <b style="color:var(--purple)">AAAA (IPv6)</b>: Risoluzioni IPv6<br>
-        &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
-      </div>
+
+  </div>
+
+  <!-- COLONNA DESTRA: &#128257; MODULO UPSTREAM RADAR DOT -->
+  <div class="panel" style="margin-bottom: 0;">
+    <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
+    <div style="overflow-x: auto;">
+      <table id="tabellaRadar">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Provider Resolver DoT</th>
+            <th>Indirizzo IP</th>
+            <th>Latenza TCP</th>
+            <th>Stato Porta 853</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5" class="muted">Verifica resolver DoT in corso...</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
+
 </div>
 
-<!-- &#9889; MODULO LIVE FEED RPZ SCORREVOLE -->
-<div class="panel">
-  <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
-  <div class="table-scroll">
-    <table id="tabellaLiveFeed">
-      <thead><tr><th>Orario</th><th>Host / Dominio FQDN Completo</th><th>Lista RPZ Intervenuta</th><th>Azione</th></tr></thead>
-      <tbody><tr><td colspan="4" class="muted">In attesa di eventi RPZ in tempo reale...</td></tr></tbody>
-    </table>
+<!-- CONTENITORE AFFIANCATO 2: SINISTRA (Live Feed RPZ) / DESTRA (Dettaglio Block List Telegram) -->
+<div class="grid-two-columns">
+  
+  <!-- METÀ SINISTRA: &#9889; LIVE FEED RPZ -->
+  <div class="panel" style="margin-bottom: 0;">
+    <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
+    <div class="table-scroll">
+      <table id="tabellaLiveFeed">
+        <thead><tr><th>Orario</th><th>Host / Dominio FQDN Completo</th><th>Lista RPZ Intervenuta</th><th>Azione</th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">In attesa di eventi RPZ in tempo reale...</td></tr></tbody>
+      </table>
+    </div>
   </div>
-</div>
 
-<!-- &#128257; MODULO UPSTREAM RADAR DOT -->
-<div class="panel">
-  <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-  <table id="tabellaRadar">
-    <thead><tr><th>Status</th><th>Provider Resolver DoT</th><th>Indirizzo IP</th><th>Latenza TCP</th><th>Stato Porta 853</th></tr></thead>
-    <tbody><tr><td colspan="5" class="muted">Verifica resolver DoT in corso...</td></tr></tbody>
-  </table>
-</div>
+  <!-- METÀ DESTRA: &#128202; REPORT TELEGRAM & DETTAGLIO BLOCK LIST -->
+  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
+    <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
+    <div class="stats-grid" id="statsUltimoReport"></div>
+    <div id="listeRpz" style="max-height: 440px; overflow-y: auto; padding-right: 4px;"></div>
+  </div>
 
-<!-- &#128202; MODULO REPORT TELEGRAM & LISTE RPZ -->
-<div class="panel">
-  <h2>&#128202; Dall'ultimo report Telegram</h2>
-  <div class="stats-grid" id="statsUltimoReport"></div>
-  <div id="listeRpz"></div>
 </div>
 
 <!-- &#9854; MODULO TOTALE SESSIONE -->
