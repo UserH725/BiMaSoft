@@ -17,10 +17,10 @@ $Prefix = "http://127.0.0.1:$Port/"
 
 $UcExe      = Join-Path $UbDir "unbound-control.exe"
 $HwConf     = Join-Path $UbDir "hardware.conf"
-$RpzLog     = Join-Path $UbDir "unbound.log"
-$SessionDat = Join-Path $UbDir "session_totale.dat"
-$HealthJson = Join-Path $UbDir "bunker_health.json"
-$LogFile    = Join-Path $UbDir "dashboard_error.log"
+$RpzLog     = "R:\unbound.log"
+$SessionDat = "R:\session_totale.dat"
+$HealthJson = "R:\bunker_health.json"
+$LogFile    = "R:\dashboard_error.log"
 
 function Write-DashLog {
     param($msg)
