@@ -1,5 +1,5 @@
 ﻿# ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - BADGES TUTTI SU UNA RIGA)     #
+# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - MODULO VERSIONI EVIDENZIATO) #
 # ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
@@ -398,28 +398,28 @@ $HtmlPage = @'
 
   .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 18px; }
   
-  /* CSS RIGIDA SINGOLA RIGA PER I BADGES (NO WRAP) */
+  /* CSS RIGIDA SINGOLA RIGA PER I BADGES */
   .badges {
     display: flex;
     gap: 8px;
-    flex-wrap: nowrap; /* FORZA TUTTO SULLA STESSA RIGA */
+    flex-wrap: nowrap;
     margin-bottom: 22px;
     width: 100%;
     align-items: center;
-    overflow-x: auto; /* SCORRIMENTO SE LO SCHERMO E' TROPPO STRETTO */
+    overflow-x: auto;
     white-space: nowrap;
     padding-bottom: 4px;
   }
   .badge {
-    padding: 8px 12px; /* PADDING OTTIMIZZATO */
+    padding: 8px 12px;
     border-radius: 6px;
-    font-size: 0.88em; /* FONT COMPATTO PER FAR STARE TUTTO */
+    font-size: 0.88em;
     font-weight: bold;
     display: inline-flex;
     align-items: center;
     box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     white-space: nowrap;
-    flex-shrink: 0; /* EVITA CHE I BADGES VENGANO SCHIACCIATI */
+    flex-shrink: 0;
   }
 
   .ok { background-color: rgba(32, 139, 76, 0.25); color: var(--green-bright); border: 2px solid var(--green-bright); }
@@ -430,7 +430,7 @@ $HtmlPage = @'
   .latenza { background-color: rgba(79, 179, 255, 0.15); color: var(--accent); border: 2px solid var(--accent); }
 
   .cache-highlight {
-    margin-left: auto; /* SPINGE IL BADGE CACHE A DESTRA */
+    margin-left: auto;
     background-color: rgba(79, 179, 255, 0.15);
     color: #ffffff;
     border: 2px solid var(--accent);
@@ -441,6 +441,31 @@ $HtmlPage = @'
 
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
+
+  /* CSS EVIDENZIATORE DEDICATO PER IL MODULO VERSIONI COMPONENTI */
+  .panel-versioni {
+    background: linear-gradient(180deg, #131d2a 0%, var(--panel) 100%);
+    border: 1px solid var(--accent) !important;
+    box-shadow: 0 0 16px rgba(79, 179, 255, 0.2);
+  }
+  .panel-versioni h2 {
+    color: #ffffff !important;
+    border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important;
+  }
+  .stat-ver {
+    background: #090e16;
+    border: 1px solid #1a2a3a;
+    border-radius: 6px;
+    padding: 12px;
+    position: relative;
+    transition: all 0.2s ease;
+  }
+  .stat-ver:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .ver-status-ok { color: var(--green-bright); font-size: 0.78em; font-weight: bold; float: right; }
+  .ver-status-warn { color: var(--amber-bright); font-size: 0.78em; font-weight: bold; float: right; }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
@@ -496,8 +521,8 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- &#8505; MODULO VERSIONI COMPONENTI -->
-<div class="panel" style="margin-bottom: 16px;">
+<!-- &#8505; MODULO VERSIONI COMPONENTI EVIDENZIATO -->
+<div class="panel panel-versioni" style="margin-bottom: 16px;">
   <h2>&#8505; Versioni Componenti (Locale vs Cloud)</h2>
   <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 0;"></div>
 </div>
@@ -583,6 +608,12 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
+function getVerBadge(loc, cld) {
+  if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Offline</span>';
+  if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; ALLINEATO</span>';
+  return '<span class="ver-status-warn">&#9888; AGGIORNAMENTO v' + cld + '</span>';
+}
+
 async function refresh(forceVersions) {
   try {
     const res = await fetch(forceVersions ? '/api/status?force=1' : '/api/status', { cache: 'no-store' });
@@ -593,12 +624,24 @@ async function refresh(forceVersions) {
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
       ' | Storage: RAM Disk (R:\\) | Aggiornato: ' + d.generato_il;
 
-    // 1. VERSIONI COMPONENTI
+    // 1. VERSIONI COMPONENTI CON SCHEDE HIGH-VISIBILITY E BADGE DI ALLINEAMENTO
     const v = d.versioni || {};
     document.getElementById('statsVersioni').innerHTML = `
-      <div class="stat"><div class="lbl">&#9881; Engine Unbound</div><div class="val" style="font-size:1.1em; color:var(--accent);">${v.unbound_local || 'N/D'}</div><div class="muted">Cloud: ${v.unbound_cloud || 'N/D'}</div></div>
-      <div class="stat"><div class="lbl">&#128220; Script BAT Manager</div><div class="val" style="font-size:1.1em; color:var(--accent);">v${v.bat_local || 'N/D'}</div><div class="muted">Cloud: v${v.bat_cloud || 'N/D'}</div></div>
-      <div class="stat"><div class="lbl">&#128736; File Service CONF</div><div class="val" style="font-size:1.1em; color:var(--accent);">${v.conf_local || 'N/D'}</div><div class="muted">Cloud: ${v.conf_cloud || 'N/D'}</div></div>
+      <div class="stat-ver">
+        <div class="lbl">&#9881; Engine Unbound ${getVerBadge(v.unbound_local, v.unbound_cloud)}</div>
+        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.unbound_local || 'N/D'}</div>
+        <div class="muted">Release Cloud: <b>${v.unbound_cloud || 'N/D'}</b></div>
+      </div>
+      <div class="stat-ver">
+        <div class="lbl">&#128220; Script BAT Manager ${getVerBadge(v.bat_local, v.bat_cloud)}</div>
+        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">v${v.bat_local || 'N/D'}</div>
+        <div class="muted">Release Cloud: <b>v${v.bat_cloud || 'N/D'}</b></div>
+      </div>
+      <div class="stat-ver">
+        <div class="lbl">&#128736; File Service CONF ${getVerBadge(v.conf_local, v.conf_cloud)}</div>
+        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.conf_local || 'N/D'}</div>
+        <div class="muted">Release Cloud: <b>${v.conf_cloud || 'N/D'}</b></div>
+      </div>
     `;
 
     // 2. BADGES DI STATO INTEGRATI SU UNA SINGOLA RIGA
