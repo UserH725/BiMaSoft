@@ -2,6 +2,10 @@
 # UNBOUND BUNKER - DASHBOARD LIVE (sola lettura)                                          #
 # Script indipendente, non tocca alcun file di configurazione ne' processo esistente.     #
 # Espone una pagina HTML su http://127.0.0.1:8954/ con auto-refresh ogni 1 secondi.       #
+# Il pannello "Versioni Componenti" fa eccezione per la parte Cloud: i valori Locali sono #
+# sempre live, i valori Cloud (letti da GitHub) si aggiornano al massimo ogni 30 minuti,   #
+# o subito con un refresh manuale della pagina (F5), per rispettare il rate limit di       #
+# api.github.com (60 richieste/ora senza autenticazione).                                 #
 # Legge: unbound-control stats_noreset, unbound.log (RPZ), hardware.conf,                 #
 #        session_totale.dat, bunker_health.json - tutti in sola lettura.                  #
 # ======================================================================================= #
@@ -55,7 +59,23 @@ function Get-HardwareTier {
     return $result
 }
 
+# Cache delle versioni CLOUD (GitHub). I valori locali sono letture da disco/processo,
+# economiche, e vengono quindi ricalcolati live ad ogni chiamata. I valori cloud invece
+# arrivano da chiamate di rete: raw.githubusercontent.com e' servito da CDN e regge bene,
+# ma api.github.com (usato per l'ultima release di Unbound) ha un rate limit molto piu'
+# stretto senza autenticazione: 60 richieste/ora. Per restare ampiamente sotto quel limite
+# anche con la dashboard aperta di continuo, i valori cloud vengono ricontrollati al
+# massimo ogni 30 minuti, oppure subito con -Force (refresh manuale della pagina, F5).
+# Se una singola chiamata fallisce (rete assente, rate limit, timeout) si mantiene
+# l'ultimo valore noto invece di azzerarlo a N/D, cosi' un guasto transitorio non
+# "sporca" la dashboard.
+$script:CloudVersionsCache       = $null
+$script:CloudVersionsCacheTime   = [DateTime]::MinValue
+$script:CloudVersionsCacheTtlSec = 1800
+
 function Get-BunkerVersions {
+    param([switch]$Force)
+
     $result = [ordered]@{
         unbound_local = "N/D"
         unbound_cloud = "N/D"
@@ -65,7 +85,9 @@ function Get-BunkerVersions {
         bat_cloud     = "N/D"
     }
 
-    # 1. Unbound Engine (Locale e Cloud)
+    # --- LOCALE: sempre ricalcolato, e' una lettura da disco/processo, non da rete ---
+
+    # 1. Unbound Engine (locale)
     $ubExe = Join-Path $UbDir "unbound.exe"
     if (Test-Path $ubExe) {
         try {
@@ -73,24 +95,14 @@ function Get-BunkerVersions {
             if ($raw -match 'Version\s+([0-9\.]+)') { $result.unbound_local = $matches[1] }
         } catch {}
     }
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-        $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 4).Content | ConvertFrom-Json
-        $v = $json.tag_name
-        if ($v -match 'release-(.*)') { $result.unbound_cloud = $matches[1] } else { $result.unbound_cloud = $v }
-    } catch {}
 
-    # 2. File service.conf (Locale e Cloud)
+    # 2. File service.conf (locale)
     $svcVerFile = Join-Path $UbDir "versione_service_conf.txt"
     if (Test-Path $svcVerFile) {
         try { $result.conf_local = (Get-Content -LiteralPath $svcVerFile -Raw).Trim() } catch {}
     }
-    try {
-        $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
-        if ($v) { $result.conf_cloud = $v }
-    } catch {}
 
-    # 3. Script BAT Manager (Locale e Cloud)
+    # 3. Script BAT Manager (locale)
     $batFile = Join-Path $UbDir "UnboundBunkerManager.BAT"
     if (Test-Path $batFile) {
         try {
@@ -98,10 +110,46 @@ function Get-BunkerVersions {
             if ($line -match '([0-9]+\.[0-9]+)') { $result.bat_local = $matches[1] }
         } catch {}
     }
-    try {
-        $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
-        if ($v) { $result.bat_cloud = $v }
-    } catch {}
+
+    # --- CLOUD: chiamate di rete, ricontrollate solo se la cache e' scaduta (o -Force) ---
+    $cloudStale = $Force -or (-not $script:CloudVersionsCache) -or
+        ((Get-Date) - $script:CloudVersionsCacheTime).TotalSeconds -ge $script:CloudVersionsCacheTtlSec
+
+    if ($cloudStale) {
+        if (-not $script:CloudVersionsCache) {
+            $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" }
+        }
+
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+            $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 4).Content | ConvertFrom-Json
+            $v = $json.tag_name
+            if ($v -match 'release-(.*)') { $script:CloudVersionsCache.unbound_cloud = $matches[1] }
+            elseif ($v) { $script:CloudVersionsCache.unbound_cloud = $v }
+        } catch {
+            Write-DashLog "Get-BunkerVersions: check cloud Unbound Engine fallito (probabile rate limit api.github.com, 60 richieste/ora senza autenticazione): $($_.Exception.Message)"
+        }
+
+        try {
+            $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
+            if ($v) { $script:CloudVersionsCache.conf_cloud = $v }
+        } catch {
+            Write-DashLog "Get-BunkerVersions: check cloud service.conf fallito: $($_.Exception.Message)"
+        }
+
+        try {
+            $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 4).Content.Trim()
+            if ($v) { $script:CloudVersionsCache.bat_cloud = $v }
+        } catch {
+            Write-DashLog "Get-BunkerVersions: check cloud BAT Manager fallito: $($_.Exception.Message)"
+        }
+
+        $script:CloudVersionsCacheTime = Get-Date
+    }
+
+    $result.unbound_cloud = $script:CloudVersionsCache.unbound_cloud
+    $result.conf_cloud    = $script:CloudVersionsCache.conf_cloud
+    $result.bat_cloud     = $script:CloudVersionsCache.bat_cloud
 
     return $result
 }
@@ -203,8 +251,9 @@ function Get-HealthSnapshot {
 }
 
 function Get-BunkerStatusJson {
+    param([switch]$ForceVersions)
     $hw       = Get-HardwareTier
-    $versioni = Get-BunkerVersions
+    $versioni = Get-BunkerVersions -Force:$ForceVersions
     $engineOn = Get-EngineStatus
     $stats    = Get-LiveStats
     $rpz      = Get-RpzBreakdown
@@ -422,9 +471,10 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-async function refresh() {
+async function refresh(forceVersions) {
   try {
-    const res = await fetch('/api/status', { cache: 'no-store' });
+    const url = forceVersions ? '/api/status?force=1' : '/api/status';
+    const res = await fetch(url, { cache: 'no-store' });
     const d = await res.json();
 
     document.getElementById('subheader').textContent =
@@ -532,8 +582,8 @@ async function refresh() {
   }
 }
 
-refresh();
-setInterval(refresh, 1000);
+refresh(true);   // caricamento pagina / refresh manuale (F5): forza il ricontrollo versioni
+setInterval(refresh, 1000);   // polling normale: le versioni arrivano dalla cache server (si rinnova da sola ogni 10s)
 </script>
 </body>
 </html>
@@ -578,7 +628,8 @@ try {
 
         try {
             if ($request.Url.AbsolutePath -eq "/api/status") {
-                $json = Get-BunkerStatusJson
+                $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
+                $json = Get-BunkerStatusJson -ForceVersions:$forceVersions
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
