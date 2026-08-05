@@ -769,7 +769,7 @@ async function refresh(forceVersions) {
     let realCachePct = Math.min(100, Math.round((cHits / qLecite) * 100));
     if (isNaN(realCachePct)) realCachePct = 0;
 
-    // 2. EFFICIENZA LATENZA (100% = 0ms, scende all'aumentare della latenza)
+    // 2. EFFICIENZA LATENZA (CURVA SCAGLIONATA OPTIMIZED PER DNS/DoT/WARP)
     let effectiveLat = latMs;
     if ((!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
@@ -777,28 +777,39 @@ async function refresh(forceVersions) {
         effectiveLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
       }
     }
-    let latScore = Math.max(0, Math.min(100, Math.round(100 - (effectiveLat * 0.2))));
+    if (!effectiveLat || effectiveLat < 0.5) effectiveLat = 0.5;
 
-    // 3. UPSTREAM DOT SCORE (100% = tutti i resolver online, scende se qualcuno disconnette)
+    let latScore = 100;
+    if (effectiveLat > 5 && effectiveLat <= 50) {
+      latScore = Math.round(100 - ((effectiveLat - 5) * 0.18));
+    } else if (effectiveLat > 50 && effectiveLat <= 150) {
+      latScore = Math.round(92 - ((effectiveLat - 50) * 0.10));
+    } else if (effectiveLat > 150 && effectiveLat <= 300) {
+      latScore = Math.round(82 - ((effectiveLat - 150) * 0.08));
+    } else if (effectiveLat > 300) {
+      latScore = Math.max(15, Math.round(70 - ((effectiveLat - 300) * 0.10)));
+    }
+
+    // 3. UPSTREAM DOT SCORE
     let upstreamScore = radarList.length > 0 ? Math.round((upOk / radarList.length) * 100) : 100;
 
-    // 4. INTEGRITÀ DNSSEC (100% = nessuna manomissione, scende se compaiono BOGUS)
+    // 4. INTEGRITÀ DNSSEC
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
     const totDnssec = ds.secure + ds.bogus;
     let dnssecPct = totDnssec > 0 ? Math.round((ds.secure / totDnssec) * 100) : 100;
     if (ds.bogus > 0) dnssecPct = Math.max(0, dnssecPct - (ds.bogus * 10));
 
-    // 5. PRONTEZZA PREFETCH (100% = motore attivo in RAM e pronto; scende solo se inattivo)
+    // 5. PRONTEZZA PREFETCH
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
     let prefetchReadiness = 100;
 
-    // 6. RISERVA DI CAPACITÀ QPS (100% = sistema a riposo/pronto; scende quando c'è forte carico)
+    // 6. RISERVA DI CAPACITÀ QPS
     let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS * 2))));
 
-    // 7. HEALTH SCORE (100% = perfetto, 0% = errori)
+    // 7. HEALTH SCORE
     let healthScore = d.salute_sistema.anomalie_rilevate ? 0 : 100;
 
-    // BUNKER BOOST SCORE GLOBALE (PONDERATO SU DISPONIBILITÀ ED EFFICIENZA)
+    // BUNKER BOOST SCORE GLOBALE
     let boostScore = Math.round(
       (realCachePct * 0.30) + 
       (latScore * 0.25) + 
@@ -826,7 +837,7 @@ async function refresh(forceVersions) {
     let totalBunkerGain = Math.round(latGainPct + rpzGainPct + ramDiskGain + hwGain + dotGain + prefetchGain);
     if (totalBunkerGain < 60) totalBunkerGain = 60;
 
-    // AGGIORNAMENTO SOTTO-INDICATORI A GRADIENTE (TUTTI CON BASE 100% TOP)
+    // AGGIORNAMENTO SOTTO-INDICATORI A GRADIENTE
     document.getElementById('valRealCache').textContent = realCachePct + '%';
     document.getElementById('barRealCache').style.width = realCachePct + '%';
 
