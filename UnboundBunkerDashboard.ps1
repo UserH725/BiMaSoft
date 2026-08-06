@@ -645,7 +645,7 @@ $HtmlPage = @'
     <div class="g-bar-bg"><div class="g-bar-fill fill-upstream" id="barUpstreamScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>INTEGRITÀ DNSSEC</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
+    <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill fill-dnssec" id="barDnssecScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
@@ -653,7 +653,7 @@ $HtmlPage = @'
     <div class="g-bar-bg"><div class="g-bar-fill fill-prefetch" id="barPrefetchScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>RISERVA CAPACITÀ (QPS)</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
+    <div class="boost-item-header"><span>RISERVA CAPACIT&Agrave; (QPS)</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill fill-qps" id="barQpsScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
