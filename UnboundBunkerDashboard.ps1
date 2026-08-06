@@ -133,12 +133,13 @@ function Get-EngineStatus {
     return ($svc -and $svc.Status -eq "Running")
 }
 
-# === LIVE FEED RPZ ===
+# === LIVE FEED RPZ (COMPLETO SENZA LIMITI TROPPO RESTRITTIVI) ===
 function Get-LiveBlockedFeed {
     $feed = @()
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
-            $lines = Get-Content -LiteralPath $RpzLog -Tail 400 -ErrorAction SilentlyContinue
+            # Legge fino a 2000 righe per consentire un elenco ampio
+            $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
             foreach ($ln in $lines) {
                 if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+(rpz-[a-z]+)') {
                     $feed += @{
@@ -152,7 +153,8 @@ function Get-LiveBlockedFeed {
         } catch {}
     }
     if ($feed.Count -gt 0) {
-        $lastFeed = $feed | Select-Object -Last 100
+        # Restituisce fino a 500 domini anziché 100 per un feed esteso
+        $lastFeed = $feed | Select-Object -Last 500
         $reversed = @()
         for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
             $reversed += $lastFeed[$i]
@@ -570,6 +572,8 @@ $HtmlPage = @'
 
   .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
+  
+  #inputRicercaFeed:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
 </style>
 </head>
 <body>
@@ -689,6 +693,9 @@ $HtmlPage = @'
   
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
+    <input type="text" id="inputRicercaFeed" onkeyup="filtraLiveFeed()" 
+           placeholder="&#128269; Cerca domini o liste nel feed in tempo reale..." 
+           style="width:100%; padding:10px 12px; margin-bottom:12px; background:#0e141b; color:#d7e2ec; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.95em; transition: border-color 0.2s;">
     <div class="table-scroll">
       <table id="tabellaLiveFeed">
         <thead><tr><th>Orario</th><th>Host / Dominio FQDN Completo</th><th>Lista RPZ Intervenuta</th><th>Azione</th></tr></thead>
@@ -741,6 +748,17 @@ function getVerBadge(loc, cld) {
   return '<span class="ver-status-warn">&#9888; AGGIORNAMENTO v' + cld + '</span>';
 }
 
+function filtraLiveFeed() {
+  const input = document.getElementById('inputRicercaFeed');
+  if (!input) return;
+  const query = input.value.toLowerCase();
+  const righe = document.querySelectorAll('#tabellaLiveFeed tbody tr');
+  righe.forEach(riga => {
+    const testo = riga.textContent.toLowerCase();
+    riga.style.display = testo.includes(query) ? '' : 'none';
+  });
+}
+
 async function refresh(forceVersions) {
   try {
     const res = await fetch(forceVersions ? '/api/status?force=1' : '/api/status', { cache: 'no-store' });
@@ -749,7 +767,7 @@ async function refresh(forceVersions) {
     document.getElementById('subheader').textContent =
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
-      ' | Storage: RAM Disk (R:\\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
+      ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
     // 1. VERSIONI COMPONENTI
     const v = d.versioni || {};
@@ -903,7 +921,7 @@ async function refresh(forceVersions) {
     if (d.ram_disk && d.ram_disk.attivo) {
       const bRam = document.createElement('span');
       bRam.className = 'badge ram';
-      bRam.innerHTML = '&#128190; RAM R:\\ ' + d.ram_disk.used_mb + '/' + d.ram_disk.tot_mb + ' MB (' + d.ram_disk.pct + '%)';
+      bRam.innerHTML = '&#128190; RAM R:\ ' + d.ram_disk.used_mb + '/' + d.ram_disk.tot_mb + ' MB (' + d.ram_disk.pct + '%)';
       badges.appendChild(bRam);
     }
 
@@ -1022,6 +1040,9 @@ async function refresh(forceVersions) {
         tbodyFeed.appendChild(tr);
       });
     }
+    
+    // Riapplica il filtro testuale corrente (se presente) sulle nuove righe generate
+    filtraLiveFeed();
 
     // 5. UPSTREAM RADAR
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
