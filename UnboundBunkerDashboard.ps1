@@ -136,7 +136,7 @@ function Get-EngineStatus {
 # === LIVE FEED RPZ ===
 function Get-LiveBlockedFeed {
     $feed = @()
-    if (Test-Path $RpzLog) {
+    if ([System.IO.File]::Exists($RpzLog)) {
         try {
             $lines = Get-Content -LiteralPath $RpzLog -Tail 400 -ErrorAction SilentlyContinue
             foreach ($ln in $lines) {
@@ -272,7 +272,7 @@ function Get-RpzBreakdown {
     $liste = @()
     $blkTotale = 0
     $rpzLines = $null
-    if (Test-Path $RpzLog) {
+    if ([System.IO.File]::Exists($RpzLog)) {
         try { $rpzLines = Get-Content -LiteralPath $RpzLog -ErrorAction SilentlyContinue } catch {}
     }
     foreach ($lista in $RpzListe) {
@@ -303,14 +303,14 @@ function Get-RpzBreakdown {
 }
 
 function Get-SessionTotal {
-    if (Test-Path $SessionDat) {
+    if ([System.IO.File]::Exists($SessionDat)) {
         try { return (Get-Content -LiteralPath $SessionDat -Raw | ConvertFrom-Json) } catch { return $null }
     }
     return $null
 }
 
 function Get-HealthSnapshot {
-    if (Test-Path $HealthJson) {
+    if ([System.IO.File]::Exists($HealthJson)) {
         try { return (Get-Content -LiteralPath $HealthJson -Raw | ConvertFrom-Json) } catch { return $null }
     }
     return $null
@@ -331,7 +331,7 @@ function Get-BunkerStatusJson {
     $netSpeed = Get-NetworkSpeed
 
     $rpzAgeMinutes = 0
-    if (Test-Path $RpzLog) {
+    if ([System.IO.File]::Exists($RpzLog)) {
         try {
             $lastWrite = (Get-Item -LiteralPath $RpzLog).LastWriteTime
             $rpzAgeMinutes = [math]::Round(((Get-Date) - $lastWrite).TotalMinutes, 0)
