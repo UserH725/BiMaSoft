@@ -526,6 +526,27 @@ $HtmlPage = @'
   .stat .val { font-size:1.4em; font-weight:bold; }
   .stat .lbl { color: var(--dim); font-size:0.75em; }
 
+  /* CSS STATISTICHE AVANZATE RIGENERATO AD ALTA VISIBILITÀ */
+  .stat-breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+    margin-bottom: 10px;
+  }
+  .stat-card {
+    border-radius: 6px;
+    padding: 10px 8px;
+    text-align: center;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    transition: transform 0.2s ease;
+  }
+  .stat-card:hover { transform: translateY(-2px); }
+  .stat-card .sc-lbl { font-size: 0.76em; font-weight: bold; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .stat-card .sc-val { font-size: 1.45em; font-weight: bold; line-height: 1.1; margin-bottom: 2px; }
+  .stat-card .sc-pct { font-size: 0.9em; font-weight: bold; opacity: 0.9; }
+
   .table-scroll { max-height: 520px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: #0e141b; }
   .table-scroll table { width: 100%; border-collapse: collapse; font-size: 0.85em; border: none; }
   .table-scroll th, .table-scroll td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -543,9 +564,9 @@ $HtmlPage = @'
   .latency { color: var(--accent); font-weight: bold; }
   .muted { color: var(--dim); }
 
-  .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 22px; overflow: hidden; display: flex; }
+  .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 26px; overflow: hidden; display: flex; }
   .bar-fill { height: 100%; transition: width 0.3s ease; }
-  .legend-box { font-size: 0.98em; color: var(--dim); margin-top: 10px; line-height: 1.6; }
+  .legend-box { font-size: 0.88em; color: var(--dim); margin-top: 10px; line-height: 1.6; }
 
   .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
@@ -609,20 +630,25 @@ $HtmlPage = @'
       <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
     </div>
 
+    <!-- MODULO STATISTICHE AVANZATE RISTRUTTURATO PER MASSIMA VISIBILITÀ -->
     <div class="panel" style="margin-bottom: 0; flex: 1;">
       <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
       <div style="display: flex; flex-direction: column; gap: 20px;">
+        
         <div>
-          <div style="font-size: 1.18em; font-weight: bold; margin-bottom: 8px;" id="lblRcode">Codici Risposta (RCODE): --</div>
+          <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
+          <div class="stat-breakdown-grid" id="gridRcode"></div>
           <div class="bar-bg" id="barRcode"></div>
           <div class="legend-box">
             &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
             &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
-            &bull; <b style="color:var(--amber)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
+            &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
           </div>
         </div>
+
         <div>
-          <div style="font-size: 1.18em; font-weight: bold; margin-bottom: 8px;" id="lblTypes">Tipologia Query (RR Type): --</div>
+          <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia Query (RR Type)</div>
+          <div class="stat-breakdown-grid" id="gridTypes"></div>
           <div class="bar-bg" id="barTypes"></div>
           <div class="legend-box">
             &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
@@ -630,6 +656,7 @@ $HtmlPage = @'
             &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
           </div>
         </div>
+
       </div>
     </div>
 
@@ -733,12 +760,12 @@ async function refresh(forceVersions) {
         <div class="muted">Release Cloud: <b>${v.unbound_cloud || 'N/D'}</b></div>
       </div>
       <div class="stat-ver">
-        <div class="lbl">&#128220; Script BAT Manager ${getVerBadge(v.bat_local, v.bat_cloud)}</div>
+        <div class="lbl">&#128220; BAT Manager ${getVerBadge(v.bat_local, v.bat_cloud)}</div>
         <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">v${v.bat_local || 'N/D'}</div>
         <div class="muted">Release Cloud: <b>v${v.bat_cloud || 'N/D'}</b></div>
       </div>
       <div class="stat-ver">
-        <div class="lbl">&#128736; File Service CONF ${getVerBadge(v.conf_local, v.conf_cloud)}</div>
+        <div class="lbl">&#128736; Service CONF ${getVerBadge(v.conf_local, v.conf_cloud)}</div>
         <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.conf_local || 'N/D'}</div>
         <div class="muted">Release Cloud: <b>${v.conf_cloud || 'N/D'}</b></div>
       </div>
@@ -907,7 +934,6 @@ async function refresh(forceVersions) {
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
 
-    // Calcolo tonalità HSL: da 38° (Ambra/Arancio per gain basso) fino a 138° (Verde Smeraldo per gain alto)
     let gainRatio = Math.min(1, Math.max(0, (totalBunkerGain - 25) / 55));
     let hueStart  = Math.round(38 + gainRatio * 92);
     let hueEnd    = Math.round(58 + gainRatio * 80);
@@ -919,7 +945,7 @@ async function refresh(forceVersions) {
     bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
     badges.appendChild(bGain);
 
-    // 3. STATISTICHE LIVE TRAFFICO
+    // 3. STATISTICHE LIVE TRAFFICO (RISTRUTTURATE AD ALTA VISIBILITÀ)
     const st = d.statistiche_live || {};
     const rc = st.rcode || { noerror:0, nxdomain:0, servfail:0 };
     const totRc = (rc.noerror + rc.nxdomain + rc.servfail) || 1;
@@ -927,11 +953,28 @@ async function refresh(forceVersions) {
     const pNx = Math.round((rc.nxdomain / totRc) * 100);
     const pFail = Math.round((rc.servfail / totRc) * 100);
 
-    document.getElementById('lblRcode').innerHTML = `Codici Risposta: <span class="esito-ok">NOERROR (${pNoerr}%)</span> | <span class="esito-warn">NXDOMAIN (${pNx}%)</span> | <span style="color:var(--amber)">SERVFAIL (${pFail}%)</span>`;
+    document.getElementById('gridRcode').innerHTML = `
+      <div class="stat-card" style="border-color: rgba(61, 220, 132, 0.4); background: rgba(32, 139, 76, 0.15);">
+        <div class="sc-lbl" style="color: var(--green-bright);">NOERROR</div>
+        <div class="sc-val" style="color: var(--green-bright);">${fmt(rc.noerror)}</div>
+        <div class="sc-pct" style="color: var(--green-bright);">${pNoerr}%</div>
+      </div>
+      <div class="stat-card" style="border-color: rgba(255, 92, 92, 0.4); background: rgba(192, 57, 43, 0.15);">
+        <div class="sc-lbl" style="color: var(--red-bright);">NXDOMAIN</div>
+        <div class="sc-val" style="color: var(--red-bright);">${fmt(rc.nxdomain)}</div>
+        <div class="sc-pct" style="color: var(--red-bright);">${pNx}%</div>
+      </div>
+      <div class="stat-card" style="border-color: rgba(255, 179, 0, 0.4); background: rgba(211, 84, 0, 0.15);">
+        <div class="sc-lbl" style="color: var(--amber-bright);">SERVFAIL</div>
+        <div class="sc-val" style="color: var(--amber-bright);">${fmt(rc.servfail)}</div>
+        <div class="sc-pct" style="color: var(--amber-bright);">${pFail}%</div>
+      </div>
+    `;
+
     document.getElementById('barRcode').innerHTML = `
-      <div class="bar-fill" style="width:${pNoerr}%; background:var(--green-bright);"></div>
-      <div class="bar-fill" style="width:${pNx}%; background:var(--red-bright);"></div>
-      <div class="bar-fill" style="width:${pFail}%; background:var(--amber);"></div>
+      <div class="bar-fill" style="width:${pNoerr}%; background:var(--green-bright);" title="NOERROR: ${pNoerr}%"></div>
+      <div class="bar-fill" style="width:${pNx}%; background:var(--red-bright);" title="NXDOMAIN: ${pNx}%"></div>
+      <div class="bar-fill" style="width:${pFail}%; background:var(--amber);" title="SERVFAIL: ${pFail}%"></div>
     `;
 
     const tp = st.types || { type_a:0, type_aaaa:0, type_https:0 };
@@ -940,11 +983,28 @@ async function refresh(forceVersions) {
     const pAaaa = Math.round((tp.type_aaaa / totTp) * 100);
     const pHttps = Math.round((tp.type_https / totTp) * 100);
 
-    document.getElementById('lblTypes').innerHTML = `Tipologia Query: <span style="color:var(--accent)">A/IPv4 (${pA}%)</span> | <span style="color:var(--purple)">AAAA/IPv6 (${pAaaa}%)</span> | <span style="color:#ffffff">HTTPS/Type65 (${pHttps}%)</span>`;
+    document.getElementById('gridTypes').innerHTML = `
+      <div class="stat-card" style="border-color: rgba(79, 179, 255, 0.4); background: rgba(79, 179, 255, 0.15);">
+        <div class="sc-lbl" style="color: var(--accent);">A (IPv4)</div>
+        <div class="sc-val" style="color: var(--accent);">${fmt(tp.type_a)}</div>
+        <div class="sc-pct" style="color: var(--accent);">${pA}%</div>
+      </div>
+      <div class="stat-card" style="border-color: rgba(179, 136, 255, 0.4); background: rgba(179, 136, 255, 0.15);">
+        <div class="sc-lbl" style="color: var(--purple);">AAAA (IPv6)</div>
+        <div class="sc-val" style="color: var(--purple);">${fmt(tp.type_aaaa)}</div>
+        <div class="sc-pct" style="color: var(--purple);">${pAaaa}%</div>
+      </div>
+      <div class="stat-card" style="border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08);">
+        <div class="sc-lbl" style="color: #ffffff;">HTTPS (Type 65)</div>
+        <div class="sc-val" style="color: #ffffff;">${fmt(tp.type_https)}</div>
+        <div class="sc-pct" style="color: #ffffff;">${pHttps}%</div>
+      </div>
+    `;
+
     document.getElementById('barTypes').innerHTML = `
-      <div class="bar-fill" style="width:${pA}%; background:var(--accent);"></div>
-      <div class="bar-fill" style="width:${pAaaa}%; background:var(--purple);"></div>
-      <div class="bar-fill" style="width:${pHttps}%; background:#ffffff;"></div>
+      <div class="bar-fill" style="width:${pA}%; background:var(--accent);" title="A: ${pA}%"></div>
+      <div class="bar-fill" style="width:${pAaaa}%; background:var(--purple);" title="AAAA: ${pAaaa}%"></div>
+      <div class="bar-fill" style="width:${pHttps}%; background:#ffffff;" title="HTTPS: ${pHttps}%"></div>
     `;
 
     // 4. LIVE FEED RPZ
