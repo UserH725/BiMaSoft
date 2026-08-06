@@ -138,7 +138,6 @@ function Get-LiveBlockedFeed {
     $feed = @()
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
-            # Legge fino a 2000 righe per consentire un elenco ampio
             $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
             foreach ($ln in $lines) {
                 if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+(rpz-[a-z]+)') {
@@ -153,7 +152,44 @@ function Get-LiveBlockedFeed {
         } catch {}
     }
     if ($feed.Count -gt 0) {
-        # Restituisce fino a 500 domini anziché 100 per un feed esteso
+        $lastFeed = $feed | Select-Object -Last 500
+        $reversed = @()
+        for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
+            $reversed += $lastFeed[$i]
+        }
+        return $reversed
+    }
+    return @()
+}
+
+# === LIVE FEED RCODE (ULTIMI 500 EVENTI CON STATO RCODE) ===
+function Get-LiveRcodeFeed {
+    $feed = @()
+    if ([System.IO.File]::Exists($RpzLog)) {
+        try {
+            $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
+            foreach ($ln in $lines) {
+                # 1. Risposte DNS standard di Unbound (richiede log-replies: yes)
+                if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
+                    $feed += @{
+                        orario  = $matches[1]
+                        dominio = $matches[2].TrimEnd('.')
+                        rcode   = $matches[3].ToUpper()
+                    }
+                }
+                # 2. Eventi RPZ (intercettati come NXDOMAIN o NOERROR)
+                elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
+                    $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
+                    $feed += @{
+                        orario  = $matches[1]
+                        dominio = $matches[3].TrimEnd('.')
+                        rcode   = $rcodeMap
+                    }
+                }
+            }
+        } catch {}
+    }
+    if ($feed.Count -gt 0) {
         $lastFeed = $feed | Select-Object -Last 500
         $reversed = @()
         for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
@@ -320,17 +356,18 @@ function Get-HealthSnapshot {
 
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
-    $hw       = Get-HardwareTier
-    $ramDisk  = Get-RamDiskGauge
-    $versioni = Get-BunkerVersions -Force:$ForceVersions
-    $engineOn = Get-EngineStatus
-    $stats    = Get-LiveStats
-    $liveFeed = Get-LiveBlockedFeed
-    $radar    = Get-UpstreamRadar
-    $rpz      = Get-RpzBreakdown
-    $sessione = Get-SessionTotal
-    $salute   = Get-HealthSnapshot
-    $netSpeed = Get-NetworkSpeed
+    $hw          = Get-HardwareTier
+    $ramDisk     = Get-RamDiskGauge
+    $versioni    = Get-BunkerVersions -Force:$ForceVersions
+    $engineOn    = Get-EngineStatus
+    $stats       = Get-LiveStats
+    $liveFeed    = Get-LiveBlockedFeed
+    $liveRcode   = Get-LiveRcodeFeed
+    $radar       = Get-UpstreamRadar
+    $rpz         = Get-RpzBreakdown
+    $sessione    = Get-SessionTotal
+    $salute      = Get-HealthSnapshot
+    $netSpeed    = Get-NetworkSpeed
 
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -363,6 +400,7 @@ function Get-BunkerStatusJson {
         net_speed        = $netSpeed
         rpz_log_age_min  = $rpzAgeMinutes
         live_feed_rpz    = $liveFeed
+        live_rcode_feed  = $liveRcode
         upstream_radar   = $radar
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
@@ -573,7 +611,7 @@ $HtmlPage = @'
   .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
   
-  #inputRicercaFeed:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
+  #inputRicercaFeed:focus, #inputRicercaRcode:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
 </style>
 </head>
 <body>
@@ -724,6 +762,28 @@ $HtmlPage = @'
   <table id="tabellaSalute"><thead><tr><th>Fase</th><th>Azione</th><th>Esito</th></tr></thead><tbody></tbody></table>
 </div>
 
+<!-- &#128678; MODULO LIVE FEED RCODE (IN FONDO ALLA DASHBOARD - ULTIMI 500 RECORD) -->
+<div class="panel">
+  <h2>&#128678; Live Feed Risposte DNS (Ultimi 500 Eventi RCODE in Tempo Reale)</h2>
+  <input type="text" id="inputRicercaRcode" onkeyup="filtraLiveRcode()" 
+         placeholder="&#128269; Cerca domini o codici RCODE (NOERROR, NXDOMAIN, SERVFAIL)..." 
+         style="width:100%; padding:10px 12px; margin-bottom:12px; background:#0e141b; color:#d7e2ec; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.95em; transition: border-color 0.2s;">
+  <div class="table-scroll" style="max-height: 420px;">
+    <table id="tabellaLiveRcode">
+      <thead>
+        <tr>
+          <th style="width: 15%;">Orario</th>
+          <th style="width: 65%;">Dominio / Host FQDN Completo</th>
+          <th style="width: 20%;">Stato RCODE</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="3" class="muted">In attesa di eventi RCODE in tempo reale...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <script>
 let prevQueries = 0;
 let prevTime = Date.now();
@@ -753,6 +813,17 @@ function filtraLiveFeed() {
   if (!input) return;
   const query = input.value.toLowerCase();
   const righe = document.querySelectorAll('#tabellaLiveFeed tbody tr');
+  righe.forEach(riga => {
+    const testo = riga.textContent.toLowerCase();
+    riga.style.display = testo.includes(query) ? '' : 'none';
+  });
+}
+
+function filtraLiveRcode() {
+  const input = document.getElementById('inputRicercaRcode');
+  if (!input) return;
+  const query = input.value.toLowerCase();
+  const righe = document.querySelectorAll('#tabellaLiveRcode tbody tr');
   righe.forEach(riga => {
     const testo = riga.textContent.toLowerCase();
     riga.style.display = testo.includes(query) ? '' : 'none';
@@ -1041,7 +1112,6 @@ async function refresh(forceVersions) {
       });
     }
     
-    // Riapplica il filtro testuale corrente (se presente) sulle nuove righe generate
     filtraLiveFeed();
 
     // 5. UPSTREAM RADAR
@@ -1134,6 +1204,42 @@ async function refresh(forceVersions) {
         tr.innerHTML = `<td>${f.fase || '-'}</td><td>${f.azione || ''}</td><td class="${isWarn ? 'esito-warn' : 'esito-ok'}">${f.esito || ''}</td>`;
         tbodySalute.appendChild(tr);
       });
+    }
+
+    // 9. LIVE FEED RCODE (IN FONDO ALLA DASHBOARD)
+    const tbodyRcode = document.querySelector('#tabellaLiveRcode tbody');
+    if (tbodyRcode) {
+      tbodyRcode.innerHTML = '';
+      let feedRcode = d.live_rcode_feed || [];
+      if (!Array.isArray(feedRcode)) { feedRcode = [feedRcode]; }
+
+      if (feedRcode.length === 0) {
+        tbodyRcode.innerHTML = '<tr><td colspan="3" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
+      } else {
+        feedRcode.forEach(f => {
+          const tr = document.createElement('tr');
+          let badgeStyle = 'background: rgba(127, 147, 166, 0.2); color: var(--dim); border: 1px solid var(--dim);';
+          const code = (f.rcode || 'UNKNOWN').toUpperCase();
+
+          if (code === 'NOERROR') {
+            badgeStyle = 'background-color: rgba(32, 139, 76, 0.25); color: var(--green-bright); border: 1px solid var(--green-bright);';
+          } else if (code === 'NXDOMAIN') {
+            badgeStyle = 'background-color: rgba(192, 57, 43, 0.3); color: var(--red-bright); border: 1px solid var(--red-bright);';
+          } else if (code === 'SERVFAIL') {
+            badgeStyle = 'background-color: rgba(211, 84, 0, 0.3); color: var(--amber-bright); border: 1px solid var(--amber-bright);';
+          }
+
+          const badgeHtml = `<span class="badge" style="${badgeStyle} padding: 4px 10px; font-size: 0.85em;">${code}</span>`;
+
+          tr.innerHTML = `
+            <td>${f.orario || '-'}</td>
+            <td style="font-weight:bold; font-size:1.05em; color: var(--text);">${f.dominio || '-'}</td>
+            <td>${badgeHtml}</td>
+          `;
+          tbodyRcode.appendChild(tr);
+        });
+      }
+      filtraLiveRcode();
     }
   } catch (e) {
     document.getElementById('subheader').textContent = 'Errore di connessione alla Dashboard Live: ' + e;
