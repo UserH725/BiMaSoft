@@ -9,6 +9,7 @@
 :: 2. Se viene rilevato un errore di sintassi nel file service.conf, la subroutine 
 ::    :CONFIG_ERROR ripristina all'istante l'ultimo backup funzionante (.BKP)
 :: ===================================================================================
+
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
