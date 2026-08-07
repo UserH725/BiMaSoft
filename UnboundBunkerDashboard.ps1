@@ -36,6 +36,23 @@ $RpzListe = @(
     @{ Tag = "hagezi-spamtlds";   Nome = "HaGeZi Most Abused TLDs";Emoji = [char]::ConvertFromUtf32(0x1F6AB) }
 )
 
+# === ANAGRAFICA ROOT SERVERS MONDIALI (ICMP) ===
+$script:RootServersList = @(
+    @{ Tag = "A.ROOT"; Host = "a.root-servers.net"; IP = "198.41.0.4";   Operator = "Verisign, Inc." },
+    @{ Tag = "B.ROOT"; Host = "b.root-servers.net"; IP = "199.9.14.201"; Operator = "USC-ISI" },
+    @{ Tag = "C.ROOT"; Host = "c.root-servers.net"; IP = "192.33.4.12";  Operator = "Cogent Communications" },
+    @{ Tag = "D.ROOT"; Host = "d.root-servers.net"; IP = "199.7.91.13";  Operator = "University of Maryland" },
+    @{ Tag = "E.ROOT"; Host = "e.root-servers.net"; IP = "192.203.230.10"; Operator = "NASA Ames Research Center" },
+    @{ Tag = "F.ROOT"; Host = "f.root-servers.net"; IP = "192.5.5.241";  Operator = "Internet Systems Consortium (ISC)" },
+    @{ Tag = "G.ROOT"; Host = "g.root-servers.net"; IP = "192.112.36.4"; Operator = "US DoD DTIC" },
+    @{ Tag = "H.ROOT"; Host = "h.root-servers.net"; IP = "198.97.190.53"; Operator = "US Army Research Lab" },
+    @{ Tag = "I.ROOT"; Host = "i.root-servers.net"; IP = "192.36.148.17"; Operator = "Netnod (Autonomica)" },
+    @{ Tag = "J.ROOT"; Host = "j.root-servers.net"; IP = "192.58.128.30"; Operator = "Verisign, Inc." },
+    @{ Tag = "K.ROOT"; Host = "k.root-servers.net"; IP = "193.0.14.129"; Operator = "RIPE NCC" },
+    @{ Tag = "L.ROOT"; Host = "l.root-servers.net"; IP = "199.7.83.42";  Operator = "ICANN" },
+    @{ Tag = "M.ROOT"; Host = "m.root-servers.net"; IP = "202.12.27.33"; Operator = "WIDE Project" }
+)
+
 # === RACCOLTA DATI BANDA E HARDWARE ===
 
 function Get-NetworkSpeed {
@@ -77,6 +94,84 @@ function Get-RamDiskGauge {
         }
     } catch {}
     return @{ tot_mb = 50; used_mb = 0; pct = 0; attivo = $false }
+}
+
+# === NUOVE FUNZIONALITÀ SPECIFICHE DEL BUNKER ===
+
+function Get-UnboundWorkingSet {
+    try {
+        $p = Get-Process -Name "unbound" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($p) {
+            return [math]::Round($p.WorkingSet64 / 1MB, 1)
+        }
+    } catch {}
+    return 0
+}
+
+$script:TotalRpzRulesCache = 0
+$script:TotalRpzRulesCacheTime = [DateTime]::MinValue
+
+function Get-TotalRpzRulesCount {
+    if (((Get-Date) - $script:TotalRpzRulesCacheTime).TotalSeconds -ge 600 -or $script:TotalRpzRulesCache -eq 0) {
+        $tot = 0
+        $files = Get-ChildItem -Path $UbDir -Filter "*.conf" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'hagezi|spamhaus' }
+        foreach ($f in $files) {
+            try {
+                $tot += [System.Linq.Enumerable]::Count([System.IO.File]::ReadLines($f.FullName))
+            } catch {}
+        }
+        $script:TotalRpzRulesCache = $tot
+        $script:TotalRpzRulesCacheTime = Get-Date
+    }
+    return $script:TotalRpzRulesCache
+}
+
+function Get-HardeningStatus {
+    $score = 100
+    try {
+        $chromeDoh = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Google\Chrome" -Name "DnsOverHttpsMode" -ErrorAction SilentlyContinue).DnsOverHttpsMode
+        if ($chromeDoh -ne "off") { $score -= 20 }
+    } catch { $score -= 20 }
+
+    try {
+        $edgeDoh = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "DnsOverHttpsMode" -ErrorAction SilentlyContinue).DnsOverHttpsMode
+        if ($edgeDoh -ne "off") { $score -= 20 }
+    } catch { $score -= 20 }
+
+    try {
+        $idnChrome = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Google\Chrome" -Name "IDNPolicy" -ErrorAction SilentlyContinue).IDNPolicy
+        if ($idnChrome -ne 1) { $score -= 20 }
+    } catch { $score -= 20 }
+
+    try {
+        $smartDns = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient" -Name "DisableSmartNameResolution" -ErrorAction SilentlyContinue).DisableSmartNameResolution
+        if ($smartDns -ne 1) { $score -= 20 }
+    } catch { $score -= 20 }
+
+    if ($score -lt 0) { $score = 0 }
+    return $score
+}
+
+function Get-NtpStatus {
+    try {
+        $svc = Get-Service -Name "w32time" -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            return @{ ok = $true; desc = "Sincronizzato (INRIM/Cloudflare)" }
+        }
+    } catch {}
+    return @{ ok = $false; desc = "Non Sincronizzato" }
+}
+
+function Get-HyperlocalStatus {
+    if (Test-Path $SvcConf) {
+        try {
+            $raw = Get-Content -LiteralPath $SvcConf -ErrorAction SilentlyContinue
+            if ($raw -match 'auth-zone:' -and $raw -match 'name:\s*"\."') {
+                return @{ attivo = $true; desc = "Attivo (RFC 8806 - RAM Local)" }
+            }
+        } catch {}
+    }
+    return @{ attivo = $false; desc = "Disattivato" }
 }
 
 # === CACHE VERSIONI CLOUD ===
@@ -133,7 +228,7 @@ function Get-EngineStatus {
     return ($svc -and $svc.Status -eq "Running")
 }
 
-# === LIVE FEED RPZ (COMPLETO SENZA LIMITI TROPPO RESTRITTIVI) ===
+# === LIVE FEED RPZ ===
 function Get-LiveBlockedFeed {
     $feed = @()
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -162,14 +257,13 @@ function Get-LiveBlockedFeed {
     return @()
 }
 
-# === LIVE FEED RCODE (ULTIMI 500 EVENTI CON STATO RCODE) ===
+# === LIVE FEED RCODE ===
 function Get-LiveRcodeFeed {
     $feed = @()
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
             $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
             foreach ($ln in $lines) {
-                # 1. Risposte DNS standard di Unbound (richiede log-replies: yes)
                 if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
                     $feed += @{
                         orario  = $matches[1]
@@ -177,7 +271,6 @@ function Get-LiveRcodeFeed {
                         rcode   = $matches[3].ToUpper()
                     }
                 }
-                # 2. Eventi RPZ (intercettati come NXDOMAIN o NOERROR)
                 elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                     $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
                     $feed += @{
@@ -200,7 +293,7 @@ function Get-LiveRcodeFeed {
     return @()
 }
 
-# === UPSTREAM RADAR ===
+# === UPSTREAM RADAR (DOT PORTA 853) ===
 $script:RadarCacheTime = [DateTime]::MinValue
 $script:RadarCacheData = @()
 
@@ -260,6 +353,52 @@ function Get-UpstreamRadar {
         $script:RadarCacheTime = Get-Date
     }
     return $script:RadarCacheData
+}
+
+# === ROOT SERVERS RADAR (LATENZA ICMP ASINCRONA) ===
+$script:RootRadarCacheTime = [DateTime]::MinValue
+$script:RootRadarCacheData = @()
+
+function Get-RootServersRadar {
+    if (((Get-Date) - $script:RootRadarCacheTime).TotalSeconds -ge 12 -or $script:RootRadarCacheData.Count -eq 0) {
+        $results = New-Object System.Collections.Generic.List[psobject]
+
+        $pings = foreach ($rs in $script:RootServersList) {
+            [pscustomobject]@{
+                tag      = $rs.Tag
+                ip       = $rs.IP
+                operator = $rs.Operator
+                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 350)
+            }
+        }
+
+        foreach ($p in $pings) {
+            $ms = 999
+            $ok = $false
+            try {
+                if ($p.task.Wait(350)) {
+                    $res = $p.task.Result
+                    if ($res -and $res.Status -eq "Success") {
+                        $ok = $true
+                        $ms = $res.RoundtripTime
+                    }
+                }
+            } catch {}
+
+            $results.Add([pscustomobject]@{
+                tag      = $p.tag
+                ip       = $p.ip
+                operator = $p.operator
+                ok       = $ok
+                ms       = $ms
+            })
+        }
+
+        $sortedRoot = $results | Sort-Object @{Expression={$_.ok}; Descending=$true}, @{Expression={$_.ms}; Ascending=$true}
+        $script:RootRadarCacheData = @($sortedRoot)
+        $script:RootRadarCacheTime = Get-Date
+    }
+    return $script:RootRadarCacheData
 }
 
 # === LIVE STATS ESTESE ===
@@ -364,10 +503,18 @@ function Get-BunkerStatusJson {
     $liveFeed    = Get-LiveBlockedFeed
     $liveRcode   = Get-LiveRcodeFeed
     $radar       = Get-UpstreamRadar
+    $rootRadar   = Get-RootServersRadar
     $rpz         = Get-RpzBreakdown
     $sessione    = Get-SessionTotal
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
+
+    # Dati aggiuntivi specifici per il Bunker
+    $unboundRamMb = Get-UnboundWorkingSet
+    $totalRpzRules = Get-TotalRpzRulesCount
+    $hardeningScore = Get-HardeningStatus
+    $ntpStatus = Get-NtpStatus
+    $hyperlocalStatus = Get-HyperlocalStatus
 
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -402,6 +549,14 @@ function Get-BunkerStatusJson {
         live_feed_rpz    = $liveFeed
         live_rcode_feed  = $liveRcode
         upstream_radar   = $radar
+        root_radar       = $rootRadar
+        bunker_features  = [ordered]@{
+            unbound_ram_mb   = $unboundRamMb
+            total_rpz_rules  = $totalRpzRules
+            hardening_score  = $hardeningScore
+            ntp_status       = $ntpStatus
+            hyperlocal       = $hyperlocalStatus
+        }
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -455,28 +610,14 @@ $HtmlPage = @'
 
   .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 18px; }
   
-  /* BADGES PRINCIPALI */
   .badges {
-    display: flex;
-    gap: 10px;
-    flex-wrap: nowrap;
-    margin-bottom: 14px;
-    width: 100%;
-    align-items: center;
-    overflow-x: auto;
-    white-space: nowrap;
-    padding-bottom: 6px;
+    display: flex; gap: 10px; flex-wrap: nowrap; margin-bottom: 14px; width: 100%;
+    align-items: center; overflow-x: auto; white-space: nowrap; padding-bottom: 6px;
   }
   .badge {
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 0.88em;
-    font-weight: bold;
-    display: inline-flex;
-    align-items: center;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-    white-space: nowrap;
-    flex-shrink: 0;
+    padding: 8px 12px; border-radius: 6px; font-size: 0.88em; font-weight: bold;
+    display: inline-flex; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    white-space: nowrap; flex-shrink: 0;
   }
 
   .ok { background-color: rgba(32, 139, 76, 0.25); color: var(--green-bright); border: 2px solid var(--green-bright); }
@@ -488,51 +629,34 @@ $HtmlPage = @'
 
   .cache-highlight {
     background: linear-gradient(135deg, rgba(79,179,255,0.2) 0%, rgba(61,220,132,0.2) 100%);
-    color: #ffffff;
-    border: 2px solid var(--green-bright);
-    box-shadow: 0 0 18px rgba(61, 220, 132, 0.4);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    color: #ffffff; border: 2px solid var(--green-bright);
+    box-shadow: 0 0 18px rgba(61, 220, 132, 0.4); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
   }
   .cache-highlight b { color: var(--green-bright); font-size: 1.15em; margin-left: 6px; }
 
-  /* CSS EVIDENZIATORE INGRANDITO ED ELEGANTE PER IL BUNKER GAIN CON GRADIENTE REATTIVO VERDE */
   .gain-highlight {
-    margin-left: auto;
-    font-size: 1em;
-    padding: 10px 18px;
-    border-radius: 8px;
-    border: 2px solid var(--amber-bright);
-    box-shadow: 0 0 24px rgba(255, 179, 0, 0.5);
-    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
-    transition: all 0.4s ease-in-out;
+    margin-left: auto; font-size: 1em; padding: 10px 18px; border-radius: 8px;
+    border: 2px solid var(--amber-bright); box-shadow: 0 0 24px rgba(255, 179, 0, 0.5);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9); transition: all 0.4s ease-in-out;
   }
   .gain-highlight b { font-size: 1.32em; margin-left: 6px; }
 
-  /* SUB-ROW SOTTO-INDICATORI A GRADIENTE PER BOOST SCORE & HEADROOM */
+  /* SUB-ROW 1: PERFORMANCE & BOOST SCORE */
   .boost-subrow {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-    margin-bottom: 22px;
-    background: #0e141b;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px; margin-bottom: 12px; background: #0e141b; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px;
   }
-  .boost-item {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
+
+  /* SUB-ROW 2: FUNZIONALITÀ & BLINDATURA BUNKER */
+  .bunker-subrow {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; margin-bottom: 22px; background: #0b1219; border: 1px solid rgba(79, 179, 255, 0.3);
+    border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
   }
-  .boost-item-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.78em;
-    color: var(--dim);
-    margin-bottom: 5px;
-    font-weight: bold;
-  }
+
+  .boost-item { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .boost-item-header { display: flex; justify-content: space-between; font-size: 0.78em; color: var(--dim); margin-bottom: 5px; font-weight: bold; }
   .boost-item-val { color: var(--text); }
 
   .g-bar-bg { background: #080c10; border-radius: 4px; height: 10px; overflow: hidden; display: flex; }
@@ -545,14 +669,14 @@ $HtmlPage = @'
   .fill-prefetch { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
   .fill-qps { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
   .fill-health { background: linear-gradient(90deg, #ff5c5c 0%, #3ddc84 100%); }
+  .fill-bunker { background: linear-gradient(90deg, #0099ff 0%, #b388ff 100%); }
 
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
 
   .panel-versioni {
     background: linear-gradient(180deg, #131d2a 0%, var(--panel) 100%);
-    border: 1px solid var(--accent) !important;
-    box-shadow: 0 0 16px rgba(79, 179, 255, 0.2);
+    border: 1px solid var(--accent) !important; box-shadow: 0 0 16px rgba(79, 179, 255, 0.2);
   }
   .panel-versioni h2 { color: #ffffff !important; border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important; }
   
@@ -566,22 +690,8 @@ $HtmlPage = @'
   .stat .val { font-size:1.4em; font-weight:bold; }
   .stat .lbl { color: var(--dim); font-size:0.75em; }
 
-  /* CSS STATISTICHE AVANZATE RIGENERATO AD ALTA VISIBILITÀ */
-  .stat-breakdown-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: 8px;
-    margin-bottom: 10px;
-  }
-  .stat-card {
-    border-radius: 6px;
-    padding: 10px 8px;
-    text-align: center;
-    border: 1px solid var(--border);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    transition: transform 0.2s ease;
-  }
+  .stat-breakdown-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; margin-bottom: 10px; }
+  .stat-card { border-radius: 6px; padding: 10px 8px; text-align: center; border: 1px solid var(--border); box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s ease; }
   .stat-card:hover { transform: translateY(-2px); }
   .stat-card .sc-lbl { font-size: 0.76em; font-weight: bold; margin-bottom: 4px; letter-spacing: 0.5px; }
   .stat-card .sc-val { font-size: 1.45em; font-weight: bold; line-height: 1.1; margin-bottom: 2px; }
@@ -595,6 +705,14 @@ $HtmlPage = @'
   table { width:100%; border-collapse: collapse; font-size:0.85em; }
   th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
   th { color: var(--dim); font-weight:normal; }
+
+  /* COMPATTAZIONE VERTICALE SPECIFICA PER UPSTREAM & ROOT RADAR */
+  #tabellaRadar th, #tabellaRadar td,
+  #tabellaRootRadar th, #tabellaRootRadar td {
+    padding: 3px 8px !important;
+    font-size: 0.82em !important;
+    line-height: 1.25 !important;
+  }
   
   details { margin-top:6px; }
   summary { cursor:pointer; color: var(--accent); font-weight: bold; }
@@ -607,6 +725,9 @@ $HtmlPage = @'
   .bar-bg { background: #0e141b; border: 1px solid var(--border); border-radius: 4px; height: 26px; overflow: hidden; display: flex; }
   .bar-fill { height: 100%; transition: width 0.3s ease; }
   .legend-box { font-size: 0.88em; color: var(--dim); margin-top: 10px; line-height: 1.6; }
+
+  .grid-three-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+  .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
   .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
@@ -627,10 +748,9 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- 🏷️ BARRA DEI BADGES DI STATO CON BUNKER BOOST SCORE E BUNKER GAIN INGRANDITO -->
 <div class="badges" id="badges"></div>
 
-<!-- 📊 SECONDA FILA: SOTTO-INDICATORI A RISERVA/EFFICIENZA (100% = STATO TOP) -->
+<!-- FILA 1: PERFORMANCE & BOOST SCORE -->
 <div class="boost-subrow">
   <div class="boost-item">
     <div class="boost-item-header"><span>CACHE REALE (NO RPZ)</span><span class="boost-item-val" id="valRealCache">--%</span></div>
@@ -662,51 +782,67 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- CONTENITORE AFFIANCATO 1: SINISTRA (Versioni + Statistiche) / DESTRA (Upstream Radar) -->
-<div class="grid-two-columns">
+<!-- FILA 2: SOTTO-INDICATORI FUNZIONALITÀ BUNKER (HTML ENTITIES ANTI-MOJIBAKE) -->
+<div class="bunker-subrow">
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barUnboundRam" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128274; HARDENING &amp; POLICY</span><span class="boost-item-val" id="valHardening">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barHardening" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#9201;&#65039; OROLOGIO &amp; SYNC NTP</span><span class="boost-item-val" id="valNtpStatus">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barNtpStatus" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#127760; HYPERLOCAL ROOT</span><span class="boost-item-val" id="valHyperlocal">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barHyperlocal" style="width:100%"></div></div>
+  </div>
+</div>
+
+<!-- GRIGLIA A 3 COLONNE PERFETTAMENTE BILANCIATA -->
+<div class="grid-three-columns">
   
-  <div style="display: flex; flex-direction: column; gap: 18px;">
-    
-    <div class="panel panel-versioni" style="margin-bottom: 0;">
-      <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-      <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
-    </div>
-
-    <!-- MODULO STATISTICHE AVANZATE RISTRUTTURATO PER MASSIMA VISIBILITÀ -->
-    <div class="panel" style="margin-bottom: 0; flex: 1;">
-      <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
-      <div style="display: flex; flex-direction: column; gap: 20px;">
-        
-        <div>
-          <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
-          <div class="stat-breakdown-grid" id="gridRcode"></div>
-          <div class="bar-bg" id="barRcode"></div>
-          <div class="legend-box">
-            &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
-            &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
-            &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
-          </div>
+  <!-- COLONNA 1: Statistiche Avanzate Traffico -->
+  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
+    <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      
+      <div>
+        <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
+        <div class="stat-breakdown-grid" id="gridRcode"></div>
+        <div class="bar-bg" id="barRcode"></div>
+        <div class="legend-box">
+          &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
+          &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
+          &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
         </div>
-
-        <div>
-          <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia Query (RR Type)</div>
-          <div class="stat-breakdown-grid" id="gridTypes"></div>
-          <div class="bar-bg" id="barTypes"></div>
-          <div class="legend-box">
-            &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
-            &bull; <b style="color:var(--purple)">AAAA (IPv6)</b>: Risoluzioni IPv6<br>
-            &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
-          </div>
-        </div>
-
       </div>
-    </div>
 
+      <div>
+        <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia Query (RR Type)</div>
+        <div class="stat-breakdown-grid" id="gridTypes"></div>
+        <div class="bar-bg" id="barTypes"></div>
+        <div class="legend-box">
+          &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
+          &bull; <b style="color:var(--purple)">AAAA (IPv6)</b>: Risoluzioni IPv6<br>
+          &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
+        </div>
+      </div>
+
+    </div>
   </div>
 
+  <!-- COLONNA 2: Upstream Radar -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-    <div style="overflow-x: auto;">
+    <div style="overflow-x: auto; max-height: 520px;">
       <table id="tabellaRadar">
         <thead>
           <tr>
@@ -724,9 +860,38 @@ $HtmlPage = @'
     </div>
   </div>
 
+  <!-- COLONNA 3: Versioni Componenti (In alto) + Root Server Mondiali (Sotto) -->
+  <div style="display: flex; flex-direction: column; gap: 18px;">
+    
+    <div class="panel panel-versioni" style="margin-bottom: 0;">
+      <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
+      <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom: 0; flex: 1;">
+      <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
+      <div style="overflow-x: auto; max-height: 440px;">
+        <table id="tabellaRootRadar">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Root</th>
+              <th>Gestore / Organizzazione</th>
+              <th>Indirizzo IP IPv4</th>
+              <th>Latenza ICMP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="5" class="muted">Misurazione ICMP Root Server in corso...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
 </div>
 
-<!-- CONTENITORE AFFIANCATO 2: SINISTRA (Live Feed RPZ) / DESTRA (Dettaglio Block List Telegram) -->
 <div class="grid-two-columns">
   
   <div class="panel" style="margin-bottom: 0;">
@@ -750,19 +915,16 @@ $HtmlPage = @'
 
 </div>
 
-<!-- &#9854; MODULO TOTALE SESSIONE -->
 <div class="panel">
   <h2>&#9854; Totale sessione (dall'ultimo avvio)</h2>
   <div class="stats-grid" id="statsSessione"></div>
 </div>
 
-<!-- &#9877; MODULO SALUTE SISTEMA -->
 <div class="panel">
   <h2>&#9877; Stato di salute del sistema (Log Fasi di Avvio)</h2>
   <table id="tabellaSalute"><thead><tr><th>Fase</th><th>Azione</th><th>Esito</th></tr></thead><tbody></tbody></table>
 </div>
 
-<!-- &#128678; MODULO LIVE FEED RCODE (IN FONDO ALLA DASHBOARD - ULTIMI 500 RECORD) -->
 <div class="panel">
   <h2>&#128678; Live Feed Risposte DNS (Ultimi 500 Eventi RCODE in Tempo Reale)</h2>
   <input type="text" id="inputRicercaRcode" onkeyup="filtraLiveRcode()" 
@@ -938,7 +1100,6 @@ async function refresh(forceVersions) {
       (healthScore * 0.10)
     );
 
-    // === CALCOLO RICALIBRATO REALISTICO BUNKER GAIN (%) CON TEMPO RISPARMIATO ===
     const ispBaselineMs = 45;
     const displayLat = Math.max(0.5, effectiveLat);
     const msSaved = Math.max(0, Math.round(ispBaselineMs - displayLat));
@@ -953,7 +1114,7 @@ async function refresh(forceVersions) {
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
 
-    // AGGIORNAMENTO SOTTO-INDICATORI A GRADIENTE
+    // AGGIORNAMENTO SOTTO-INDICATORI BOOST
     document.getElementById('valRealCache').textContent = realCachePct + '%';
     document.getElementById('barRealCache').style.width = realCachePct + '%';
 
@@ -975,7 +1136,24 @@ async function refresh(forceVersions) {
     document.getElementById('valHealthScore').textContent = healthScore + '%';
     document.getElementById('barHealthScore').style.width = healthScore + '%';
 
-    // 2. BADGES DI STATO INTEGRATI
+    // AGGIORNAMENTO NUOVI SOTTO-INDICATORI BUNKER
+    const bf = d.bunker_features || {};
+    document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
+    document.getElementById('valUnboundRam').textContent = (bf.unbound_ram_mb || 0) + ' MB';
+    
+    const hardScore = bf.hardening_score || 0;
+    document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
+    document.getElementById('barHardening').style.width = hardScore + '%';
+
+    const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
+    document.getElementById('valNtpStatus').innerHTML = ntpOk ? '<span class="esito-ok">OK (INRIM/Cloudflare)</span>' : '<span class="esito-warn">Non Sincronizzato</span>';
+    document.getElementById('barNtpStatus').style.width = ntpOk ? '100%' : '20%';
+
+    const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
+    document.getElementById('valHyperlocal').innerHTML = hlOk ? '<span class="esito-ok">Attivo (RFC 8806)</span>' : '<span class="muted">Disattivato</span>';
+    document.getElementById('barHyperlocal').style.width = hlOk ? '100%' : '10%';
+
+    // BADGES DI STATO INTEGRATI
     const badges = document.getElementById('badges');
     badges.innerHTML = '';
     
@@ -1013,13 +1191,11 @@ async function refresh(forceVersions) {
       badges.appendChild(bNet);
     }
 
-    // BUNKER BOOST SCORE
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
 
-    // === BUNKER GAIN INGRANDITO CON GRADIENTE DINAMICO REATTIVO DA AMBRA A VERDE SMERALDO ===
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
 
@@ -1034,7 +1210,7 @@ async function refresh(forceVersions) {
     bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
     badges.appendChild(bGain);
 
-    // 3. STATISTICHE LIVE TRAFFICO (RISTRUTTURATE AD ALTA VISIBILITÀ)
+    // STATISTICHE LIVE TRAFFICO
     const st = d.statistiche_live || {};
     const rc = st.rcode || { noerror:0, nxdomain:0, servfail:0 };
     const totRc = (rc.noerror + rc.nxdomain + rc.servfail) || 1;
@@ -1096,7 +1272,7 @@ async function refresh(forceVersions) {
       <div class="bar-fill" style="width:${pHttps}%; background:#ffffff;" title="HTTPS: ${pHttps}%"></div>
     `;
 
-    // 4. LIVE FEED RPZ
+    // LIVE FEED RPZ
     const tbodyFeed = document.querySelector('#tabellaLiveFeed tbody');
     tbodyFeed.innerHTML = '';
     let feed = d.live_feed_rpz || [];
@@ -1114,7 +1290,7 @@ async function refresh(forceVersions) {
     
     filtraLiveFeed();
 
-    // 5. UPSTREAM RADAR
+    // UPSTREAM RADAR
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
     let radar = d.upstream_radar || [];
@@ -1133,7 +1309,35 @@ async function refresh(forceVersions) {
       });
     }
 
-    // 6. REPORT TELEGRAM
+    // ROOT SERVERS RADAR (ICMP)
+    const tbodyRoot = document.querySelector('#tabellaRootRadar tbody');
+    if (tbodyRoot) {
+      tbodyRoot.innerHTML = '';
+      let rootRadar = d.root_radar || [];
+      if (!Array.isArray(rootRadar)) { rootRadar = [rootRadar]; }
+
+      if (rootRadar.length === 0) {
+        tbodyRoot.innerHTML = '<tr><td colspan="5" class="muted">Nessun dato Root Server disponibile</td></tr>';
+      } else {
+        rootRadar.forEach(r => {
+          const tr = document.createElement('tr');
+          const stIcon = r.ok ? '&#128994;' : '&#128308;';
+          let latClass = r.ms < 40 ? 'color: var(--green-bright);' : (r.ms < 100 ? 'color: var(--amber-bright);' : 'color: var(--red-bright);');
+          const msText = r.ok ? `<span style="font-weight:bold; ${latClass}">${r.ms} ms</span>` : '<span class="esito-warn">TIMEOUT</span>';
+          
+          tr.innerHTML = `
+            <td>${stIcon}</td>
+            <td style="font-weight:bold; color: var(--accent);">${r.tag || '-'}</td>
+            <td style="font-size:0.85em;">${r.operator || '-'}</td>
+            <td style="font-size:0.85em;">${r.ip || '-'}</td>
+            <td>${msText}</td>
+          `;
+          tbodyRoot.appendChild(tr);
+        });
+      }
+    }
+
+    // REPORT TELEGRAM
     const r = d.dall_ultimo_report;
     document.getElementById('statsUltimoReport').innerHTML = `
       <div class="stat"><div class="val">${fmt(r.query_totali)}</div><div class="lbl">Query totali</div></div>
@@ -1176,7 +1380,7 @@ async function refresh(forceVersions) {
       listeDiv.appendChild(det);
     });
 
-    // 7. TOTALE SESSIONE
+    // TOTALE SESSIONE
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
     if (s) {
@@ -1189,7 +1393,7 @@ async function refresh(forceVersions) {
       sessDiv.innerHTML = '<div class="muted">Nessun dato di sessione ancora disponibile</div>';
     }
 
-    // 8. SALUTE SISTEMA
+    // SALUTE SISTEMA
     const tbodySalute = document.querySelector('#tabellaSalute tbody');
     tbodySalute.innerHTML = '';
     let fasi = (d.salute_sistema && d.salute_sistema.dettaglio && d.salute_sistema.dettaglio.fasi) || [];
@@ -1206,7 +1410,7 @@ async function refresh(forceVersions) {
       });
     }
 
-    // 9. LIVE FEED RCODE (IN FONDO ALLA DASHBOARD)
+    // LIVE FEED RCODE
     const tbodyRcode = document.querySelector('#tabellaLiveRcode tbody');
     if (tbodyRcode) {
       tbodyRcode.innerHTML = '';
