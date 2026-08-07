@@ -9,7 +9,6 @@
 :: 2. Se viene rilevato un errore di sintassi nel file service.conf, la subroutine 
 ::    :CONFIG_ERROR ripristina all'istante l'ultimo backup funzionante (.BKP)
 :: ===================================================================================
-
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
@@ -121,7 +120,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1002.00"
+set "LOCAL_VER=1005.00"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -714,6 +713,20 @@ if exist "!DASH_PS1!" (
     for %%A in ("!DASH_PS1!") do if %%~zA GTR !DASH_MIN_SIZE! set "DASH_SIZE_OK=1"
 )
 
+:: [OVERWRITE PROMPT] Se il file e' gia' presente e valido, chiede per 3 secondi se
+:: sovrascriverlo con la versione cloud. Risposta automatica NO allo scadere del timeout
+:: (nessuna azione, comportamento identico a prima), S per forzare un nuovo download.
+if "!DASH_SIZE_OK!"=="1" (
+    echo   [?] UnboundBunkerDashboard.ps1 gia' presente.
+    choice /C SN /N /T 3 /D N /M "  Sovrascrivere con la versione cloud? [S/N] (auto-NO tra 3s): "
+    if errorlevel 2 (
+        echo   [OK] UnboundBunkerDashboard.ps1 mantenuto invariato.
+    ) else (
+        echo   [..] Sovrascrittura richiesta: nuovo download in corso...
+        set "DASH_SIZE_OK=0"
+    )
+)
+
 if not "!DASH_SIZE_OK!"=="1" (
     echo   [..] UnboundBunkerDashboard.ps1 mancante o non valido: download da GitHub in corso...
     set "CLOUD_DASH_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1"
@@ -764,7 +777,7 @@ if not "!DASH_SIZE_OK!"=="1" (
     )
 )
 
-:: [DASHBOARD LIVE] Avvio automatico, nessuna richiesta di conferma - solo se il file e' presente e valido
+:: [DASHBOARD LIVE] Avvio automatico se il file e' presente e valido (dopo l'eventuale prompt di sovrascrittura sopra)
 if "!DASH_SIZE_OK!"=="1" (
     :: Termina eventuali istanze precedenti prima di avviarne una nuova: evita piu' processi
     :: in competizione sulla porta 8954 quando questo blocco gira ogni 2 ore oltre che ad ogni boot.
