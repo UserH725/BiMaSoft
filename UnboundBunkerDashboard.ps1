@@ -551,9 +551,12 @@ function Get-BunkerStatusJson {
     $hardeningScore = Get-HardeningStatus
     $ntpStatus = Get-NtpStatus
     $hyperlocalStatus = Get-HyperlocalStatus
+    
+    # MODIFICA: Calcolo della cache "libera" invece di "occupata" (per logica dei colori coerente)
     $configuredCacheMb = Get-ConfiguredCacheSizeMb
     $cacheUsedMb = [math]::Round(($stats.base.cache_mem_bytes / 1MB), 2)
-    $cacheSatPct = if ($configuredCacheMb -gt 0) { [math]::Round(($cacheUsedMb / $configuredCacheMb) * 100, 1) } else { 0 }
+    $cacheFreeMb = [math]::Max(0, $configuredCacheMb - $cacheUsedMb)
+    $cacheSatPct = if ($configuredCacheMb -gt 0) { [math]::Round(($cacheFreeMb / $configuredCacheMb) * 100, 1) } else { 100 }
 
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -861,8 +864,9 @@ $HtmlPage = @'
     <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUnboundRam" style="width:100%"></div></div>
   </div>
+  <!-- MODIFICA QUI L'ETICHETTA -->
   <div class="boost-item">
-    <div class="boost-item-header"><span>&#128190; SATURAZIONE CACHE</span><span class="boost-item-val" id="valCacheMem">-- MB (--%)</span></div>
+    <div class="boost-item-header"><span>&#128190; DISPONIBILIT&Agrave; CACHE</span><span class="boost-item-val" id="valCacheMem">-- MB (--%)</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheMem" style="width:0%"></div></div>
   </div>
   <div class="boost-item">
@@ -1251,11 +1255,13 @@ async function refresh(forceVersions) {
     document.getElementById('valUnboundRam').textContent = (bf.unbound_ram_mb || 0) + ' MB';
     updateGradientBar('barUnboundRam', bf.unbound_ram_mb > 0 ? 100 : 0);
     
+    // MODIFICA QUI LA LOGICA JS PER LA CACHE
     const cUsed = bf.cache_used_mb || 0;
     const cTot = bf.cache_total_mb || 1;
-    const cSatPct = bf.cache_sat_pct || 0;
-    document.getElementById('valCacheMem').textContent = cUsed + ' / ' + cTot + ' MB (' + cSatPct + '%)';
-    updateGradientBar('barCacheMem', cSatPct);
+    const cFreeMb = Math.max(0, cTot - cUsed).toFixed(1);
+    const cFreePct = Math.max(0, Math.min(100, Math.round((cFreeMb / cTot) * 100)));
+    document.getElementById('valCacheMem').textContent = cFreeMb + ' / ' + cTot + ' MB Liberi (' + cFreePct + '%)';
+    updateGradientBar('barCacheMem', cFreePct);
 
     const hardScore = bf.hardening_score || 0;
     document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
