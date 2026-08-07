@@ -641,6 +641,41 @@ $HtmlPage = @'
   }
   .gain-highlight b { font-size: 1.32em; margin-left: 6px; }
 
+  /* CSS PALLINI ANIMATI PULSANTI (RADAR PULSE DOTS) */
+  .status-dot-container { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; vertical-align: middle; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block; position: relative;
+  }
+  .status-dot.ok {
+    background-color: var(--green-bright);
+    box-shadow: 0 0 6px var(--green-bright);
+  }
+  .status-dot.ok::after {
+    content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
+    border-radius: 50%; border: 2px solid var(--green-bright);
+    animation: radar-pulse-green 1.8s ease-out infinite; opacity: 0;
+  }
+  .status-dot.bad {
+    background-color: var(--red-bright);
+    box-shadow: 0 0 6px var(--red-bright);
+  }
+  .status-dot.bad::after {
+    content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
+    border-radius: 50%; border: 2px solid var(--red-bright);
+    animation: radar-pulse-red 1.8s ease-out infinite; opacity: 0;
+  }
+
+  @keyframes radar-pulse-green {
+    0% { transform: scale(0.5); opacity: 0.9; }
+    70% { transform: scale(2.2); opacity: 0; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+  @keyframes radar-pulse-red {
+    0% { transform: scale(0.5); opacity: 0.9; }
+    70% { transform: scale(2.2); opacity: 0; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+
   /* SUB-ROW 1: PERFORMANCE & BOOST SCORE */
   .boost-subrow {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1290,7 +1325,7 @@ async function refresh(forceVersions) {
     
     filtraLiveFeed();
 
-    // UPSTREAM RADAR
+    // UPSTREAM RADAR (PALLINI PULSANTI ANIMATI)
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
     let radar = d.upstream_radar || [];
@@ -1301,7 +1336,7 @@ async function refresh(forceVersions) {
     } else {
       radar.forEach(r => {
         const tr = document.createElement('tr');
-        const stIcon = r.ok ? '&#128994;' : '&#128308;';
+        const stIcon = `<div class="status-dot-container"><span class="status-dot ${r.ok ? 'ok' : 'bad'}"></span></div>`;
         const stText = r.ok ? '<span class="esito-ok">PORTA 853 OK</span>' : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
         const msText = r.ok ? r.ms + ' ms' : 'TIMEOUT';
         tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${r.tag || '-'}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency">${msText}</td><td>${stText}</td>`;
@@ -1309,7 +1344,7 @@ async function refresh(forceVersions) {
       });
     }
 
-    // ROOT SERVERS RADAR (ICMP)
+    // ROOT SERVERS RADAR (PALLINI PULSANTI ANIMATI)
     const tbodyRoot = document.querySelector('#tabellaRootRadar tbody');
     if (tbodyRoot) {
       tbodyRoot.innerHTML = '';
@@ -1321,7 +1356,7 @@ async function refresh(forceVersions) {
       } else {
         rootRadar.forEach(r => {
           const tr = document.createElement('tr');
-          const stIcon = r.ok ? '&#128994;' : '&#128308;';
+          const stIcon = `<div class="status-dot-container"><span class="status-dot ${r.ok ? 'ok' : 'bad'}"></span></div>`;
           let latClass = r.ms < 40 ? 'color: var(--green-bright);' : (r.ms < 100 ? 'color: var(--amber-bright);' : 'color: var(--red-bright);');
           const msText = r.ok ? `<span style="font-weight:bold; ${latClass}">${r.ms} ms</span>` : '<span class="esito-warn">TIMEOUT</span>';
           
