@@ -36,21 +36,34 @@ $RpzListe = @(
     @{ Tag = "hagezi-spamtlds";   Nome = "HaGeZi Most Abused TLDs";Emoji = [char]::ConvertFromUtf32(0x1F6AB) }
 )
 
-# === ANAGRAFICA ROOT SERVERS MONDIALI (ICMP) ===
+# === ANAGRAFICA ROOT SERVERS MONDIALI (ICMP IPv4 & IPv6) ===
 $script:RootServersList = @(
-    @{ Tag = "A.ROOT"; Host = "a.root-servers.net"; IP = "198.41.0.4";   Operator = "Verisign, Inc." },
-    @{ Tag = "B.ROOT"; Host = "b.root-servers.net"; IP = "199.9.14.201"; Operator = "USC-ISI" },
-    @{ Tag = "C.ROOT"; Host = "c.root-servers.net"; IP = "192.33.4.12";  Operator = "Cogent Communications" },
-    @{ Tag = "D.ROOT"; Host = "d.root-servers.net"; IP = "199.7.91.13";  Operator = "University of Maryland" },
-    @{ Tag = "E.ROOT"; Host = "e.root-servers.net"; IP = "192.203.230.10"; Operator = "NASA Ames Research Center" },
-    @{ Tag = "F.ROOT"; Host = "f.root-servers.net"; IP = "192.5.5.241";  Operator = "Internet Systems Consortium (ISC)" },
-    @{ Tag = "G.ROOT"; Host = "g.root-servers.net"; IP = "192.112.36.4"; Operator = "US DoD DTIC" },
-    @{ Tag = "H.ROOT"; Host = "h.root-servers.net"; IP = "198.97.190.53"; Operator = "US Army Research Lab" },
-    @{ Tag = "I.ROOT"; Host = "i.root-servers.net"; IP = "192.36.148.17"; Operator = "Netnod (Autonomica)" },
-    @{ Tag = "J.ROOT"; Host = "j.root-servers.net"; IP = "192.58.128.30"; Operator = "Verisign, Inc." },
-    @{ Tag = "K.ROOT"; Host = "k.root-servers.net"; IP = "193.0.14.129"; Operator = "RIPE NCC" },
-    @{ Tag = "L.ROOT"; Host = "l.root-servers.net"; IP = "199.7.83.42";  Operator = "ICANN" },
-    @{ Tag = "M.ROOT"; Host = "m.root-servers.net"; IP = "202.12.27.33"; Operator = "WIDE Project" }
+    @{ Tag = "A.ROOT"; Host = "a.root-servers.net"; IP = "198.41.0.4";         Operator = "Verisign, Inc." },
+    @{ Tag = "A.ROOT"; Host = "a.root-servers.net"; IP = "2001:503:ba3e::2:30"; Operator = "Verisign, Inc." },
+    @{ Tag = "B.ROOT"; Host = "b.root-servers.net"; IP = "199.9.14.201";       Operator = "USC-ISI" },
+    @{ Tag = "B.ROOT"; Host = "b.root-servers.net"; IP = "2001:500:200::b";     Operator = "USC-ISI" },
+    @{ Tag = "C.ROOT"; Host = "c.root-servers.net"; IP = "192.33.4.12";        Operator = "Cogent Communications" },
+    @{ Tag = "C.ROOT"; Host = "c.root-servers.net"; IP = "2001:500:2::c";       Operator = "Cogent Communications" },
+    @{ Tag = "D.ROOT"; Host = "d.root-servers.net"; IP = "199.7.91.13";        Operator = "University of Maryland" },
+    @{ Tag = "D.ROOT"; Host = "d.root-servers.net"; IP = "2001:500:2d::d";      Operator = "University of Maryland" },
+    @{ Tag = "E.ROOT"; Host = "e.root-servers.net"; IP = "192.203.230.10";     Operator = "NASA Ames Research Center" },
+    @{ Tag = "E.ROOT"; Host = "e.root-servers.net"; IP = "2001:500:a8::e";      Operator = "NASA Ames Research Center" },
+    @{ Tag = "F.ROOT"; Host = "f.root-servers.net"; IP = "192.5.5.241";        Operator = "Internet Systems Consortium (ISC)" },
+    @{ Tag = "F.ROOT"; Host = "f.root-servers.net"; IP = "2001:500:2f::f";      Operator = "Internet Systems Consortium (ISC)" },
+    @{ Tag = "G.ROOT"; Host = "g.root-servers.net"; IP = "192.112.36.4";       Operator = "US DoD DTIC" },
+    @{ Tag = "G.ROOT"; Host = "g.root-servers.net"; IP = "2001:500:12::d0d";    Operator = "US DoD DTIC" },
+    @{ Tag = "H.ROOT"; Host = "h.root-servers.net"; IP = "198.97.190.53";      Operator = "US Army Research Lab" },
+    @{ Tag = "H.ROOT"; Host = "h.root-servers.net"; IP = "2001:500:1::53";      Operator = "US Army Research Lab" },
+    @{ Tag = "I.ROOT"; Host = "i.root-servers.net"; IP = "192.36.148.17";      Operator = "Netnod (Autonomica)" },
+    @{ Tag = "I.ROOT"; Host = "i.root-servers.net"; IP = "2001:7fe::53";        Operator = "Netnod (Autonomica)" },
+    @{ Tag = "J.ROOT"; Host = "j.root-servers.net"; IP = "192.58.128.30";      Operator = "Verisign, Inc." },
+    @{ Tag = "J.ROOT"; Host = "j.root-servers.net"; IP = "2001:503:c27::2:30"; Operator = "Verisign, Inc." },
+    @{ Tag = "K.ROOT"; Host = "k.root-servers.net"; IP = "193.0.14.129";       Operator = "RIPE NCC" },
+    @{ Tag = "K.ROOT"; Host = "k.root-servers.net"; IP = "2001:7fd::1";         Operator = "RIPE NCC" },
+    @{ Tag = "L.ROOT"; Host = "l.root-servers.net"; IP = "199.7.83.42";        Operator = "ICANN" },
+    @{ Tag = "L.ROOT"; Host = "l.root-servers.net"; IP = "2001:500:9f::42";     Operator = "ICANN" },
+    @{ Tag = "M.ROOT"; Host = "m.root-servers.net"; IP = "202.12.27.33";       Operator = "WIDE Project" },
+    @{ Tag = "M.ROOT"; Host = "m.root-servers.net"; IP = "2001:dc3::35";        Operator = "WIDE Project" }
 )
 
 # === RACCOLTA DATI BANDA E HARDWARE ===
@@ -408,7 +421,7 @@ function Get-UpstreamRadar {
     return $script:RadarCacheData
 }
 
-# === ROOT SERVERS RADAR (LATENZA ICMP ASINCRONA) ===
+# === ROOT SERVERS RADAR (LATENZA ICMP ASINCRONA V4 & V6) ===
 $script:RootRadarCacheTime = [DateTime]::MinValue
 $script:RootRadarCacheData = @()
 
@@ -662,7 +675,7 @@ $HtmlPage = @'
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font-family: "Consolas","Cascadia Mono",monospace; margin: 0; padding: 20px; }
   
-  .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
   .clock-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; text-align: right; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
   .clock-time { font-size: 2em; font-weight: bold; color: var(--accent); line-height: 1.1; }
   .clock-date { font-size: 0.9em; color: var(--dim); margin-top: 2px; text-transform: capitalize; }
@@ -680,11 +693,11 @@ $HtmlPage = @'
     100% { background-position: 200% center; filter: drop-shadow(0 0 2px rgba(79, 179, 255, 0.2)); }
   }
 
-  .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 18px; }
+  .sub { color: var(--dim); font-size: 0.85em; margin-bottom: 12px; }
   
   .badges {
-    display: flex; gap: 10px; flex-wrap: nowrap; margin-bottom: 14px; width: 100%;
-    align-items: center; overflow-x: auto; white-space: nowrap; padding-bottom: 6px;
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; width: 100%;
+    align-items: center; padding-bottom: 6px;
   }
   .badge {
     padding: 8px 12px; border-radius: 6px; font-size: 0.88em; font-weight: bold;
@@ -772,13 +785,19 @@ $HtmlPage = @'
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
 
+  /* PANNELLO VERSIONI SLIM (IN ALTO ORIZZONTALE) */
   .panel-versioni {
     background: linear-gradient(180deg, #131d2a 0%, var(--panel) 100%);
-    border: 1px solid var(--accent) !important; box-shadow: 0 0 16px rgba(79, 179, 255, 0.2);
+    border: 1px solid var(--accent) !important; box-shadow: 0 0 12px rgba(79, 179, 255, 0.2);
+    padding: 6px 14px !important; margin-bottom: 12px !important;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   }
-  .panel-versioni h2 { color: #ffffff !important; border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important; }
+  .panel-versioni h2 { color: #ffffff !important; border: none !important; margin: 0 !important; padding: 0 !important; font-size: 0.92em !important; white-space: nowrap; }
   
-  .stat-ver { background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 8px; position: relative; transition: all 0.2s ease; font-size: 0.88em; }
+  .stat-ver {
+    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 4px 10px;
+    display: flex; align-items: center; gap: 8px; font-size: 0.82em; transition: all 0.2s ease;
+  }
   .stat-ver:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
   .ver-status-ok { color: var(--green-bright); font-size: 0.75em; font-weight: bold; }
   .ver-status-warn { color: var(--amber-bright); font-size: 0.75em; font-weight: bold; }
@@ -795,7 +814,7 @@ $HtmlPage = @'
   .stat-card .sc-val { font-size: 1.45em; font-weight: bold; line-height: 1.1; margin-bottom: 2px; }
   .stat-card .sc-pct { font-size: 0.9em; font-weight: bold; opacity: 0.9; }
 
-  .table-scroll { max-height: 520px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: #0e141b; }
+  .table-scroll { border: 1px solid var(--border); border-radius: 6px; background: #0e141b; }
   .table-scroll table { width: 100%; border-collapse: collapse; font-size: 0.85em; border: none; }
   .table-scroll th, .table-scroll td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
   .table-scroll th { position: sticky; top: 0; background: var(--panel); z-index: 2; color: var(--dim); font-weight: normal; box-shadow: 0 1px 0 var(--border); }
@@ -844,6 +863,12 @@ $HtmlPage = @'
     <div class="clock-time" id="clockTime">--:--:--</div>
     <div class="clock-date" id="clockDate">-----------------</div>
   </div>
+</div>
+
+<!-- MODULO VERSIONI SOTTILE (IN ALTO, PRIMA DEI BADGES) -->
+<div class="panel panel-versioni">
+  <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
+  <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
 </div>
 
 <div class="badges" id="badges"></div>
@@ -945,10 +970,10 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <!-- COLONNA 2: Upstream Radar (SENZA MAX-HEIGHT/SCROLL) -->
+  <!-- COLONNA 2: Upstream Radar -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-    <div style="overflow-x: auto;">
+    <div>
       <table id="tabellaRadar">
         <thead>
           <tr>
@@ -966,34 +991,25 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <!-- COLONNA 3: Versioni Componenti (In alto) + Root Server Mondiali (Sotto) -->
-  <div style="display: flex; flex-direction: column; gap: 18px;">
-    
-    <div class="panel panel-versioni" style="margin-bottom: 0;">
-      <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-      <div id="statsVersioni" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 0;"></div>
+  <!-- COLONNA 3: Root Server Mondiali -->
+  <div class="panel" style="margin-bottom: 0;">
+    <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
+    <div>
+      <table id="tabellaRootRadar">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Root</th>
+            <th>Gestore / Organizzazione</th>
+            <th>Indirizzo IP (v4/v6)</th>
+            <th>Latenza ICMP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5" class="muted">Misurazione ICMP Root Server in corso...</td></tr>
+        </tbody>
+      </table>
     </div>
-
-    <div class="panel" style="margin-bottom: 0; flex: 1;">
-      <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
-      <div style="overflow-x: auto; max-height: 440px;">
-        <table id="tabellaRootRadar">
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Root</th>
-              <th>Gestore / Organizzazione</th>
-              <th>Indirizzo IP IPv4</th>
-              <th>Latenza ICMP</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td colspan="5" class="muted">Misurazione ICMP Root Server in corso...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
   </div>
 
 </div>
@@ -1016,7 +1032,7 @@ $HtmlPage = @'
   <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
     <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
     <div class="stats-grid" id="statsUltimoReport"></div>
-    <div id="listeRpz" style="max-height: 440px; overflow-y: auto; padding-right: 4px;"></div>
+    <div id="listeRpz" style="padding-right: 4px;"></div>
   </div>
 
 </div>
@@ -1036,7 +1052,7 @@ $HtmlPage = @'
   <input type="text" id="inputRicercaRcode" onkeyup="filtraLiveRcode()" 
          placeholder="&#128269; Cerca domini, risolutori o codici RCODE (NOERROR, NXDOMAIN, SERVFAIL)..." 
          style="width:100%; padding:10px 12px; margin-bottom:12px; background:#0e141b; color:#d7e2ec; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.95em; transition: border-color 0.2s;">
-  <div class="table-scroll" style="max-height: 420px;">
+  <div class="table-scroll">
     <table id="tabellaLiveRcode">
       <thead>
         <tr>
@@ -1128,29 +1144,26 @@ async function refresh(forceVersions) {
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
-    // 1. VERSIONI COMPONENTI (STRUTTURA COMPATTA SU 1 RIGA SINGOLA)
+    // 1. VERSIONI COMPONENTI (STRUTTURA SOTTILE SU SINGOLA RIGA)
     const v = d.versioni || {};
     document.getElementById('statsVersioni').innerHTML = `
       <div class="stat-ver">
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
-          <span>&#9881; Engine</span> ${getVerBadge(v.unbound_local, v.unbound_cloud)}
-        </div>
-        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">${v.unbound_local || 'N/D'}</div>
-        <div class="muted" style="font-size:0.72em;">Cloud: <b>${v.unbound_cloud || 'N/D'}</b></div>
+        <span style="color:var(--dim); font-weight:bold;">&#9881; Engine:</span>
+        <span style="color:#ffffff; font-weight:bold;">${v.unbound_local || 'N/D'}</span>
+        <span class="muted" style="font-size:0.8em;">(Cloud: ${v.unbound_cloud || 'N/D'})</span>
+        ${getVerBadge(v.unbound_local, v.unbound_cloud)}
       </div>
       <div class="stat-ver">
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
-          <span>&#128220; BAT Mgr</span> ${getVerBadge(v.bat_local, v.bat_cloud)}
-        </div>
-        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">v${v.bat_local || 'N/D'}</div>
-        <div class="muted" style="font-size:0.72em;">Cloud: <b>v${v.bat_cloud || 'N/D'}</b></div>
+        <span style="color:var(--dim); font-weight:bold;">&#128220; BAT Mgr:</span>
+        <span style="color:#ffffff; font-weight:bold;">v${v.bat_local || 'N/D'}</span>
+        <span class="muted" style="font-size:0.8em;">(Cloud: v${v.bat_cloud || 'N/D'})</span>
+        ${getVerBadge(v.bat_local, v.bat_cloud)}
       </div>
       <div class="stat-ver">
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
-          <span>&#128736; Service</span> ${getVerBadge(v.conf_local, v.conf_cloud)}
-        </div>
-        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">${v.conf_local || 'N/D'}</div>
-        <div class="muted" style="font-size:0.72em;">Cloud: <b>v${v.conf_cloud || 'N/D'}</b></div>
+        <span style="color:var(--dim); font-weight:bold;">&#128736; Service:</span>
+        <span style="color:#ffffff; font-weight:bold;">${v.conf_local || 'N/D'}</span>
+        <span class="muted" style="font-size:0.8em;">(Cloud: v${v.conf_cloud || 'N/D'})</span>
+        ${getVerBadge(v.conf_local, v.conf_cloud)}
       </div>
     `;
 
@@ -1475,7 +1488,7 @@ async function refresh(forceVersions) {
       });
     }
 
-    // ROOT SERVERS RADAR (PALLINI PULSANTI ANIMATI)
+    // ROOT SERVERS RADAR (PALLINI PULSANTI ANIMATI V4 & V6)
     const tbodyRoot = document.querySelector('#tabellaRootRadar tbody');
     if (tbodyRoot) {
       tbodyRoot.innerHTML = '';
