@@ -126,6 +126,33 @@ function Get-TotalRpzRulesCount {
     return $script:TotalRpzRulesCache
 }
 
+function Get-ConfiguredCacheSizeMb {
+    $totalMb = 0
+    if (Test-Path $HwConf) {
+        try {
+            $lines = Get-Content -LiteralPath $HwConf -ErrorAction SilentlyContinue
+            foreach ($ln in $lines) {
+                if ($ln -match 'msg-cache-size:\s*(\d+)([mGkM]?)') {
+                    $val = [double]$matches[1]
+                    $unit = $matches[2].ToUpper()
+                    if ($unit -eq 'G') { $totalMb += ($val * 1024) }
+                    elseif ($unit -eq 'K') { $totalMb += ($val / 1024) }
+                    else { $totalMb += $val }
+                }
+                if ($ln -match 'rrset-cache-size:\s*(\d+)([mGkM]?)') {
+                    $val = [double]$matches[1]
+                    $unit = $matches[2].ToUpper()
+                    if ($unit -eq 'G') { $totalMb += ($val * 1024) }
+                    elseif ($unit -eq 'K') { $totalMb += ($val / 1024) }
+                    else { $totalMb += $val }
+                }
+            }
+        } catch {}
+    }
+    if ($totalMb -eq 0) { $totalMb = 384 }
+    return $totalMb
+}
+
 function Get-HardeningStatus {
     $score = 100
     try {
@@ -403,12 +430,15 @@ function Get-RootServersRadar {
 
 # === LIVE STATS ESTESE ===
 function Get-LiveStats {
-    $base   = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0; qps_medio = 0 }
+    $base   = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0; qps_medio = 0; cache_mem_bytes = 0; ratelimited_queries = 0 }
     $rcode  = [ordered]@{ noerror = 0; nxdomain = 0; servfail = 0 }
     $types  = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0 }
     $dnssec = [ordered]@{ secure = 0; bogus = 0 }
     $prefetch = 0
     $recMs = 0
+    $memCacheRrset = 0
+    $memCacheMsg   = 0
+    $rateLimited    = 0
 
     if (Test-Path $UcExe) {
         try {
@@ -430,8 +460,14 @@ function Get-LiveStats {
                     if ($k -eq "num.answer.secure")          { $dnssec.secure   = $v }
                     if ($k -eq "num.answer.bogus")           { $dnssec.bogus    = $v }
                     if ($k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
+                    if ($k -eq "mem.cache.rrset")            { $memCacheRrset = $v }
+                    if ($k -eq "mem.cache.message")          { $memCacheMsg   = $v }
+                    if ($k -eq "num.query.ratelimited" -or $k -eq "num.query.ip_ratelimited") { $rateLimited += $v }
                 }
             }
+            $base.cache_mem_bytes = $memCacheRrset + $memCacheMsg
+            $base.ratelimited_queries = $rateLimited
+
             if ($base.uptime_secondi -gt 0) {
                 $base.qps_medio = [math]::Round($base.query_totali / $base.uptime_secondi, 2)
             }
@@ -515,6 +551,9 @@ function Get-BunkerStatusJson {
     $hardeningScore = Get-HardeningStatus
     $ntpStatus = Get-NtpStatus
     $hyperlocalStatus = Get-HyperlocalStatus
+    $configuredCacheMb = Get-ConfiguredCacheSizeMb
+    $cacheUsedMb = [math]::Round(($stats.base.cache_mem_bytes / 1MB), 2)
+    $cacheSatPct = if ($configuredCacheMb -gt 0) { [math]::Round(($cacheUsedMb / $configuredCacheMb) * 100, 1) } else { 0 }
 
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -556,6 +595,10 @@ function Get-BunkerStatusJson {
             hardening_score  = $hardeningScore
             ntp_status       = $ntpStatus
             hyperlocal       = $hyperlocalStatus
+            cache_used_mb    = $cacheUsedMb
+            cache_total_mb   = $configuredCacheMb
+            cache_sat_pct    = $cacheSatPct
+            ratelimited_cnt  = $stats.base.ratelimited_queries
         }
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
@@ -685,7 +728,7 @@ $HtmlPage = @'
 
   /* SUB-ROW 2: FUNZIONALITÀ & BLINDATURA BUNKER */
   .bunker-subrow {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px; margin-bottom: 22px; background: #0b1219; border: 1px solid rgba(79, 179, 255, 0.3);
     border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
   }
@@ -695,16 +738,7 @@ $HtmlPage = @'
   .boost-item-val { color: var(--text); }
 
   .g-bar-bg { background: #080c10; border-radius: 4px; height: 10px; overflow: hidden; display: flex; }
-  .g-bar-fill { height: 100%; transition: width 0.4s ease; }
-  
-  .fill-cache { background: linear-gradient(90deg, #0099ff 0%, #3ddc84 100%); }
-  .fill-latency { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
-  .fill-upstream { background: linear-gradient(90deg, #b388ff 0%, #3ddc84 100%); }
-  .fill-dnssec { background: linear-gradient(90deg, #0099ff 0%, #3ddc84 100%); }
-  .fill-prefetch { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
-  .fill-qps { background: linear-gradient(90deg, #ffb300 0%, #3ddc84 100%); }
-  .fill-health { background: linear-gradient(90deg, #ff5c5c 0%, #3ddc84 100%); }
-  .fill-bunker { background: linear-gradient(90deg, #0099ff 0%, #b388ff 100%); }
+  .g-bar-fill { height: 100%; transition: width 0.4s ease, background 0.4s ease; }
 
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
@@ -785,59 +819,67 @@ $HtmlPage = @'
 
 <div class="badges" id="badges"></div>
 
-<!-- FILA 1: PERFORMANCE & BOOST SCORE -->
+<!-- FILA 1: PERFORMANCE & BOOST SCORE (BARRE CON GRADIENTE DINAMICO ROSSO -> VERDE SCURO) -->
 <div class="boost-subrow">
   <div class="boost-item">
     <div class="boost-item-header"><span>CACHE REALE (NO RPZ)</span><span class="boost-item-val" id="valRealCache">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-cache" id="barRealCache" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barRealCache" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>EFFICIENZA LATENZA</span><span class="boost-item-val" id="valLatScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-latency" id="barLatScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barLatScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>UPSTREAM DoT ONLINE</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-upstream" id="barUpstreamScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barUpstreamScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-dnssec" id="barDnssecScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barDnssecScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>PRONTEZZA PREFETCH</span><span class="boost-item-val" id="valPrefetchScore">100%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-prefetch" id="barPrefetchScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>RISERVA CAPACIT&Agrave; (QPS)</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-qps" id="barQpsScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barQpsScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>SALUTE SISTEMA</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-health" id="barHealthScore" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
   </div>
 </div>
 
-<!-- FILA 2: SOTTO-INDICATORI FUNZIONALITÀ BUNKER (HTML ENTITIES ANTI-MOJIBAKE) -->
+<!-- FILA 2: SOTTO-INDICATORI FUNZIONALITÀ BUNKER (BARRE CON GRADIENTE DINAMICO ROSSO -> VERDE SCURO) -->
 <div class="bunker-subrow">
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barRpzRules" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barUnboundRam" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barUnboundRam" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128190; SATURAZIONE CACHE</span><span class="boost-item-val" id="valCacheMem">-- MB (--%)</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheMem" style="width:0%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128274; HARDENING &amp; POLICY</span><span class="boost-item-val" id="valHardening">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barHardening" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barHardening" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9201;&#65039; OROLOGIO &amp; SYNC NTP</span><span class="boost-item-val" id="valNtpStatus">--</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barNtpStatus" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barNtpStatus" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#127760; HYPERLOCAL ROOT</span><span class="boost-item-val" id="valHyperlocal">--</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill fill-bunker" id="barHyperlocal" style="width:100%"></div></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barHyperlocal" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#9889; ANTI-FLOOD &amp; RATELIMIT</span><span class="boost-item-val" id="valRateLimit">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barRateLimit" style="width:100%"></div></div>
   </div>
 </div>
 
@@ -985,6 +1027,7 @@ $HtmlPage = @'
 let prevQueries = 0;
 let prevTime = Date.now();
 let liveQPS = 0;
+let maxQPS = 0;
 
 function fmt(n) {
   if (n === undefined || n === null) return "-";
@@ -1003,6 +1046,24 @@ function getVerBadge(loc, cld) {
   if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Offline</span>';
   if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; ALLINEATO</span>';
   return '<span class="ver-status-warn">&#9888; AGGIORNAMENTO v' + cld + '</span>';
+}
+
+/* FUNZIONE PER CALCOLARE E APPLICARE IL GRADIENTE DINAMICO DA ROSSO A VERDE SCURO */
+function updateGradientBar(id, pct) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const p = Math.min(100, Math.max(0, pct || 0));
+  el.style.width = p + '%';
+
+  if (p <= 25) {
+    el.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
+  } else if (p <= 60) {
+    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 100%)';
+  } else if (p <= 85) {
+    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 40%, #196f3d 100%)';
+  } else {
+    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 35%, #196f3d 70%, #145a32 100%)';
+  }
 }
 
 function filtraLiveFeed() {
@@ -1064,7 +1125,7 @@ async function refresh(forceVersions) {
     const latMs = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.latenza_ms : 0;
     const qpsAvg = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.qps_medio : 0;
     
-    // CALCOLO QPS LIVE
+    // CALCOLO QPS LIVE E PICCO MAX BURST
     const nowMs = Date.now();
     if (prevQueries > 0 && nowMs > prevTime) {
       const qDiff = Math.max(0, qTot - prevQueries);
@@ -1075,6 +1136,11 @@ async function refresh(forceVersions) {
     }
     prevQueries = qTot;
     prevTime = nowMs;
+
+    const liveQpsNum = parseFloat(liveQPS);
+    if (!isNaN(liveQpsNum) && liveQpsNum > maxQPS) {
+      maxQPS = liveQpsNum;
+    }
 
     let radarList = d.upstream_radar || [];
     if (!Array.isArray(radarList)) radarList = [radarList];
@@ -1149,44 +1215,62 @@ async function refresh(forceVersions) {
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
 
-    // AGGIORNAMENTO SOTTO-INDICATORI BOOST
+    // AGGIORNAMENTO SOTTO-INDICATORI BOOST CON GRADIENTI DINAMICI
     document.getElementById('valRealCache').textContent = realCachePct + '%';
-    document.getElementById('barRealCache').style.width = realCachePct + '%';
+    updateGradientBar('barRealCache', realCachePct);
 
     document.getElementById('valLatScore').textContent = latScore + '% (' + displayLat + ' ms)';
-    document.getElementById('barLatScore').style.width = latScore + '%';
+    updateGradientBar('barLatScore', latScore);
 
     document.getElementById('valUpstreamScore').textContent = upstreamScore + '% (' + upOk + '/' + radarList.length + ')';
-    document.getElementById('barUpstreamScore').style.width = upstreamScore + '%';
+    updateGradientBar('barUpstreamScore', upstreamScore);
 
     document.getElementById('valDnssecScore').innerHTML = dnssecPct + '% ' + (ds.bogus > 0 ? '<span class="esito-warn">[BOGUS:' + ds.bogus + ']</span>' : '<span class="esito-ok">[OK]</span>');
-    document.getElementById('barDnssecScore').style.width = dnssecPct + '%';
+    updateGradientBar('barDnssecScore', dnssecPct);
 
     document.getElementById('valPrefetchScore').textContent = prefetchReadiness + '% (' + fmt(prefetchVal) + ' hits)';
-    document.getElementById('barPrefetchScore').style.width = prefetchReadiness + '%';
+    updateGradientBar('barPrefetchScore', prefetchReadiness);
 
-    document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (' + liveQPS + ' req/s)';
-    document.getElementById('barQpsScore').style.width = qpsHeadroom + '%';
+    document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (Live: ' + liveQPS + ' | Max: ' + maxQPS.toFixed(1) + ' req/s)';
+    updateGradientBar('barQpsScore', qpsHeadroom);
 
     document.getElementById('valHealthScore').textContent = healthScore + '%';
-    document.getElementById('barHealthScore').style.width = healthScore + '%';
+    updateGradientBar('barHealthScore', healthScore);
 
-    // AGGIORNAMENTO NUOVI SOTTO-INDICATORI BUNKER
+    // AGGIORNAMENTO SOTTO-INDICATORI BUNKER CON GRADIENTI DINAMICI
     const bf = d.bunker_features || {};
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
+    updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
+
     document.getElementById('valUnboundRam').textContent = (bf.unbound_ram_mb || 0) + ' MB';
+    updateGradientBar('barUnboundRam', bf.unbound_ram_mb > 0 ? 100 : 0);
     
+    const cUsed = bf.cache_used_mb || 0;
+    const cTot = bf.cache_total_mb || 1;
+    const cSatPct = bf.cache_sat_pct || 0;
+    document.getElementById('valCacheMem').textContent = cUsed + ' / ' + cTot + ' MB (' + cSatPct + '%)';
+    updateGradientBar('barCacheMem', cSatPct);
+
     const hardScore = bf.hardening_score || 0;
     document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
-    document.getElementById('barHardening').style.width = hardScore + '%';
+    updateGradientBar('barHardening', hardScore);
 
     const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
     document.getElementById('valNtpStatus').innerHTML = ntpOk ? '<span class="esito-ok">OK (INRIM/Cloudflare)</span>' : '<span class="esito-warn">Non Sincronizzato</span>';
-    document.getElementById('barNtpStatus').style.width = ntpOk ? '100%' : '20%';
+    updateGradientBar('barNtpStatus', ntpOk ? 100 : 20);
 
     const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
     document.getElementById('valHyperlocal').innerHTML = hlOk ? '<span class="esito-ok">Attivo (RFC 8806)</span>' : '<span class="muted">Disattivato</span>';
-    document.getElementById('barHyperlocal').style.width = hlOk ? '100%' : '10%';
+    updateGradientBar('barHyperlocal', hlOk ? 100 : 10);
+
+    const rlCnt = bf.ratelimited_cnt || 0;
+    if (rlCnt > 0) {
+      document.getElementById('valRateLimit').innerHTML = '<span class="esito-warn">' + fmt(rlCnt) + ' intercettati</span>';
+      updateGradientBar('barRateLimit', 30);
+    } else {
+      document.getElementById('valRateLimit').innerHTML = '<span class="esito-ok">0 (Sistema nominale)</span>';
+      updateGradientBar('barRateLimit', 100);
+    }
 
     // BADGES DI STATO INTEGRATI
     const badges = document.getElementById('badges');
