@@ -864,7 +864,6 @@ $HtmlPage = @'
     <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUnboundRam" style="width:100%"></div></div>
   </div>
-  <!-- MODIFICA QUI L'ETICHETTA -->
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128190; DISPONIBILIT&Agrave; CACHE</span><span class="boost-item-val" id="valCacheMem">-- MB (--%)</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheMem" style="width:0%"></div></div>
@@ -1254,8 +1253,7 @@ async function refresh(forceVersions) {
 
     document.getElementById('valUnboundRam').textContent = (bf.unbound_ram_mb || 0) + ' MB';
     updateGradientBar('barUnboundRam', bf.unbound_ram_mb > 0 ? 100 : 0);
-    
-    // MODIFICA QUI LA LOGICA JS PER LA CACHE
+
     const cUsed = bf.cache_used_mb || 0;
     const cTot = bf.cache_total_mb || 1;
     const cFreeMb = Math.max(0, cTot - cUsed).toFixed(1);
@@ -1421,7 +1419,7 @@ async function refresh(forceVersions) {
     
     filtraLiveFeed();
 
-    // UPSTREAM RADAR (PALLINI PULSANTI ANIMATI)
+    // UPSTREAM RADAR (PALLINI PULSANTI ANIMATI + EVIDENZIAZIONE TOP 3 VERDE BRILANTE)
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
     let radar = d.upstream_radar || [];
@@ -1430,12 +1428,22 @@ async function refresh(forceVersions) {
     if (radar.length === 0) {
       tbodyRadar.innerHTML = '<tr><td colspan="5" class="muted">Nessun resolver configurato nel file service.conf</td></tr>';
     } else {
-      radar.forEach(r => {
+      radar.forEach((r, index) => {
         const tr = document.createElement('tr');
+        
+        // Evidenziazione verde brillante per i primi 3 più veloci
+        let tagHtml = r.tag || '-';
+        if (r.ok && index < 3) {
+          tr.style.background = 'rgba(61, 220, 132, 0.20)';
+          tr.style.borderLeft = '4px solid var(--green-bright)';
+          tagHtml += ` <span style="background:var(--green-bright); color:#0b0f14; font-size:0.75em; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:6px;">TOP ${index + 1}</span>`;
+        }
+
         const stIcon = `<div class="status-dot-container"><span class="status-dot ${r.ok ? 'ok' : 'bad'}"></span></div>`;
         const stText = r.ok ? '<span class="esito-ok">PORTA 853 OK</span>' : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
         const msText = r.ok ? r.ms + ' ms' : 'TIMEOUT';
-        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${r.tag || '-'}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency">${msText}</td><td>${stText}</td>`;
+
+        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="${r.ok && index < 3 ? 'color:var(--green-bright); font-weight:bold;' : ''}">${msText}</td><td>${stText}</td>`;
         tbodyRadar.appendChild(tr);
       });
     }
