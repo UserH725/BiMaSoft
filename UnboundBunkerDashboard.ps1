@@ -284,30 +284,34 @@ function Get-LiveBlockedFeed {
     return @()
 }
 
-# === LIVE FEED RCODE CON RESOLVER UPSTREAM ===
+# === LIVE FEED RCODE CON RESOLVER UPSTREAM (ROBUSTO CONTRO MOJIBAKE) ===
 function Get-LiveRcodeFeed {
     $feed = @()
+    $zap    = "$([char]0x26A1) Cache RAM"
+    $globe  = [char]::ConvertFromUtf32(0x1F310)
+    $shield = [char]::ConvertFromUtf32(0x1F6E1)
+
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
             $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
-            $currentUpstream = "⚡ Cache RAM"
+            $currentUpstream = $zap
             
             foreach ($ln in $lines) {
                 if ($ln -match 'info:\s+sending query to\s+([0-9a-fA-F.:]+)(?:@\d+)?') {
                     $ip = $matches[1]
                     $currentUpstream = switch -Wildcard ($ip) {
-                        "*194.242.2.2*"      { "🌐 Mullvad ($ip)" }
-                        "*9.9.9.10*"        { "🌐 Quad9 ($ip)" }
-                        "*149.112.112.10*"  { "🌐 Quad9 ($ip)" }
-                        "*1.1.1.1*"         { "🌐 Cloudflare ($ip)" }
-                        "*1.0.0.1*"         { "🌐 Cloudflare ($ip)" }
-                        "*8.8.8.8*"         { "🌐 Google ($ip)" }
-                        "*8.8.4.4*"         { "🌐 Google ($ip)" }
-                        "*76.76.2.11*"      { "🌐 Control D ($ip)" }
-                        "*76.76.10.11*"     { "🌐 Control D ($ip)" }
-                        "*208.67.222.222*"  { "🌐 OpenDNS ($ip)" }
-                        "*208.67.220.220*"  { "🌐 OpenDNS ($ip)" }
-                        default             { "🌐 Upstream ($ip)" }
+                        "*194.242.2.2*"      { "$globe Mullvad ($ip)" }
+                        "*9.9.9.10*"        { "$globe Quad9 ($ip)" }
+                        "*149.112.112.10*"  { "$globe Quad9 ($ip)" }
+                        "*1.1.1.1*"         { "$globe Cloudflare ($ip)" }
+                        "*1.0.0.1*"         { "$globe Cloudflare ($ip)" }
+                        "*8.8.8.8*"         { "$globe Google ($ip)" }
+                        "*8.8.4.4*"         { "$globe Google ($ip)" }
+                        "*76.76.2.11*"      { "$globe Control D ($ip)" }
+                        "*76.76.10.11*"     { "$globe Control D ($ip)" }
+                        "*208.67.222.222*"  { "$globe OpenDNS ($ip)" }
+                        "*208.67.220.220*"  { "$globe OpenDNS ($ip)" }
+                        default             { "$globe Upstream ($ip)" }
                     }
                 }
                 elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
@@ -317,7 +321,7 @@ function Get-LiveRcodeFeed {
                         rcode    = $matches[3].ToUpper()
                         resolver = $currentUpstream
                     }
-                    $currentUpstream = "⚡ Cache RAM"
+                    $currentUpstream = $zap
                 }
                 elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                     $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
@@ -325,7 +329,7 @@ function Get-LiveRcodeFeed {
                         orario   = $matches[1]
                         dominio  = $matches[3].TrimEnd('.')
                         rcode    = $rcodeMap
-                        resolver = "🛡️ Scudo RPZ"
+                        resolver = "$shield Scudo RPZ"
                     }
                 }
             }
@@ -1597,11 +1601,11 @@ async function refresh(forceVersions) {
 
           const badgeHtml = `<span class="badge" style="${badgeStyle} padding: 4px 10px; font-size: 0.85em;">${code}</span>`;
 
-          const resText = f.resolver || '⚡ Cache RAM';
+          const resText = f.resolver || '\u26A1 Cache RAM';
           let resStyle = 'color: var(--green-bright);';
           if (resText.includes('RPZ')) {
             resStyle = 'color: var(--red-bright);';
-          } else if (resText.includes('🌐')) {
+          } else if (!resText.includes('Cache RAM')) {
             resStyle = 'color: var(--accent); font-weight: bold;';
           }
 
