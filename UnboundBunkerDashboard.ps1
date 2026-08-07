@@ -728,7 +728,7 @@ $HtmlPage = @'
 
   /* SUB-ROW 2: FUNZIONALITÀ & BLINDATURA BUNKER */
   .bunker-subrow {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 10px; margin-bottom: 22px; background: #0b1219; border: 1px solid rgba(79, 179, 255, 0.3);
     border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
   }
@@ -749,10 +749,10 @@ $HtmlPage = @'
   }
   .panel-versioni h2 { color: #ffffff !important; border-bottom: 1px solid rgba(79, 179, 255, 0.4) !important; }
   
-  .stat-ver { background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 12px; position: relative; transition: all 0.2s ease; }
+  .stat-ver { background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 8px; position: relative; transition: all 0.2s ease; font-size: 0.88em; }
   .stat-ver:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-  .ver-status-ok { color: var(--green-bright); font-size: 0.78em; font-weight: bold; float: right; }
-  .ver-status-warn { color: var(--amber-bright); font-size: 0.78em; font-weight: bold; float: right; }
+  .ver-status-ok { color: var(--green-bright); font-size: 0.75em; font-weight: bold; }
+  .ver-status-warn { color: var(--amber-bright); font-size: 0.75em; font-weight: bold; }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
@@ -942,7 +942,7 @@ $HtmlPage = @'
     
     <div class="panel panel-versioni" style="margin-bottom: 0;">
       <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-      <div class="stats-grid" id="statsVersioni" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;"></div>
+      <div id="statsVersioni" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 0;"></div>
     </div>
 
     <div class="panel" style="margin-bottom: 0; flex: 1;">
@@ -1043,9 +1043,9 @@ setInterval(updateClock, 1000);
 updateClock();
 
 function getVerBadge(loc, cld) {
-  if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Offline</span>';
-  if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; ALLINEATO</span>';
-  return '<span class="ver-status-warn">&#9888; AGGIORNAMENTO v' + cld + '</span>';
+  if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Off</span>';
+  if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; OK</span>';
+  return '<span class="ver-status-warn">&#9888; v' + cld + '</span>';
 }
 
 /* FUNZIONE PER CALCOLARE E APPLICARE IL GRADIENTE DINAMICO DA ROSSO A VERDE SCURO */
@@ -1098,23 +1098,29 @@ async function refresh(forceVersions) {
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
-    // 1. VERSIONI COMPONENTI
+    // 1. VERSIONI COMPONENTI (STRUTTURA COMPATTA SU 1 RIGA SINGOLA)
     const v = d.versioni || {};
     document.getElementById('statsVersioni').innerHTML = `
       <div class="stat-ver">
-        <div class="lbl">&#9881; Engine Unbound ${getVerBadge(v.unbound_local, v.unbound_cloud)}</div>
-        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.unbound_local || 'N/D'}</div>
-        <div class="muted">Release Cloud: <b>${v.unbound_cloud || 'N/D'}</b></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
+          <span>&#9881; Engine</span> ${getVerBadge(v.unbound_local, v.unbound_cloud)}
+        </div>
+        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">${v.unbound_local || 'N/D'}</div>
+        <div class="muted" style="font-size:0.72em;">Cloud: <b>${v.unbound_cloud || 'N/D'}</b></div>
       </div>
       <div class="stat-ver">
-        <div class="lbl">&#128220; BAT Manager ${getVerBadge(v.bat_local, v.bat_cloud)}</div>
-        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">v${v.bat_local || 'N/D'}</div>
-        <div class="muted">Release Cloud: <b>v${v.bat_cloud || 'N/D'}</b></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
+          <span>&#128220; BAT Mgr</span> ${getVerBadge(v.bat_local, v.bat_cloud)}
+        </div>
+        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">v${v.bat_local || 'N/D'}</div>
+        <div class="muted" style="font-size:0.72em;">Cloud: <b>v${v.bat_cloud || 'N/D'}</b></div>
       </div>
       <div class="stat-ver">
-        <div class="lbl">&#128736; Service CONF ${getVerBadge(v.conf_local, v.conf_cloud)}</div>
-        <div class="val" style="font-size:1.25em; color:#ffffff; margin: 4px 0;">${v.conf_local || 'N/D'}</div>
-        <div class="muted">Release Cloud: <b>${v.conf_cloud || 'N/D'}</b></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75em; color:var(--dim);">
+          <span>&#128736; Service</span> ${getVerBadge(v.conf_local, v.conf_cloud)}
+        </div>
+        <div class="val" style="font-size:1.15em; color:#ffffff; margin: 3px 0;">${v.conf_local || 'N/D'}</div>
+        <div class="muted" style="font-size:0.72em;">Cloud: <b>${v.conf_cloud || 'N/D'}</b></div>
       </div>
     `;
 
