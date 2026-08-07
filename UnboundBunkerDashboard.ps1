@@ -874,10 +874,10 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <!-- COLONNA 2: Upstream Radar -->
+  <!-- COLONNA 2: Upstream Radar (SENZA MAX-HEIGHT/SCROLL) -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-    <div style="overflow-x: auto; max-height: 520px;">
+    <div style="overflow-x: auto;">
       <table id="tabellaRadar">
         <thead>
           <tr>
