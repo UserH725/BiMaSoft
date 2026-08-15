@@ -29,13 +29,15 @@ exit /b
 
 :ADMIN_VERIFIED
 :: Applica font nel registro e rilancia in nuova finestra se non già fatto.
-:: I lanci automatici con flag (--scheduled / --refresh / --dailyreport) arrivano
+:: I lanci automatici con flag (--scheduled / --refresh / --dailyreport /
+:: --refreshabusech) arrivano
 :: da Task Scheduler in background: saltano subito la finestra visibile, che ha
 :: senso solo per l'uso interattivo, ed evitano cosi' di perdere il flag nel
 :: rilancio (cmd /k ""%~f0"" non lo propagava).
 if "%~1"=="--scheduled" goto :FONT_OK
 if "%~1"=="--refresh" goto :FONT_OK
 if "%~1"=="--dailyreport" goto :FONT_OK
+if "%~1"=="--refreshabusech" goto :FONT_OK
 set "FLAG_FILE=%TEMP%\unbound_relaunched.flag"
 if exist "%FLAG_FILE%" (
     del /f /q "%FLAG_FILE%" >nul 2>&1
@@ -120,7 +122,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1005.00"
+set "LOCAL_VER=1010.00"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -387,6 +389,7 @@ set "TASK_NAME_2H=Unbound_Bunker_2h"
 set "TASK_NAME_BOOT=Unbound_Bunker_Boot"
 set "TASK_NAME_REPORT=Unbound_Bunker_DailyReport"
 set "TASK_NAME_SHUTDOWN=Unbound_Bunker_ShutdownReport"
+set "TASK_NAME_ABUSECH=Unbound_Bunker_AbuseCh30m"
 
 :: 1. CREAZIONE/AGGIORNAMENTO TASK GIORNALIERO
 :: [FIX] Come per il task biorario: sempre sovrascritto (schtasks /f) ad ogni
@@ -447,6 +450,25 @@ if !errorlevel! NEQ 0 (
     if exist "!TASK_ERR_2H!" type "!TASK_ERR_2H!"
 ) else (
     del /f /q "!TASK_ERR_2H!" >nul 2>&1
+)
+
+:: 2B. CREAZIONE/AGGIORNAMENTO TASK ABUSE.CH (URLHAUS + THREATFOX) OGNI 30 MINUTI
+:: URLhaus rigenera il proprio RPZ ogni 5 minuti; ThreatFox con cadenza simile.
+:: Il ciclo biorario resta troppo lento per sfruttare davvero questa freschezza,
+:: quindi le due fonti piu' dinamiche hanno un task dedicato separato, allineato
+:: alle mezz'ore esatte (xx:00, xx:30) grazie a /st 00:00 + /mo 30. Le altre 8
+:: liste (HaGeZi/Spamhaus) restano sul ciclo biorario standard: non serve
+:: aggiornarle piu' spesso e un intervallo piu' stretto per tutto lo stack
+:: sprecherebbe banda/CPU senza benefici reali.
+echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (abuse.ch URLhaus/ThreatFox)...
+set "TASK_ERR_ABUSECH=!UB_DIR!\schtasks_error_abusech.log"
+if exist "!TASK_ERR_ABUSECH!" del /f /q "!TASK_ERR_ABUSECH!" >nul 2>&1
+schtasks /create /tn "%TASK_NAME_ABUSECH%" /tr "cmd.exe /c \"\"%~f0\" --refreshabusech\"" /sc minute /mo 30 /st 00:00 /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_ABUSECH!"
+if !errorlevel! NEQ 0 (
+    echo   [!] Creazione/aggiornamento task abuse.ch fallita. Dettaglio salvato in !TASK_ERR_ABUSECH!
+    if exist "!TASK_ERR_ABUSECH!" type "!TASK_ERR_ABUSECH!"
+) else (
+    del /f /q "!TASK_ERR_ABUSECH!" >nul 2>&1
 )
 
 :: 3. CREAZIONE/AGGIORNAMENTO TASK DI AVVIO A VIDEO AL LOGON
@@ -542,6 +564,17 @@ set "HZ_SPAMTLDS=%UB_DIR%\hagezi-spamtlds.conf"
 set "HZ_SPAMTLDS_BAK=%HZ_SPAMTLDS%.bak1"
 set "HZ_SPAMTLDS_BAK2=%HZ_SPAMTLDS%.bak2"
 set "HZ_SPAMTLDS_BAK3=%HZ_SPAMTLDS%.bak3"
+set "URLHAUS=%UB_DIR%\urlhaus.conf"
+set "URLHAUS_BAK=%URLHAUS%.bak1"
+set "URLHAUS_BAK2=%URLHAUS%.bak2"
+set "URLHAUS_BAK3=%URLHAUS%.bak3"
+set "THREATFOX=%UB_DIR%\threatfox.conf"
+set "THREATFOX_BAK=%THREATFOX%.bak1"
+set "THREATFOX_BAK2=%THREATFOX%.bak2"
+set "THREATFOX_BAK3=%THREATFOX%.bak3"
+:: Auth-Key gratuita abuse.ch - NON necessaria per gli endpoint RPZ (pubblici),
+:: serve solo per altri export abuse.ch come CSV/JSON/MISP. Conservata per usi futuri.
+set "ABUSECH_AUTHKEY=9232c744c5ca5656cd1b6b25925077df38d18f9de901493e"
 set "NCACHE_BAK=%UB_DIR%\named.cache.bak1"
 set "NCACHE_BAK2=%UB_DIR%\named.cache.bak2"
 set "NCACHE_BAK3=%UB_DIR%\named.cache.bak3"
@@ -576,6 +609,10 @@ set "F10G_ACT="
 set "F10G_RES="
 set "F10H_ACT="
 set "F10H_RES="
+set "F10I_ACT="
+set "F10I_RES="
+set "F10J_ACT="
+set "F10J_RES="
 set "F14_ACT="
 set "F14_RES="
 
@@ -594,8 +631,11 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: ==================================================================
 :: FLAG --refresh: aggiorna solo HaGeZi + root hints, poi riavvia
 :: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
+:: FLAG --refreshabusech: aggiorna solo URLhaus + ThreatFox, poi riavvia
+:: se necessario. Viene eseguito ogni 30 minuti dallo scheduler dedicato.
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
+if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
 
 set "SKIP_MAINTENANCE=0"
@@ -977,6 +1017,10 @@ if exist "%HZ_HOSTER%" call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%H
 if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" >nul 2>&1
 if exist "%HZ_SPAMTLDS%" call :ROTATE_BAK "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS_BAK2%" "%HZ_SPAMTLDS_BAK3%"
 if exist "%HZ_SPAMTLDS%" copy /y "%HZ_SPAMTLDS%" "%HZ_SPAMTLDS_BAK%" >nul 2>&1
+if exist "%URLHAUS%" call :ROTATE_BAK "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
+if exist "%URLHAUS%" copy /y "%URLHAUS%" "%URLHAUS_BAK%" >nul 2>&1
+if exist "%THREATFOX%" call :ROTATE_BAK "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
+if exist "%THREATFOX%" copy /y "%THREATFOX%" "%THREATFOX_BAK%" >nul 2>&1
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -1698,6 +1742,118 @@ if exist "%HZ_SPAMTLDS%" (
 call :UPDATE_UI 90
 call :LOGSTEP "NET" "!F10H_RES!"
 
+:: ================================================================
+:: F10I — ABUSE.CH URLHAUS (RPZ nativo, nessuna conversione necessaria.
+:: Aggiornato ogni 5 minuti dalla fonte; niente mirror CDN alternativo
+:: per abuse.ch, quindi retry singola sorgente con backoff 3s/6s)
+:: ================================================================
+set "F10I_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch URLhaus (malware attivo) e la preparo come RPZ attiva."
+call :UPDATE_UI 90
+
+call :CURL_RETRY "https://urlhaus.abuse.ch/downloads/rpz/" "%URLHAUS%.tmp" ""
+set "URLHAUS_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "URLHAUS_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if errorlevel 1 (
+    if exist "%URLHAUS_BAK%" (
+        copy /y "%URLHAUS_BAK%" "%URLHAUS%" >nul 2>&1
+        call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        set "F10I_RES=[     WARN     ] NET  >> abuse.ch URLhaus non scaricato, ripristinato dal backup: !DT_URLHAUS!"
+    ) else if exist "%URLHAUS%" (
+        call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        set "F10I_RES=[     WARN     ] NET  >> abuse.ch URLhaus: download fallito, uso esistente: !DT_URLHAUS!"
+    ) else (
+        set "F10I_RES=[ERR ] NET  >> abuse.ch URLhaus non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%URLHAUS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_URLHAUS=0"
+        if exist "%URLHAUS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%URLHAUS%') { (Get-FileHash '%URLHAUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%URLHAUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_URLHAUS=1"
+            )
+        )
+        if "!SKIP_URLHAUS!"=="0" (
+            move /y "%URLHAUS%.tmp" "%URLHAUS%" >nul 2>&1
+            call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            set "F10I_RES=[      OK      ] NET  >> abuse.ch URLhaus - RPZ aggiornato: !DT_URLHAUS!!URLHAUS_TRYNOTE!"
+        ) else (
+            del /f /q "%URLHAUS%.tmp" >nul 2>&1
+            call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            set "F10I_RES=[     SKIP     ] NET  >> abuse.ch URLhaus - RPZ gia' aggiornato: !DT_URLHAUS!"
+        )
+    ) else (
+        if exist "%URLHAUS%" (
+            call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            set "F10I_RES=[     SKIP     ] NET  >> abuse.ch URLhaus - file scaricato piccolo, uso esistente: !DT_URLHAUS!"
+        ) else (
+            set "F10I_RES=[    ERRORE    ] NET  >> abuse.ch URLhaus - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%URLHAUS%.tmp" del /f /q "%URLHAUS%.tmp" >nul 2>&1
+if exist "%URLHAUS%" (
+    call :GET_RPZ_LINES "%URLHAUS%" RPZ_L_CNT
+    set "F10I_RES=!F10I_RES! [!RPZ_L_CNT! elementi]"
+)
+call :UPDATE_UI 90
+call :LOGSTEP "NET" "!F10I_RES!"
+
+:: ================================================================
+:: F10J — ABUSE.CH THREATFOX (RPZ nativo, IOC botnet C2. Endpoint
+:: pubblico, non richiede Auth-Key - IOC scaduti >6 mesi vengono
+:: rimossi automaticamente dalla fonte per ridurre i falsi positivi)
+:: ================================================================
+set "F10J_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch ThreatFox (IOC botnet C2) e la preparo come RPZ attiva."
+call :UPDATE_UI 90
+
+call :CURL_RETRY "https://threatfox.abuse.ch/downloads/threatfox.rpz" "%THREATFOX%.tmp" ""
+set "THREATFOX_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "THREATFOX_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if errorlevel 1 (
+    if exist "%THREATFOX_BAK%" (
+        copy /y "%THREATFOX_BAK%" "%THREATFOX%" >nul 2>&1
+        call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        set "F10J_RES=[     WARN     ] NET  >> abuse.ch ThreatFox non scaricato, ripristinato dal backup: !DT_THREATFOX!"
+    ) else if exist "%THREATFOX%" (
+        call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        set "F10J_RES=[     WARN     ] NET  >> abuse.ch ThreatFox: download fallito, uso esistente: !DT_THREATFOX!"
+    ) else (
+        set "F10J_RES=[ERR ] NET  >> abuse.ch ThreatFox non scaricabile e nessun backup disponibile!"
+    )
+) else (
+    for %%I in ("%THREATFOX%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_THREATFOX=0"
+        if exist "%THREATFOX%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%THREATFOX%') { (Get-FileHash '%THREATFOX%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%THREATFOX%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_THREATFOX=1"
+            )
+        )
+        if "!SKIP_THREATFOX!"=="0" (
+            move /y "%THREATFOX%.tmp" "%THREATFOX%" >nul 2>&1
+            call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            set "F10J_RES=[      OK      ] NET  >> abuse.ch ThreatFox - RPZ aggiornato: !DT_THREATFOX!!THREATFOX_TRYNOTE!"
+        ) else (
+            del /f /q "%THREATFOX%.tmp" >nul 2>&1
+            call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            set "F10J_RES=[     SKIP     ] NET  >> abuse.ch ThreatFox - RPZ gia' aggiornato: !DT_THREATFOX!"
+        )
+    ) else (
+        if exist "%THREATFOX%" (
+            call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            set "F10J_RES=[     SKIP     ] NET  >> abuse.ch ThreatFox - file scaricato piccolo, uso esistente: !DT_THREATFOX!"
+        ) else (
+            set "F10J_RES=[    ERRORE    ] NET  >> abuse.ch ThreatFox - file scaricato troppo piccolo e nessun backup!"
+        )
+    )
+)
+if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
+if exist "%THREATFOX%" (
+    call :GET_RPZ_LINES "%THREATFOX%" RPZ_L_CNT
+    set "F10J_RES=!F10J_RES! [!RPZ_L_CNT! elementi]"
+)
+call :UPDATE_UI 90
+call :LOGSTEP "NET" "!F10J_RES!"
+
 
 :: FASE 11 - Azione
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
@@ -1723,6 +1879,8 @@ icacls "%SH_DROP6%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(
 icacls "%HZ_DYNDNS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_HOSTER%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%HZ_SPAMTLDS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%URLHAUS%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
+icacls "%THREATFOX%" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
 icacls "%UB_DIR%\root.key" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(F) >nul 2>&1
 set "F12_RES=[      OK      ] SECU >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
@@ -2029,6 +2187,8 @@ if exist "%HZ_HOSTER%"          call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_B
 if exist "%HZ_HOSTER%"          copy /y "%HZ_HOSTER%"          "%HZ_HOSTER_BAK%"    >nul 2>&1
 if exist "%HZ_SPAMTLDS%"        call :ROTATE_BAK "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS_BAK2%" "%HZ_SPAMTLDS_BAK3%"
 if exist "%HZ_SPAMTLDS%"        copy /y "%HZ_SPAMTLDS%"        "%HZ_SPAMTLDS_BAK%"  >nul 2>&1
+:: [NOTA] URLhaus/ThreatFox non hanno piu' rotazione backup qui: la gestisce
+:: il task dedicato ogni 30 minuti (:REFRESH_ABUSECH_ONLY).
 
 
 :: named.cache (refresh biorario)
@@ -2558,6 +2718,12 @@ if not errorlevel 1 (
 )
 if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 
+:: [NOTA] abuse.ch URLhaus e ThreatFox NON vengono piu' scaricati qui: hanno un
+:: task dedicato ogni 30 minuti (:REFRESH_ABUSECH_ONLY, flag --refreshabusech),
+:: piu' adeguato alla loro cadenza di aggiornamento (URLhaus rigenera il proprio
+:: RPZ ogni 5 minuti). Mantenerli anche qui avrebbe solo duplicato il lavoro.
+
+
 if "!CHANGED!"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
@@ -2579,6 +2745,133 @@ echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
 :: indipendentemente dal fatto che CHANGED sia 0 o 1.
 call :DNS_FALLBACK_OFF
+exit /b
+
+:: ============================================================================
+:: REFRESH DEDICATO ABUSE.CH (URLHAUS + THREATFOX) OGNI 30 MINUTI
+:: Sottoinsieme snello di :REFRESH_FILES_ONLY: aggiorna solo le due fonti piu'
+:: dinamiche (URLhaus rigenera il proprio RPZ ogni 5 minuti), senza toccare
+:: BAT/service.conf/HaGeZi/Spamhaus/root.zone/NTP - quelli restano sul ciclo
+:: biorario standard. Stessa rete di sicurezza (ping, DNS fallback, restart
+:: condizionale solo se cambia qualcosa) ma senza gli step pesanti (silent
+:: update, NTP resync) che non hanno senso ripetere ogni 30 minuti.
+:: ============================================================================
+:REFRESH_ABUSECH_ONLY
+title UNBOUND BUNKER - REFRESH ABUSE.CH (30 MIN)
+
+ping -n 1 8.8.8.8 >nul 2>&1
+if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
+if errorlevel 1 (
+    call :LOGFAIL "REFRESH-ABUSECH" "Rete non raggiungibile, refresh saltato"
+    exit /b
+)
+
+if not exist "%UB_DIR%" (
+    call :LOGFAIL "REFRESH-ABUSECH" "Directory Unbound non trovata"
+    exit /b
+)
+
+set "CHANGED=0"
+
+:: Rotazione backup prima del download, stesso pattern del refresh biorario
+if exist "%URLHAUS%"            call :ROTATE_BAK "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
+if exist "%URLHAUS%"            copy /y "%URLHAUS%"            "%URLHAUS_BAK%"      >nul 2>&1
+if exist "%THREATFOX%"          call :ROTATE_BAK "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
+if exist "%THREATFOX%"          copy /y "%THREATFOX%"          "%THREATFOX_BAK%"    >nul 2>&1
+
+:: abuse.ch URLhaus - RPZ nativo, singola sorgente senza mirror CDN
+call :CURL_RETRY "https://urlhaus.abuse.ch/downloads/rpz/" "%URLHAUS%.tmp" ""
+set "URLHAUSR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "URLHAUSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%URLHAUS%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_URLHAUS=0"
+        if exist "%URLHAUS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%URLHAUS%') { (Get-FileHash '%URLHAUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%URLHAUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_URLHAUS=1"
+            )
+        )
+        if "!SKIP_URLHAUS!"=="0" (
+            move /y "%URLHAUS%.tmp" "%URLHAUS%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            call :LOGSTEP "REFRESH-ABUSECH" "[      OK      ] abuse.ch URLhaus - RPZ aggiornato: !DT_URLHAUS!!URLHAUSR_TRYNOTE!"
+        ) else (
+            del /f /q "%URLHAUS%.tmp" >nul 2>&1
+            call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch URLhaus - RPZ gia' aggiornato: !DT_URLHAUS!"
+        )
+    ) else (
+        call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch URLhaus - file scaricato piccolo, uso esistente: !DT_URLHAUS!"
+    )
+) else (
+    if exist "%URLHAUS_BAK%" (
+        copy /y "%URLHAUS_BAK%" "%URLHAUS%" >nul 2>&1
+        call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch URLhaus non scaricato, ripristinato dal backup: !DT_URLHAUS!"
+    ) else (
+        call :LOGSTEP "REFRESH-ABUSECH" "[ERR ] abuse.ch URLhaus non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%URLHAUS%.tmp" del /f /q "%URLHAUS%.tmp" >nul 2>&1
+
+:: abuse.ch ThreatFox - RPZ nativo, endpoint pubblico
+call :CURL_RETRY "https://threatfox.abuse.ch/downloads/threatfox.rpz" "%THREATFOX%.tmp" ""
+set "THREATFOXR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "THREATFOXR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%THREATFOX%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_THREATFOX=0"
+        if exist "%THREATFOX%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%THREATFOX%') { (Get-FileHash '%THREATFOX%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%THREATFOX%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_THREATFOX=1"
+            )
+        )
+        if "!SKIP_THREATFOX!"=="0" (
+            move /y "%THREATFOX%.tmp" "%THREATFOX%" >nul 2>&1
+            set "CHANGED=1"
+            call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            call :LOGSTEP "REFRESH-ABUSECH" "[      OK      ] abuse.ch ThreatFox - RPZ aggiornato: !DT_THREATFOX!!THREATFOXR_TRYNOTE!"
+        ) else (
+            del /f /q "%THREATFOX%.tmp" >nul 2>&1
+            call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch ThreatFox - RPZ gia' aggiornato: !DT_THREATFOX!"
+        )
+    ) else (
+        call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch ThreatFox - file scaricato piccolo, uso esistente: !DT_THREATFOX!"
+    )
+) else (
+    if exist "%THREATFOX_BAK%" (
+        copy /y "%THREATFOX_BAK%" "%THREATFOX%" >nul 2>&1
+        call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch ThreatFox non scaricato, ripristinato dal backup: !DT_THREATFOX!"
+    ) else (
+        call :LOGSTEP "REFRESH-ABUSECH" "[ERR ] abuse.ch ThreatFox non scaricabile e nessun backup disponibile!"
+    )
+)
+if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
+
+if "!CHANGED!"=="1" (
+    net stop unbound >nul 2>&1
+    taskkill /f /im unbound.exe >nul 2>&1
+    :: DNS bootstrap attivo: Unbound e' fermo, garantisco risoluzione esterna temporanea
+    call :DNS_FALLBACK_ON
+    net start unbound >nul 2>&1
+    :: Verifica stabilita': attendo 2 secondi affinche' Unbound sia pronto ad accettare query
+    timeout /t 2 >nul
+    :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound e' attivo
+    call :DNS_FALLBACK_OFF
+    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    call :LOGSTEP "REFRESH-ABUSECH" "Servizio riavviato dopo refresh abuse.ch"
+) else (
+    call :LOGSTEP "REFRESH-ABUSECH" "Nessun file cambiato, riavvio saltato"
+    :: [FIX] Ripristina comunque il DNS su 127.0.0.1: se il ping iniziale aveva
+    :: gia' Unbound giu' per altri motivi il fallback potrebbe essere rimasto
+    :: attivo da un ciclo precedente; stessa rete di sicurezza degli altri cicli.
+    call :DNS_FALLBACK_OFF
+)
 exit /b
 
 :: ============================================================================
@@ -2905,20 +3198,26 @@ if defined F10F_RES ( call :ARROW_BAR 16 93 94 & call :RES_COLOR "!F10F_RES!" & 
 if defined F10G_ACT ( call :PHASE_BAR 17 94 95 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10G_ACT!%ESC%[0m )
 if defined F10G_RES ( call :ARROW_BAR 17 94 95 & call :RES_COLOR "!F10G_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F10H_ACT ( call :PHASE_BAR 18 95 96 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10H_ACT!%ESC%[0m )
-if defined F10H_RES ( call :ARROW_BAR 18 95 96 & call :RES_COLOR "!F10H_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10H_ACT ( call :PHASE_BAR 18 94 95 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10H_ACT!%ESC%[0m )
+if defined F10H_RES ( call :ARROW_BAR 18 94 95 & call :RES_COLOR "!F10H_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F11_ACT  ( call :PHASE_BAR 19 96 97 & echo %ESC%[38;2;144;238;144m!UI_PB! !F11_ACT!%ESC%[0m )
-if defined F11_RES  ( call :ARROW_BAR 19 96 97 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10I_ACT ( call :PHASE_BAR 19 95 96 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10I_ACT!%ESC%[0m )
+if defined F10I_RES ( call :ARROW_BAR 19 95 96 & call :RES_COLOR "!F10I_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F12_ACT  ( call :PHASE_BAR 20 97 98 & echo %ESC%[38;2;144;238;144m!UI_PB! !F12_ACT!%ESC%[0m )
-if defined F12_RES  ( call :ARROW_BAR 20 97 98 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F10J_ACT ( call :PHASE_BAR 20 96 97 & echo %ESC%[38;2;144;238;144m!UI_PB! !F10J_ACT!%ESC%[0m )
+if defined F10J_RES ( call :ARROW_BAR 20 96 97 & call :RES_COLOR "!F10J_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F13_ACT  ( call :PHASE_BAR 21 98 99 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
-if defined F13_RES  ( call :ARROW_BAR 21 98 99 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F11_ACT  ( call :PHASE_BAR 21 97 98 & echo %ESC%[38;2;144;238;144m!UI_PB! !F11_ACT!%ESC%[0m )
+if defined F11_RES  ( call :ARROW_BAR 21 97 98 & call :RES_COLOR "!F11_RES!" & echo !UI_ARROW! !RES_COLORED!)
 
-if defined F14_ACT  ( call :PHASE_BAR 22 99 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F14_ACT!%ESC%[0m )
-if defined F14_RES  ( call :ARROW_BAR 22 99 100 & call :RES_COLOR "!F14_RES!" & echo !UI_ARROW! !RES_COLORED!)
+if defined F12_ACT  ( call :PHASE_BAR 22 98 99 & echo %ESC%[38;2;144;238;144m!UI_PB! !F12_ACT!%ESC%[0m )
+if defined F12_RES  ( call :ARROW_BAR 22 98 99 & call :RES_COLOR "!F12_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F13_ACT  ( call :PHASE_BAR 23 99 99 & echo %ESC%[38;2;144;238;144m!UI_PB! !F13_ACT!%ESC%[0m )
+if defined F13_RES  ( call :ARROW_BAR 23 99 99 & call :RES_COLOR "!F13_RES!" & echo !UI_ARROW! !RES_COLORED!)
+
+if defined F14_ACT  ( call :PHASE_BAR 24 99 100 & echo %ESC%[38;2;144;238;144m!UI_PB! !F14_ACT!%ESC%[0m )
+if defined F14_RES  ( call :ARROW_BAR 24 99 100 & call :RES_COLOR "!F14_RES!" & echo !UI_ARROW! !RES_COLORED!)
 exit /b
 
 :PHASE_BAR
@@ -3608,6 +3907,8 @@ call :GET_RPZ_LINES "%SH_DROP6%" RPZ_DROP6_CNT
 call :GET_RPZ_LINES "%HZ_DYNDNS%" RPZ_DYNDNS_CNT
 call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_HOSTER_CNT
 call :GET_RPZ_LINES "%HZ_SPAMTLDS%" RPZ_SPAMTLDS_CNT
+call :GET_RPZ_LINES "%URLHAUS%" RPZ_URLHAUS_CNT
+call :GET_RPZ_LINES "%THREATFOX%" RPZ_THREATFOX_CNT
 
 :: Verifica se la risoluzione DNS locale verso api.telegram.org e' funzionante
 set "TG_DNS_RESET=0"
@@ -3618,10 +3919,10 @@ if errorlevel 1 (
     set "TG_DNS_RESET=1"
 )
 
-powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - AVVIO CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 30); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $dtNow = (Get-Date).ToString('dd.MM.yyyy - HH:mm'); $warns = Get-ChildItem env:F*_RES | Where-Object { $_.Value -match 'WARN|ERR|ERRORE|ALLARME|NON sincronizzato|FALLITO' } | ForEach-Object { $c = $_.Value -replace '\[\s*', '' -replace '\s*\]', '' -replace '>>', '➔' -replace '\s+', ' '; '• ' + $c }; $updates = @(); if ('!UB_CLOUD_VER!' -ne 'N/A' -and '!UB_CLOUD_VER!' -ne '!UB_LOCAL_VER!') { $updates += '• 🔔 Engine Unbound: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!' }; if ('!CLOUD_VER!' -ne 'N/A' -and '!CLOUD_VER!' -ne '!LOCAL_VER!') { $updates += '• 🔔 Script BAT: v!LOCAL_VER! -> v!CLOUD_VER!' }; if ('!SVC_VER!' -ne 'N/A' -and '!SVC_VER!' -ne '!LOCAL_SVC_VER!') { $updates += '• 🔔 File CONF: v!LOCAL_SVC_VER! -> v!SVC_VER!' }; $st = '🟢 *STATO:* Sistema perfettamente operativo'; $hdr = '🛡️ *UNBOUND BUNKER - AVVIO CLIENT*'; if ($warns) { $hdr = '⚠️ *UNBOUND BUNKER - ANOMALIE RILEVATE!*'; $st = '🔴 *STATO:* Rilevati Warning/Anomalie' }; $msg = $hdr + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* ' + $env:COMPUTERNAME + [char]10 + '=============================================' + [char]10 + '📅 Data: ' + $dtNow + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER! / Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER! / Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER! / Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '• *Liste di Blocco attive:*' + [char]10 + '🥇- HaGeZi Pro Plus.: !RPZ_PROPLUS_CNT! elementi' + [char]10 + '🥈- HaGeZi TIF......: !RPZ_TIF_CNT! elementi' + [char]10 + '🥉- HaGeZi TIF-IPS..: !RPZ_TIFIPS_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v4: !RPZ_DROP_CNT! elementi' + [char]10 + '🛡️- Spamhaus DROP v6: !RPZ_DROP6_CNT! elementi' + [char]10 + '🌐- HaGeZi DynDNS...: !RPZ_DYNDNS_CNT! elementi' + [char]10 + '📦- HaGeZi Hoster...: !RPZ_HOSTER_CNT! elementi' + [char]10 + '🚫- HaGeZi Spam TLDs: !RPZ_SPAMTLDS_CNT! elementi' + [char]10 + '🦠- abuse.ch URLhaus.: !RPZ_URLHAUS_CNT! elementi' + [char]10 + '🕸️- abuse.ch ThreatFox: !RPZ_THREATFOX_CNT! elementi' + [char]10 + '=============================================' + [char]10 + $st; if ($updates) { $msg += [char]10 + [char]10 + '📢 *AGGIORNAMENTI DISPONIBILI:*' + [char]10 + ($updates -join [char]10) }; if ($warns) { $msg += [char]10 + [char]10 + '⚠️ *DETTAGLIO ANOMALIE / WARNINGS:*' + [char]10 + ($warns -join [char]10) }; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 30); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio Telegram fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
 
 :: [DASHBOARD LIVE] Snapshot chirurgico e non invasivo delle 14 fasi (sola AGGIUNTA in append: non modifica alcuna riga della logica esistente sopra)
-powershell -NoProfile -Command "$ord = @('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F11','F12','F13','F14'); $fasi = foreach ($code in $ord) { $actP = 'env:' + $code + '_ACT'; $resP = 'env:' + $code + '_RES'; $act = if (Test-Path $actP) { (Get-Item $actP).Value } else { '' }; $res = if (Test-Path $resP) { (Get-Item $resP).Value } else { '' }; if ($act -or $res) { [pscustomobject]@{ fase = $code; azione = $act; esito = $res } } }; $obj = [pscustomobject]@{ timestamp = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); fasi = @($fasi) }; try { $obj | ConvertTo-Json -Depth 4 | Out-File 'R:\bunker_health.json' -Encoding utf8 } catch {}" >nul 2>&1
+powershell -NoProfile -Command "$ord = @('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F10I','F10J','F11','F12','F13','F14'); $fasi = foreach ($code in $ord) { $actP = 'env:' + $code + '_ACT'; $resP = 'env:' + $code + '_RES'; $act = if (Test-Path $actP) { (Get-Item $actP).Value } else { '' }; $res = if (Test-Path $resP) { (Get-Item $resP).Value } else { '' }; if ($act -or $res) { [pscustomobject]@{ fase = $code; azione = $act; esito = $res } } }; $obj = [pscustomobject]@{ timestamp = (Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); fasi = @($fasi) }; try { $obj | ConvertTo-Json -Depth 4 | Out-File 'R:\bunker_health.json' -Encoding utf8 } catch {}" >nul 2>&1
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
