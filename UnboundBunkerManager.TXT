@@ -68,7 +68,7 @@ call :AUTO_TUNING_HARDWARE
 :: INIZIALIZZAZIONE RAM DISK (Zero Usura SSD per Log e Statistiche)
 :: ==================================================================
 set "RAM_DRIVE=R:"
-set "RAM_SIZE=100M"
+set "RAM_SIZE=200M"
 
 sc query imdsksvc >nul 2>&1
 if !errorlevel! NEQ 0 (
@@ -122,7 +122,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1010.00"
+set "LOCAL_VER=1011.00"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -470,6 +470,18 @@ if !errorlevel! NEQ 0 (
 ) else (
     del /f /q "!TASK_ERR_ABUSECH!" >nul 2>&1
 )
+
+:: 2C. CREAZIONE/AGGIORNAMENTO TASK WATCHDOG DASHBOARD (OGNI 5 MINUTI)
+echo [+] Creazione/aggiornamento del task Watchdog Dashboard...
+set "TASK_NAME_DASH_WATCHDOG=Unbound_Bunker_Dash_Watchdog"
+set "TASK_ERR_DASH_WATCHDOG=!UB_DIR!\schtasks_error_dash_watchdog.log"
+if exist "!TASK_ERR_DASH_WATCHDOG!" del /f /q "!TASK_ERR_DASH_WATCHDOG!" >nul 2>&1
+
+:: Comando inline che testa la porta 8954 e rilancia lo script se risulta offline
+set "DASH_WATCHDOG_CMD=powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (-not (Test-NetConnection -ComputerName 127.0.0.1 -Port 8954 -WarningAction SilentlyContinue).TcpTestSucceeded) { Start-Process powershell -ArgumentList '-WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"!UB_DIR!\UnboundBunkerDashboard.ps1\"\"' }\""
+
+schtasks /create /tn "%TASK_NAME_DASH_WATCHDOG%" /tr "%DASH_WATCHDOG_CMD%" /sc minute /mo 5 /st 00:00 /ru "INTERACTIVE" /rl highest /f >nul 2>"!TASK_ERR_DASH_WATCHDOG!"
+
 
 :: 3. CREAZIONE/AGGIORNAMENTO TASK DI AVVIO A VIDEO AL LOGON
 :: [FIX] Prima si creava SOLO se non esisteva gia' un task con questo nome - ma
