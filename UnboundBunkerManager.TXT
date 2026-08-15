@@ -474,13 +474,20 @@ if !errorlevel! NEQ 0 (
 :: 2C. CREAZIONE/AGGIORNAMENTO TASK WATCHDOG DASHBOARD (OGNI 5 MINUTI)
 echo [+] Creazione/aggiornamento del task Watchdog Dashboard...
 set "TASK_NAME_DASH_WATCHDOG=Unbound_Bunker_Dash_Watchdog"
+set "DASH_WD_PS1=!UB_DIR!\UnboundDashboardWatchdog.ps1"
 set "TASK_ERR_DASH_WATCHDOG=!UB_DIR!\schtasks_error_dash_watchdog.log"
 if exist "!TASK_ERR_DASH_WATCHDOG!" del /f /q "!TASK_ERR_DASH_WATCHDOG!" >nul 2>&1
 
-:: Comando inline che testa la porta 8954 e rilancia lo script se risulta offline
-set "DASH_WATCHDOG_CMD=powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (-not (Test-NetConnection -ComputerName 127.0.0.1 -Port 8954 -WarningAction SilentlyContinue).TcpTestSucceeded) { Start-Process powershell -ArgumentList '-WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"!UB_DIR!\UnboundBunkerDashboard.ps1\"\"' }\""
+:: Genera lo script ausiliario di controllo rapido (TCP Socket Check)
+powershell -NoProfile -Command "$cmd = '$t = New-Object System.Net.Sockets.TcpClient; try { $t.Connect(''127.0.0.1'', 8954); $t.Close() } catch { Start-Process powershell ''-WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"' + '!UB_DIR!' + '\UnboundBunkerDashboard.ps1\"\"'' }'; [System.IO.File]::WriteAllText('!DASH_WD_PS1!', $cmd)" >nul 2>&1
 
-schtasks /create /tn "%TASK_NAME_DASH_WATCHDOG%" /tr "%DASH_WATCHDOG_CMD%" /sc minute /mo 5 /st 00:00 /ru "INTERACTIVE" /rl highest /f >nul 2>"!TASK_ERR_DASH_WATCHDOG!"
+:: Registra il task puntando al file ausiliario (lunghezza /tr < 90 caratteri)
+schtasks /create /tn "%TASK_NAME_DASH_WATCHDOG%" /tr "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File \"!DASH_WD_PS1!\"" /sc minute /mo 5 /st 00:00 /ru "INTERACTIVE" /rl highest /f >nul 2>"!TASK_ERR_DASH_WATCHDOG!"
+if !errorlevel! NEQ 0 (
+    echo   [!] Creazione task Watchdog Dashboard fallita. Dettaglio salvato in !TASK_ERR_DASH_WATCHDOG!
+) else (
+    del /f /q "!TASK_ERR_DASH_WATCHDOG!" >nul 2>&1
+)
 
 
 :: 3. CREAZIONE/AGGIORNAMENTO TASK DI AVVIO A VIDEO AL LOGON
