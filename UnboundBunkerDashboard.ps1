@@ -34,6 +34,8 @@ $RpzListe = @(
     @{ Tag = "hagezi-dyndns";     Nome = "HaGeZi DynDNS";          Emoji = [char]::ConvertFromUtf32(0x1F310) }
     @{ Tag = "hagezi-hoster";     Nome = "HaGeZi Badware Hoster";  Emoji = [char]::ConvertFromUtf32(0x1F4E6) }
     @{ Tag = "hagezi-spamtlds";   Nome = "HaGeZi Most Abused TLDs";Emoji = [char]::ConvertFromUtf32(0x1F6AB) }
+    @{ Tag = "urlhaus";           Nome = "abuse.ch URLhaus";       Emoji = [char]::ConvertFromUtf32(0x1F9A0) }
+    @{ Tag = "threatfox";         Nome = "abuse.ch ThreatFox";     Emoji = [char]::ConvertFromUtf32(0x1F578) }
 )
 
 # === ANAGRAFICA ROOT SERVERS MONDIALI (ICMP IPv4 & IPv6) ===
@@ -127,7 +129,7 @@ $script:TotalRpzRulesCacheTime = [DateTime]::MinValue
 function Get-TotalRpzRulesCount {
     if (((Get-Date) - $script:TotalRpzRulesCacheTime).TotalSeconds -ge 600 -or $script:TotalRpzRulesCache -eq 0) {
         $tot = 0
-        $files = Get-ChildItem -Path $UbDir -Filter "*.conf" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'hagezi|spamhaus' }
+        $files = Get-ChildItem -Path $UbDir -Filter "*.conf" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'hagezi|spamhaus|urlhaus|threatfox' }
         foreach ($f in $files) {
             try {
                 $tot += [System.Linq.Enumerable]::Count([System.IO.File]::ReadLines($f.FullName))
