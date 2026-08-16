@@ -1647,75 +1647,66 @@ setInterval(refresh, 1000);
 </html>
 '@
 
-# === SERVER HTTP LOCALE CON AUTO-HEALING ===
-while ($true) {
-    $listener = $null
+# === SERVER HTTP LOCALE (LOOPBACK ONLY) ===
+$listener = New-Object System.Net.HttpListener
+$startedOk = $false
+$triedPrefixes = @($Prefix, "http://localhost:$Port/")
+
+foreach ($tryPrefix in $triedPrefixes) {
     try {
-        $listener = New-Object System.Net.HttpListener
-        $startedOk = $false
-        $triedPrefixes = @($Prefix, "http://localhost:$Port/")
-
-        foreach ($tryPrefix in $triedPrefixes) {
-            try {
-                $listener.Prefixes.Clear()
-                $listener.Prefixes.Add($tryPrefix)
-                $listener.Start()
-                $Prefix = $tryPrefix
-                $startedOk = $true
-                Write-DashLog "Listener avviato su $Prefix"
-                break
-            } catch {
-                Write-DashLog "Tentativo fallito su $tryPrefix : $($_.Exception.Message)"
-                $listener.Prefixes.Clear()
-            }
-        }
-
-        if (-not $startedOk) {
-            Write-DashLog "Impossibile avviare il listener HTTP su porta $Port. Riprovo tra 5 secondi..."
-            Start-Sleep -Seconds 5
-            continue
-        }
-
-        # Ciclo di ascolto richieste
-        while ($listener.IsListening) {
-            $context = $listener.GetContext()
-            $request  = $context.Request
-            $response = $context.Response
-
-            try {
-                if ($request.Url.AbsolutePath -eq "/api/status") {
-                    $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
-                    $json = Get-BunkerStatusJson -ForceVersions:$forceVersions
-                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = "application/json; charset=utf-8"
-                    $response.Headers.Add("Cache-Control", "no-store")
-                    $response.ContentLength64 = $buffer.Length
-                    $response.OutputStream.Write($buffer, 0, $buffer.Length)
-                } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
-                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
-                    $response.ContentType = "text/html; charset=utf-8"
-                    $response.Headers.Add("Cache-Control", "no-store")
-                    $response.ContentLength64 = $buffer.Length
-                    $response.OutputStream.Write($buffer, 0, $buffer.Length)
-                } else {
-                    $response.StatusCode = 404
-                    $notFound = [System.Text.Encoding]::UTF8.GetBytes("Not found")
-                    $response.OutputStream.Write($notFound, 0, $notFound.Length)
-                }
-            } catch {
-                try { $response.StatusCode = 500 } catch {}
-            } finally {
-                $response.OutputStream.Close()
-            }
-        }
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($tryPrefix)
+        $listener.Start()
+        $Prefix = $tryPrefix
+        $startedOk = $true
+        Write-DashLog "Listener avviato su $Prefix"
+        break
     } catch {
-        Write-DashLog "CRASH LISTENER HTTP: $($_.Exception.Message). Riavvio in corso..."
-    } finally {
-        if ($listener) {
-            try { $listener.Stop(); $listener.Close() } catch {}
+        Write-DashLog "Tentativo fallito su $tryPrefix : $($_.Exception.Message)"
+        $listener.Prefixes.Clear()
+    }
+}
+
+if (-not $startedOk) {
+    Write-Host "[ERRORE] Impossibile avviare il listener HTTP su porta $Port."
+    exit 1
+}
+
+Write-Host "[OK] Unbound Bunker Dashboard Live V2 in ascolto su $Prefix (Ctrl+C per arrestare)"
+
+try {
+    while ($listener.IsListening) {
+        $context = $listener.GetContext()
+        $request  = $context.Request
+        $response = $context.Response
+
+        try {
+            if ($request.Url.AbsolutePath -eq "/api/status") {
+                $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
+                $json = Get-BunkerStatusJson -ForceVersions:$forceVersions
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
+                $response.ContentType = "text/html; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            } else {
+                $response.StatusCode = 404
+                $notFound = [System.Text.Encoding]::UTF8.GetBytes("Not found")
+                $response.OutputStream.Write($notFound, 0, $notFound.Length)
+            }
+        } catch {
+            try { $response.StatusCode = 500 } catch {}
+        } finally {
+            $response.OutputStream.Close()
         }
     }
-    
-    # Pausa di sicurezza prima del riavvio del listener in caso di crash
-    Start-Sleep -Seconds 2
+} finally {
+    $listener.Stop()
+    $listener.Close()
 }
