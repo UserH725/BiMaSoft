@@ -1249,6 +1249,10 @@ async function refresh(forceVersions) {
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
     const ipc = d.connettivita_ip || {};
+    
+    const locV4Str = wanData.v4_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + wanData.v4_loc + ')</span>' : '';
+    const locV6Str = wanData.v6_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + wanData.v6_loc + ')</span>' : '';
+
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_lan_ok ? 'ok' : 'bad'}"></span></div>
@@ -1265,15 +1269,13 @@ async function refresh(forceVersions) {
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${wanData.v4_ok ? 'ok' : 'bad'}"></span></div>
         <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${wanData.v4}</span>
-        ${wanData.v4_loc ? `<span class="muted" style="font-size:0.8em;">(${wanData.v4_loc})</span>` : ''}
+        <span style="color:#ffffff; font-weight:bold;">${wanData.v4}</span>${locV4Str}
         <span class="${wanData.v4_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v4_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${wanData.v6_ok ? 'ok' : 'bad'}"></span></div>
         <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${wanData.v6}</span>
-        ${wanData.v6_loc ? `<span class="muted" style="font-size:0.8em;">(${wanData.v6_loc})</span>` : ''}
+        <span style="color:#ffffff; font-weight:bold;">${wanData.v6}</span>${locV6Str}
         <span class="${wanData.v6_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v6_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
     `;
