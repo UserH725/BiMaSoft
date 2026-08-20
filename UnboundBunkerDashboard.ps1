@@ -111,8 +111,6 @@ function Get-RamDiskGauge {
     return @{ tot_mb = 50; used_mb = 0; pct = 0; attivo = $false }
 }
 
-# === NUOVE FUNZIONALITÀ SPECIFICHE DEL BUNKER ===
-
 function Get-UnboundWorkingSet {
     try {
         $p = Get-Process -Name "unbound" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -216,67 +214,32 @@ function Get-HyperlocalStatus {
     return @{ attivo = $false; desc = "Disattivato" }
 }
 
-# === CONNETTIVITA' IPv4 / IPv6 (SEMAFORO + INDIRIZZO LOCALE) ===
-$script:IpConnCache       = $null
-$script:IpConnCacheTime   = [DateTime]::MinValue
-$script:IpConnCacheTtlSec = 20
-
+# === CONNETTIVITA' IP LAN LOCALE ===
 function Get-IpConnectivityStatus {
-    if ($script:IpConnCache -and ((Get-Date) - $script:IpConnCacheTime).TotalSeconds -lt $script:IpConnCacheTtlSec) {
-        return $script:IpConnCache
-    }
-
-    # --- Indirizzo IPv4 locale (esclude loopback e APIPA) ---
-    $ip4Addr = $null
+    # --- LAN IPv4 ---
+    $ip4Lan = $null
     try {
-        $ip4Addr = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        $ip4Lan = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
             Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
             Sort-Object -Property InterfaceMetric |
             Select-Object -First 1 -ExpandProperty IPAddress
     } catch {}
 
-    # --- Test uscita reale IPv4 (TCP 443 verso 1.1.1.1) ---
-    $ip4Ok = $false
+    # --- LAN IPv6 ---
+    $ip6Lan = $null
     try {
-        $tcp4 = New-Object System.Net.Sockets.TcpClient([System.Net.Sockets.AddressFamily]::InterNetwork)
-        $ar4  = $tcp4.BeginConnect('1.1.1.1', 443, $null, $null)
-        if ($ar4.AsyncWaitHandle.WaitOne(600, $false)) {
-            $tcp4.EndConnect($ar4)
-            $ip4Ok = $tcp4.Connected
-        }
-        $tcp4.Close()
-    } catch {}
-
-    # --- Indirizzo IPv6 locale (esclude link-local e loopback) ---
-    $ip6Addr = $null
-    try {
-        $ip6Addr = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+        $ip6Lan = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
             Where-Object { $_.IPAddress -notmatch '^fe80:|^::1$' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.AddressState -eq 'Preferred' } |
             Sort-Object -Property InterfaceMetric |
             Select-Object -First 1 -ExpandProperty IPAddress
     } catch {}
 
-    # --- Test uscita reale IPv6 (TCP 443 verso 2606:4700:4700::1111) ---
-    $ip6Ok = $false
-    try {
-        $tcp6 = New-Object System.Net.Sockets.TcpClient([System.Net.Sockets.AddressFamily]::InterNetworkV6)
-        $ar6  = $tcp6.BeginConnect('2606:4700:4700::1111', 443, $null, $null)
-        if ($ar6.AsyncWaitHandle.WaitOne(600, $false)) {
-            $tcp6.EndConnect($ar6)
-            $ip6Ok = $tcp6.Connected
-        }
-        $tcp6.Close()
-    } catch {}
-
-    $result = [ordered]@{
-        ipv4_attivo    = $ip4Ok
-        ipv4_indirizzo = if ($ip4Addr) { $ip4Addr } else { "N/D" }
-        ipv6_attivo    = $ip6Ok
-        ipv6_indirizzo = if ($ip6Addr) { $ip6Addr } else { "N/D" }
+    return [ordered]@{
+        ipv4_lan    = if ($ip4Lan) { $ip4Lan } else { "N/D" }
+        ipv4_lan_ok = [bool]$ip4Lan
+        ipv6_lan    = if ($ip6Lan) { $ip6Lan } else { "N/D" }
+        ipv6_lan_ok = [bool]$ip6Lan
     }
-    $script:IpConnCache     = $result
-    $script:IpConnCacheTime = Get-Date
-    return $result
 }
 
 # === CACHE VERSIONI CLOUD ===
@@ -314,11 +277,11 @@ function Get-BunkerVersions {
         if (-not $script:CloudVersionsCache) { $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" } }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-            $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json
+            $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 2).Content | ConvertFrom-Json
             if ($json.tag_name -match 'release-(.*)') { $script:CloudVersionsCache.unbound_cloud = $matches[1] } else { $script:CloudVersionsCache.unbound_cloud = $json.tag_name }
         } catch {}
-        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
-        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 3).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 2).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 2).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
         $script:CloudVersionsCacheTime = Get-Date
     }
 
@@ -338,7 +301,7 @@ function Get-LiveBlockedFeed {
     $feed = @()
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
-            $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
+            $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue
             foreach ($ln in $lines) {
                 if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+(rpz-[a-z]+)') {
                     $feed += @{
@@ -352,7 +315,7 @@ function Get-LiveBlockedFeed {
         } catch {}
     }
     if ($feed.Count -gt 0) {
-        $lastFeed = $feed | Select-Object -Last 500
+        $lastFeed = $feed | Select-Object -Last 300
         $reversed = @()
         for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
             $reversed += $lastFeed[$i]
@@ -362,7 +325,7 @@ function Get-LiveBlockedFeed {
     return @()
 }
 
-# === LIVE FEED RCODE CON RESOLVER UPSTREAM (ROBUSTO CONTRO MOJIBAKE) ===
+# === LIVE FEED RCODE ===
 function Get-LiveRcodeFeed {
     $feed = @()
     $zap    = "$([char]0x26A1) Cache RAM"
@@ -371,7 +334,7 @@ function Get-LiveRcodeFeed {
 
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
-            $lines = Get-Content -LiteralPath $RpzLog -Tail 2000 -ErrorAction SilentlyContinue
+            $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue
             $currentUpstream = $zap
             
             foreach ($ln in $lines) {
@@ -414,7 +377,7 @@ function Get-LiveRcodeFeed {
         } catch {}
     }
     if ($feed.Count -gt 0) {
-        $lastFeed = $feed | Select-Object -Last 500
+        $lastFeed = $feed | Select-Object -Last 300
         $reversed = @()
         for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
             $reversed += $lastFeed[$i]
@@ -458,7 +421,7 @@ function Get-UpstreamRadar {
                             $ipObj = [System.Net.IPAddress]::Parse($ip)
                             $tcp   = New-Object System.Net.Sockets.TcpClient($ipObj.AddressFamily)
                             $ar    = $tcp.BeginConnect($ipObj, $port, $null, $null)
-                            if ($ar.AsyncWaitHandle.WaitOne(300, $false)) {
+                            if ($ar.AsyncWaitHandle.WaitOne(200, $false)) {
                                 $tcp.EndConnect($ar)
                                 $ok = $tcp.Connected
                             }
@@ -486,7 +449,7 @@ function Get-UpstreamRadar {
     return $script:RadarCacheData
 }
 
-# === ROOT SERVERS RADAR (LATENZA ICMP ASINCRONA V4 & V6) ===
+# === ROOT SERVERS RADAR ===
 $script:RootRadarCacheTime = [DateTime]::MinValue
 $script:RootRadarCacheData = @()
 
@@ -499,7 +462,7 @@ function Get-RootServersRadar {
                 tag      = $rs.Tag
                 ip       = $rs.IP
                 operator = $rs.Operator
-                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 350)
+                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 250)
             }
         }
 
@@ -507,7 +470,7 @@ function Get-RootServersRadar {
             $ms = 999
             $ok = $false
             try {
-                if ($p.task.Wait(350)) {
+                if ($p.task.Wait(250)) {
                     $res = $p.task.Result
                     if ($res -and $res.Status -eq "Success") {
                         $ok = $true
@@ -650,14 +613,12 @@ function Get-BunkerStatusJson {
     $netSpeed    = Get-NetworkSpeed
     $ipConn      = Get-IpConnectivityStatus
 
-    # Dati aggiuntivi specifici per il Bunker
     $unboundRamMb = Get-UnboundWorkingSet
     $totalRpzRules = Get-TotalRpzRulesCount
     $hardeningScore = Get-HardeningStatus
     $ntpStatus = Get-NtpStatus
     $hyperlocalStatus = Get-HyperlocalStatus
     
-    # MODIFICA: Calcolo della cache "libera" invece di "occupata" (per logica dei colori coerente)
     $configuredCacheMb = Get-ConfiguredCacheSizeMb
     $cacheUsedMb = [math]::Round(($stats.base.cache_mem_bytes / 1MB), 2)
     $cacheFreeMb = [math]::Max(0, $configuredCacheMb - $cacheUsedMb)
@@ -793,7 +754,6 @@ $HtmlPage = @'
   }
   .gain-highlight b { font-size: 1.32em; margin-left: 6px; }
 
-  /* CSS PALLINI ANIMATI PULSANTI (RADAR PULSE DOTS) */
   .status-dot-container { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; vertical-align: middle; }
   .status-dot {
     width: 8px; height: 8px; border-radius: 50%; display: inline-block; position: relative;
@@ -828,14 +788,12 @@ $HtmlPage = @'
     100% { transform: scale(2.5); opacity: 0; }
   }
 
-  /* SUB-ROW 1: PERFORMANCE & BOOST SCORE */
   .boost-subrow {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px; margin-bottom: 12px; background: #0e141b; border: 1px solid var(--border);
     border-radius: 8px; padding: 10px;
   }
 
-  /* SUB-ROW 2: FUNZIONALITÀ & BLINDATURA BUNKER */
   .bunker-subrow {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 10px; margin-bottom: 22px; background: #0b1219; border: 1px solid rgba(79, 179, 255, 0.3);
@@ -852,7 +810,6 @@ $HtmlPage = @'
   .panel { background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:18px; }
   .panel h2 { margin:0 0 12px 0; font-size:1.05em; color: var(--accent); border-bottom:1px solid var(--border); padding-bottom:8px; }
 
-  /* PANNELLO VERSIONI SLIM (IN ALTO ORIZZONTALE) */
   .panel-versioni {
     background: linear-gradient(180deg, #131d2a 0%, var(--panel) 100%);
     border: 1px solid var(--accent) !important; box-shadow: 0 0 12px rgba(79, 179, 255, 0.2);
@@ -890,7 +847,6 @@ $HtmlPage = @'
   th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
   th { color: var(--dim); font-weight:normal; }
 
-  /* COMPATTAZIONE VERTICALE SPECIFICA PER UPSTREAM & ROOT RADAR */
   #tabellaRadar th, #tabellaRadar td,
   #tabellaRootRadar th, #tabellaRootRadar td {
     padding: 3px 8px !important;
@@ -932,13 +888,11 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- MODULO CONNETTIVITA' IPv4 / IPv6 (SOTTILE, SOPRA LE VERSIONI) -->
 <div class="panel panel-versioni">
   <h2>&#127760; Connettivit&agrave; IP</h2>
   <div id="statsIpConn" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
 </div>
 
-<!-- MODULO VERSIONI SOTTILE (IN ALTO, PRIMA DEI BADGES) -->
 <div class="panel panel-versioni">
   <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
   <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
@@ -946,7 +900,6 @@ $HtmlPage = @'
 
 <div class="badges" id="badges"></div>
 
-<!-- FILA 1: PERFORMANCE & BOOST SCORE (BARRE CON GRADIENTE DINAMICO ROSSO -> VERDE SCURO) -->
 <div class="boost-subrow">
   <div class="boost-item">
     <div class="boost-item-header"><span>CACHE REALE (NO RPZ)</span><span class="boost-item-val" id="valRealCache">--%</span></div>
@@ -978,7 +931,6 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- FILA 2: SOTTO-INDICATORI FUNZIONALITÀ BUNKER (BARRE CON GRADIENTE DINAMICO ROSSO -> VERDE SCURO) -->
 <div class="bunker-subrow">
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
@@ -1010,14 +962,10 @@ $HtmlPage = @'
   </div>
 </div>
 
-<!-- GRIGLIA A 3 COLONNE PERFETTAMENTE BILANCIATA -->
 <div class="grid-three-columns">
-  
-  <!-- COLONNA 1: Statistiche Avanzate Traffico -->
   <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
     <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
     <div style="display: flex; flex-direction: column; gap: 20px;">
-      
       <div>
         <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
         <div class="stat-breakdown-grid" id="gridRcode"></div>
@@ -1028,7 +976,6 @@ $HtmlPage = @'
           &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
         </div>
       </div>
-
       <div>
         <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia Query (RR Type)</div>
         <div class="stat-breakdown-grid" id="gridTypes"></div>
@@ -1039,11 +986,9 @@ $HtmlPage = @'
           &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
         </div>
       </div>
-
     </div>
   </div>
 
-  <!-- COLONNA 2: Upstream Radar -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
     <div>
@@ -1064,7 +1009,6 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <!-- COLONNA 3: Root Server Mondiali -->
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
     <div>
@@ -1084,11 +1028,9 @@ $HtmlPage = @'
       </table>
     </div>
   </div>
-
 </div>
 
 <div class="grid-two-columns">
-  
   <div class="panel" style="margin-bottom: 0;">
     <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
     <input type="text" id="inputRicercaFeed" onkeyup="filtraLiveFeed()" 
@@ -1107,7 +1049,6 @@ $HtmlPage = @'
     <div class="stats-grid" id="statsUltimoReport"></div>
     <div id="listeRpz" style="padding-right: 4px;"></div>
   </div>
-
 </div>
 
 <div class="panel">
@@ -1147,6 +1088,89 @@ let prevQueries = 0;
 let prevTime = Date.now();
 let liveQPS = 0;
 let maxQPS = 0;
+let isRefreshing = false;
+
+// CLIENT-SIDE WAN DETECTION CON GEOLOCALIZZAZIONE
+let wanData = { v4: 'N/D', v4_ok: false, v4_loc: '', v6: 'N/D', v6_ok: false, v6_loc: '' };
+
+async function detectPublicIPs() {
+  // --- DETECT IPV4 WAN & LOCATION ---
+  let ip4Found = null, loc4Found = '';
+  const apis4 = [
+    async () => {
+      const r = await fetch('https://ipinfo.io/json', { cache: 'no-store' });
+      const d = await r.json();
+      return { ip: d.ip, loc: [d.city, d.country].filter(Boolean).join(', ') };
+    },
+    async () => {
+      const r = await fetch('https://ipv4.icanhazip.com', { cache: 'no-store' });
+      return { ip: (await r.text()).trim(), loc: '' };
+    },
+    async () => {
+      const r = await fetch('https://api4.ipify.org?format=json', { cache: 'no-store' });
+      return { ip: (await r.json()).ip, loc: '' };
+    }
+  ];
+
+  for (const fn of apis4) {
+    try {
+      const res = await Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject('timeout'), 2500))]);
+      if (res && res.ip && res.ip.match(/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/)) {
+        ip4Found = res.ip;
+        loc4Found = res.loc;
+        break;
+      }
+    } catch(e) {}
+  }
+
+  if (ip4Found) {
+    wanData.v4 = ip4Found;
+    wanData.v4_ok = true;
+    wanData.v4_loc = loc4Found;
+  } else {
+    wanData.v4 = 'N/D'; wanData.v4_ok = false; wanData.v4_loc = '';
+  }
+
+  // --- DETECT IPV6 WAN & LOCATION ---
+  let ip6Found = null, loc6Found = '';
+  const apis6 = [
+    async () => {
+      const r = await fetch('https://v6.ipapi.co/json/', { cache: 'no-store' });
+      const d = await r.json();
+      return { ip: d.ip, loc: [d.city, d.country_code].filter(Boolean).join(', ') };
+    },
+    async () => {
+      const r = await fetch('https://ipv6.icanhazip.com', { cache: 'no-store' });
+      return { ip: (await r.text()).trim(), loc: '' };
+    },
+    async () => {
+      const r = await fetch('https://api6.ipify.org?format=json', { cache: 'no-store' });
+      return { ip: (await r.json()).ip, loc: '' };
+    }
+  ];
+
+  for (const fn of apis6) {
+    try {
+      const res = await Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject('timeout'), 2500))]);
+      if (res && res.ip && res.ip.includes(':')) {
+        ip6Found = res.ip;
+        loc6Found = res.loc;
+        break;
+      }
+    } catch(e) {}
+  }
+
+  if (ip6Found) {
+    wanData.v6 = ip6Found;
+    wanData.v6_ok = true;
+    wanData.v6_loc = loc6Found;
+  } else {
+    wanData.v6 = 'N/D'; wanData.v6_ok = false; wanData.v6_loc = '';
+  }
+}
+
+detectPublicIPs();
+setInterval(detectPublicIPs, 30000);
 
 function fmt(n) {
   if (n === undefined || n === null) return "-";
@@ -1167,7 +1191,6 @@ function getVerBadge(loc, cld) {
   return '<span class="ver-status-warn">&#9888; v' + cld + '</span>';
 }
 
-/* FUNZIONE PER CALCOLARE E APPLICARE IL GRADIENTE DINAMICO DA ROSSO A VERDE SCURO */
 function updateGradientBar(id, pct) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -1208,33 +1231,53 @@ function filtraLiveRcode() {
 }
 
 async function refresh(forceVersions) {
+  if (isRefreshing) return;
+  isRefreshing = true;
+
   try {
     const res = await fetch(forceVersions ? '/api/status?force=1' : '/api/status', { cache: 'no-store' });
-    const d = await res.json();
+    if (!res.ok) { isRefreshing = false; return; }
+    
+    const textData = await res.text();
+    if (!textData || textData.trim().length === 0) { isRefreshing = false; return; }
+
+    const d = JSON.parse(textData);
 
     document.getElementById('subheader').textContent =
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
-    // 0. CONNETTIVITA' IPv4 / IPv6 (SEMAFORO + INDIRIZZO)
     const ipc = d.connettivita_ip || {};
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
-        <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_attivo ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">IPv4:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_indirizzo || 'N/D'}</span>
-        <span class="${ipc.ipv4_attivo ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_attivo ? 'ONLINE' : 'OFFLINE'}</span>
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_lan_ok ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">Ipv4 Lan:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_lan || 'N/D'}</span>
+        <span class="${ipc.ipv4_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
       <div class="stat-ver">
-        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_attivo ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">IPv6:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_indirizzo || 'N/D'}</span>
-        <span class="${ipc.ipv6_attivo ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_attivo ? 'ONLINE' : 'OFFLINE'}</span>
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_lan_ok ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">Ipv6 Lan:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_lan || 'N/D'}</span>
+        <span class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+      </div>
+      <div class="stat-ver">
+        <div class="status-dot-container"><span class="status-dot ${wanData.v4_ok ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN:</span>
+        <span style="color:#ffffff; font-weight:bold;">${wanData.v4}</span>
+        ${wanData.v4_loc ? `<span class="muted" style="font-size:0.8em;">(${wanData.v4_loc})</span>` : ''}
+        <span class="${wanData.v4_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v4_ok ? 'ONLINE' : 'OFFLINE'}</span>
+      </div>
+      <div class="stat-ver">
+        <div class="status-dot-container"><span class="status-dot ${wanData.v6_ok ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN:</span>
+        <span style="color:#ffffff; font-weight:bold;">${wanData.v6}</span>
+        ${wanData.v6_loc ? `<span class="muted" style="font-size:0.8em;">(${wanData.v6_loc})</span>` : ''}
+        <span class="${wanData.v6_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v6_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
     `;
 
-    // 1. VERSIONI COMPONENTI (STRUTTURA SOTTILE SU SINGOLA RIGA)
     const v = d.versioni || {};
     document.getElementById('statsVersioni').innerHTML = `
       <div class="stat-ver">
@@ -1257,14 +1300,12 @@ async function refresh(forceVersions) {
       </div>
     `;
 
-    // METRICHE BASE E UPSTREAM
     const qTot = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.query_totali : 0;
     const cHits = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_hits : 0;
     const qBlocchi = (d.dall_ultimo_report && d.dall_ultimo_report.blocchi_totali) ? d.dall_ultimo_report.blocchi_totali : 0;
     const latMs = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.latenza_ms : 0;
     const qpsAvg = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.qps_medio : 0;
     
-    // CALCOLO QPS LIVE E PICCO MAX BURST
     const nowMs = Date.now();
     if (prevQueries > 0 && nowMs > prevTime) {
       const qDiff = Math.max(0, qTot - prevQueries);
@@ -1285,12 +1326,10 @@ async function refresh(forceVersions) {
     if (!Array.isArray(radarList)) radarList = [radarList];
     const upOk = radarList.filter(r => r.ok).length;
 
-    // 1. CACHE HIT REALE
     const qLecite = Math.max(1, qTot - qBlocchi);
     let realCachePct = Math.min(100, Math.round((cHits / qLecite) * 100));
     if (isNaN(realCachePct)) realCachePct = 0;
 
-    // 2. EFFICIENZA LATENZA
     let effectiveLat = latMs;
     if ((!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
@@ -1311,26 +1350,19 @@ async function refresh(forceVersions) {
       latScore = Math.max(15, Math.round(70 - ((effectiveLat - 300) * 0.10)));
     }
 
-    // 3. UPSTREAM DOT SCORE
     let upstreamScore = radarList.length > 0 ? Math.round((upOk / radarList.length) * 100) : 100;
 
-    // 4. INTEGRITÀ DNSSEC
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
     const totDnssec = ds.secure + ds.bogus;
     let dnssecPct = totDnssec > 0 ? Math.round((ds.secure / totDnssec) * 100) : 100;
     if (ds.bogus > 0) dnssecPct = Math.max(0, dnssecPct - (ds.bogus * 10));
 
-    // 5. PRONTEZZA PREFETCH
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
     let prefetchReadiness = 100;
 
-    // 6. RISERVA DI CAPACITÀ QPS
     let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS * 2))));
-
-    // 7. HEALTH SCORE
     let healthScore = d.salute_sistema.anomalie_rilevate ? 0 : 100;
 
-    // BUNKER BOOST SCORE GLOBALE
     let boostScore = Math.round(
       (realCachePct * 0.30) + 
       (latScore * 0.25) + 
@@ -1354,7 +1386,6 @@ async function refresh(forceVersions) {
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
 
-    // AGGIORNAMENTO SOTTO-INDICATORI BOOST CON GRADIENTI DINAMICI
     document.getElementById('valRealCache').textContent = realCachePct + '%';
     updateGradientBar('barRealCache', realCachePct);
 
@@ -1376,7 +1407,6 @@ async function refresh(forceVersions) {
     document.getElementById('valHealthScore').textContent = healthScore + '%';
     updateGradientBar('barHealthScore', healthScore);
 
-    // AGGIORNAMENTO SOTTO-INDICATORI BUNKER CON GRADIENTI DINAMICI
     const bf = d.bunker_features || {};
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
     updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
@@ -1412,7 +1442,6 @@ async function refresh(forceVersions) {
       updateGradientBar('barRateLimit', 100);
     }
 
-    // BADGES DI STATO INTEGRATI
     const badges = document.getElementById('badges');
     badges.innerHTML = '';
     
@@ -1469,7 +1498,6 @@ async function refresh(forceVersions) {
     bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
     badges.appendChild(bGain);
 
-    // STATISTICHE LIVE TRAFFICO
     const st = d.statistiche_live || {};
     const rc = st.rcode || { noerror:0, nxdomain:0, servfail:0 };
     const totRc = (rc.noerror + rc.nxdomain + rc.servfail) || 1;
@@ -1531,7 +1559,6 @@ async function refresh(forceVersions) {
       <div class="bar-fill" style="width:${pHttps}%; background:#ffffff;" title="HTTPS: ${pHttps}%"></div>
     `;
 
-    // LIVE FEED RPZ
     const tbodyFeed = document.querySelector('#tabellaLiveFeed tbody');
     tbodyFeed.innerHTML = '';
     let feed = d.live_feed_rpz || [];
@@ -1549,7 +1576,6 @@ async function refresh(forceVersions) {
     
     filtraLiveFeed();
 
-    // UPSTREAM RADAR (PALLINI PULSANTI ANIMATI + EVIDENZIAZIONE TOP 3 VERDE BRILANTE)
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
     let radar = d.upstream_radar || [];
@@ -1560,8 +1586,6 @@ async function refresh(forceVersions) {
     } else {
       radar.forEach((r, index) => {
         const tr = document.createElement('tr');
-        
-        // Evidenziazione verde brillante per i primi 3 più veloci
         let tagHtml = r.tag || '-';
         if (r.ok && index < 3) {
           tr.style.background = 'rgba(61, 220, 132, 0.20)';
@@ -1578,7 +1602,6 @@ async function refresh(forceVersions) {
       });
     }
 
-    // ROOT SERVERS RADAR (PALLINI PULSANTI ANIMATI V4 & V6)
     const tbodyRoot = document.querySelector('#tabellaRootRadar tbody');
     if (tbodyRoot) {
       tbodyRoot.innerHTML = '';
@@ -1606,7 +1629,6 @@ async function refresh(forceVersions) {
       }
     }
 
-    // REPORT TELEGRAM
     const r = d.dall_ultimo_report;
     document.getElementById('statsUltimoReport').innerHTML = `
       <div class="stat"><div class="val">${fmt(r.query_totali)}</div><div class="lbl">Query totali</div></div>
@@ -1649,7 +1671,6 @@ async function refresh(forceVersions) {
       listeDiv.appendChild(det);
     });
 
-    // TOTALE SESSIONE
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
     if (s) {
@@ -1662,7 +1683,6 @@ async function refresh(forceVersions) {
       sessDiv.innerHTML = '<div class="muted">Nessun dato di sessione ancora disponibile</div>';
     }
 
-    // SALUTE SISTEMA
     const tbodySalute = document.querySelector('#tabellaSalute tbody');
     tbodySalute.innerHTML = '';
     let fasi = (d.salute_sistema && d.salute_sistema.dettaglio && d.salute_sistema.dettaglio.fasi) || [];
@@ -1679,7 +1699,6 @@ async function refresh(forceVersions) {
       });
     }
 
-    // LIVE FEED RCODE
     const tbodyRcode = document.querySelector('#tabellaLiveRcode tbody');
     if (tbodyRcode) {
       tbodyRcode.innerHTML = '';
@@ -1724,7 +1743,9 @@ async function refresh(forceVersions) {
       filtraLiveRcode();
     }
   } catch (e) {
-    document.getElementById('subheader').textContent = 'Errore di connessione alla Dashboard Live: ' + e;
+    console.warn('Errore di connessione temporaneo:', e);
+  } finally {
+    isRefreshing = false;
   }
 }
 
@@ -1789,9 +1810,16 @@ try {
                 $response.OutputStream.Write($notFound, 0, $notFound.Length)
             }
         } catch {
-            try { $response.StatusCode = 500 } catch {}
+            try {
+                Write-DashLog "Errore durante la risposta HTTP: $($_.Exception.Message)"
+                $errJson = [System.Text.Encoding]::UTF8.GetBytes('{"error":"internal_server_error"}')
+                $response.StatusCode = 500
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $errJson.Length
+                $response.OutputStream.Write($errJson, 0, $errJson.Length)
+            } catch {}
         } finally {
-            $response.OutputStream.Close()
+            try { $response.OutputStream.Close() } catch {}
         }
     }
 } finally {
