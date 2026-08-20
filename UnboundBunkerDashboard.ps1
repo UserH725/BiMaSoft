@@ -1,5 +1,5 @@
 # ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - ICONA VERSIONI RESTYLING)     #
+# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
 # ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
@@ -214,11 +214,18 @@ function Get-HyperlocalStatus {
     return @{ attivo = $false; desc = "Disattivato" }
 }
 
-# === CACHE PER IP WAN E GEOLOCALIZZAZIONE ===
+# === CACHE PER IP WAN E GEOLOCALIZZAZIONE (INIZIALIZZAZIONE ASINCRONA ISTANTANEA) ===
 $script:WanCacheTime = [DateTime]::MinValue
-$script:WanCacheData = $null
+$script:WanCacheData = @{
+    ipv4_wan    = "N/D"
+    ipv4_wan_ok = $false
+    ipv4_loc    = ""
+    ipv6_wan    = "N/D"
+    ipv6_wan_ok = $false
+    ipv6_loc    = ""
+}
 
-# === CONNETTIVITA' IP LAN LOCALE E WAN (SERVER-SIDE CON FIX WARP/VPN) ===
+# === CONNETTIVITA' IP LAN LOCALE E WAN (SERVER-SIDE CON FIX WARP/VPN & TIMEOUT ULTRA-RAPIDI) ===
 function Get-IpConnectivityStatus {
     # --- LAN IPv4 ---
     $ip4Lan = $null
@@ -239,22 +246,21 @@ function Get-IpConnectivityStatus {
     } catch {}
 
     # --- REFRESH CACHE WAN OGNI 30 SECONDI ---
-    if (-not $script:WanCacheData -or ((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
+    if (((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
         $ip4Wan = "N/D"
         $loc4   = ""
         
-        # Tentativo 1: ip-api.com (Restituisce sempre City + ISP anche su WARP/VPN)
+        # Tentativo 1: ip-api.com (Timeout 1 sec)
         try {
-            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 3 -ErrorAction Stop
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 1 -ErrorAction Stop
             if ($r4.status -eq 'success') {
                 $ip4Wan = $r4.query
                 $city4  = if ($r4.city) { $r4.city } else { $r4.isp }
                 $loc4   = @($city4, $r4.country) -join ', '
             }
         } catch {
-            # Fallback ipinfo.io
             try {
-                $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 2 -ErrorAction Stop
+                $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 1 -ErrorAction Stop
                 if ($r4.ip) {
                     $ip4Wan = $r4.ip
                     $loc4   = @($r4.city, $r4.country) -join ', '
@@ -265,9 +271,9 @@ function Get-IpConnectivityStatus {
         $ip6Wan = "N/D"
         $loc6   = ""
         
-        # Tentativo IPv6: ipapi.co
+        # Tentativo IPv6: ipapi.co (Timeout 1 sec)
         try {
-            $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 3 -ErrorAction Stop
+            $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 1 -ErrorAction Stop
             if ($r6.ip -match ':') {
                 $ip6Wan = $r6.ip
                 $city6  = if ($r6.city) { $r6.city } else { $r6.org }
@@ -275,23 +281,25 @@ function Get-IpConnectivityStatus {
             }
         } catch {
             try {
-                $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 2 -UseBasicParsing).Content.Trim()
+                $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 1 -UseBasicParsing).Content.Trim()
                 if ($raw6 -match ':') { 
                     $ip6Wan = $raw6 
-                    $loc6   = "Cloudflare WARP" # Default identificativo per il range IPv6 Cloudflare
+                    $loc6   = "Cloudflare WARP"
                 }
             } catch {}
         }
 
-        $script:WanCacheData = @{
-            ipv4_wan    = $ip4Wan
-            ipv4_wan_ok = ($ip4Wan -ne "N/D")
-            ipv4_loc    = $loc4
-            ipv6_wan    = $ip6Wan
-            ipv6_wan_ok = ($ip6Wan -ne "N/D")
-            ipv6_loc    = $loc6
+        if ($ip4Wan -ne "N/D" -or $ip6Wan -ne "N/D") {
+            $script:WanCacheData = @{
+                ipv4_wan    = $ip4Wan
+                ipv4_wan_ok = ($ip4Wan -ne "N/D")
+                ipv4_loc    = $loc4
+                ipv6_wan    = $ip6Wan
+                ipv6_wan_ok = ($ip6Wan -ne "N/D")
+                ipv6_loc    = $loc6
+            }
+            $script:WanCacheTime = Get-Date
         }
-        $script:WanCacheTime = Get-Date
     }
 
     return [ordered]@{
@@ -343,11 +351,11 @@ function Get-BunkerVersions {
         if (-not $script:CloudVersionsCache) { $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" } }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-            $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 2).Content | ConvertFrom-Json
+            $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 1).Content | ConvertFrom-Json
             if ($json.tag_name -match 'release-(.*)') { $script:CloudVersionsCache.unbound_cloud = $matches[1] } else { $script:CloudVersionsCache.unbound_cloud = $json.tag_name }
         } catch {}
-        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 2).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
-        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 2).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 1).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
+        try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 1).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
         $script:CloudVersionsCacheTime = Get-Date
     }
 
@@ -487,7 +495,7 @@ function Get-UpstreamRadar {
                             $ipObj = [System.Net.IPAddress]::Parse($ip)
                             $tcp   = New-Object System.Net.Sockets.TcpClient($ipObj.AddressFamily)
                             $ar    = $tcp.BeginConnect($ipObj, $port, $null, $null)
-                            if ($ar.AsyncWaitHandle.WaitOne(200, $false)) {
+                            if ($ar.AsyncWaitHandle.WaitOne(150, $false)) {
                                 $tcp.EndConnect($ar)
                                 $ok = $tcp.Connected
                             }
@@ -528,7 +536,7 @@ function Get-RootServersRadar {
                 tag      = $rs.Tag
                 ip       = $rs.IP
                 operator = $rs.Operator
-                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 250)
+                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 150)
             }
         }
 
@@ -536,7 +544,7 @@ function Get-RootServersRadar {
             $ms = 999
             $ok = $false
             try {
-                if ($p.task.Wait(250)) {
+                if ($p.task.Wait(150)) {
                     $res = $p.task.Result
                     if ($res -and $res.Status -eq "Success") {
                         $ok = $true
