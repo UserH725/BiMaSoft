@@ -216,6 +216,69 @@ function Get-HyperlocalStatus {
     return @{ attivo = $false; desc = "Disattivato" }
 }
 
+# === CONNETTIVITA' IPv4 / IPv6 (SEMAFORO + INDIRIZZO LOCALE) ===
+$script:IpConnCache       = $null
+$script:IpConnCacheTime   = [DateTime]::MinValue
+$script:IpConnCacheTtlSec = 20
+
+function Get-IpConnectivityStatus {
+    if ($script:IpConnCache -and ((Get-Date) - $script:IpConnCacheTime).TotalSeconds -lt $script:IpConnCacheTtlSec) {
+        return $script:IpConnCache
+    }
+
+    # --- Indirizzo IPv4 locale (esclude loopback e APIPA) ---
+    $ip4Addr = $null
+    try {
+        $ip4Addr = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
+            Sort-Object -Property InterfaceMetric |
+            Select-Object -First 1 -ExpandProperty IPAddress
+    } catch {}
+
+    # --- Test uscita reale IPv4 (TCP 443 verso 1.1.1.1) ---
+    $ip4Ok = $false
+    try {
+        $tcp4 = New-Object System.Net.Sockets.TcpClient([System.Net.Sockets.AddressFamily]::InterNetwork)
+        $ar4  = $tcp4.BeginConnect('1.1.1.1', 443, $null, $null)
+        if ($ar4.AsyncWaitHandle.WaitOne(600, $false)) {
+            $tcp4.EndConnect($ar4)
+            $ip4Ok = $tcp4.Connected
+        }
+        $tcp4.Close()
+    } catch {}
+
+    # --- Indirizzo IPv6 locale (esclude link-local e loopback) ---
+    $ip6Addr = $null
+    try {
+        $ip6Addr = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notmatch '^fe80:|^::1$' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.AddressState -eq 'Preferred' } |
+            Sort-Object -Property InterfaceMetric |
+            Select-Object -First 1 -ExpandProperty IPAddress
+    } catch {}
+
+    # --- Test uscita reale IPv6 (TCP 443 verso 2606:4700:4700::1111) ---
+    $ip6Ok = $false
+    try {
+        $tcp6 = New-Object System.Net.Sockets.TcpClient([System.Net.Sockets.AddressFamily]::InterNetworkV6)
+        $ar6  = $tcp6.BeginConnect('2606:4700:4700::1111', 443, $null, $null)
+        if ($ar6.AsyncWaitHandle.WaitOne(600, $false)) {
+            $tcp6.EndConnect($ar6)
+            $ip6Ok = $tcp6.Connected
+        }
+        $tcp6.Close()
+    } catch {}
+
+    $result = [ordered]@{
+        ipv4_attivo    = $ip4Ok
+        ipv4_indirizzo = if ($ip4Addr) { $ip4Addr } else { "N/D" }
+        ipv6_attivo    = $ip6Ok
+        ipv6_indirizzo = if ($ip6Addr) { $ip6Addr } else { "N/D" }
+    }
+    $script:IpConnCache     = $result
+    $script:IpConnCacheTime = Get-Date
+    return $result
+}
+
 # === CACHE VERSIONI CLOUD ===
 $script:CloudVersionsCache       = $null
 $script:CloudVersionsCacheTime   = [DateTime]::MinValue
@@ -585,6 +648,7 @@ function Get-BunkerStatusJson {
     $sessione    = Get-SessionTotal
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
+    $ipConn      = Get-IpConnectivityStatus
 
     # Dati aggiuntivi specifici per il Bunker
     $unboundRamMb = Get-UnboundWorkingSet
@@ -625,6 +689,7 @@ function Get-BunkerStatusJson {
         host             = $env:COMPUTERNAME
         hardware         = $hw
         ram_disk         = $ramDisk
+        connettivita_ip  = $ipConn
         versioni         = $versioni
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
@@ -865,6 +930,12 @@ $HtmlPage = @'
     <div class="clock-time" id="clockTime">--:--:--</div>
     <div class="clock-date" id="clockDate">-----------------</div>
   </div>
+</div>
+
+<!-- MODULO CONNETTIVITA' IPv4 / IPv6 (SOTTILE, SOPRA LE VERSIONI) -->
+<div class="panel panel-versioni">
+  <h2>&#127760; Connettivit&agrave; IP</h2>
+  <div id="statsIpConn" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
 </div>
 
 <!-- MODULO VERSIONI SOTTILE (IN ALTO, PRIMA DEI BADGES) -->
@@ -1145,6 +1216,23 @@ async function refresh(forceVersions) {
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
       (d.hardware.ram_gb ? ' (' + d.hardware.ram_gb + ' GB)' : '') +
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
+
+    // 0. CONNETTIVITA' IPv4 / IPv6 (SEMAFORO + INDIRIZZO)
+    const ipc = d.connettivita_ip || {};
+    document.getElementById('statsIpConn').innerHTML = `
+      <div class="stat-ver">
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_attivo ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">IPv4:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_indirizzo || 'N/D'}</span>
+        <span class="${ipc.ipv4_attivo ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_attivo ? 'ONLINE' : 'OFFLINE'}</span>
+      </div>
+      <div class="stat-ver">
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_attivo ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">IPv6:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_indirizzo || 'N/D'}</span>
+        <span class="${ipc.ipv6_attivo ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_attivo ? 'ONLINE' : 'OFFLINE'}</span>
+      </div>
+    `;
 
     // 1. VERSIONI COMPONENTI (STRUTTURA SOTTILE SU SINGOLA RIGA)
     const v = d.versioni || {};
