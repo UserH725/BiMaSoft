@@ -214,7 +214,11 @@ function Get-HyperlocalStatus {
     return @{ attivo = $false; desc = "Disattivato" }
 }
 
-# === CONNETTIVITA' IP LAN LOCALE ===
+# === CACHE PER IP WAN E GEOLOCALIZZAZIONE ===
+$script:WanCacheTime = [DateTime]::MinValue
+$script:WanCacheData = $null
+
+# === CONNETTIVITA' IP LAN LOCALE E WAN (SERVER-SIDE CON FIX WARP/VPN) ===
 function Get-IpConnectivityStatus {
     # --- LAN IPv4 ---
     $ip4Lan = $null
@@ -234,11 +238,73 @@ function Get-IpConnectivityStatus {
             Select-Object -First 1 -ExpandProperty IPAddress
     } catch {}
 
+    # --- REFRESH CACHE WAN OGNI 30 SECONDI ---
+    if (-not $script:WanCacheData -or ((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
+        $ip4Wan = "N/D"
+        $loc4   = ""
+        
+        # Tentativo 1: ip-api.com (Restituisce sempre City + ISP anche su WARP/VPN)
+        try {
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 3 -ErrorAction Stop
+            if ($r4.status -eq 'success') {
+                $ip4Wan = $r4.query
+                $city4  = if ($r4.city) { $r4.city } else { $r4.isp }
+                $loc4   = @($city4, $r4.country) -join ', '
+            }
+        } catch {
+            # Fallback ipinfo.io
+            try {
+                $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 2 -ErrorAction Stop
+                if ($r4.ip) {
+                    $ip4Wan = $r4.ip
+                    $loc4   = @($r4.city, $r4.country) -join ', '
+                }
+            } catch {}
+        }
+
+        $ip6Wan = "N/D"
+        $loc6   = ""
+        
+        # Tentativo IPv6: ipapi.co
+        try {
+            $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 3 -ErrorAction Stop
+            if ($r6.ip -match ':') {
+                $ip6Wan = $r6.ip
+                $city6  = if ($r6.city) { $r6.city } else { $r6.org }
+                $loc6   = @($city6, $r6.country_code) -join ', '
+            }
+        } catch {
+            try {
+                $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 2 -UseBasicParsing).Content.Trim()
+                if ($raw6 -match ':') { 
+                    $ip6Wan = $raw6 
+                    $loc6   = "Cloudflare WARP" # Default identificativo per il range IPv6 Cloudflare
+                }
+            } catch {}
+        }
+
+        $script:WanCacheData = @{
+            ipv4_wan    = $ip4Wan
+            ipv4_wan_ok = ($ip4Wan -ne "N/D")
+            ipv4_loc    = $loc4
+            ipv6_wan    = $ip6Wan
+            ipv6_wan_ok = ($ip6Wan -ne "N/D")
+            ipv6_loc    = $loc6
+        }
+        $script:WanCacheTime = Get-Date
+    }
+
     return [ordered]@{
         ipv4_lan    = if ($ip4Lan) { $ip4Lan } else { "N/D" }
         ipv4_lan_ok = [bool]$ip4Lan
         ipv6_lan    = if ($ip6Lan) { $ip6Lan } else { "N/D" }
         ipv6_lan_ok = [bool]$ip6Lan
+        ipv4_wan    = $script:WanCacheData.ipv4_wan
+        ipv4_wan_ok = $script:WanCacheData.ipv4_wan_ok
+        ipv4_loc    = $script:WanCacheData.ipv4_loc
+        ipv6_wan    = $script:WanCacheData.ipv6_wan
+        ipv6_wan_ok = $script:WanCacheData.ipv6_wan_ok
+        ipv6_loc    = $script:WanCacheData.ipv6_loc
     }
 }
 
@@ -1090,88 +1156,6 @@ let liveQPS = 0;
 let maxQPS = 0;
 let isRefreshing = false;
 
-// CLIENT-SIDE WAN DETECTION CON GEOLOCALIZZAZIONE
-let wanData = { v4: 'N/D', v4_ok: false, v4_loc: '', v6: 'N/D', v6_ok: false, v6_loc: '' };
-
-async function detectPublicIPs() {
-  // --- DETECT IPV4 WAN & LOCATION ---
-  let ip4Found = null, loc4Found = '';
-  const apis4 = [
-    async () => {
-      const r = await fetch('https://ipinfo.io/json', { cache: 'no-store' });
-      const d = await r.json();
-      return { ip: d.ip, loc: [d.city, d.country].filter(Boolean).join(', ') };
-    },
-    async () => {
-      const r = await fetch('https://ipv4.icanhazip.com', { cache: 'no-store' });
-      return { ip: (await r.text()).trim(), loc: '' };
-    },
-    async () => {
-      const r = await fetch('https://api4.ipify.org?format=json', { cache: 'no-store' });
-      return { ip: (await r.json()).ip, loc: '' };
-    }
-  ];
-
-  for (const fn of apis4) {
-    try {
-      const res = await Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject('timeout'), 2500))]);
-      if (res && res.ip && res.ip.match(/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/)) {
-        ip4Found = res.ip;
-        loc4Found = res.loc;
-        break;
-      }
-    } catch(e) {}
-  }
-
-  if (ip4Found) {
-    wanData.v4 = ip4Found;
-    wanData.v4_ok = true;
-    wanData.v4_loc = loc4Found;
-  } else {
-    wanData.v4 = 'N/D'; wanData.v4_ok = false; wanData.v4_loc = '';
-  }
-
-  // --- DETECT IPV6 WAN & LOCATION ---
-  let ip6Found = null, loc6Found = '';
-  const apis6 = [
-    async () => {
-      const r = await fetch('https://v6.ipapi.co/json/', { cache: 'no-store' });
-      const d = await r.json();
-      return { ip: d.ip, loc: [d.city, d.country_code].filter(Boolean).join(', ') };
-    },
-    async () => {
-      const r = await fetch('https://ipv6.icanhazip.com', { cache: 'no-store' });
-      return { ip: (await r.text()).trim(), loc: '' };
-    },
-    async () => {
-      const r = await fetch('https://api6.ipify.org?format=json', { cache: 'no-store' });
-      return { ip: (await r.json()).ip, loc: '' };
-    }
-  ];
-
-  for (const fn of apis6) {
-    try {
-      const res = await Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject('timeout'), 2500))]);
-      if (res && res.ip && res.ip.includes(':')) {
-        ip6Found = res.ip;
-        loc6Found = res.loc;
-        break;
-      }
-    } catch(e) {}
-  }
-
-  if (ip6Found) {
-    wanData.v6 = ip6Found;
-    wanData.v6_ok = true;
-    wanData.v6_loc = loc6Found;
-  } else {
-    wanData.v6 = 'N/D'; wanData.v6_ok = false; wanData.v6_loc = '';
-  }
-}
-
-detectPublicIPs();
-setInterval(detectPublicIPs, 30000);
-
 function fmt(n) {
   if (n === undefined || n === null) return "-";
   return Number(n).toLocaleString('it-IT');
@@ -1249,9 +1233,8 @@ async function refresh(forceVersions) {
       ' | Storage: RAM Disk (R:\) | Log RPZ: ' + (d.rpz_log_age_min || 0) + 'm fa | Aggiornato: ' + d.generato_il;
 
     const ipc = d.connettivita_ip || {};
-    
-    const locV4Str = wanData.v4_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + wanData.v4_loc + ')</span>' : '';
-    const locV6Str = wanData.v6_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + wanData.v6_loc + ')</span>' : '';
+    const locV4Str = ipc.ipv4_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + ipc.ipv4_loc + ')</span>' : '';
+    const locV6Str = ipc.ipv6_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + ipc.ipv6_loc + ')</span>' : '';
 
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
@@ -1267,16 +1250,16 @@ async function refresh(forceVersions) {
         <span class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
       <div class="stat-ver">
-        <div class="status-dot-container"><span class="status-dot ${wanData.v4_ok ? 'ok' : 'bad'}"></span></div>
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_wan_ok ? 'ok' : 'bad'}"></span></div>
         <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${wanData.v4}</span>${locV4Str}
-        <span class="${wanData.v4_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v4_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_wan || 'N/D'}</span>${locV4Str}
+        <span class="${ipc.ipv4_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
       <div class="stat-ver">
-        <div class="status-dot-container"><span class="status-dot ${wanData.v6_ok ? 'ok' : 'bad'}"></span></div>
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_wan_ok ? 'ok' : 'bad'}"></span></div>
         <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${wanData.v6}</span>${locV6Str}
-        <span class="${wanData.v6_ok ? 'ver-status-ok' : 'esito-warn'}">${wanData.v6_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}</span>${locV6Str}
+        <span class="${ipc.ipv6_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
       </div>
     `;
 
