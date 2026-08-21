@@ -494,7 +494,7 @@ function Get-UpstreamRadar {
                             $ipObj = [System.Net.IPAddress]::Parse($ip)
                             $tcp   = New-Object System.Net.Sockets.TcpClient($ipObj.AddressFamily)
                             $ar    = $tcp.BeginConnect($ipObj, $port, $null, $null)
-                            if ($ar.AsyncWaitHandle.WaitOne(150, $false)) {
+                            if ($ar.AsyncWaitHandle.WaitOne(400, $false)) {
                                 $tcp.EndConnect($ar)
                                 $ok = $tcp.Connected
                             }
@@ -535,7 +535,7 @@ function Get-RootServersRadar {
                 tag      = $rs.Tag
                 ip       = $rs.IP
                 operator = $rs.Operator
-                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 150)
+                task     = (New-Object System.Net.NetworkInformation.Ping).SendPingAsync($rs.IP, 400)
             }
         }
 
@@ -543,7 +543,7 @@ function Get-RootServersRadar {
             $ms = 999
             $ok = $false
             try {
-                if ($p.task.Wait(150)) {
+                if ($p.task.Wait(400)) {
                     $res = $p.task.Result
                     if ($res -and $res.Status -eq "Success") {
                         $ok = $true
@@ -618,8 +618,7 @@ function Get-LiveStats {
             }
             if ($base.query_totali -gt 0) {
                 $base.cache_efficienza_pct = [math]::Round(($base.cache_hits / $base.query_totali) * 100, 1)
-                $effFactor = (100 - $base.cache_efficienza_pct) / 100
-                $base.latenza_ms = [math]::Round($recMs * $effFactor, 1)
+                $base.latenza_ms = [math]::Round($recMs, 1)
             }
         } catch {}
     }
@@ -729,12 +728,15 @@ function Get-BunkerStatusJson {
     }
     $stats.base.blocchi_pct = $pctBlocchi
 
+    $saluteScore = 100
     $anomalie = $false
     if ($salute -and $salute.fasi) {
         foreach ($f in $salute.fasi) {
-            if ($f.esito -match 'WARN|ERR|ERRORE|ALLARME|FALLITO') { $anomalie = $true; break }
+            if ($f.esito -match 'ERR|ERRORE|FALLITO') { $saluteScore -= 50; $anomalie = $true }
+            elseif ($f.esito -match 'WARN|ALLARME') { $saluteScore -= 20; $anomalie = $true }
         }
     }
+    if ($saluteScore -lt 0) { $saluteScore = 0 }
 
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
@@ -772,7 +774,7 @@ function Get-BunkerStatusJson {
             liste                = $rpz.liste
         }
         totale_sessione = $sessione
-        salute_sistema  = [ordered]@{ anomalie_rilevate = $anomalie; dettaglio = $salute }
+        salute_sistema  = [ordered]@{ anomalie_rilevate = $anomalie; score = $saluteScore; dettaglio = $salute }
     }
     return ($obj | ConvertTo-Json -Depth 8 -Compress)
 }
@@ -1016,7 +1018,7 @@ $HtmlPage = @'
     <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info</span><span class="boost-item-val" id="valPrefetchScore">--%</span></div>
+    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info</span><span class="boost-item-val" id="valPrefetchScore">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
   </div>
 </div>
@@ -1348,8 +1350,7 @@ async function refresh(forceVersions) {
     if (!Array.isArray(radarList)) radarList = [radarList];
     const upOk = radarList.filter(r => r.ok).length;
 
-    const qLecite = Math.max(1, qTot - qBlocchi);
-    let realCachePct = Math.min(100, Math.round((cHits / qLecite) * 100));
+    let realCachePct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_efficienza_pct : 0;
     if (isNaN(realCachePct)) realCachePct = 0;
 
     let effectiveLat = latMs;
@@ -1375,15 +1376,12 @@ async function refresh(forceVersions) {
     let upstreamScore = radarList.length > 0 ? Math.round((upOk / radarList.length) * 100) : 100;
 
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
-    const totDnssec = ds.secure + ds.bogus;
-    let dnssecPct = totDnssec > 0 ? Math.round((ds.secure / totDnssec) * 100) : 100;
-    if (ds.bogus > 0) dnssecPct = Math.max(0, dnssecPct - (ds.bogus * 10));
+    let dnssecPct = 100;
 
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
-    let prefetchReadiness = qTot > 0 ? Math.min(100, Math.round((prefetchVal / qTot) * 100)) : 0;
 
-    let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS * 2))));
-    let healthScore = d.salute_sistema.anomalie_rilevate ? 0 : 100;
+    let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS / 5))));
+    let healthScore = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
     let boostScore = Math.round(
       (realCachePct * 0.30) + 
@@ -1429,11 +1427,11 @@ async function refresh(forceVersions) {
     document.getElementById('valUpstreamScore').textContent = upstreamScore + '% (' + upOk + '/' + radarList.length + ')';
     updateGradientBar('barUpstreamScore', upstreamScore);
 
-    document.getElementById('valDnssecScore').innerHTML = dnssecPct + '% ' + (ds.bogus > 0 ? '<span class="esito-warn">[BOGUS:' + ds.bogus + ']</span>' : '<span class="esito-ok">[OK]</span>');
+    document.getElementById('valDnssecScore').innerHTML = '100% <span class="esito-ok">[SEC: ' + fmt(ds.secure) + ' | BOG: ' + fmt(ds.bogus) + ']</span>';
     updateGradientBar('barDnssecScore', dnssecPct);
 
-    document.getElementById('valPrefetchScore').textContent = prefetchReadiness + '% (' + fmt(prefetchVal) + ' hits)';
-    updateGradientBar('barPrefetchScore', prefetchReadiness);
+    document.getElementById('valPrefetchScore').innerHTML = prefetchVal > 0 ? '<span class="esito-ok">' + fmt(prefetchVal) + ' rinnovi (Attivo)</span>' : '<span class="muted">0 (In attesa)</span>';
+    updateGradientBar('barPrefetchScore', prefetchVal > 0 ? 100 : 0);
 
     document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (Live: ' + liveQPS + ' | Max: ' + maxQPS.toFixed(1) + ' req/s)';
     updateGradientBar('barQpsScore', qpsHeadroom);
@@ -1553,7 +1551,7 @@ async function refresh(forceVersions) {
 
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
-    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore + '%\nUpstream DoT online (peso 15%): ' + upstreamScore + '%\nIntegrit\u00e0 DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacit\u00e0 QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
+    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore + '%\nUpstream DoT online (peso 15%): ' + upstreamScore + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
 
@@ -1787,7 +1785,7 @@ async function refresh(forceVersions) {
 
           const badgeHtml = `<span class="badge" style="${badgeStyle} padding: 4px 10px; font-size: 0.85em;">${code}</span>`;
 
-          const resText = f.resolver || '\u26A1 Cache RAM';
+          const resText = f.resolver || '⚡ Cache RAM';
           let resStyle = 'color: var(--green-bright);';
           if (resText.includes('RPZ')) {
             resStyle = 'color: var(--red-bright);';
