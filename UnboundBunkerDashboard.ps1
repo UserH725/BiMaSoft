@@ -168,28 +168,38 @@ function Get-ConfiguredCacheSizeMb {
 
 function Get-HardeningStatus {
     $score = 100
+    $dettaglio = @()
+
     try {
         $chromeDoh = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Google\Chrome" -Name "DnsOverHttpsMode" -ErrorAction SilentlyContinue).DnsOverHttpsMode
-        if ($chromeDoh -ne "off") { $score -= 20 }
-    } catch { $score -= 20 }
+        $okChromeDoh = ($chromeDoh -eq "off")
+        if (-not $okChromeDoh) { $score -= 20 }
+    } catch { $okChromeDoh = $false; $score -= 20 }
+    $dettaglio += @{ nome = "DoH disattivato (Chrome)"; ok = $okChromeDoh }
 
     try {
         $edgeDoh = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "DnsOverHttpsMode" -ErrorAction SilentlyContinue).DnsOverHttpsMode
-        if ($edgeDoh -ne "off") { $score -= 20 }
-    } catch { $score -= 20 }
+        $okEdgeDoh = ($edgeDoh -eq "off")
+        if (-not $okEdgeDoh) { $score -= 20 }
+    } catch { $okEdgeDoh = $false; $score -= 20 }
+    $dettaglio += @{ nome = "DoH disattivato (Edge)"; ok = $okEdgeDoh }
 
     try {
         $idnChrome = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Google\Chrome" -Name "IDNPolicy" -ErrorAction SilentlyContinue).IDNPolicy
-        if ($idnChrome -ne 1) { $score -= 20 }
-    } catch { $score -= 20 }
+        $okIdnChrome = ($idnChrome -eq 1)
+        if (-not $okIdnChrome) { $score -= 20 }
+    } catch { $okIdnChrome = $false; $score -= 20 }
+    $dettaglio += @{ nome = "IDN Policy (Chrome)"; ok = $okIdnChrome }
 
     try {
         $smartDns = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\DNSClient" -Name "DisableSmartNameResolution" -ErrorAction SilentlyContinue).DisableSmartNameResolution
-        if ($smartDns -ne 1) { $score -= 20 }
-    } catch { $score -= 20 }
+        $okSmartDns = ($smartDns -eq 1)
+        if (-not $okSmartDns) { $score -= 20 }
+    } catch { $okSmartDns = $false; $score -= 20 }
+    $dettaglio += @{ nome = "Smart Multi-Homed Name Resolution disattivata"; ok = $okSmartDns }
 
     if ($score -lt 0) { $score = 0 }
-    return $score
+    return @{ score = $score; dettaglio = $dettaglio }
 }
 
 function Get-NtpStatus {
@@ -370,45 +380,33 @@ function Get-EngineStatus {
     return ($svc -and $svc.Status -eq "Running")
 }
 
-# === LIVE FEED RPZ ===
-function Get-LiveBlockedFeed {
-    $feed = @()
-    if ([System.IO.File]::Exists($RpzLog)) {
-        try {
-            $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue
-            foreach ($ln in $lines) {
-                if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+(rpz-[a-z]+)') {
-                    $feed += @{
-                        orario  = $matches[1]
-                        lista   = $matches[2]
-                        dominio = $matches[3].TrimEnd('.')
-                        azione  = $matches[4].ToUpper()
-                    }
-                }
-            }
-        } catch {}
-    }
-    if ($feed.Count -gt 0) {
-        $lastFeed = $feed | Select-Object -Last 300
-        $reversed = @()
-        for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
-            $reversed += $lastFeed[$i]
+# === CACHE CONDIVISA TAIL LOG (evita letture multiple dello stesso file per refresh) ===
+$script:LogTailCacheTime   = [DateTime]::MinValue
+$script:LogTailCacheLines  = @()
+$script:LogTailCacheTtlSec = 2
+
+function Get-RpzLogTailCached {
+    if (((Get-Date) - $script:LogTailCacheTime).TotalSeconds -ge $script:LogTailCacheTtlSec -or $script:LogTailCacheLines.Count -eq 0) {
+        $lines = @()
+        if ([System.IO.File]::Exists($RpzLog)) {
+            try { $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue } catch {}
         }
-        return $reversed
+        $script:LogTailCacheLines = $lines
+        $script:LogTailCacheTime  = Get-Date
     }
-    return @()
+    return $script:LogTailCacheLines
 }
 
-# === LIVE FEED RCODE ===
+# === LIVE FEED RCODE (include anche l'esito dei blocchi RPZ con relativa lista) ===
 function Get-LiveRcodeFeed {
     $feed = @()
     $zap    = "$([char]0x26A1) Cache RAM"
     $globe  = [char]::ConvertFromUtf32(0x1F310)
     $shield = [char]::ConvertFromUtf32(0x1F6E1)
 
-    if ([System.IO.File]::Exists($RpzLog)) {
+    $lines = Get-RpzLogTailCached
+    if ($lines -and $lines.Count -gt 0) {
         try {
-            $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue
             $currentUpstream = $zap
             
             foreach ($ln in $lines) {
@@ -441,10 +439,11 @@ function Get-LiveRcodeFeed {
                 elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                     $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
                     $feed += @{
-                        orario   = $matches[1]
-                        dominio  = $matches[3].TrimEnd('.')
-                        rcode    = $rcodeMap
-                        resolver = "$shield Scudo RPZ"
+                        orario    = $matches[1]
+                        dominio   = $matches[3].TrimEnd('.')
+                        rcode     = $rcodeMap
+                        resolver  = "$shield Scudo RPZ"
+                        rpz_lista = $matches[2]
                     }
                 }
             }
@@ -571,9 +570,9 @@ function Get-RootServersRadar {
 
 # === LIVE STATS ESTESE ===
 function Get-LiveStats {
-    $base   = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0; qps_medio = 0; cache_mem_bytes = 0; ratelimited_queries = 0 }
+    $base   = [ordered]@{ query_totali = 0; cache_hits = 0; cache_efficienza_pct = 0; uptime_secondi = 0; latenza_ms = 0; blocchi_pct = 0; qps_medio = 0; cache_mem_bytes = 0; ratelimited_queries = 0; tcp_queries = 0; udp_queries = 0; unwanted_queries = 0; unwanted_replies = 0 }
     $rcode  = [ordered]@{ noerror = 0; nxdomain = 0; servfail = 0 }
-    $types  = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0 }
+    $types  = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0; type_altro = 0 }
     $dnssec = [ordered]@{ secure = 0; bogus = 0 }
     $prefetch = 0
     $recMs = 0
@@ -604,10 +603,15 @@ function Get-LiveStats {
                     if ($k -eq "mem.cache.rrset")            { $memCacheRrset = $v }
                     if ($k -eq "mem.cache.message")          { $memCacheMsg   = $v }
                     if ($k -eq "num.query.ratelimited" -or $k -eq "num.query.ip_ratelimited") { $rateLimited += $v }
+                    if ($k -eq "num.query.tcp")              { $base.tcp_queries = $v }
+                    if ($k -eq "unwanted.queries")           { $base.unwanted_queries = $v }
+                    if ($k -eq "unwanted.replies")           { $base.unwanted_replies = $v }
                 }
             }
             $base.cache_mem_bytes = $memCacheRrset + $memCacheMsg
             $base.ratelimited_queries = $rateLimited
+            $base.udp_queries = [math]::Max(0, $base.query_totali - $base.tcp_queries)
+            $types.type_altro = [math]::Max(0, $base.query_totali - ($types.type_a + $types.type_aaaa + $types.type_https))
 
             if ($base.uptime_secondi -gt 0) {
                 $base.qps_medio = [math]::Round($base.query_totali / $base.uptime_secondi, 2)
@@ -622,7 +626,18 @@ function Get-LiveStats {
     return @{ base = $base; rcode = $rcode; types = $types; dnssec = $dnssec; prefetch = $prefetch }
 }
 
+# Cache: la scansione completa del log per lista RPZ e' l'operazione piu' costosa
+# (file intero x 10 liste). Non serve precisione al secondo: un TTL di 15s elimina
+# la rilettura ad ogni singola richiesta /api/status senza percepibili ritardi in UI.
+$script:RpzBreakdownCache       = $null
+$script:RpzBreakdownCacheTime   = [DateTime]::MinValue
+$script:RpzBreakdownCacheTtlSec = 15
+
 function Get-RpzBreakdown {
+    if ($script:RpzBreakdownCache -and ((Get-Date) - $script:RpzBreakdownCacheTime).TotalSeconds -lt $script:RpzBreakdownCacheTtlSec) {
+        return $script:RpzBreakdownCache
+    }
+
     $liste = @()
     $blkTotale = 0
     $rpzLines = $null
@@ -653,7 +668,10 @@ function Get-RpzBreakdown {
         $liste += @{ tag = $lista.Tag; nome = $lista.Nome; emoji = $lista.Emoji; conteggio = $conteggioLista; domini = $domini }
         $blkTotale += $conteggioLista
     }
-    return @{ totale = $blkTotale; liste = $liste }
+    $result = @{ totale = $blkTotale; liste = $liste }
+    $script:RpzBreakdownCache     = $result
+    $script:RpzBreakdownCacheTime = Get-Date
+    return $result
 }
 
 function Get-SessionTotal {
@@ -677,7 +695,6 @@ function Get-BunkerStatusJson {
     $versioni    = Get-BunkerVersions -Force:$ForceVersions
     $engineOn    = Get-EngineStatus
     $stats       = Get-LiveStats
-    $liveFeed    = Get-LiveBlockedFeed
     $liveRcode   = Get-LiveRcodeFeed
     $radar       = Get-UpstreamRadar
     $rootRadar   = Get-RootServersRadar
@@ -689,7 +706,7 @@ function Get-BunkerStatusJson {
 
     $unboundRamMb = Get-UnboundWorkingSet
     $totalRpzRules = Get-TotalRpzRulesCount
-    $hardeningScore = Get-HardeningStatus
+    $hardeningStatus = Get-HardeningStatus
     $ntpStatus = Get-NtpStatus
     $hyperlocalStatus = Get-HyperlocalStatus
     
@@ -729,20 +746,20 @@ function Get-BunkerStatusJson {
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
         rpz_log_age_min  = $rpzAgeMinutes
-        live_feed_rpz    = $liveFeed
         live_rcode_feed  = $liveRcode
         upstream_radar   = $radar
         root_radar       = $rootRadar
         bunker_features  = [ordered]@{
-            unbound_ram_mb   = $unboundRamMb
-            total_rpz_rules  = $totalRpzRules
-            hardening_score  = $hardeningScore
-            ntp_status       = $ntpStatus
-            hyperlocal       = $hyperlocalStatus
-            cache_used_mb    = $cacheUsedMb
-            cache_total_mb   = $configuredCacheMb
-            cache_sat_pct    = $cacheSatPct
-            ratelimited_cnt  = $stats.base.ratelimited_queries
+            unbound_ram_mb      = $unboundRamMb
+            total_rpz_rules     = $totalRpzRules
+            hardening_score     = $hardeningStatus.score
+            hardening_dettaglio = $hardeningStatus.dettaglio
+            ntp_status          = $ntpStatus
+            hyperlocal          = $hyperlocalStatus
+            cache_used_mb       = $cacheUsedMb
+            cache_total_mb      = $configuredCacheMb
+            cache_sat_pct       = $cacheSatPct
+            ratelimited_cnt     = $stats.base.ratelimited_queries
         }
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
@@ -906,6 +923,7 @@ $HtmlPage = @'
   .stat .lbl { color: var(--dim); font-size:0.75em; }
 
   .stat-breakdown-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; margin-bottom: 10px; }
+  #gridTypes { grid-template-columns: repeat(4, 1fr); }
   .stat-card { border-radius: 6px; padding: 10px 8px; text-align: center; border: 1px solid var(--border); box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s ease; }
   .stat-card:hover { transform: translateY(-2px); }
   .stat-card .sc-lbl { font-size: 0.76em; font-weight: bold; margin-bottom: 4px; letter-spacing: 0.5px; }
@@ -943,10 +961,8 @@ $HtmlPage = @'
   .grid-three-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
-  .grid-two-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
-  .grid-two-columns > div { flex: 1; min-width: 320px; margin-bottom: 0; }
   
-  #inputRicercaFeed:focus, #inputRicercaRcode:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
+  #inputRicercaRcode:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
 </style>
 </head>
 <body>
@@ -1021,6 +1037,7 @@ $HtmlPage = @'
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128274; HARDENING &amp; POLICY</span><span class="boost-item-val" id="valHardening">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barHardening" style="width:100%"></div></div>
+    <div id="hardeningDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9201;&#65039; OROLOGIO &amp; SYNC NTP</span><span class="boost-item-val" id="valNtpStatus">--</span></div>
@@ -1033,6 +1050,22 @@ $HtmlPage = @'
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9889; ANTI-FLOOD &amp; RATELIMIT</span><span class="boost-item-val" id="valRateLimit">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRateLimit" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#9203; TEMPO DI ATTIVIT&Agrave; MOTORE</span><span class="boost-item-val" id="valUptime">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barUptime" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128200; CACHE HIT RATE GREZZO</span><span class="boost-item-val" id="valCacheEff">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheEff" style="width:0%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#9888;&#65039; TRAFFICO ANOMALO (UNWANTED)</span><span class="boost-item-val" id="valUnwanted">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barUnwanted" style="width:100%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128225; PROTOCOLLO TCP / UDP</span><span class="boost-item-val" id="valTcpUdp">--</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barTcpUdp" style="width:0%"></div></div>
   </div>
 </div>
 
@@ -1104,25 +1137,10 @@ $HtmlPage = @'
   </div>
 </div>
 
-<div class="grid-two-columns">
-  <div class="panel" style="margin-bottom: 0;">
-    <h2>&#9889; Live Feed - Ultimi Domini Bloccati in RAM (Real-Time RPZ)</h2>
-    <input type="text" id="inputRicercaFeed" onkeyup="filtraLiveFeed()" 
-           placeholder="&#128269; Cerca domini o liste nel feed in tempo reale..." 
-           style="width:100%; padding:10px 12px; margin-bottom:12px; background:#0e141b; color:#d7e2ec; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.95em; transition: border-color 0.2s;">
-    <div class="table-scroll">
-      <table id="tabellaLiveFeed">
-        <thead><tr><th>Orario</th><th>Host / Dominio FQDN Completo</th><th>Lista RPZ Intervenuta</th><th>Azione</th></tr></thead>
-        <tbody><tr><td colspan="4" class="muted">In attesa di eventi RPZ in tempo reale...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
-    <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
-    <div class="stats-grid" id="statsUltimoReport"></div>
-    <div id="listeRpz" style="padding-right: 4px;"></div>
-  </div>
+<div class="panel">
+  <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
+  <div class="stats-grid" id="statsUltimoReport"></div>
+  <div id="listeRpz" style="padding-right: 4px;"></div>
 </div>
 
 <div class="panel">
@@ -1144,14 +1162,15 @@ $HtmlPage = @'
     <table id="tabellaLiveRcode">
       <thead>
         <tr>
-          <th style="width: 12%;">Orario</th>
-          <th style="width: 48%;">Dominio / Host FQDN Completo</th>
-          <th style="width: 25%;">Risolutore / Upstream</th>
-          <th style="width: 15%;">Stato RCODE</th>
+          <th style="width: 10%;">Orario</th>
+          <th style="width: 38%;">Dominio / Host FQDN Completo</th>
+          <th style="width: 20%;">Risolutore / Upstream</th>
+          <th style="width: 20%;">Lista RPZ Intervenuta</th>
+          <th style="width: 12%;">Stato RCODE</th>
         </tr>
       </thead>
       <tbody>
-        <tr><td colspan="4" class="muted">In attesa di eventi RCODE in tempo reale...</td></tr>
+        <tr><td colspan="5" class="muted">In attesa di eventi RCODE in tempo reale...</td></tr>
       </tbody>
     </table>
   </div>
@@ -1198,17 +1217,6 @@ function updateGradientBar(id, pct) {
   } else {
     el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 35%, #196f3d 70%, #145a32 100%)';
   }
-}
-
-function filtraLiveFeed() {
-  const input = document.getElementById('inputRicercaFeed');
-  if (!input) return;
-  const query = input.value.toLowerCase();
-  const righe = document.querySelectorAll('#tabellaLiveFeed tbody tr');
-  righe.forEach(riga => {
-    const testo = riga.textContent.toLowerCase();
-    riga.style.display = testo.includes(query) ? '' : 'none';
-  });
 }
 
 function filtraLiveRcode() {
@@ -1418,12 +1426,20 @@ async function refresh(forceVersions) {
     document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
     updateGradientBar('barHardening', hardScore);
 
+    let hardDettaglio = bf.hardening_dettaglio || [];
+    if (!Array.isArray(hardDettaglio)) { hardDettaglio = [hardDettaglio]; }
+    document.getElementById('hardeningDettaglio').innerHTML = hardDettaglio.map(h =>
+      `<div>${h.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${h.nome || '-'}</div>`
+    ).join('');
+
     const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
-    document.getElementById('valNtpStatus').innerHTML = ntpOk ? '<span class="esito-ok">OK (INRIM/Cloudflare)</span>' : '<span class="esito-warn">Non Sincronizzato</span>';
+    const ntpDesc = (bf.ntp_status && bf.ntp_status.desc) || (ntpOk ? 'Sincronizzato' : 'Non Sincronizzato');
+    document.getElementById('valNtpStatus').innerHTML = ntpOk ? `<span class="esito-ok">${ntpDesc}</span>` : `<span class="esito-warn">${ntpDesc}</span>`;
     updateGradientBar('barNtpStatus', ntpOk ? 100 : 20);
 
     const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
-    document.getElementById('valHyperlocal').innerHTML = hlOk ? '<span class="esito-ok">Attivo (RFC 8806)</span>' : '<span class="muted">Disattivato</span>';
+    const hlDesc = (bf.hyperlocal && bf.hyperlocal.desc) || (hlOk ? 'Attivo' : 'Disattivato');
+    document.getElementById('valHyperlocal').innerHTML = hlOk ? `<span class="esito-ok">${hlDesc}</span>` : `<span class="muted">${hlDesc}</span>`;
     updateGradientBar('barHyperlocal', hlOk ? 100 : 10);
 
     const rlCnt = bf.ratelimited_cnt || 0;
@@ -1434,6 +1450,36 @@ async function refresh(forceVersions) {
       document.getElementById('valRateLimit').innerHTML = '<span class="esito-ok">0 (Sistema nominale)</span>';
       updateGradientBar('barRateLimit', 100);
     }
+
+    const uptimeSec = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.uptime_secondi || 0) : 0;
+    const upG = Math.floor(uptimeSec / 86400);
+    const upH = Math.floor((uptimeSec % 86400) / 3600);
+    const upM = Math.floor((uptimeSec % 3600) / 60);
+    const uptimeStr = upG > 0 ? `${upG}g ${upH}h ${upM}m` : (upH > 0 ? `${upH}h ${upM}m` : `${upM}m`);
+    document.getElementById('valUptime').textContent = uptimeSec > 0 ? uptimeStr : 'N/D';
+    updateGradientBar('barUptime', uptimeSec > 3600 ? 100 : (uptimeSec > 0 ? 40 : 0));
+
+    const cacheEffPct = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_efficienza_pct || 0) : 0;
+    document.getElementById('valCacheEff').textContent = cacheEffPct + '%';
+    updateGradientBar('barCacheEff', cacheEffPct);
+
+    const unwantedQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_queries || 0) : 0;
+    const unwantedR = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_replies || 0) : 0;
+    const unwantedTot = unwantedQ + unwantedR;
+    if (unwantedTot > 0) {
+      document.getElementById('valUnwanted').innerHTML = '<span class="esito-warn">' + fmt(unwantedTot) + '</span>';
+      updateGradientBar('barUnwanted', 25);
+    } else {
+      document.getElementById('valUnwanted').innerHTML = '<span class="esito-ok">0</span>';
+      updateGradientBar('barUnwanted', 100);
+    }
+
+    const tcpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.tcp_queries || 0) : 0;
+    const udpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.udp_queries || 0) : 0;
+    const totProto = (tcpQ + udpQ) || 1;
+    const pctTcp = Math.round((tcpQ / totProto) * 100);
+    document.getElementById('valTcpUdp').textContent = pctTcp + '% TCP / ' + (100 - pctTcp) + '% UDP';
+    updateGradientBar('barTcpUdp', 100);
 
     const badges = document.getElementById('badges');
     badges.innerHTML = '';
@@ -1522,11 +1568,12 @@ async function refresh(forceVersions) {
       <div class="bar-fill" style="width:${pFail}%; background:var(--amber);" title="SERVFAIL: ${pFail}%"></div>
     `;
 
-    const tp = st.types || { type_a:0, type_aaaa:0, type_https:0 };
-    const totTp = (tp.type_a + tp.type_aaaa + tp.type_https) || 1;
+    const tp = st.types || { type_a:0, type_aaaa:0, type_https:0, type_altro:0 };
+    const totTp = (tp.type_a + tp.type_aaaa + tp.type_https + tp.type_altro) || 1;
     const pA = Math.round((tp.type_a / totTp) * 100);
     const pAaaa = Math.round((tp.type_aaaa / totTp) * 100);
     const pHttps = Math.round((tp.type_https / totTp) * 100);
+    const pAltro = Math.round((tp.type_altro / totTp) * 100);
 
     document.getElementById('gridTypes').innerHTML = `
       <div class="stat-card" style="border-color: rgba(79, 179, 255, 0.4); background: rgba(79, 179, 255, 0.15);">
@@ -1544,30 +1591,19 @@ async function refresh(forceVersions) {
         <div class="sc-val" style="color: #ffffff;">${fmt(tp.type_https)}</div>
         <div class="sc-pct" style="color: #ffffff;">${pHttps}%</div>
       </div>
+      <div class="stat-card" style="border-color: rgba(127, 147, 166, 0.4); background: rgba(127, 147, 166, 0.12);">
+        <div class="sc-lbl" style="color: var(--dim);">ALTRO (TXT/NS/CNAME/...)</div>
+        <div class="sc-val" style="color: var(--dim);">${fmt(tp.type_altro)}</div>
+        <div class="sc-pct" style="color: var(--dim);">${pAltro}%</div>
+      </div>
     `;
 
     document.getElementById('barTypes').innerHTML = `
       <div class="bar-fill" style="width:${pA}%; background:var(--accent);" title="A: ${pA}%"></div>
       <div class="bar-fill" style="width:${pAaaa}%; background:var(--purple);" title="AAAA: ${pAaaa}%"></div>
       <div class="bar-fill" style="width:${pHttps}%; background:#ffffff;" title="HTTPS: ${pHttps}%"></div>
+      <div class="bar-fill" style="width:${pAltro}%; background:var(--dim);" title="ALTRO: ${pAltro}%"></div>
     `;
-
-    const tbodyFeed = document.querySelector('#tabellaLiveFeed tbody');
-    tbodyFeed.innerHTML = '';
-    let feed = d.live_feed_rpz || [];
-    if (!Array.isArray(feed)) { feed = [feed]; }
-    
-    if (feed.length === 0) {
-      tbodyFeed.innerHTML = '<tr><td colspan="4" class="muted">Nessun blocco RPZ registrato di recente in RAM</td></tr>';
-    } else {
-      feed.forEach(f => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.orario || '-'}</td><td style="font-weight:bold; font-size:1.05em;">${f.dominio || '-'}</td><td style="color:var(--accent);">${f.lista || '-'}</td><td class="esito-warn">[ ${f.azione || '-'} ]</td>`;
-        tbodyFeed.appendChild(tr);
-      });
-    }
-    
-    filtraLiveFeed();
 
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
@@ -1699,7 +1735,7 @@ async function refresh(forceVersions) {
       if (!Array.isArray(feedRcode)) { feedRcode = [feedRcode]; }
 
       if (feedRcode.length === 0) {
-        tbodyRcode.innerHTML = '<tr><td colspan="4" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
+        tbodyRcode.innerHTML = '<tr><td colspan="5" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
       } else {
         feedRcode.forEach(f => {
           const tr = document.createElement('tr');
@@ -1724,10 +1760,15 @@ async function refresh(forceVersions) {
             resStyle = 'color: var(--accent); font-weight: bold;';
           }
 
+          const listaRpz = f.rpz_lista
+            ? `<span style="color: var(--red-bright);">${f.rpz_lista}</span>`
+            : `<span class="muted">-</span>`;
+
           tr.innerHTML = `
             <td>${f.orario || '-'}</td>
             <td style="font-weight:bold; font-size:1.05em; color: var(--text);">${f.dominio || '-'}</td>
             <td style="${resStyle}">${resText}</td>
+            <td>${listaRpz}</td>
             <td>${badgeHtml}</td>
           `;
           tbodyRcode.appendChild(tr);
@@ -1774,7 +1815,7 @@ if (-not $startedOk) {
     exit 1
 }
 
-Write-Host "[OK] Unbound Bunker Dashboard Live V2 in ascolto su $Prefix (Ctrl+C per arrestare)"
+Write-Host "[OK] Unbound Bunker Dashboard Live in ascolto su $Prefix (Ctrl+C per arrestare)"
 
 try {
     while ($listener.IsListening) {
