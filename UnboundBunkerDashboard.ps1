@@ -202,14 +202,46 @@ function Get-HardeningStatus {
     return @{ score = $score; dettaglio = $dettaglio }
 }
 
+$script:NtpCacheTime = [DateTime]::MinValue
+$script:NtpCacheData = @{ ok = $false; dettaglio = @(); okCount = 0; totCount = 0; desc = "In attesa del primo test" }
+
 function Get-NtpStatus {
-    try {
-        $svc = Get-Service -Name "w32time" -ErrorAction SilentlyContinue
-        if ($svc -and $svc.Status -eq "Running") {
-            return @{ ok = $true; desc = "Sincronizzato (INRIM/Cloudflare)" }
-        }
-    } catch {}
-    return @{ ok = $false; desc = "Non Sincronizzato" }
+    if (((Get-Date) - $script:NtpCacheTime).TotalSeconds -lt 1800) {
+        return $script:NtpCacheData
+    }
+
+    # Peer reali configurati in FASE 6 del BAT (w32tm /config /manualpeerlist:...)
+    $serversToTest = @(
+        @{ nome = "INRIM primario (ntp.inrim.it)";    host = "ntp.inrim.it" },
+        @{ nome = "INRIM secondario (ntp1.inrim.it)"; host = "ntp1.inrim.it" },
+        @{ nome = "Cloudflare (time.cloudflare.com)"; host = "time.cloudflare.com" },
+        @{ nome = "Pool IT (it.pool.ntp.org)";        host = "it.pool.ntp.org" }
+    )
+
+    $dettaglio = @()
+    $okCount = 0
+    foreach ($s in $serversToTest) {
+        $ok = $false
+        try {
+            $res = w32tm /stripchart /computer:$($s.host) /samples:1 /dataonly 2>$null
+            $ok = ($LASTEXITCODE -eq 0) -and ($res -match '\d')
+        } catch { $ok = $false }
+        if ($ok) { $okCount++ }
+        $dettaglio += @{ nome = $s.nome; ok = $ok }
+    }
+
+    $svcOk = $false
+    try { $svcOk = (Get-Service -Name "w32time" -ErrorAction SilentlyContinue).Status -eq "Running" } catch {}
+
+    $script:NtpCacheData = @{
+        ok        = ($svcOk -and $okCount -gt 0)
+        dettaglio = $dettaglio
+        okCount   = $okCount
+        totCount  = $serversToTest.Count
+        desc      = "$okCount / $($serversToTest.Count) peer raggiunti"
+    }
+    $script:NtpCacheTime = Get-Date
+    return $script:NtpCacheData
 }
 
 function Get-HyperlocalStatus {
@@ -582,7 +614,7 @@ function Get-LiveStats {
 
     if (Test-Path $UcExe) {
         try {
-            $raw = & $UcExe -e stats_noreset 2>$null
+            $raw = & $UcExe stats_noreset 2>$null
             foreach ($ln in $raw) {
                 if ($ln -match '^([a-zA-Z0-9_.\-]+)=(.+)$') {
                     $k = $matches[1]
@@ -1018,11 +1050,11 @@ $HtmlPage = @'
     <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info</span><span class="boost-item-val" id="valPrefetchScore">--</span></div>
+    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info (100% = non serve)</span><span class="boost-item-val" id="valPrefetchScore">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
   </div>
 </div>
-<div class="sub" style="margin: -8px 0 14px 2px;">&#128640; Le 6 metriche sopra con "peso" compongono il BUNKER BOOST SCORE (somma pesata). "Prontezza Prefetch" &egrave; informativo e non entra nel calcolo.</div>
+<div class="sub" style="margin: -8px 0 14px 2px;">&#128640; Le 6 metriche sopra con "peso" compongono il BUNKER BOOST SCORE (somma pesata). "Prontezza Prefetch" &egrave; informativo e non entra nel calcolo: scala invertita, 100% significa che la cache &egrave; gi&agrave; efficiente e non necessita di rinnovi anticipati.</div>
 
 <div class="boost-subrow" id="gainSubrow">
   <div class="boost-item">
@@ -1065,6 +1097,7 @@ $HtmlPage = @'
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9201;&#65039; OROLOGIO &amp; SYNC NTP</span><span class="boost-item-val" id="valNtpStatus">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barNtpStatus" style="width:100%"></div></div>
+    <div id="ntpDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#127760; HYPERLOCAL ROOT</span><span class="boost-item-val" id="valHyperlocal">--</span></div>
@@ -1204,6 +1237,7 @@ let prevQueries = 0;
 let prevTime = Date.now();
 let liveQPS = 0;
 let maxQPS = 0;
+let maxLatSeen = 0;
 let isRefreshing = false;
 
 function fmt(n) {
@@ -1379,6 +1413,14 @@ async function refresh(forceVersions) {
     let dnssecPct = 100;
 
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
+    // Prontezza Prefetch (logica invertita): 0 rinnovi = 100% (cache gia' ottimale, prefetch non necessario).
+    // Usiamo il RAPPORTO rinnovi/query_totali (non il numero grezzo) cosi' la scala si auto-adatta
+    // al volume di traffico invece di azzerarsi progressivamente con uptime lungo.
+    // PREFETCH_SENSITIVITY: moltiplicatore che regola quanto velocemente il punteggio scende.
+    // Con valore 10, un rapporto prefetch/query del 10% porta il punteggio a 0.
+    const PREFETCH_SENSITIVITY = 10;
+    const prefetchRatioPct = (qTot > 0) ? (prefetchVal / qTot) * 100 : 0;
+    const prefetchScore = Math.max(0, Math.min(100, Math.round(100 - (prefetchRatioPct * PREFETCH_SENSITIVITY))));
 
     let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS / 5))));
     let healthScore = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
@@ -1392,11 +1434,14 @@ async function refresh(forceVersions) {
       (healthScore * 0.10)
     );
 
-    const ispBaselineMs = 45;
-    const displayLat = Math.max(0.5, effectiveLat);
-    const msSaved = Math.max(0, Math.round(ispBaselineMs - displayLat));
+    const ispBaselineMs = 120; // valore provvisorio: da confermare confrontando con latenza_ms reale osservata
+    if (effectiveLat > maxLatSeen) maxLatSeen = effectiveLat;
+    const effectiveBaselineMs = Math.max(ispBaselineMs, maxLatSeen);
 
-    const latGainReal = Math.min(40, Math.round((msSaved / ispBaselineMs) * 40));
+    const displayLat = Math.max(0.5, effectiveLat);
+    const msSaved = Math.max(0, Math.round(effectiveBaselineMs - displayLat));
+
+    const latGainReal = Math.min(40, Math.round((msSaved / effectiveBaselineMs) * 40));
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
     const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
@@ -1430,8 +1475,8 @@ async function refresh(forceVersions) {
     document.getElementById('valDnssecScore').innerHTML = '100% <span class="esito-ok">[SEC: ' + fmt(ds.secure) + ' | BOG: ' + fmt(ds.bogus) + ']</span>';
     updateGradientBar('barDnssecScore', dnssecPct);
 
-    document.getElementById('valPrefetchScore').innerHTML = prefetchVal > 0 ? '<span class="esito-ok">' + fmt(prefetchVal) + ' rinnovi (Attivo)</span>' : '<span class="muted">0 (In attesa)</span>';
-    updateGradientBar('barPrefetchScore', prefetchVal > 0 ? 100 : 0);
+    document.getElementById('valPrefetchScore').innerHTML = prefetchVal > 0 ? '<span class="esito-ok">' + prefetchScore + '% (' + fmt(prefetchVal) + ' rinnovi, ' + prefetchRatioPct.toFixed(2) + '% delle query)</span>' : '<span class="esito-ok">100% (Cache gi&agrave; ottimale, prefetch non necessario)</span>';
+    updateGradientBar('barPrefetchScore', prefetchScore);
 
     document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (Live: ' + liveQPS + ' | Max: ' + maxQPS.toFixed(1) + ' req/s)';
     updateGradientBar('barQpsScore', qpsHeadroom);
@@ -1466,7 +1511,15 @@ async function refresh(forceVersions) {
     const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
     const ntpDesc = (bf.ntp_status && bf.ntp_status.desc) || (ntpOk ? 'Sincronizzato' : 'Non Sincronizzato');
     document.getElementById('valNtpStatus').innerHTML = ntpOk ? `<span class="esito-ok">${ntpDesc}</span>` : `<span class="esito-warn">${ntpDesc}</span>`;
-    updateGradientBar('barNtpStatus', ntpOk ? 100 : 20);
+    const ntpOkCount = (bf.ntp_status && bf.ntp_status.okCount) || 0;
+    const ntpTotCount = (bf.ntp_status && bf.ntp_status.totCount) || 0;
+    updateGradientBar('barNtpStatus', ntpTotCount > 0 ? Math.round((ntpOkCount / ntpTotCount) * 100) : (ntpOk ? 100 : 20));
+
+    let ntpDettaglio = bf.ntp_status && bf.ntp_status.dettaglio ? bf.ntp_status.dettaglio : [];
+    if (!Array.isArray(ntpDettaglio)) { ntpDettaglio = [ntpDettaglio]; }
+    document.getElementById('ntpDettaglio').innerHTML = ntpDettaglio.map(n =>
+      `<div>${n.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${n.nome || '-'}</div>`
+    ).join('');
 
     const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
     const hlDesc = (bf.hyperlocal && bf.hyperlocal.desc) || (hlOk ? 'Attivo' : 'Disattivato');
