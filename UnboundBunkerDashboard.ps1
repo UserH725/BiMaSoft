@@ -1,5 +1,5 @@
 # ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE V2 (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
+# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
 # ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
@@ -784,7 +784,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Unbound Bunker - Dashboard Live V2</title>
+<title>Unbound Bunker - DASHBOARD LIVE</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -969,7 +969,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER - Dashboard Live V2 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER - DASHBOARD LIVE - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -992,34 +992,55 @@ $HtmlPage = @'
 
 <div class="boost-subrow">
   <div class="boost-item">
-    <div class="boost-item-header"><span>CACHE REALE (NO RPZ)</span><span class="boost-item-val" id="valRealCache">--%</span></div>
+    <div class="boost-item-header"><span>CACHE REALE (NO RPZ) &middot; peso 30%</span><span class="boost-item-val" id="valRealCache">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRealCache" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>EFFICIENZA LATENZA</span><span class="boost-item-val" id="valLatScore">--%</span></div>
+    <div class="boost-item-header"><span>EFFICIENZA LATENZA &middot; peso 25%</span><span class="boost-item-val" id="valLatScore">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barLatScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>UPSTREAM DoT ONLINE</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
+    <div class="boost-item-header"><span>UPSTREAM DoT ONLINE &middot; peso 15%</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUpstreamScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
+    <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC &middot; peso 15%</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barDnssecScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>PRONTEZZA PREFETCH</span><span class="boost-item-val" id="valPrefetchScore">100%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>RISERVA CAPACIT&Agrave; (QPS)</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
+    <div class="boost-item-header"><span>RISERVA CAPACIT&Agrave; (QPS) &middot; peso 5%</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barQpsScore" style="width:100%"></div></div>
   </div>
   <div class="boost-item">
-    <div class="boost-item-header"><span>SALUTE SISTEMA</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
+    <div class="boost-item-header"><span>SALUTE SISTEMA &middot; peso 10%</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
   </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info</span><span class="boost-item-val" id="valPrefetchScore">--%</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
+  </div>
 </div>
+<div class="sub" style="margin: -8px 0 14px 2px;">&#128640; Le 6 metriche sopra con "peso" compongono il BUNKER BOOST SCORE (somma pesata). "Prontezza Prefetch" &egrave; informativo e non entra nel calcolo.</div>
+
+<div class="boost-subrow" id="gainSubrow">
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#9889; GUADAGNO LATENZA</span><span class="boost-item-val" id="valGainLat">-- / 40 pt</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainLat" style="width:0%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128737; GUADAGNO BLOCCHI RPZ</span><span class="boost-item-val" id="valGainRpz">-- / 20 pt</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRpz" style="width:0%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#128190; GUADAGNO RAM DISK</span><span class="boost-item-val" id="valGainRam">-- / 10 pt</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRam" style="width:0%"></div></div>
+  </div>
+  <div class="boost-item">
+    <div class="boost-item-header"><span>&#127760; GUADAGNO DoT/PREFETCH</span><span class="boost-item-val" id="valGainDot">-- / 10 pt</span></div>
+    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainDot" style="width:0%"></div></div>
+  </div>
+</div>
+<div class="sub" style="margin: -8px 0 14px 2px;">&#9889; Le 4 metriche sopra compongono il BUNKER GAIN (somma dei punti, poi limitata tra 25% e 80%).</div>
 
 <div class="bunker-subrow">
   <div class="boost-item">
@@ -1359,7 +1380,7 @@ async function refresh(forceVersions) {
     if (ds.bogus > 0) dnssecPct = Math.max(0, dnssecPct - (ds.bogus * 10));
 
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
-    let prefetchReadiness = 100;
+    let prefetchReadiness = qTot > 0 ? Math.min(100, Math.round((prefetchVal / qTot) * 100)) : 0;
 
     let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS * 2))));
     let healthScore = d.salute_sistema.anomalie_rilevate ? 0 : 100;
@@ -1386,6 +1407,18 @@ async function refresh(forceVersions) {
     let totalBunkerGain = Math.round(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
+
+    document.getElementById('valGainLat').textContent = latGainReal + ' / 40 pt';
+    updateGradientBar('barGainLat', Math.round((latGainReal / 40) * 100));
+
+    document.getElementById('valGainRpz').textContent = rpzGainReal + ' / 20 pt';
+    updateGradientBar('barGainRpz', Math.round((rpzGainReal / 20) * 100));
+
+    document.getElementById('valGainRam').textContent = ramGainReal + ' / 10 pt';
+    updateGradientBar('barGainRam', Math.round((ramGainReal / 10) * 100));
+
+    document.getElementById('valGainDot').textContent = dotPrefetchGain + ' / 10 pt';
+    updateGradientBar('barGainDot', Math.round((dotPrefetchGain / 10) * 100));
 
     document.getElementById('valRealCache').textContent = realCachePct + '%';
     updateGradientBar('barRealCache', realCachePct);
@@ -1520,11 +1553,13 @@ async function refresh(forceVersions) {
 
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
+    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore + '%\nUpstream DoT online (peso 15%): ' + upstreamScore + '%\nIntegrit\u00e0 DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacit\u00e0 QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
 
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
+    bGain.title = 'Guadagno latenza: ' + latGainReal + ' / 40 pt\nGuadagno blocchi RPZ: ' + rpzGainReal + ' / 20 pt\nGuadagno RAM disk: ' + ramGainReal + ' / 10 pt\nGuadagno DoT/Prefetch: ' + dotPrefetchGain + ' / 10 pt\nTotale (limitato 25-80%): ' + totalBunkerGain + '%';
 
     let gainRatio = Math.min(1, Math.max(0, (totalBunkerGain - 25) / 55));
     let hueStart  = Math.round(38 + gainRatio * 92);
@@ -1815,7 +1850,7 @@ if (-not $startedOk) {
     exit 1
 }
 
-Write-Host "[OK] Unbound Bunker Dashboard Live in ascolto su $Prefix (Ctrl+C per arrestare)"
+Write-Host "[OK] Unbound Bunker DASHBOARD LIVE in ascolto su $Prefix (Ctrl+C per arrestare)"
 
 try {
     while ($listener.IsListening) {
