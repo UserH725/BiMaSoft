@@ -114,26 +114,53 @@ function Get-RamDiskGauge {
 function Get-UnboundWorkingSet {
     try {
         $p = Get-Process -Name "unbound" -ErrorAction SilentlyContinue | Select-Object -First 1
+        $sysRamMb = 0
+        try {
+            $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+            if ($os -and $os.TotalVisibleMemorySize) {
+                $sysRamMb = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
+            }
+        } catch {}
+        if ($sysRamMb -eq 0) {
+            try {
+                $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+                if ($cs -and $cs.TotalPhysicalMemory) {
+                    $sysRamMb = [math]::Round($cs.TotalPhysicalMemory / 1MB, 0)
+                }
+            } catch {}
+        }
+
         if ($p) {
-            return [math]::Round($p.WorkingSet64 / 1MB, 1)
+            $wsMb = [math]::Round($p.WorkingSet64 / 1MB, 1)
+            $pct = if ($sysRamMb -gt 0) { [math]::Round(($wsMb / $sysRamMb) * 100, 2) } else { 0 }
+            return @{ ws_mb = $wsMb; pid = $p.Id; sys_ram_mb = $sysRamMb; pct_sys = $pct }
+        } else {
+            return @{ ws_mb = 0; pid = "N/A"; sys_ram_mb = $sysRamMb; pct_sys = 0 }
         }
     } catch {}
-    return 0
+    return @{ ws_mb = 0; pid = "N/A"; sys_ram_mb = 0; pct_sys = 0 }
 }
 
-$script:TotalRpzRulesCache = 0
+$script:TotalRpzRulesCache = $null
 $script:TotalRpzRulesCacheTime = [DateTime]::MinValue
 
 function Get-TotalRpzRulesCount {
-    if (((Get-Date) - $script:TotalRpzRulesCacheTime).TotalSeconds -ge 600 -or $script:TotalRpzRulesCache -eq 0) {
+    if (((Get-Date) - $script:TotalRpzRulesCacheTime).TotalSeconds -ge 600 -or -not $script:TotalRpzRulesCache) {
         $tot = 0
-        $files = Get-ChildItem -Path $UbDir -Filter "*.conf" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'hagezi|spamhaus|urlhaus|threatfox' }
-        foreach ($f in $files) {
-            try {
-                $tot += [System.Linq.Enumerable]::Count([System.IO.File]::ReadLines($f.FullName))
-            } catch {}
+        $dettaglio = @()
+        $confFiles = Get-ChildItem -Path $UbDir -Filter "*.conf" -ErrorAction SilentlyContinue
+        foreach ($lista in $RpzListe) {
+            $cnt = 0
+            $matchingFiles = $confFiles | Where-Object { $_.Name -match [regex]::Escape($lista.Tag) }
+            foreach ($f in $matchingFiles) {
+                try {
+                    $cnt += [System.Linq.Enumerable]::Count([System.IO.File]::ReadLines($f.FullName))
+                } catch {}
+            }
+            $tot += $cnt
+            $dettaglio += @{ nome = $lista.Nome; emoji = $lista.Emoji; regole = $cnt }
         }
-        $script:TotalRpzRulesCache = $tot
+        $script:TotalRpzRulesCache = @{ totale = $tot; dettaglio = $dettaglio }
         $script:TotalRpzRulesCacheTime = Get-Date
     }
     return $script:TotalRpzRulesCache
@@ -210,7 +237,6 @@ function Get-NtpStatus {
         return $script:NtpCacheData
     }
 
-    # Peer reali configurati in FASE 6 del BAT (w32tm /config /manualpeerlist:...)
     $serversToTest = @(
         @{ nome = "INRIM primario (ntp.inrim.it)";    host = "ntp.inrim.it" },
         @{ nome = "INRIM secondario (ntp1.inrim.it)"; host = "ntp1.inrim.it" },
@@ -249,14 +275,29 @@ function Get-HyperlocalStatus {
         try {
             $raw = Get-Content -LiteralPath $SvcConf -ErrorAction SilentlyContinue
             if ($raw -match 'auth-zone:' -and $raw -match 'name:\s*"\."') {
-                return @{ attivo = $true; desc = "Attivo (RFC 8806 - RAM Local)" }
+                return @{
+                    attivo    = $true
+                    desc      = "Attivo (RFC 8806 - RAM Local)"
+                    dettaglio = @(
+                        @{ nome = "Zona di Autenticazione Root (.)"; ok = $true },
+                        @{ nome = "Servizio Root Server Locale RAM"; ok = $true },
+                        @{ nome = "Fallback Automatico Upstream"; ok = $true }
+                    )
+                }
             }
         } catch {}
     }
-    return @{ attivo = $false; desc = "Disattivato" }
+    return @{
+        attivo    = $false
+        desc      = "Disattivato"
+        dettaglio = @(
+            @{ nome = "Zona di Autenticazione Root (.)"; ok = $false },
+            @{ nome = "Servizio Root Server Locale RAM"; ok = $false }
+        )
+    }
 }
 
-# === CACHE PER IP WAN E GEOLOCALIZZAZIONE (INIZIALIZZAZIONE ASINCRONA ISTANTANEA) ===
+# === CACHE PER IP WAN E GEOLOCALIZZAZIONE ===
 $script:WanCacheTime = [DateTime]::MinValue
 $script:WanCacheData = @{
     ipv4_wan    = "N/D"
@@ -267,9 +308,7 @@ $script:WanCacheData = @{
     ipv6_loc    = ""
 }
 
-# === CONNETTIVITA' IP LAN LOCALE E WAN (SERVER-SIDE CON FIX WARP/VPN & TIMEOUT ULTRA-RAPIDI) ===
 function Get-IpConnectivityStatus {
-    # --- LAN IPv4 ---
     $ip4Lan = $null
     try {
         $ip4Lan = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
@@ -278,7 +317,6 @@ function Get-IpConnectivityStatus {
             Select-Object -First 1 -ExpandProperty IPAddress
     } catch {}
 
-    # --- LAN IPv6 ---
     $ip6Lan = $null
     try {
         $ip6Lan = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
@@ -287,12 +325,10 @@ function Get-IpConnectivityStatus {
             Select-Object -First 1 -ExpandProperty IPAddress
     } catch {}
 
-    # --- REFRESH CACHE WAN OGNI 30 SECONDI ---
     if (((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
         $ip4Wan = "N/D"
         $loc4   = ""
         
-        # Tentativo 1: ip-api.com (Timeout 1 sec)
         try {
             $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 1 -ErrorAction Stop
             if ($r4.status -eq 'success') {
@@ -313,7 +349,6 @@ function Get-IpConnectivityStatus {
         $ip6Wan = "N/D"
         $loc6   = ""
         
-        # Tentativo IPv6: ipapi.co (Timeout 1 sec)
         try {
             $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 1 -ErrorAction Stop
             if ($r6.ip -match ':') {
@@ -412,7 +447,7 @@ function Get-EngineStatus {
     return ($svc -and $svc.Status -eq "Running")
 }
 
-# === CACHE CONDIVISA TAIL LOG (evita letture multiple dello stesso file per refresh) ===
+# === CACHE CONDIVISA TAIL LOG ===
 $script:LogTailCacheTime   = [DateTime]::MinValue
 $script:LogTailCacheLines  = @()
 $script:LogTailCacheTtlSec = 2
@@ -429,7 +464,7 @@ function Get-RpzLogTailCached {
     return $script:LogTailCacheLines
 }
 
-# === LIVE FEED RCODE (include anche l'esito dei blocchi RPZ con relativa lista) ===
+# === LIVE FEED RCODE ===
 function Get-LiveRcodeFeed {
     $feed = @()
     $zap    = "$([char]0x26A1) Cache RAM"
@@ -610,7 +645,8 @@ function Get-LiveStats {
     $recMs = 0
     $memCacheRrset = 0
     $memCacheMsg   = 0
-    $rateLimited    = 0
+    $rateLimitedDomain = 0
+    $rateLimitedIp     = 0
 
     if (Test-Path $UcExe) {
         try {
@@ -634,14 +670,15 @@ function Get-LiveStats {
                     if ($k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
                     if ($k -eq "mem.cache.rrset")            { $memCacheRrset = $v }
                     if ($k -eq "mem.cache.message")          { $memCacheMsg   = $v }
-                    if ($k -eq "num.query.ratelimited" -or $k -eq "num.query.ip_ratelimited") { $rateLimited += $v }
+                    if ($k -eq "num.query.ratelimited")      { $rateLimitedDomain += $v }
+                    if ($k -eq "num.query.ip_ratelimited")   { $rateLimitedIp += $v }
                     if ($k -eq "num.query.tcp")              { $base.tcp_queries = $v }
                     if ($k -eq "unwanted.queries")           { $base.unwanted_queries = $v }
                     if ($k -eq "unwanted.replies")           { $base.unwanted_replies = $v }
                 }
             }
             $base.cache_mem_bytes = $memCacheRrset + $memCacheMsg
-            $base.ratelimited_queries = $rateLimited
+            $base.ratelimited_queries = $rateLimitedDomain + $rateLimitedIp
             $base.udp_queries = [math]::Max(0, $base.query_totali - $base.tcp_queries)
             $types.type_altro = [math]::Max(0, $base.query_totali - ($types.type_a + $types.type_aaaa + $types.type_https))
 
@@ -654,12 +691,19 @@ function Get-LiveStats {
             }
         } catch {}
     }
-    return @{ base = $base; rcode = $rcode; types = $types; dnssec = $dnssec; prefetch = $prefetch }
+    return @{
+        base               = $base
+        rcode              = $rcode
+        types              = $types
+        dnssec             = $dnssec
+        prefetch           = $prefetch
+        mem_cache_rrset    = $memCacheRrset
+        mem_cache_msg      = $memCacheMsg
+        ratelimit_domain   = $rateLimitedDomain
+        ratelimit_ip       = $rateLimitedIp
+    }
 }
 
-# Cache: la scansione completa del log per lista RPZ e' l'operazione piu' costosa
-# (file intero x 10 liste). Non serve precisione al secondo: un TTL di 15s elimina
-# la rilettura ad ogni singola richiesta /api/status senza percepibili ritardi in UI.
 $script:RpzBreakdownCache       = $null
 $script:RpzBreakdownCacheTime   = [DateTime]::MinValue
 $script:RpzBreakdownCacheTtlSec = 15
@@ -735,16 +779,23 @@ function Get-BunkerStatusJson {
     $netSpeed    = Get-NetworkSpeed
     $ipConn      = Get-IpConnectivityStatus
 
-    $unboundRamMb = Get-UnboundWorkingSet
-    $totalRpzRules = Get-TotalRpzRulesCount
+    $unboundRamData  = Get-UnboundWorkingSet
+    $rpzRulesObj     = Get-TotalRpzRulesCount
     $hardeningStatus = Get-HardeningStatus
-    $ntpStatus = Get-NtpStatus
-    $hyperlocalStatus = Get-HyperlocalStatus
+    $ntpStatus       = Get-NtpStatus
+    $hyperlocalStatus= Get-HyperlocalStatus
     
     $configuredCacheMb = Get-ConfiguredCacheSizeMb
     $cacheUsedMb = [math]::Round(($stats.base.cache_mem_bytes / 1MB), 2)
     $cacheFreeMb = [math]::Max(0, $configuredCacheMb - $cacheUsedMb)
     $cacheSatPct = if ($configuredCacheMb -gt 0) { [math]::Round(($cacheFreeMb / $configuredCacheMb) * 100, 1) } else { 100 }
+
+    $cacheRrsetMb = [math]::Round(($stats.mem_cache_rrset / 1MB), 2)
+    $cacheMsgMb   = [math]::Round(($stats.mem_cache_msg / 1MB), 2)
+
+    $engineStartTime = if ($stats.base.uptime_secondi -gt 0) {
+        (Get-Date).AddSeconds(-$stats.base.uptime_secondi).ToString("dd.MM.yyyy HH:mm:ss")
+    } else { "N/D" }
 
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
@@ -784,16 +835,23 @@ function Get-BunkerStatusJson {
         upstream_radar   = $radar
         root_radar       = $rootRadar
         bunker_features  = [ordered]@{
-            unbound_ram_mb      = $unboundRamMb
-            total_rpz_rules     = $totalRpzRules
+            unbound_ram_mb      = $unboundRamData.ws_mb
+            unbound_ram_data    = $unboundRamData
+            total_rpz_rules     = $rpzRulesObj.totale
+            rpz_dettaglio       = $rpzRulesObj.dettaglio
             hardening_score     = $hardeningStatus.score
             hardening_dettaglio = $hardeningStatus.dettaglio
             ntp_status          = $ntpStatus
             hyperlocal          = $hyperlocalStatus
             cache_used_mb       = $cacheUsedMb
+            cache_rrset_mb      = $cacheRrsetMb
+            cache_msg_mb        = $cacheMsgMb
             cache_total_mb      = $configuredCacheMb
             cache_sat_pct       = $cacheSatPct
             ratelimited_cnt     = $stats.base.ratelimited_queries
+            ratelimit_domain    = $stats.ratelimit_domain
+            ratelimit_ip        = $stats.ratelimit_ip
+            engine_start_time   = $engineStartTime
         }
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
@@ -920,7 +978,7 @@ $HtmlPage = @'
   }
 
   .bunker-subrow {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 10px; margin-bottom: 22px; background: #0b1219; border: 1px solid rgba(79, 179, 255, 0.3);
     border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
   }
@@ -928,6 +986,13 @@ $HtmlPage = @'
   .boost-item { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
   .boost-item-header { display: flex; justify-content: space-between; font-size: 0.78em; color: var(--dim); margin-bottom: 5px; font-weight: bold; }
   .boost-item-val { color: var(--text); }
+
+  .boost-item-wide {
+    grid-column: span 2;
+  }
+  @media (max-width: 650px) {
+    .boost-item-wide { grid-column: span 1; }
+  }
 
   .g-bar-bg { background: #080c10; border-radius: 4px; height: 10px; overflow: hidden; display: flex; }
   .g-bar-fill { height: 100%; transition: width 0.4s ease, background 0.4s ease; }
@@ -995,7 +1060,6 @@ $HtmlPage = @'
   .grid-three-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
-  
   #inputRicercaRcode:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
 </style>
 </head>
@@ -1077,17 +1141,21 @@ $HtmlPage = @'
 <div class="sub" style="margin: -8px 0 14px 2px;">&#9889; Le 4 metriche sopra compongono il BUNKER GAIN (somma dei punti, poi limitata tra 25% e 80%).</div>
 
 <div class="bunker-subrow">
-  <div class="boost-item">
+  <div class="boost-item boost-item-wide">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRpzRules" style="width:100%"></div></div>
+    <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.6; display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:4px 18px;"></div>
   </div>
+
   <div class="boost-item">
     <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUnboundRam" style="width:100%"></div></div>
+    <div id="ramDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128190; DISPONIBILIT&Agrave; CACHE</span><span class="boost-item-val" id="valCacheMem">-- MB (--%)</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheMem" style="width:0%"></div></div>
+    <div id="cacheDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128274; HARDENING &amp; POLICY</span><span class="boost-item-val" id="valHardening">--%</span></div>
@@ -1102,26 +1170,32 @@ $HtmlPage = @'
   <div class="boost-item">
     <div class="boost-item-header"><span>&#127760; HYPERLOCAL ROOT</span><span class="boost-item-val" id="valHyperlocal">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barHyperlocal" style="width:100%"></div></div>
+    <div id="hyperlocalDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9889; ANTI-FLOOD &amp; RATELIMIT</span><span class="boost-item-val" id="valRateLimit">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRateLimit" style="width:100%"></div></div>
+    <div id="rateLimitDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9203; TEMPO DI ATTIVIT&Agrave; MOTORE</span><span class="boost-item-val" id="valUptime">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUptime" style="width:100%"></div></div>
+    <div id="uptimeDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128200; CACHE HIT RATE GREZZO</span><span class="boost-item-val" id="valCacheEff">--%</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barCacheEff" style="width:0%"></div></div>
+    <div id="cacheEffDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#9888;&#65039; TRAFFICO ANOMALO (UNWANTED)</span><span class="boost-item-val" id="valUnwanted">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUnwanted" style="width:100%"></div></div>
+    <div id="unwantedDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
   <div class="boost-item">
     <div class="boost-item-header"><span>&#128225; PROTOCOLLO TCP / UDP</span><span class="boost-item-val" id="valTcpUdp">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barTcpUdp" style="width:0%"></div></div>
+    <div id="tcpUdpDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
   </div>
 </div>
 
@@ -1413,11 +1487,6 @@ async function refresh(forceVersions) {
     let dnssecPct = 100;
 
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
-    // Prontezza Prefetch (logica invertita): 0 rinnovi = 100% (cache gia' ottimale, prefetch non necessario).
-    // Usiamo il RAPPORTO rinnovi/query_totali (non il numero grezzo) cosi' la scala si auto-adatta
-    // al volume di traffico invece di azzerarsi progressivamente con uptime lungo.
-    // PREFETCH_SENSITIVITY: moltiplicatore che regola quanto velocemente il punteggio scende.
-    // Con valore 10, un rapporto prefetch/query del 10% porta il punteggio a 0.
     const PREFETCH_SENSITIVITY = 10;
     const prefetchRatioPct = (qTot > 0) ? (prefetchVal / qTot) * 100 : 0;
     const prefetchScore = Math.max(0, Math.min(100, Math.round(100 - (prefetchRatioPct * PREFETCH_SENSITIVITY))));
@@ -1434,7 +1503,7 @@ async function refresh(forceVersions) {
       (healthScore * 0.10)
     );
 
-    const ispBaselineMs = 120; // valore provvisorio: da confermare confrontando con latenza_ms reale osservata
+    const ispBaselineMs = 120;
     if (effectiveLat > maxLatSeen) maxLatSeen = effectiveLat;
     const effectiveBaselineMs = Math.max(ispBaselineMs, maxLatSeen);
 
@@ -1485,47 +1554,77 @@ async function refresh(forceVersions) {
     updateGradientBar('barHealthScore', healthScore);
 
     const bf = d.bunker_features || {};
+
+    // 1. VOLUME SCUDO RPZ DETTAGLIO INTABELLATO CON VALORI ALLINEATI A DESTRA
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
     updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
+    let rpzDettaglio = bf.rpz_dettaglio || [];
+    if (!Array.isArray(rpzDettaglio)) { rpzDettaglio = [rpzDettaglio]; }
+    document.getElementById('rpzDettaglio').innerHTML = rpzDettaglio.map(r =>
+      `<div style="display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.05); padding:1px 0;">
+        <span>${r.emoji || '&#128737;'} ${r.nome || '-'}</span>
+        <b style="color:var(--accent); text-align:right; margin-left:8px;">${fmt(r.regole || 0)}</b>
+      </div>`
+    ).join('');
 
-    document.getElementById('valUnboundRam').textContent = (bf.unbound_ram_mb || 0) + ' MB';
-    updateGradientBar('barUnboundRam', bf.unbound_ram_mb > 0 ? 100 : 0);
+    // 2. RAM WORKING SET DETTAGLIO
+    const ramData = bf.unbound_ram_data || {};
+    document.getElementById('valUnboundRam').textContent = (ramData.ws_mb || 0) + ' MB';
+    updateGradientBar('barUnboundRam', ramData.ws_mb > 0 ? 100 : 0);
+    document.getElementById('ramDettaglio').innerHTML = `
+      <div>&#129504; Processo PID: <b style="color:var(--accent);">${ramData.pid || '-'}</b></div>
+      <div>&#128187; Incidenza RAM Sistema: <b style="color:var(--accent);">${ramData.pct_sys || 0}%</b> (su ${fmt(ramData.sys_ram_mb || 0)} MB)</div>
+      <div>&#9881;&#65039; Profilo Hardware: <b style="color:var(--accent);">${d.hardware.profilo || 'N/D'}</b></div>
+    `;
 
+    // 3. DISPONIBILITÀ CACHE DETTAGLIO
     const cUsed = bf.cache_used_mb || 0;
     const cTot = bf.cache_total_mb || 1;
     const cFreeMb = Math.max(0, cTot - cUsed).toFixed(1);
     const cFreePct = Math.max(0, Math.min(100, Math.round((cFreeMb / cTot) * 100)));
     document.getElementById('valCacheMem').textContent = cFreeMb + ' / ' + cTot + ' MB Liberi (' + cFreePct + '%)';
     updateGradientBar('barCacheMem', cFreePct);
+    document.getElementById('cacheDettaglio').innerHTML = `
+      <div>&#128230; RRset Cache: <b style="color:var(--accent);">${bf.cache_rrset_mb || 0} MB</b></div>
+      <div>&#9993;&#65039; Message Cache: <b style="color:var(--accent);">${bf.cache_msg_mb || 0} MB</b></div>
+      <div>&#127387; Riserva RAM Libera: <b style="color:var(--green-bright);">${cFreeMb} MB</b> (${cFreePct}%)</div>
+    `;
 
+    // 4. HARDENING & POLICY DETTAGLIO
     const hardScore = bf.hardening_score || 0;
     document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
     updateGradientBar('barHardening', hardScore);
-
     let hardDettaglio = bf.hardening_dettaglio || [];
     if (!Array.isArray(hardDettaglio)) { hardDettaglio = [hardDettaglio]; }
     document.getElementById('hardeningDettaglio').innerHTML = hardDettaglio.map(h =>
       `<div>${h.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${h.nome || '-'}</div>`
     ).join('');
 
+    // 5. OROLOGIO & SYNC NTP DETTAGLIO
     const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
     const ntpDesc = (bf.ntp_status && bf.ntp_status.desc) || (ntpOk ? 'Sincronizzato' : 'Non Sincronizzato');
     document.getElementById('valNtpStatus').innerHTML = ntpOk ? `<span class="esito-ok">${ntpDesc}</span>` : `<span class="esito-warn">${ntpDesc}</span>`;
     const ntpOkCount = (bf.ntp_status && bf.ntp_status.okCount) || 0;
     const ntpTotCount = (bf.ntp_status && bf.ntp_status.totCount) || 0;
     updateGradientBar('barNtpStatus', ntpTotCount > 0 ? Math.round((ntpOkCount / ntpTotCount) * 100) : (ntpOk ? 100 : 20));
-
     let ntpDettaglio = bf.ntp_status && bf.ntp_status.dettaglio ? bf.ntp_status.dettaglio : [];
     if (!Array.isArray(ntpDettaglio)) { ntpDettaglio = [ntpDettaglio]; }
     document.getElementById('ntpDettaglio').innerHTML = ntpDettaglio.map(n =>
       `<div>${n.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${n.nome || '-'}</div>`
     ).join('');
 
+    // 6. HYPERLOCAL ROOT DETTAGLIO
     const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
     const hlDesc = (bf.hyperlocal && bf.hyperlocal.desc) || (hlOk ? 'Attivo' : 'Disattivato');
     document.getElementById('valHyperlocal').innerHTML = hlOk ? `<span class="esito-ok">${hlDesc}</span>` : `<span class="muted">${hlDesc}</span>`;
     updateGradientBar('barHyperlocal', hlOk ? 100 : 10);
+    let hlDettaglio = (bf.hyperlocal && bf.hyperlocal.dettaglio) || [];
+    if (!Array.isArray(hlDettaglio)) { hlDettaglio = [hlDettaglio]; }
+    document.getElementById('hyperlocalDettaglio').innerHTML = hlDettaglio.map(h =>
+      `<div>${h.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${h.nome || '-'}</div>`
+    ).join('');
 
+    // 7. ANTI-FLOOD & RATELIMIT DETTAGLIO
     const rlCnt = bf.ratelimited_cnt || 0;
     if (rlCnt > 0) {
       document.getElementById('valRateLimit').innerHTML = '<span class="esito-warn">' + fmt(rlCnt) + ' intercettati</span>';
@@ -1534,7 +1633,12 @@ async function refresh(forceVersions) {
       document.getElementById('valRateLimit').innerHTML = '<span class="esito-ok">0 (Sistema nominale)</span>';
       updateGradientBar('barRateLimit', 100);
     }
+    document.getElementById('rateLimitDettaglio').innerHTML = `
+      <div>&#128100; Limite per IP Client: <b style="color:${bf.ratelimit_ip > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(bf.ratelimit_ip || 0)}</b></div>
+      <div>&#127760; Limite per Dominio Global: <b style="color:${bf.ratelimit_domain > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(bf.ratelimit_domain || 0)}</b></div>
+    `;
 
+    // 8. TEMPO DI ATTIVITÀ MOTORE DETTAGLIO
     const uptimeSec = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.uptime_secondi || 0) : 0;
     const upG = Math.floor(uptimeSec / 86400);
     const upH = Math.floor((uptimeSec % 86400) / 3600);
@@ -1542,11 +1646,24 @@ async function refresh(forceVersions) {
     const uptimeStr = upG > 0 ? `${upG}g ${upH}h ${upM}m` : (upH > 0 ? `${upH}h ${upM}m` : `${upM}m`);
     document.getElementById('valUptime').textContent = uptimeSec > 0 ? uptimeStr : 'N/D';
     updateGradientBar('barUptime', uptimeSec > 3600 ? 100 : (uptimeSec > 0 ? 40 : 0));
+    document.getElementById('uptimeDettaglio').innerHTML = `
+      <div>&#128640; Data Ultimo Avvio: <b style="color:var(--accent);">${bf.engine_start_time || 'N/D'}</b></div>
+      <div>&#9201;&#65039; Uptime Assoluto: <b style="color:var(--accent);">${fmt(uptimeSec)} sec</b></div>
+    `;
 
+    // 9. CACHE HIT RATE GREZZO DETTAGLIO
     const cacheEffPct = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_efficienza_pct || 0) : 0;
     document.getElementById('valCacheEff').textContent = cacheEffPct + '%';
     updateGradientBar('barCacheEff', cacheEffPct);
+    const totalHits = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_hits || 0) : 0;
+    const totalMisses = Math.max(0, qTot - totalHits);
+    document.getElementById('cacheEffDettaglio').innerHTML = `
+      <div>&#127919; Cache Hits: <b style="color:var(--green-bright);">${fmt(totalHits)}</b></div>
+      <div>&#127760; Recursive Misses: <b style="color:var(--amber-bright);">${fmt(totalMisses)}</b></div>
+      <div>&#128202; Query Servite: <b style="color:var(--accent);">${fmt(qTot)}</b></div>
+    `;
 
+    // 10. TRAFFICO ANOMALO (UNWANTED) DETTAGLIO
     const unwantedQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_queries || 0) : 0;
     const unwantedR = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_replies || 0) : 0;
     const unwantedTot = unwantedQ + unwantedR;
@@ -1557,13 +1674,22 @@ async function refresh(forceVersions) {
       document.getElementById('valUnwanted').innerHTML = '<span class="esito-ok">0</span>';
       updateGradientBar('barUnwanted', 100);
     }
+    document.getElementById('unwantedDettaglio').innerHTML = `
+      <div>&#128229; Query Anomale Client: <b style="color:${unwantedQ > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(unwantedQ)}</b></div>
+      <div>&#128228; Risposte Anomale Upstream: <b style="color:${unwantedR > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(unwantedR)}</b></div>
+    `;
 
+    // 11. PROTOCOLLO TCP / UDP DETTAGLIO
     const tcpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.tcp_queries || 0) : 0;
     const udpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.udp_queries || 0) : 0;
     const totProto = (tcpQ + udpQ) || 1;
     const pctTcp = Math.round((tcpQ / totProto) * 100);
     document.getElementById('valTcpUdp').textContent = pctTcp + '% TCP / ' + (100 - pctTcp) + '% UDP';
     updateGradientBar('barTcpUdp', 100);
+    document.getElementById('tcpUdpDettaglio').innerHTML = `
+      <div>&#9889; Risoluzioni UDP: <b style="color:var(--accent);">${fmt(udpQ)}</b> (${100 - pctTcp}%)</div>
+      <div>&#128274; Risoluzioni TCP: <b style="color:var(--purple);">${fmt(tcpQ)}</b> (${pctTcp}%)</div>
+    `;
 
     const badges = document.getElementById('badges');
     badges.innerHTML = '';
@@ -1838,7 +1964,7 @@ async function refresh(forceVersions) {
 
           const badgeHtml = `<span class="badge" style="${badgeStyle} padding: 4px 10px; font-size: 0.85em;">${code}</span>`;
 
-          const resText = f.resolver || '⚡ Cache RAM';
+          const resText = f.resolver || '&#9889; Cache RAM';
           let resStyle = 'color: var(--green-bright);';
           if (resText.includes('RPZ')) {
             resStyle = 'color: var(--red-bright);';
