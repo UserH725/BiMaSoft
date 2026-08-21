@@ -582,7 +582,7 @@ function Get-LiveStats {
 
     if (Test-Path $UcExe) {
         try {
-            $raw = & $UcExe stats_noreset 2>$null
+            $raw = & $UcExe -e stats_noreset 2>$null
             foreach ($ln in $raw) {
                 if ($ln -match '^([a-zA-Z0-9_.\-]+)=(.+)$') {
                     $k = $matches[1]
