@@ -256,11 +256,8 @@ function Get-NtpStatus {
         $dettaglio += @{ nome = $s.nome; ok = $ok }
     }
 
-    $svcOk = $false
-    try { $svcOk = (Get-Service -Name "w32time" -ErrorAction SilentlyContinue).Status -eq "Running" } catch {}
-
     $script:NtpCacheData = @{
-        ok        = ($svcOk -and $okCount -gt 0)
+        ok        = ($okCount -gt 0)
         dettaglio = $dettaglio
         okCount   = $okCount
         totCount  = $serversToTest.Count
@@ -1462,13 +1459,16 @@ async function refresh(forceVersions) {
     if (isNaN(realCachePct)) realCachePct = 0;
 
     let effectiveLat = latMs;
-    if ((!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
+    // CORREZIONE LOGICA: 0 ms significa efficienza massima (Cache Hit 100%).
+    // Facciamo il fallback alla latenza del radar SOLO se il server non riceve query.
+    if (qTot === 0 && (!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
       if (okRadars.length > 0) {
         effectiveLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
       }
     }
-    if (!effectiveLat || effectiveLat < 0.5) effectiveLat = 0.5;
+    // Evitiamo valori negativi. 0 è perfetto.
+    if (effectiveLat < 0) effectiveLat = 0;
 
     let latScore = 100;
     if (effectiveLat > 5 && effectiveLat <= 50) {
@@ -1507,9 +1507,11 @@ async function refresh(forceVersions) {
     if (effectiveLat > maxLatSeen) maxLatSeen = effectiveLat;
     const effectiveBaselineMs = Math.max(ispBaselineMs, maxLatSeen);
 
-    const displayLat = Math.max(0.5, effectiveLat);
+    // CORREZIONE LOGICA: mostriamo 0 se è veramente 0.
+    const displayLat = effectiveLat;
     const msSaved = Math.max(0, Math.round(effectiveBaselineMs - displayLat));
 
+    // Il guadagno latenza sarà pieno (40/40 pt) in caso di latenza prossima allo 0.
     const latGainReal = Math.min(40, Math.round((msSaved / effectiveBaselineMs) * 40));
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
@@ -1570,7 +1572,11 @@ async function refresh(forceVersions) {
     // 2. RAM WORKING SET DETTAGLIO
     const ramData = bf.unbound_ram_data || {};
     document.getElementById('valUnboundRam').textContent = (ramData.ws_mb || 0) + ' MB';
-    updateGradientBar('barUnboundRam', ramData.ws_mb > 0 ? 100 : 0);
+    // CORREZIONE LOGICA: La barra cala all'aumentare dell'occupazione RAM (100% = RAM scarica).
+    let ramSysPct = ramData.pct_sys || 0;
+    let ramEfficiency = Math.max(0, Math.min(100, 100 - ramSysPct));
+    updateGradientBar('barUnboundRam', ramData.ws_mb > 0 ? ramEfficiency : 0);
+    
     document.getElementById('ramDettaglio').innerHTML = `
       <div>&#129504; Processo PID: <b style="color:var(--accent);">${ramData.pid || '-'}</b></div>
       <div>&#128187; Incidenza RAM Sistema: <b style="color:var(--accent);">${ramData.pct_sys || 0}%</b> (su ${fmt(ramData.sys_ram_mb || 0)} MB)</div>
@@ -1601,7 +1607,7 @@ async function refresh(forceVersions) {
     ).join('');
 
     // 5. OROLOGIO & SYNC NTP DETTAGLIO
-    const ntpOk = (bf.ntp_status && bf.ntp_status.ok);
+    const ntpOk = (bf.ntp_status && (bf.ntp_status.ok || bf.ntp_status.okCount > 0));
     const ntpDesc = (bf.ntp_status && bf.ntp_status.desc) || (ntpOk ? 'Sincronizzato' : 'Non Sincronizzato');
     document.getElementById('valNtpStatus').innerHTML = ntpOk ? `<span class="esito-ok">${ntpDesc}</span>` : `<span class="esito-warn">${ntpDesc}</span>`;
     const ntpOkCount = (bf.ntp_status && bf.ntp_status.okCount) || 0;
