@@ -852,6 +852,53 @@ if "!DASH_SIZE_OK!"=="1" (
     echo   [!] Dashboard NON avviata: file mancante o non valido in "!DASH_PS1!".
 )
 
+:: [DASHBOARD RESTART HELPER] Genera un BAT standalone per riavviare la sola
+:: Dashboard Live senza rieseguire l'intera procedura di avvio del Bunker.
+:: Rigenerato ad ogni avvio/refresh cosi' resta sempre allineato al percorso e
+:: alla porta correnti. Nessun impatto sul resto del flusso: se la scrittura
+:: fallisce, si prosegue comunque con l'avvio/refresh normale del Bunker.
+set "DASH_RESTART_BAT=!UB_DIR!\UnboundBunkerDashboard_Restart.BAT"
+echo @echo off > "!DASH_RESTART_BAT!"
+echo chcp 65001 ^>nul >> "!DASH_RESTART_BAT!"
+echo title Unbound Bunker - Riavvio Dashboard >> "!DASH_RESTART_BAT!"
+echo set "DASH_PS1=%%~dp0UnboundBunkerDashboard.ps1" >> "!DASH_RESTART_BAT!"
+echo set "DASH_MIN_SIZE=5000" >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo if not exist "%%DASH_PS1%%" goto :DASH_NOTFOUND >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo set "DASH_SIZE_OK=0" >> "!DASH_RESTART_BAT!"
+echo for %%%%A in ("%%DASH_PS1%%") do if %%%%~zA GTR %%DASH_MIN_SIZE%% set "DASH_SIZE_OK=1" >> "!DASH_RESTART_BAT!"
+echo if not "%%DASH_SIZE_OK%%"=="1" goto :DASH_TOOSMALL >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo echo   [..] Arresto istanza Dashboard precedente, se presente... >> "!DASH_RESTART_BAT!"
+echo powershell -NoProfile -Command "try { $procs=Get-CimInstance Win32_Process -Filter 'Name=''powershell.exe''' -ErrorAction SilentlyContinue; foreach ($p in $procs) { if ($p.CommandLine -like '*UnboundBunkerDashboard.ps1*') { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } } } catch {}" ^>nul 2^>^&1 >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo timeout /t 1 /nobreak ^>nul >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo echo   [..] Avvio nuova istanza Dashboard... >> "!DASH_RESTART_BAT!"
+echo start "" powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "%%DASH_PS1%%" >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo echo   [OK] Dashboard riavviata: http://127.0.0.1:8954/ >> "!DASH_RESTART_BAT!"
+echo timeout /t 2 /nobreak ^>nul >> "!DASH_RESTART_BAT!"
+echo exit /b 0 >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo :DASH_NOTFOUND >> "!DASH_RESTART_BAT!"
+echo echo   [!] File Dashboard non trovato: "%%DASH_PS1%%" >> "!DASH_RESTART_BAT!"
+echo echo       Esegui prima UnboundBunkerManager.BAT per generarlo. >> "!DASH_RESTART_BAT!"
+echo pause >> "!DASH_RESTART_BAT!"
+echo exit /b 1 >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo :DASH_TOOSMALL >> "!DASH_RESTART_BAT!"
+echo echo   [!] File Dashboard non valido (dimensione sospetta): "%%DASH_PS1%%" >> "!DASH_RESTART_BAT!"
+echo pause >> "!DASH_RESTART_BAT!"
+echo exit /b 1 >> "!DASH_RESTART_BAT!"
+
+if exist "!DASH_RESTART_BAT!" (
+    echo   [OK] Helper riavvio Dashboard pronto: "!DASH_RESTART_BAT!"
+) else (
+    echo   [!] Generazione helper riavvio Dashboard fallita ^(non bloccante^).
+)
+
 :DASH_SKIP
 :: Pulisce lo schermo dai log di backup/aggiornamento (self-update BAT + service.conf)
 :: prima di disegnare il primo frame della UI a barra fissa.
