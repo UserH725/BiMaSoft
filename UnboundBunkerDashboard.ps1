@@ -1646,15 +1646,33 @@ async function refresh(forceVersions) {
 
     // 8. TEMPO DI ATTIVITÀ MOTORE DETTAGLIO
     const uptimeSec = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.uptime_secondi || 0) : 0;
-    const upG = Math.floor(uptimeSec / 86400);
-    const upH = Math.floor((uptimeSec % 86400) / 3600);
-    const upM = Math.floor((uptimeSec % 3600) / 60);
-    const uptimeStr = upG > 0 ? `${upG}g ${upH}h ${upM}m` : (upH > 0 ? `${upH}h ${upM}m` : `${upM}m`);
+    
+    function formatUptimeSintetico(totalSec) {
+      if (!totalSec || totalSec <= 0) return '0s';
+      const y = Math.floor(totalSec / 31536000);
+      const mo = Math.floor((totalSec % 31536000) / 2592000);
+      const d = Math.floor((totalSec % 2592000) / 86400);
+      const h = Math.floor((totalSec % 86400) / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = Math.floor(totalSec % 60);
+
+      let p = [];
+      if (y > 0) p.push(`${y}a`);
+      if (mo > 0) p.push(`${mo}M`);
+      if (d > 0) p.push(`${d}g`);
+      if (h > 0) p.push(`${h}h`);
+      if (m > 0) p.push(`${m}m`);
+      if (s > 0 || p.length === 0) p.push(`${s}s`);
+
+      return p.join(' ');
+    }
+    
+    const uptimeStr = formatUptimeSintetico(uptimeSec);
     document.getElementById('valUptime').textContent = uptimeSec > 0 ? uptimeStr : 'N/D';
     updateGradientBar('barUptime', uptimeSec > 3600 ? 100 : (uptimeSec > 0 ? 40 : 0));
     document.getElementById('uptimeDettaglio').innerHTML = `
       <div>&#128640; Data Ultimo Avvio: <b style="color:var(--accent);">${bf.engine_start_time || 'N/D'}</b></div>
-      <div>&#9201;&#65039; Uptime Assoluto: <b style="color:var(--accent);">${fmt(uptimeSec)} sec</b></div>
+      <div>&#9201;&#65039; Uptime Assoluto: <b style="color:var(--accent);">${uptimeStr}</b> <span class="muted">(${fmt(uptimeSec)} sec)</span></div>
     `;
 
     // 9. CACHE HIT RATE GREZZO DETTAGLIO
