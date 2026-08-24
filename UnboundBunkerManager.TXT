@@ -762,14 +762,17 @@ if exist "%UB_DIR%\service.conf" (
 )
 if "!FWD_LIST!"=="" set "FWD_LIST=N/A"
 
-set "DASH_PS1=!UB_DIR!\UnboundBunkerDashboard.ps1"
+set "DASH_PS1=!RAM_DRIVE!\UnboundBunkerDashboard.ps1"
 
-:: [DASHBOARD LIVE] UnboundBunkerDashboard.ps1 ora viene SCARICATO da GitHub (con verifica SHA256),
-:: non piu' rigenerato ogni volta da un payload Base64 incorporato nel BAT: elimina alla radice la
-:: classe di problemi vista in precedenza (0 byte, corruzione in decodifica, scan antivirus sul
-:: dropper). Il file e' statico: se e' gia' presente e di dimensione plausibile, non si tocca la
-:: rete e non si scrive nulla - zero rischio ad ogni avvio/refresh.
+:: [DASHBOARD LIVE - SU RAM DISK] UnboundBunkerDashboard.ps1 vive su !RAM_DRIVE! (azzerato ad
+:: ogni riavvio di Windows: zero usura SSD) e viene SCARICATO da GitHub (con verifica SHA256)
+:: solo quando manca o non e' valido, SENZA piu' chiedere conferma (il vecchio prompt "vuoi
+:: sovrascrivere" e' stato rimosso). Dato che !RAM_DRIVE! si svuota ad ogni riavvio, questo
+:: equivale in pratica a scaricarlo solo al boot: nelle esecuzioni successive nella stessa
+:: sessione Windows (lancio manuale, task giornaliero --scheduled) il file e' gia' presente e
+:: valido, quindi non si tocca la rete e non si scrive nulla - zero rischio/traffico extra.
 if not exist "!UB_DIR!" goto :DASH_SKIP
+if not exist "!RAM_DRIVE!\" goto :DASH_SKIP
 
 set "DASH_MIN_SIZE=5000"
 set "DASH_SIZE_OK=0"
@@ -777,30 +780,18 @@ if exist "!DASH_PS1!" (
     for %%A in ("!DASH_PS1!") do if %%~zA GTR !DASH_MIN_SIZE! set "DASH_SIZE_OK=1"
 )
 
-:: [OVERWRITE PROMPT] Se il file e' gia' presente e valido, chiede per 3 secondi se
-:: sovrascriverlo con la versione cloud. Risposta automatica NO allo scadere del timeout
-:: (nessuna azione, comportamento identico a prima), S per forzare un nuovo download.
 if "!DASH_SIZE_OK!"=="1" (
-    echo   [?] UnboundBunkerDashboard.ps1 gia' presente.
-    choice /C SN /N /T 3 /D N /M "  Sovrascrivere con la versione cloud? [S/N] (auto-NO tra 3s): "
-    if errorlevel 2 (
-        echo   [OK] UnboundBunkerDashboard.ps1 mantenuto invariato.
-    ) else (
-        echo   [..] Sovrascrittura richiesta: nuovo download in corso...
-        set "DASH_SIZE_OK=0"
-    )
-)
-
-if not "!DASH_SIZE_OK!"=="1" (
+    echo   [OK] UnboundBunkerDashboard.ps1 gia' presente e valido su !RAM_DRIVE! per questa sessione.
+) else (
     echo   [..] UnboundBunkerDashboard.ps1 mancante o non valido: download da GitHub in corso...
     set "CLOUD_DASH_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1"
     set "CLOUD_DASH_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.sha256"
-    set "DASH_TMP=!UB_DIR!\UnboundBunkerDashboard.ps1.tmp"
-    set "DASH_SHA_TMP=!UB_DIR!\UnboundBunkerDashboard.sha256.tmp"
+    set "DASH_TMP=!RAM_DRIVE!\UnboundBunkerDashboard.ps1.tmp"
+    set "DASH_SHA_TMP=!RAM_DRIVE!\UnboundBunkerDashboard.sha256.tmp"
     if exist "!DASH_TMP!" del /f /q "!DASH_TMP!" >nul 2>&1
     if exist "!DASH_SHA_TMP!" del /f /q "!DASH_SHA_TMP!" >nul 2>&1
 
-    set "DASH_DL_ERR=!UB_DIR!\dashboard_download_error.log"
+    set "DASH_DL_ERR=!RAM_DRIVE!\dashboard_download_error.log"
     if exist "!DASH_DL_ERR!" del /f /q "!DASH_DL_ERR!" >nul 2>&1
     powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_DASH_URL!', '!DASH_TMP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_DASH_SHA_URL!', '!DASH_SHA_TMP!') } catch { [System.IO.File]::WriteAllText('!DASH_DL_ERR!', $_.Exception.ToString()); exit 1 }" >nul 2>&1
 
@@ -841,7 +832,7 @@ if not "!DASH_SIZE_OK!"=="1" (
     )
 )
 
-:: [DASHBOARD LIVE] Avvio automatico se il file e' presente e valido (dopo l'eventuale prompt di sovrascrittura sopra)
+:: [DASHBOARD LIVE] Avvio automatico se il file e' presente e valido (dopo l'eventuale download sopra)
 if "!DASH_SIZE_OK!"=="1" (
     :: Termina eventuali istanze precedenti prima di avviarne una nuova: evita piu' processi
     :: in competizione sulla porta 8954 quando questo blocco gira ogni 2 ore oltre che ad ogni boot.
@@ -857,7 +848,7 @@ if "!DASH_SIZE_OK!"=="1" (
 :: Rigenerato ad ogni avvio/refresh cosi' resta sempre allineato al percorso e
 :: alla porta correnti. Nessun impatto sul resto del flusso: se la scrittura
 :: fallisce, si prosegue comunque con l'avvio/refresh normale del Bunker.
-set "DASH_RESTART_BAT=!UB_DIR!\UnboundBunkerDashboard_Restart.BAT"
+set "DASH_RESTART_BAT=!RAM_DRIVE!\UnboundBunkerDashboard_Restart.BAT"
 echo @echo off > "!DASH_RESTART_BAT!"
 echo chcp 65001 ^>nul >> "!DASH_RESTART_BAT!"
 echo title Unbound Bunker - Riavvio Dashboard >> "!DASH_RESTART_BAT!"
