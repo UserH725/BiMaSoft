@@ -968,6 +968,31 @@ $HtmlPage = @'
     100% { transform: scale(2.5); opacity: 0; }
   }
 
+  .live-indicator { display: flex; align-items: center; gap: 10px; width: 100%; margin: 6px 0 14px 0; }
+  .live-label { font-size: 0.78em; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0; }
+  .live-label.on { color: var(--green-bright); }
+  .live-label.off { color: var(--red-bright); animation: liveBlinkText 1s steps(2, start) infinite; }
+  @keyframes liveBlinkText { 50% { opacity: 0.25; } }
+
+  .live-bar-track {
+    position: relative; flex: 1 1 auto; min-width: 0; height: 5px; border-radius: 3px; overflow: hidden;
+    background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+  }
+  .live-bar-scan {
+    position: absolute; top: 0; left: -40%; height: 100%; width: 40%; border-radius: 3px;
+    background: linear-gradient(90deg, transparent, var(--green-bright), transparent);
+    animation: liveScanMove 1.3s linear infinite;
+  }
+  @keyframes liveScanMove {
+    0% { left: -40%; }
+    100% { left: 100%; }
+  }
+  .live-bar-track.offline { background: rgba(255, 92, 92, 0.18); }
+  .live-bar-track.offline .live-bar-scan {
+    animation: none; left: 0; width: 100%; opacity: 0.55;
+    background: var(--red-bright);
+  }
+
   .boost-subrow {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px; margin-bottom: 12px; background: #0e141b; border: 1px solid var(--border);
@@ -1071,6 +1096,12 @@ $HtmlPage = @'
     <div class="clock-time" id="clockTime">--:--:--</div>
     <div class="clock-date" id="clockDate">-----------------</div>
   </div>
+</div>
+
+<div class="live-indicator" id="liveIndicator">
+  <div class="status-dot-container"><span class="status-dot ok" id="liveDot"></span></div>
+  <span class="live-label on" id="liveLabel">LIVE</span>
+  <div class="live-bar-track" id="liveBarTrack"><div class="live-bar-scan"></div></div>
 </div>
 
 <div class="panel panel-versioni">
@@ -1310,6 +1341,47 @@ let liveQPS = 0;
 let maxQPS = 0;
 let maxLatSeen = 0;
 let isRefreshing = false;
+let lastDataTs = 0;
+let liveState = true;
+let audioCtx = null;
+
+function playOfflineBeep() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 660;
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.035, audioCtx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4);
+  } catch (e) {}
+}
+
+function setLiveStatus(isLive) {
+  const dot = document.getElementById('liveDot');
+  const label = document.getElementById('liveLabel');
+  const track = document.getElementById('liveBarTrack');
+  if (!dot || !label || !track) return;
+  if (isLive) {
+    dot.classList.remove('bad'); dot.classList.add('ok');
+    label.classList.remove('off'); label.classList.add('on');
+    label.textContent = 'LIVE';
+    track.classList.remove('offline');
+  } else {
+    dot.classList.remove('ok'); dot.classList.add('bad');
+    label.classList.remove('on'); label.classList.add('off');
+    label.textContent = 'OFFLINE - Nessun dato da Unbound';
+    track.classList.add('offline');
+    if (liveState) playOfflineBeep();
+  }
+  liveState = isLive;
+}
 
 function fmt(n) {
   if (n === undefined || n === null) return "-";
@@ -1370,6 +1442,9 @@ async function refresh(forceVersions) {
     if (!textData || textData.trim().length === 0) { isRefreshing = false; return; }
 
     const d = JSON.parse(textData);
+
+    lastDataTs = Date.now();
+    setLiveStatus(true);
 
     document.getElementById('subheader').textContent =
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
@@ -2021,6 +2096,9 @@ async function refresh(forceVersions) {
 
 refresh(true);
 setInterval(refresh, 1000);
+setInterval(() => {
+  if (Date.now() - lastDataTs > 3000) setLiveStatus(false);
+}, 1000);
 </script>
 </body>
 </html>
