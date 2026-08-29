@@ -14,6 +14,7 @@ $RpzLog     = "R:\unbound.log"
 $SessionDat = "R:\session_totale.dat"
 $HealthJson = "R:\bunker_health.json"
 $LogFile    = "R:\dashboard_error.log"
+$PidFile    = "R:\dashboard.pid"
 
 function Write-DashLog {
     param($msg)
@@ -968,29 +969,45 @@ $HtmlPage = @'
     100% { transform: scale(2.5); opacity: 0; }
   }
 
-  .live-indicator { display: flex; align-items: center; gap: 10px; width: 100%; margin: 6px 0 14px 0; }
-  .live-label { font-size: 0.78em; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0; }
-  .live-label.on { color: var(--green-bright); }
-  .live-label.off { color: var(--red-bright); animation: liveBlinkText 1s steps(2, start) infinite; }
-  @keyframes liveBlinkText { 50% { opacity: 0.25; } }
+  .live-indicator { display: flex; align-items: center; gap: 14px; width: 100%; margin: 8px 0 16px 0; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+    padding: 7px 16px; border-radius: 20px; font-size: 0.92em; font-weight: 800;
+    letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap;
+    border: 1.5px solid transparent;
+  }
+  .live-badge.on {
+    color: var(--green-bright); background: rgba(60, 220, 130, 0.14);
+    border-color: rgba(60, 220, 130, 0.5);
+    box-shadow: 0 0 14px rgba(60, 220, 130, 0.25);
+  }
+  .live-badge.off {
+    color: var(--red-bright); background: rgba(255, 92, 92, 0.16);
+    border-color: rgba(255, 92, 92, 0.55);
+    box-shadow: 0 0 14px rgba(255, 92, 92, 0.3);
+    animation: liveBadgeBlink 1s steps(2, start) infinite;
+  }
+  @keyframes liveBadgeBlink { 50% { opacity: 0.45; } }
 
   .live-bar-track {
-    position: relative; flex: 1 1 auto; min-width: 0; height: 5px; border-radius: 3px; overflow: hidden;
+    position: relative; flex: 1 1 auto; min-width: 0; height: 11px; border-radius: 6px; overflow: hidden;
     background: rgba(255,255,255,0.08); border: 1px solid var(--border);
   }
   .live-bar-scan {
-    position: absolute; top: 0; left: -40%; height: 100%; width: 40%; border-radius: 3px;
+    position: absolute; top: 0; left: -40%; height: 100%; width: 40%; border-radius: 6px;
     background: linear-gradient(90deg, transparent, var(--green-bright), transparent);
+    box-shadow: 0 0 10px var(--green-bright);
     animation: liveScanMove 1.3s linear infinite;
   }
   @keyframes liveScanMove {
     0% { left: -40%; }
     100% { left: 100%; }
   }
-  .live-bar-track.offline { background: rgba(255, 92, 92, 0.18); }
+  .live-bar-track.offline { background: rgba(255, 92, 92, 0.22); }
   .live-bar-track.offline .live-bar-scan {
-    animation: none; left: 0; width: 100%; opacity: 0.55;
-    background: var(--red-bright);
+    animation: none; left: 0; width: 100%; opacity: 0.65;
+    background: var(--red-bright); box-shadow: 0 0 10px var(--red-bright);
   }
 
   .boost-subrow {
@@ -1099,8 +1116,10 @@ $HtmlPage = @'
 </div>
 
 <div class="live-indicator" id="liveIndicator">
-  <div class="status-dot-container"><span class="status-dot ok" id="liveDot"></span></div>
-  <span class="live-label on" id="liveLabel">LIVE</span>
+  <div class="live-badge on" id="liveBadge">
+    <span class="status-dot ok" id="liveDot"></span>
+    <span id="liveLabel">DASHBOARD ATTIVA - Dati in tempo reale</span>
+  </div>
   <div class="live-bar-track" id="liveBarTrack"><div class="live-bar-scan"></div></div>
 </div>
 
@@ -1349,34 +1368,40 @@ function playOfflineBeep() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 660;
-    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.035, audioCtx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.4);
+    const startAt = audioCtx.currentTime;
+    const beepTimes = [startAt, startAt + 0.22];
+    beepTimes.forEach(t => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.015);
+      gain.gain.setValueAtTime(0.25, t + 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    });
   } catch (e) {}
 }
 
 function setLiveStatus(isLive) {
   const dot = document.getElementById('liveDot');
+  const badge = document.getElementById('liveBadge');
   const label = document.getElementById('liveLabel');
   const track = document.getElementById('liveBarTrack');
-  if (!dot || !label || !track) return;
+  if (!dot || !badge || !label || !track) return;
   if (isLive) {
     dot.classList.remove('bad'); dot.classList.add('ok');
-    label.classList.remove('off'); label.classList.add('on');
-    label.textContent = 'LIVE';
+    badge.classList.remove('off'); badge.classList.add('on');
+    label.textContent = 'DASHBOARD ATTIVA - Dati in tempo reale';
     track.classList.remove('offline');
   } else {
     dot.classList.remove('ok'); dot.classList.add('bad');
-    label.classList.remove('on'); label.classList.add('off');
-    label.textContent = 'OFFLINE - Nessun dato da Unbound';
+    badge.classList.remove('on'); badge.classList.add('off');
+    label.textContent = 'DASHBOARD OFFLINE - Nessun dato da Unbound';
     track.classList.add('offline');
     if (liveState) playOfflineBeep();
   }
@@ -2131,6 +2156,8 @@ if (-not $startedOk) {
 
 Write-Host "[OK] Unbound Bunker DASHBOARD LIVE in ascolto su $Prefix (Ctrl+C per arrestare)"
 
+try { [System.IO.File]::WriteAllText($PidFile, [string]$PID) } catch { Write-DashLog "Impossibile scrivere PID file: $($_.Exception.Message)" }
+
 try {
     while ($listener.IsListening) {
         $context = $listener.GetContext()
@@ -2173,4 +2200,5 @@ try {
 } finally {
     $listener.Stop()
     $listener.Close()
+    try { if (Test-Path -LiteralPath $PidFile) { Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue } } catch {}
 }
