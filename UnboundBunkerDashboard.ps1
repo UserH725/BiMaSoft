@@ -7,6 +7,9 @@ $UbDir  = "C:\Program Files\Unbound"
 $Port   = 8954
 $Prefix = "http://127.0.0.1:$Port/"
 
+$script:CurrentScriptPath = $MyInvocation.MyCommand.Path
+if (-not $script:CurrentScriptPath) { $script:CurrentScriptPath = Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
+
 $UcExe      = Join-Path $UbDir "unbound-control.exe"
 $HwConf     = Join-Path $UbDir "hardware.conf"
 $SvcConf    = Join-Path $UbDir "service.conf"
@@ -122,14 +125,6 @@ function Get-UnboundWorkingSet {
                 $sysRamMb = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
             }
         } catch {}
-        if ($sysRamMb -eq 0) {
-            try {
-                $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
-                if ($cs -and $cs.TotalPhysicalMemory) {
-                    $sysRamMb = [math]::Round($cs.TotalPhysicalMemory / 1MB, 0)
-                }
-            } catch {}
-        }
 
         if ($p) {
             $wsMb = [math]::Round($p.WorkingSet64 / 1MB, 1)
@@ -391,22 +386,27 @@ function Get-IpConnectivityStatus {
     }
 }
 
-# === CACHE VERSIONI CLOUD ===
+# === CACHE VERSIONI CLOUD E LOCALE ===
 $script:CloudVersionsCache       = $null
 $script:CloudVersionsCacheTime   = [DateTime]::MinValue
 $script:CloudVersionsCacheTtlSec = 1800
+$script:UnboundLocalVerCache     = $null
 
 function Get-BunkerVersions {
     param([switch]$Force)
     $result = [ordered]@{ unbound_local = "N/D"; unbound_cloud = "N/D"; conf_local = "N/D"; conf_cloud = "N/D"; bat_local = "N/D"; bat_cloud = "N/D" }
 
-    $ubExe = Join-Path $UbDir "unbound.exe"
-    if (Test-Path $ubExe) {
-        try {
-            $raw = & $ubExe -h 2>&1 | Out-String
-            if ($raw -match 'Version\s+([0-9\.]+)') { $result.unbound_local = $matches[1] }
-        } catch {}
+    if (-not $script:UnboundLocalVerCache) {
+        $ubExe = Join-Path $UbDir "unbound.exe"
+        if (Test-Path $ubExe) {
+            try {
+                $raw = & $ubExe -h 2>&1 | Out-String
+                if ($raw -match 'Version\s+([0-9\.]+)') { $script:UnboundLocalVerCache = $matches[1] }
+            } catch {}
+        }
+        if (-not $script:UnboundLocalVerCache) { $script:UnboundLocalVerCache = "N/D" }
     }
+    $result.unbound_local = $script:UnboundLocalVerCache
 
     $svcVerFile = Join-Path $UbDir "versione_service_conf.txt"
     if (Test-Path $svcVerFile) {
@@ -761,8 +761,17 @@ function Get-HealthSnapshot {
     return $null
 }
 
+# === GLOBAL JSON CACHE TO PREVENT HTTP BLOCKING ===
+$script:LastJsonCacheTime = [DateTime]::MinValue
+$script:CachedStatusJson  = $null
+
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
+
+    if (-not $ForceVersions -and $script:CachedStatusJson -and ((Get-Date) - $script:LastJsonCacheTime).TotalMilliseconds -lt 1500) {
+        return $script:CachedStatusJson
+    }
+
     $hw          = Get-HardwareTier
     $ramDisk     = Get-RamDiskGauge
     $versioni    = Get-BunkerVersions -Force:$ForceVersions
@@ -864,7 +873,10 @@ function Get-BunkerStatusJson {
         totale_sessione = $sessione
         salute_sistema  = [ordered]@{ anomalie_rilevate = $anomalie; score = $saluteScore; dettaglio = $salute }
     }
-    return ($obj | ConvertTo-Json -Depth 8 -Compress)
+    
+    $script:CachedStatusJson = ($obj | ConvertTo-Json -Depth 8 -Compress)
+    $script:LastJsonCacheTime = Get-Date
+    return $script:CachedStatusJson
 }
 
 # === INTERFACCIA WEB HTML5 / JS ===
@@ -888,6 +900,35 @@ $HtmlPage = @'
   .clock-box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; text-align: right; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
   .clock-time { font-size: 2em; font-weight: bold; color: var(--accent); line-height: 1.1; }
   .clock-date { font-size: 0.9em; color: var(--dim); margin-top: 2px; text-transform: capitalize; }
+
+  .btn-restart {
+    background: rgba(211, 84, 0, 0.25);
+    color: var(--amber-bright);
+    border: 1.5px solid var(--amber-bright);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: inherit;
+    font-size: 0.85em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    white-space: nowrap;
+  }
+  .btn-restart:hover {
+    background: rgba(211, 84, 0, 0.45);
+    box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
+    transform: translateY(-1px);
+  }
+  .btn-restart:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
 
   h1 { 
     font-size: 2em; margin: 0 0 6px 0; font-weight: bold;
@@ -1109,9 +1150,14 @@ $HtmlPage = @'
     <h1>&#128737; UNBOUND BUNKER - DASHBOARD LIVE - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
-  <div class="clock-box">
-    <div class="clock-time" id="clockTime">--:--:--</div>
-    <div class="clock-date" id="clockDate">-----------------</div>
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <button id="btnRestart" onclick="confirmRestart()" class="btn-restart" title="Riavvia la Dashboard ed esegui la verifica della porta">
+      &#128472;&#65039; Riavvia Dashboard
+    </button>
+    <div class="clock-box">
+      <div class="clock-time" id="clockTime">--:--:--</div>
+      <div class="clock-date" id="clockDate">-----------------</div>
+    </div>
   </div>
 </div>
 
@@ -1362,6 +1408,7 @@ let maxLatSeen = 0;
 let isRefreshing = false;
 let lastDataTs = 0;
 let liveState = true;
+const baseTitle = document.title;
 let audioCtx = null;
 
 function playOfflineBeep() {
@@ -1398,11 +1445,13 @@ function setLiveStatus(isLive) {
     badge.classList.remove('off'); badge.classList.add('on');
     label.textContent = 'DASHBOARD ATTIVA - Dati in tempo reale';
     track.classList.remove('offline');
+    document.title = '\u{1F7E2} ' + baseTitle;
   } else {
     dot.classList.remove('ok'); dot.classList.add('bad');
     badge.classList.remove('on'); badge.classList.add('off');
     label.textContent = 'DASHBOARD OFFLINE - Nessun dato da Unbound';
     track.classList.add('offline');
+    document.title = '\u{1F534} ' + baseTitle;
     if (liveState) playOfflineBeep();
   }
   liveState = isLive;
@@ -1453,6 +1502,48 @@ function filtraLiveRcode() {
     const testo = riga.textContent.toLowerCase();
     riga.style.display = testo.includes(query) ? '' : 'none';
   });
+}
+
+async function confirmRestart() {
+  if (!confirm("Sei sicuro di voler riavviare la Dashboard?\n\nVerrà eseguita la procedura automatica di rilascio e verifica della porta " + location.port + ".")) return;
+
+  const btn = document.getElementById('btnRestart');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '&#9203; Riavvio in corso...';
+  }
+
+  try {
+    await fetch('/api/restart', { method: 'POST', cache: 'no-store' });
+  } catch(e) {}
+
+  setLiveStatus(false);
+  document.getElementById('subheader').textContent = 'Riavvio in corso... Rilascio e controllo porta ' + location.port + ' in esecuzione...';
+
+  let attempts = 0;
+  const checkInterval = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      if (res.ok) {
+        clearInterval(checkInterval);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
+        }
+        refresh(true);
+      }
+    } catch(e) {}
+
+    if (attempts > 35) {
+      clearInterval(checkInterval);
+      alert("Il riavvio sta impiegando più tempo del previsto. Ricarica la pagina tra qualche secondo.");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
+      }
+    }
+  }, 1000);
 }
 
 async function refresh(forceVersions) {
@@ -1559,15 +1650,12 @@ async function refresh(forceVersions) {
     if (isNaN(realCachePct)) realCachePct = 0;
 
     let effectiveLat = latMs;
-    // CORREZIONE LOGICA: 0 ms significa efficienza massima (Cache Hit 100%).
-    // Facciamo il fallback alla latenza del radar SOLO se il server non riceve query.
     if (qTot === 0 && (!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
       if (okRadars.length > 0) {
         effectiveLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
       }
     }
-    // Evitiamo valori negativi. 0 è perfetto.
     if (effectiveLat < 0) effectiveLat = 0;
 
     let latScore = 100;
@@ -1607,11 +1695,9 @@ async function refresh(forceVersions) {
     if (effectiveLat > maxLatSeen) maxLatSeen = effectiveLat;
     const effectiveBaselineMs = Math.max(ispBaselineMs, maxLatSeen);
 
-    // CORREZIONE LOGICA: mostriamo 0 se è veramente 0.
     const displayLat = effectiveLat;
     const msSaved = Math.max(0, Math.round(effectiveBaselineMs - displayLat));
 
-    // Il guadagno latenza sarà pieno (40/40 pt) in caso di latenza prossima allo 0.
     const latGainReal = Math.min(40, Math.round((msSaved / effectiveBaselineMs) * 40));
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
@@ -1657,7 +1743,6 @@ async function refresh(forceVersions) {
 
     const bf = d.bunker_features || {};
 
-    // 1. VOLUME SCUDO RPZ DETTAGLIO INTABELLATO CON VALORI ALLINEATI A DESTRA
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
     updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
     let rpzDettaglio = bf.rpz_dettaglio || [];
@@ -1669,10 +1754,8 @@ async function refresh(forceVersions) {
       </div>`
     ).join('');
 
-    // 2. RAM WORKING SET DETTAGLIO
     const ramData = bf.unbound_ram_data || {};
     document.getElementById('valUnboundRam').textContent = (ramData.ws_mb || 0) + ' MB';
-    // CORREZIONE LOGICA: La barra cala all'aumentare dell'occupazione RAM (100% = RAM scarica).
     let ramSysPct = ramData.pct_sys || 0;
     let ramEfficiency = Math.max(0, Math.min(100, 100 - ramSysPct));
     updateGradientBar('barUnboundRam', ramData.ws_mb > 0 ? ramEfficiency : 0);
@@ -1683,7 +1766,6 @@ async function refresh(forceVersions) {
       <div>&#9881;&#65039; Profilo Hardware: <b style="color:var(--accent);">${d.hardware.profilo || 'N/D'}</b></div>
     `;
 
-    // 3. DISPONIBILITÀ CACHE DETTAGLIO
     const cUsed = bf.cache_used_mb || 0;
     const cTot = bf.cache_total_mb || 1;
     const cFreeMb = Math.max(0, cTot - cUsed).toFixed(1);
@@ -1696,7 +1778,6 @@ async function refresh(forceVersions) {
       <div>&#127387; Riserva RAM Libera: <b style="color:var(--green-bright);">${cFreeMb} MB</b> (${cFreePct}%)</div>
     `;
 
-    // 4. HARDENING & POLICY DETTAGLIO
     const hardScore = bf.hardening_score || 0;
     document.getElementById('valHardening').innerHTML = hardScore + '% ' + (hardScore === 100 ? '<span class="esito-ok">[BLINDATO]</span>' : '<span class="esito-warn">[PARZIALE]</span>');
     updateGradientBar('barHardening', hardScore);
@@ -1706,7 +1787,6 @@ async function refresh(forceVersions) {
       `<div>${h.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${h.nome || '-'}</div>`
     ).join('');
 
-    // 5. OROLOGIO & SYNC NTP DETTAGLIO
     const ntpOk = (bf.ntp_status && (bf.ntp_status.ok || bf.ntp_status.okCount > 0));
     const ntpDesc = (bf.ntp_status && bf.ntp_status.desc) || (ntpOk ? 'Sincronizzato' : 'Non Sincronizzato');
     document.getElementById('valNtpStatus').innerHTML = ntpOk ? `<span class="esito-ok">${ntpDesc}</span>` : `<span class="esito-warn">${ntpDesc}</span>`;
@@ -1719,7 +1799,6 @@ async function refresh(forceVersions) {
       `<div>${n.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${n.nome || '-'}</div>`
     ).join('');
 
-    // 6. HYPERLOCAL ROOT DETTAGLIO
     const hlOk = (bf.hyperlocal && bf.hyperlocal.attivo);
     const hlDesc = (bf.hyperlocal && bf.hyperlocal.desc) || (hlOk ? 'Attivo' : 'Disattivato');
     document.getElementById('valHyperlocal').innerHTML = hlOk ? `<span class="esito-ok">${hlDesc}</span>` : `<span class="muted">${hlDesc}</span>`;
@@ -1730,7 +1809,6 @@ async function refresh(forceVersions) {
       `<div>${h.ok ? '<span class="esito-ok">&#10004;</span>' : '<span class="esito-warn">&#10008;</span>'} ${h.nome || '-'}</div>`
     ).join('');
 
-    // 7. ANTI-FLOOD & RATELIMIT DETTAGLIO
     const rlCnt = bf.ratelimited_cnt || 0;
     if (rlCnt > 0) {
       document.getElementById('valRateLimit').innerHTML = '<span class="esito-warn">' + fmt(rlCnt) + ' intercettati</span>';
@@ -1744,7 +1822,6 @@ async function refresh(forceVersions) {
       <div>&#127760; Limite per Dominio Global: <b style="color:${bf.ratelimit_domain > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(bf.ratelimit_domain || 0)}</b></div>
     `;
 
-    // 8. TEMPO DI ATTIVITÀ MOTORE DETTAGLIO
     const uptimeSec = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.uptime_secondi || 0) : 0;
     
     function formatUptimeSintetico(totalSec) {
@@ -1775,7 +1852,6 @@ async function refresh(forceVersions) {
       <div>&#9201;&#65039; Uptime Assoluto: <b style="color:var(--accent);">${uptimeStr}</b> <span class="muted">(${fmt(uptimeSec)} sec)</span></div>
     `;
 
-    // 9. CACHE HIT RATE GREZZO DETTAGLIO
     const cacheEffPct = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_efficienza_pct || 0) : 0;
     document.getElementById('valCacheEff').textContent = cacheEffPct + '%';
     updateGradientBar('barCacheEff', cacheEffPct);
@@ -1787,7 +1863,6 @@ async function refresh(forceVersions) {
       <div>&#128202; Query Servite: <b style="color:var(--accent);">${fmt(qTot)}</b></div>
     `;
 
-    // 10. TRAFFICO ANOMALO (UNWANTED) DETTAGLIO
     const unwantedQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_queries || 0) : 0;
     const unwantedR = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_replies || 0) : 0;
     const unwantedTot = unwantedQ + unwantedR;
@@ -1803,7 +1878,6 @@ async function refresh(forceVersions) {
       <div>&#128228; Risposte Anomale Upstream: <b style="color:${unwantedR > 0 ? 'var(--red-bright)' : 'var(--green-bright)'}">${fmt(unwantedR)}</b></div>
     `;
 
-    // 11. PROTOCOLLO TCP / UDP DETTAGLIO
     const tcpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.tcp_queries || 0) : 0;
     const udpQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.udp_queries || 0) : 0;
     const totProto = (tcpQ + udpQ) || 1;
@@ -2120,9 +2194,9 @@ async function refresh(forceVersions) {
 }
 
 refresh(true);
-setInterval(refresh, 1000);
+setInterval(refresh, 2000);
 setInterval(() => {
-  if (Date.now() - lastDataTs > 3000) setLiveStatus(false);
+  if (Date.now() - lastDataTs > 8000) setLiveStatus(false);
 }, 1000);
 </script>
 </body>
@@ -2173,6 +2247,29 @@ try {
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            } elseif ($request.Url.AbsolutePath -eq "/api/restart") {
+                Write-DashLog "Richiesta di riavvio ricevuta dall'interfaccia Web."
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes('{"status":"restarting"}')
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.OutputStream.Close()
+
+                $targetScript = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
+                
+                # Script esterno per riavvio pulito con controllo rilascio porta TCP
+                $restartCmd = "Start-Sleep -Seconds 1; " +
+                              "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
+                              "for (`$i=0; `$i -lt 20; `$i++) { " +
+                              "  `$conn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue; " +
+                              "  if (-not `$conn) { break }; " +
+                              "  Start-Sleep -Milliseconds 500 " +
+                              "}; " +
+                              "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`"' -WindowStyle Hidden"
+
+                Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
+                break
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
