@@ -1567,6 +1567,10 @@ $HtmlPage = @'
     <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-restart-unbound" title="Riavvia il servizio Windows di Unbound">
       &#128737;&#65039; Riavvia Unbound
     </button>
+    <button id="btnForceRpz" onclick="confirmForceRpzUpdate()" class="btn-restart-unbound" title="Avvia subito i task pianificati di aggiornamento RPZ (HaGeZi/Spamhaus/TIF + abuse.ch)">
+      &#128260; Forza Aggiornamento RPZ
+    </button>
+    <span id="forceRpzStatus" class="muted" style="font-size:0.8em; max-width:220px;"></span>
     <div class="clock-box">
       <div class="clock-time" id="clockTime">--:--:--</div>
       <div class="clock-date" id="clockDate">-----------------</div>
@@ -2286,6 +2290,38 @@ async function confirmRestartUnbound() {
       document.getElementById('restartOverlay').classList.remove('active');
     }
   }, 1000);
+}
+
+// === FORZA AGGIORNAMENTO RPZ ===
+// Non esiste un segnale "completato" affidabile da qui (il download e il
+// riavvio di Unbound avvengono in un processo BAT esterno indipendente),
+// quindi niente overlay con progresso finto: si avvia il task e si dà un
+// riscontro onesto, poi si lascia che il pannello "Freschezza Blocklist"
+// (rpz_freshness) rifletta l'aggiornamento reale nei minuti successivi.
+async function confirmForceRpzUpdate() {
+  if (!confirm("Avviare subito i task pianificati di aggiornamento RPZ?\n\n\u2022 Unbound_Bunker_2h (HaGeZi/Spamhaus/TIF)\n\u2022 Unbound_Bunker_AbuseCh30m (abuse.ch URLhaus/ThreatFox)\n\nIl download e il ricaricamento delle blocklist possono richiedere alcuni minuti.")) return;
+
+  const btn = document.getElementById('btnForceRpz');
+  const status = document.getElementById('forceRpzStatus');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Avvio in corso...'; }
+
+  try {
+    const res = await fetch('/api/force-rpz-update', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'started') {
+      if (status) status.textContent = 'Task avviati alle ' + new Date().toLocaleTimeString('it-IT') + '. Controlla "Freschezza Blocklist" tra qualche minuto.';
+    } else {
+      if (status) status.textContent = 'Errore nell\'avvio dei task: ' + (data.error || 'sconosciuto');
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Errore di rete durante la richiesta.';
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '&#128260; Forza Aggiornamento RPZ';
+  }
+  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
 async function refresh(forceVersions) {
@@ -3118,6 +3154,33 @@ try {
                                       "Start-Sleep -Seconds 2; Start-Service -Name 'unbound' -ErrorAction SilentlyContinue } catch {} }"
 
                 Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartUnboundCmd`"" -WindowStyle Hidden
+            } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di aggiornamento forzato RPZ ricevuta dall'interfaccia Web."
+
+                $esito = "started"
+                $errMsg = $null
+                try {
+                    # Avviati come processo esterno: gli stessi task pianificati usati dal
+                    # BAT per il refresh biorario (Unbound_Bunker_2h, HaGeZi/Spamhaus/TIF)
+                    # e per il refresh abuse.ch (Unbound_Bunker_AbuseCh30m, URLhaus/ThreatFox).
+                    # Il BAT gestisce da solo download, rotazione backup e riavvio di Unbound.
+                    $forceRpzCmd = "Start-ScheduledTask -TaskName 'Unbound_Bunker_2h' -ErrorAction SilentlyContinue; " +
+                                   "Start-ScheduledTask -TaskName 'Unbound_Bunker_AbuseCh30m' -ErrorAction SilentlyContinue"
+                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$forceRpzCmd`"" -WindowStyle Hidden
+                } catch {
+                    $esito = "error"
+                    $errMsg = $_.Exception.Message
+                    Write-DashLog "Errore nell'avvio dei task RPZ: $errMsg"
+                }
+
+                $respObj = [ordered]@{ status = $esito }
+                if ($errMsg) { $respObj.error = $errMsg }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($respObj | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                if ($esito -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
