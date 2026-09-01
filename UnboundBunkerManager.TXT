@@ -68,7 +68,7 @@ call :AUTO_TUNING_HARDWARE
 :: INIZIALIZZAZIONE RAM DISK (Zero Usura SSD per Log e Statistiche)
 :: ==================================================================
 set "RAM_DRIVE=R:"
-set "RAM_SIZE=200M"
+set "RAM_SIZE=250M"
 
 sc query imdsksvc >nul 2>&1
 if !errorlevel! NEQ 0 (
@@ -122,7 +122,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1019.00"
+set "LOCAL_VER=1020.0"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
