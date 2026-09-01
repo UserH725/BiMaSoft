@@ -154,7 +154,7 @@ function Get-TotalRpzRulesCount {
                 } catch {}
             }
             $tot += $cnt
-            $dettaglio += @{ nome = $lista.Nome; emoji = $lista.Emoji; regole = $cnt }
+            $dettaglio += @{ tag = $lista.Tag; nome = $lista.Nome; emoji = $lista.Emoji; regole = $cnt }
         }
         $script:TotalRpzRulesCache = @{ totale = $tot; dettaglio = $dettaglio }
         $script:TotalRpzRulesCacheTime = Get-Date
@@ -754,6 +754,53 @@ function Get-SessionTotal {
     return $null
 }
 
+# === FRESCHEZZA AGGIORNAMENTI BLOCKLIST RPZ ===
+# Ogni lista viene scritta da UnboundBunkerManager.BAT SOLO al termine di un
+# download riuscito (il file .conf non viene toccato se il download fallisce),
+# quindi la data di ultima modifica del file coincide con l'ultimo aggiornamento
+# riuscito, non con l'ultimo tentativo.
+$script:RpzFreshnessCache     = $null
+$script:RpzFreshnessCacheTime = [DateTime]::MinValue
+$script:RpzFreshnessCacheTtlSec = 300
+
+function Get-RpzFreshness {
+    if ($script:RpzFreshnessCache -and ((Get-Date) - $script:RpzFreshnessCacheTime).TotalSeconds -lt $script:RpzFreshnessCacheTtlSec) {
+        return $script:RpzFreshnessCache
+    }
+
+    $risultati = @()
+    $piuVecchiaOre = 0
+    foreach ($lista in $RpzListe) {
+        $file = Join-Path $UbDir "$($lista.Tag).conf"
+        $stato = [ordered]@{
+            tag        = $lista.Tag
+            nome       = $lista.Nome
+            emoji      = $lista.Emoji
+            ultimo_agg = "N/D"
+            ore_fa     = -1
+            esito      = "sconosciuto"
+        }
+        if ([System.IO.File]::Exists($file)) {
+            try {
+                $mtime = (Get-Item -LiteralPath $file).LastWriteTime
+                $oreFa = [math]::Round(((Get-Date) - $mtime).TotalHours, 1)
+                $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
+                $stato.ore_fa     = $oreFa
+                $stato.esito      = if ($oreFa -lt 24) { "ok" } elseif ($oreFa -lt 72) { "attenzione" } else { "scaduta" }
+                if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
+            } catch {}
+        } else {
+            $stato.esito = "mancante"
+        }
+        $risultati += $stato
+    }
+
+    $result = @{ liste = $risultati; piu_vecchia_ore = $piuVecchiaOre }
+    $script:RpzFreshnessCache     = $result
+    $script:RpzFreshnessCacheTime = Get-Date
+    return $result
+}
+
 function Get-HealthSnapshot {
     if ([System.IO.File]::Exists($HealthJson)) {
         try { return (Get-Content -LiteralPath $HealthJson -Raw | ConvertFrom-Json) } catch { return $null }
@@ -761,9 +808,210 @@ function Get-HealthSnapshot {
     return $null
 }
 
+# === LOG FALLBACK DNS (CAMBIO RESOLVER UPSTREAM PER TIMEOUT/ERRORE) ===
+# Quando per una stessa interrogazione compaiono piu' righe "sending query to"
+# con IP diversi prima della risposta finale, significa che Unbound e' dovuto
+# passare al forwarder successivo nella lista (il precedente non ha risposto
+# in tempo o ha restituito errore). Qui contiamo e mostriamo questi eventi.
+$script:DnsFallbackCache     = $null
+$script:DnsFallbackCacheTime = [DateTime]::MinValue
+$script:DnsFallbackCacheTtlSec = 5
+
+function Get-DnsFallbackLog {
+    if ($script:DnsFallbackCache -and ((Get-Date) - $script:DnsFallbackCacheTime).TotalSeconds -lt $script:DnsFallbackCacheTtlSec) {
+        return $script:DnsFallbackCache
+    }
+
+    $eventi = @()
+    $lines = Get-RpzLogTailCached
+    if ($lines -and $lines.Count -gt 0) {
+        try {
+            $tentativi = @()
+            foreach ($ln in $lines) {
+                if ($ln -match '(\d{2}:\d{2}:\d{2}).*?info:\s+sending query to\s+([0-9a-fA-F.:]+)(?:@\d+)?') {
+                    $tentativi += @{ orario = $matches[1]; ip = $matches[2] }
+                }
+                elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
+                    if ($tentativi.Count -gt 1) {
+                        $eventi += @{
+                            orario           = $matches[1]
+                            dominio          = $matches[2].TrimEnd('.')
+                            rcode_finale     = $matches[3].ToUpper()
+                            resolver_tentati = @($tentativi | ForEach-Object { $_.ip })
+                            resolver_finale  = $tentativi[-1].ip
+                            n_tentativi      = $tentativi.Count
+                        }
+                    }
+                    $tentativi = @()
+                }
+            }
+        } catch {}
+    }
+
+    $eventiRecenti = @($eventi | Select-Object -Last 100)
+    [array]::Reverse($eventiRecenti)
+    $result = @{ totale = $eventi.Count; eventi = $eventiRecenti }
+    $script:DnsFallbackCache     = $result
+    $script:DnsFallbackCacheTime = Get-Date
+    return $result
+}
+
+# === DISTRIBUZIONE ORARIA DEI BLOCCHI RPZ (per ora del giorno, 0-23) ===
+$script:BlocksHourlyCache     = $null
+$script:BlocksHourlyCacheTime = [DateTime]::MinValue
+$script:BlocksHourlyCacheTtlSec = 15
+
+function Get-BlocksHourlyDistribution {
+    if ($script:BlocksHourlyCache -and ((Get-Date) - $script:BlocksHourlyCacheTime).TotalSeconds -lt $script:BlocksHourlyCacheTtlSec) {
+        return $script:BlocksHourlyCache
+    }
+
+    $ore = New-Object int[] 24
+    $rpzLines = $null
+    if ([System.IO.File]::Exists($RpzLog)) {
+        try { $rpzLines = Get-Content -LiteralPath $RpzLog -ErrorAction SilentlyContinue } catch {}
+    }
+    if ($rpzLines) {
+        foreach ($ln in $rpzLines) {
+            if ($ln -match '^(\d{2}):\d{2}:\d{2}.*?\[[a-zA-Z0-9_\-]+\]\s+\S+\s+rpz-(nxdomain|nodata)') {
+                $h = [int]$matches[1]
+                if ($h -ge 0 -and $h -le 23) { $ore[$h]++ }
+            }
+        }
+    }
+    $picco = 0
+    $oraPicco = -1
+    for ($i = 0; $i -lt 24; $i++) {
+        if ($ore[$i] -gt $picco) { $picco = $ore[$i]; $oraPicco = $i }
+    }
+    $result = @{ ore = $ore; picco = $picco; ora_picco = $oraPicco }
+    $script:BlocksHourlyCache     = $result
+    $script:BlocksHourlyCacheTime = Get-Date
+    return $result
+}
+
+# === STATO WINDOWS UPDATE ===
+# Interrogare la Windows Update Agent COM API puo' richiedere qualche secondo,
+# quindi cache lunga (15 minuti) per non bloccare il ciclo del collector.
+$script:WinUpdateCache     = $null
+$script:WinUpdateCacheTime = [DateTime]::MinValue
+$script:WinUpdateCacheTtlSec = 900
+
+function Get-WindowsUpdateStatus {
+    if ($script:WinUpdateCache -and ((Get-Date) - $script:WinUpdateCacheTime).TotalSeconds -lt $script:WinUpdateCacheTtlSec) {
+        return $script:WinUpdateCache
+    }
+
+    $stato = [ordered]@{
+        ultimo_agg_installato = "N/D"
+        giorni_fa             = -1
+        riavvio_richiesto     = $false
+        ultima_ricerca        = "N/D"
+        ultimo_esito_ricerca  = "N/D"
+        aggiornamenti_in_attesa = -1
+        errore                = $null
+    }
+
+    try {
+        $hotfix = Get-CimInstance -ClassName Win32_QuickFixEngineering -ErrorAction SilentlyContinue |
+                  Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 1
+        if ($hotfix -and $hotfix.InstalledOn) {
+            $dt = [DateTime]$hotfix.InstalledOn
+            $stato.ultimo_agg_installato = $dt.ToString("dd.MM.yyyy")
+            $stato.giorni_fa = [math]::Round(((Get-Date) - $dt).TotalDays, 0)
+        }
+    } catch {}
+
+    try {
+        $rebootKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+        $stato.riavvio_richiesto = [bool](Test-Path -LiteralPath $rebootKey)
+    } catch {}
+
+    try {
+        $auSettings = New-Object -ComObject "Microsoft.Update.AutoUpdate" -ErrorAction Stop
+        $results = $auSettings.Results
+        if ($results.LastSearchSuccessDate) {
+            $stato.ultima_ricerca = ([DateTime]$results.LastSearchSuccessDate).ToString("dd.MM.yyyy HH:mm")
+        }
+        if ($results.LastInstallationSuccessDate) {
+            $stato.ultimo_esito_ricerca = "Ultima installazione riuscita: $(([DateTime]$results.LastInstallationSuccessDate).ToString('dd.MM.yyyy HH:mm'))"
+        }
+    } catch {
+        $stato.errore = "COM Windows Update non disponibile: $($_.Exception.Message)"
+    }
+
+    $result = $stato
+    $script:WinUpdateCache     = $result
+    $script:WinUpdateCacheTime = Get-Date
+    return $result
+}
+
 # === GLOBAL JSON CACHE TO PREVENT HTTP BLOCKING ===
 $script:LastJsonCacheTime = [DateTime]::MinValue
 $script:CachedStatusJson  = $null
+
+# === RILEVAMENTO ANOMALIE DI TRAFFICO ===
+# Approccio volutamente semplice (nessun ML): per ogni dominio si tiene una
+# media mobile esponenziale (EWMA) delle query/minuto. Se in un minuto un
+# dominio supera sia una soglia assoluta (>=8 query) sia 4 volte la sua
+# media storica, scatta un allarme. Il tallying usa gli stessi eventi gia'
+# estratti per il Live Feed (nessun parsing aggiuntivo del log), con un set
+# di deduplica per non ricontare le righe che restano nella coda del log
+# tra un ciclo e l'altro del raccoglitore in background.
+function Update-AnomalyTracking {
+    param($liveRcode)
+
+    if (-not $script:AnomalyState) {
+        $script:AnomalyState       = @{}
+        $script:AnomalySeenEvents  = New-Object System.Collections.Generic.HashSet[string]
+        $script:AnomalyLastMinuteTs = Get-Date
+        $script:AnomalyLastPruneTs  = Get-Date
+        $script:AnomalyAlerts      = New-Object System.Collections.Generic.List[object]
+    }
+
+    foreach ($e in $liveRcode) {
+        $sig = "$($e.orario)|$($e.dominio)|$($e.rcode)|$($e.resolver)"
+        if ($script:AnomalySeenEvents.Add($sig)) {
+            if (-not $script:AnomalyState.ContainsKey($e.dominio)) {
+                $script:AnomalyState[$e.dominio] = @{ ewma = 0.0; contaMinuto = 0 }
+            }
+            $script:AnomalyState[$e.dominio].contaMinuto++
+        }
+    }
+
+    $now = Get-Date
+    if (($now - $script:AnomalyLastMinuteTs).TotalSeconds -ge 60) {
+        foreach ($dom in @($script:AnomalyState.Keys)) {
+            $st     = $script:AnomalyState[$dom]
+            $conta  = $st.contaMinuto
+            if ($st.ewma -gt 0.5 -and $conta -ge 8 -and $conta -ge ($st.ewma * 4)) {
+                [void]$script:AnomalyAlerts.Add([ordered]@{
+                    dominio  = $dom
+                    conta    = $conta
+                    baseline = [math]::Round($st.ewma, 1)
+                    orario   = $now.ToString("HH:mm")
+                })
+                while ($script:AnomalyAlerts.Count -gt 30) { $script:AnomalyAlerts.RemoveAt(0) }
+            }
+            # alpha 0.3: la media si adatta ma non insegue ogni singolo picco
+            $st.ewma = if ($st.ewma -eq 0) { $conta } else { (0.3 * $conta) + (0.7 * $st.ewma) }
+            $st.contaMinuto = 0
+        }
+        $script:AnomalyLastMinuteTs = $now
+    }
+
+    # Il set di deduplica cresce con ogni riga nuova vista nel log; una pulizia
+    # periodica evita che cresca all'infinito su una dashboard rimasta accesa
+    # per giorni. Puo' causare un minimo doppio conteggio subito dopo la
+    # pulizia (le righe ancora in coda vengono riviste una volta) ma non e'
+    # sufficiente da solo a far scattare un allarme, e capita al massimo ogni 5 minuti.
+    if (($now - $script:AnomalyLastPruneTs).TotalSeconds -ge 300) {
+        $script:AnomalySeenEvents.Clear()
+        $script:AnomalyLastPruneTs = $now
+    }
+
+    return $script:AnomalyAlerts
+}
 
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
@@ -778,13 +1026,18 @@ function Get-BunkerStatusJson {
     $engineOn    = Get-EngineStatus
     $stats       = Get-LiveStats
     $liveRcode   = Get-LiveRcodeFeed
+    $trafficAnomalie = Update-AnomalyTracking -liveRcode $liveRcode
     $radar       = Get-UpstreamRadar
     $rootRadar   = Get-RootServersRadar
     $rpz         = Get-RpzBreakdown
+    $rpzFresh    = Get-RpzFreshness
     $sessione    = Get-SessionTotal
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
     $ipConn      = Get-IpConnectivityStatus
+    $dnsFallback = Get-DnsFallbackLog
+    $blocchiOrari = Get-BlocksHourlyDistribution
+    $winUpdate   = Get-WindowsUpdateStatus
 
     $unboundRamData  = Get-UnboundWorkingSet
     $rpzRulesObj     = Get-TotalRpzRulesCount
@@ -804,6 +1057,26 @@ function Get-BunkerStatusJson {
         (Get-Date).AddSeconds(-$stats.base.uptime_secondi).ToString("dd.MM.yyyy HH:mm:ss")
     } else { "N/D" }
 
+    # === STORICO RIAVVII SERVIZIO UNBOUND ===
+    # unbound-control espone un contatore "time.up" che riparte da zero a ogni
+    # avvio del processo: quando il valore scende rispetto alla lettura
+    # precedente (invece di crescere) significa che nel frattempo il servizio
+    # e' stato riavviato (crash, "sc failure", riavvio manuale...). Non
+    # sappiamo distinguere la causa da qui, solo che e' successo.
+    if (-not $script:UnboundRestartLog) {
+        $script:UnboundRestartLog    = New-Object System.Collections.Generic.List[object]
+        $script:UnboundLastUptimeSec = $null
+    }
+    $curUptimeSec = $stats.base.uptime_secondi
+    if ($null -ne $script:UnboundLastUptimeSec -and $curUptimeSec -lt ($script:UnboundLastUptimeSec - 5)) {
+        [void]$script:UnboundRestartLog.Add([ordered]@{
+            orario                = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
+            uptime_precedente_sec = $script:UnboundLastUptimeSec
+        })
+        while ($script:UnboundRestartLog.Count -gt 20) { $script:UnboundRestartLog.RemoveAt(0) }
+    }
+    $script:UnboundLastUptimeSec = $curUptimeSec
+
     $rpzAgeMinutes = 0
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
@@ -817,6 +1090,39 @@ function Get-BunkerStatusJson {
         $pctBlocchi = [math]::Round(($rpz.totale / $stats.base.query_totali) * 100, 1)
     }
     $stats.base.blocchi_pct = $pctBlocchi
+
+    # === CAMPIONAMENTO STORICO (per i grafici di andamento) ===
+    # Un punto al minuto, buffer circolare in memoria: si azzera a ogni riavvio
+    # della dashboard, coerentemente con "totale_sessione" (dall'ultimo avvio).
+    if (-not $script:HistoryBuffer) {
+        $script:HistoryBuffer          = New-Object System.Collections.Generic.List[object]
+        $script:HistoryLastSampleTime  = [DateTime]::MinValue
+        $script:HistoryLastQueryTotali = $null
+        $script:HistoryIntervalSec     = 60
+        $script:HistoryMaxPoints       = 360   # 6 ore a 1 campione/minuto
+    }
+    $nowTs = Get-Date
+    if ($script:HistoryBuffer.Count -eq 0 -or ($nowTs - $script:HistoryLastSampleTime).TotalSeconds -ge $script:HistoryIntervalSec) {
+        $qps = 0
+        if ($null -ne $script:HistoryLastQueryTotali -and $script:HistoryLastSampleTime -ne [DateTime]::MinValue) {
+            $deltaSec = ($nowTs - $script:HistoryLastSampleTime).TotalSeconds
+            $deltaQ   = $stats.base.query_totali - $script:HistoryLastQueryTotali
+            if ($deltaQ -lt 0) { $deltaQ = 0 }   # contatore azzerato da un riavvio del servizio Unbound
+            if ($deltaSec -gt 0) { $qps = [math]::Round($deltaQ / $deltaSec, 2) }
+        }
+        $latOk = @($radar | Where-Object { $_.ok })
+        $latAvg = if ($latOk.Count -gt 0) { [math]::Round((($latOk | Measure-Object -Property ms -Average).Average), 1) } else { 0 }
+        [void]$script:HistoryBuffer.Add([ordered]@{
+            t     = $nowTs.ToString("HH:mm")
+            qps   = $qps
+            cache = $stats.base.cache_efficienza_pct
+            block = $pctBlocchi
+            lat   = $latAvg
+        })
+        if ($script:HistoryBuffer.Count -gt $script:HistoryMaxPoints) { $script:HistoryBuffer.RemoveAt(0) }
+        $script:HistoryLastSampleTime  = $nowTs
+        $script:HistoryLastQueryTotali = $stats.base.query_totali
+    }
 
     $saluteScore = 100
     $anomalie = $false
@@ -838,9 +1144,16 @@ function Get-BunkerStatusJson {
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
         rpz_log_age_min  = $rpzAgeMinutes
+        rpz_freshness    = $rpzFresh
+        storico          = $script:HistoryBuffer
+        anomalie_traffico = $trafficAnomalie
+        unbound_restart_log = $script:UnboundRestartLog
         live_rcode_feed  = $liveRcode
         upstream_radar   = $radar
         root_radar       = $rootRadar
+        dns_fallback_log = $dnsFallback
+        blocchi_orari    = $blocchiOrari
+        windows_update   = $winUpdate
         bunker_features  = [ordered]@{
             unbound_ram_mb      = $unboundRamData.ws_mb
             unbound_ram_data    = $unboundRamData
@@ -1154,8 +1467,12 @@ $HtmlPage = @'
   .boost-item-wide {
     grid-column: span 2;
   }
+  .boost-item-extrawide {
+    grid-column: span 3;
+  }
   @media (max-width: 650px) {
     .boost-item-wide { grid-column: span 1; }
+    .boost-item-extrawide { grid-column: span 1; }
   }
 
   .g-bar-bg { background: #080c10; border-radius: 4px; height: 10px; overflow: hidden; display: flex; }
@@ -1214,6 +1531,7 @@ $HtmlPage = @'
   
   .esito-warn { color: var(--red-bright); font-weight: bold; }
   .esito-ok { color: var(--green-bright); }
+  .esito-attenzione { color: var(--amber-bright); font-weight: bold; }
   .latency { color: var(--accent); font-weight: bold; }
   .muted { color: var(--dim); }
 
@@ -1223,6 +1541,14 @@ $HtmlPage = @'
 
   .grid-three-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
+
+  .storico-grid { display: flex; gap: 18px; flex-wrap: wrap; }
+  .storico-chart-box { flex: 1; min-width: 260px; }
+  .storico-chart-title { font-size: 0.9em; font-weight: bold; color: var(--accent); margin-bottom: 4px; }
+  .storico-chart-box svg { width: 100%; height: 110px; display: block; background: #0e141b; border: 1px solid var(--border); border-radius: 4px; }
+  .storico-range { font-size: 0.82em; color: var(--dim); margin-top: 10px; text-align: right; }
+  .rpz-fresh-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding: 7px 2px; font-size: 0.92em; gap: 10px; flex-wrap: wrap; }
+  .rpz-fresh-row:last-child { border-bottom: none; }
 
   #inputRicercaRcode:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 8px rgba(79, 179, 255, 0.4); }
 </style>
@@ -1276,6 +1602,11 @@ $HtmlPage = @'
 <div class="panel panel-versioni">
   <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
   <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+</div>
+
+<div class="panel panel-versioni">
+  <h2>&#128295; Windows Update</h2>
+  <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
 </div>
 
 <div class="badges" id="badges"></div>
@@ -1333,10 +1664,10 @@ $HtmlPage = @'
 <div class="sub" style="margin: -8px 0 14px 2px;">&#9889; Le 4 metriche sopra compongono il BUNKER GAIN (somma dei punti, poi limitata tra 25% e 80%).</div>
 
 <div class="bunker-subrow">
-  <div class="boost-item boost-item-wide">
+  <div class="boost-item boost-item-wide boost-item-extrawide">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRpzRules" style="width:100%"></div></div>
-    <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.6; display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:4px 18px;"></div>
+    <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.5; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:4px 18px;"></div>
   </div>
 
   <div class="boost-item">
@@ -1460,15 +1791,64 @@ $HtmlPage = @'
 </div>
 
 <div class="panel">
+  <h2>&#128200; Andamento Storico (dall'ultimo avvio, 1 campione/minuto)</h2>
+  <div class="storico-grid">
+    <div class="storico-chart-box">
+      <div class="storico-chart-title">Query al secondo</div>
+      <svg id="chartQps" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="storico-chart-box">
+      <div class="storico-chart-title">Efficienza cache (%)</div>
+      <svg id="chartCache" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="storico-chart-box">
+      <div class="storico-chart-title">Blocchi RPZ (%)</div>
+      <svg id="chartBlock" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="storico-chart-box">
+      <div class="storico-chart-title">Latenza media upstream DoT (ms)</div>
+      <svg id="chartLat" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+  <div class="storico-range" id="storicoRange">Raccolta dati storici in corso...</div>
+</div>
+
+<div class="panel">
+  <h2>&#128200; Distribuzione Oraria dei Blocchi RPZ (per ora del giorno)</h2>
+  <div class="sub">Conteggio blocchi RPZ raggruppati per ora del giorno (00-23), calcolato sul log corrente.</div>
+  <svg id="chartBlocchiOrari" viewBox="0 0 600 130" preserveAspectRatio="none" style="width:100%; height:150px;"></svg>
+  <div class="storico-range" id="blocchiOrariInfo">In attesa di dati...</div>
+</div>
+
+<div class="panel">
   <h2>&#128202; Dall'ultimo report Telegram (Dettaglio Block List)</h2>
   <div class="stats-grid" id="statsUltimoReport"></div>
   <div id="listeRpz" style="padding-right: 4px;"></div>
 </div>
 
 <div class="panel">
+  <h2>&#9888;&#65039; Anomalie di Traffico Rilevate</h2>
+  <div class="sub">Domini che in un minuto hanno superato sia una soglia minima assoluta sia 4&times; la loro media storica di sessione &mdash; rilevamento statistico semplice, non un antivirus: verifica sempre a occhio prima di allarmarti.</div>
+  <div id="anomalieTraffico"></div>
+</div>
+
+<div class="panel">
+  <h2>&#128260; Storico Riavvii Servizio Unbound</h2>
+  <div class="sub">Rilevato dal contatore interno di uptime di Unbound: sappiamo che c'&egrave; stato un riavvio, non la causa (crash, recovery automatico "sc failure", riavvio manuale...).</div>
+  <div id="restartLog"></div>
+</div>
+
+<div class="panel">
+  <h2>&#128260; Log Fallback DNS (Cambio Resolver Upstream)</h2>
+  <div class="sub">Interrogazioni per cui Unbound ha dovuto passare a un resolver upstream successivo (il precedente non ha risposto in tempo o ha restituito errore).</div>
+  <div id="dnsFallbackLog"></div>
+</div>
+
+<div class="panel">
   <h2>&#9854; Totale sessione (dall'ultimo avvio)</h2>
   <div class="stats-grid" id="statsSessione"></div>
 </div>
+
 
 <div class="panel">
   <h2>&#9877; Stato di salute del sistema (Log Fasi di Avvio)</h2>
@@ -1592,6 +1972,175 @@ function updateGradientBar(id, pct) {
   }
 }
 
+// === GRAFICI STORICI (mini line-chart SVG, senza dipendenze esterne) ===
+function renderSparkline(svgId, points, colorVar, suffix) {
+  const svg = document.getElementById(svgId);
+  if (!svg) return;
+  if (!points || points.length < 2) {
+    svg.innerHTML = '<text x="300" y="58" text-anchor="middle" fill="var(--dim)" font-size="13">In attesa di dati storici&hellip;</text>';
+    return;
+  }
+  const w = 600, h = 110, padX = 6, padY = 16;
+  const vals = points.map(p => p.v);
+  let minV = Math.min(...vals), maxV = Math.max(...vals);
+  if (minV === maxV) { minV -= 1; maxV += 1; }
+  const range = maxV - minV;
+  const stepX = (w - padX * 2) / (points.length - 1);
+  const coords = points.map((p, i) => {
+    const x = padX + i * stepX;
+    const y = h - padY - ((p.v - minV) / range) * (h - padY * 2);
+    return [x.toFixed(1), y.toFixed(1)];
+  });
+  const polyStr = coords.map(c => c.join(',')).join(' ');
+  const last = coords[coords.length - 1];
+  const areaStr = `${padX.toFixed(1)},${(h - padY).toFixed(1)} ${polyStr} ${last[0]},${(h - padY).toFixed(1)}`;
+  svg.innerHTML = `
+    <polygon points="${areaStr}" fill="${colorVar}" opacity="0.12"></polygon>
+    <polyline points="${polyStr}" fill="none" stroke="${colorVar}" stroke-width="2"></polyline>
+    <circle cx="${last[0]}" cy="${last[1]}" r="3.2" fill="${colorVar}"></circle>
+    <text x="${padX}" y="12" fill="var(--dim)" font-size="11">${maxV}${suffix}</text>
+    <text x="${padX}" y="${h - 4}" fill="var(--dim)" font-size="11">${minV}${suffix}</text>
+  `;
+}
+
+function renderStorico(d) {
+  const storico = Array.isArray(d.storico) ? d.storico : (d.storico ? [d.storico] : []);
+  renderSparkline('chartQps',   storico.map(p => ({ v: p.qps })),   'var(--accent)',      ' q/s');
+  renderSparkline('chartCache', storico.map(p => ({ v: p.cache })), 'var(--green-bright)', '%');
+  renderSparkline('chartBlock', storico.map(p => ({ v: p.block })), 'var(--red-bright)',   '%');
+  renderSparkline('chartLat',   storico.map(p => ({ v: p.lat })),   'var(--purple)',       ' ms');
+
+  const elRange = document.getElementById('storicoRange');
+  if (!elRange) return;
+  if (storico.length < 2) {
+    elRange.textContent = 'Raccolta dati storici in corso... (1 punto ogni minuto)';
+  } else {
+    elRange.textContent = `${storico[0].t} \u2192 ${storico[storico.length - 1].t} &middot; ${storico.length} campioni, 1/minuto`.replace('&middot;', '·');
+  }
+}
+
+// === ANOMALIE DI TRAFFICO ===
+function renderAnomalie(d) {
+  const cont = document.getElementById('anomalieTraffico');
+  if (!cont) return;
+  let allarmi = Array.isArray(d.anomalie_traffico) ? d.anomalie_traffico : (d.anomalie_traffico ? [d.anomalie_traffico] : []);
+  if (!allarmi.length) {
+    cont.innerHTML = '<div class="muted">Nessuna anomalia rilevata dall\'ultimo avvio.</div>';
+    return;
+  }
+  allarmi = allarmi.slice().reverse();
+  cont.innerHTML = allarmi.map(a => `
+    <div class="rpz-fresh-row">
+      <span class="esito-warn">${a.orario || '--'} &middot; ${a.dominio || '-'}</span>
+      <span>${fmt(a.conta)} query/min <span class="muted">(media storica &asymp; ${a.baseline})</span></span>
+    </div>
+  `).join('');
+}
+
+// === STORICO RIAVVII UNBOUND ===
+function fmtDurata(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const g = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const parti = [];
+  if (g > 0) parti.push(g + 'g');
+  if (h > 0) parti.push(h + 'h');
+  if (g === 0 && m > 0) parti.push(m + 'min');
+  return parti.length ? parti.join(' ') : '<1min';
+}
+
+function renderRestartLog(d) {
+  const cont = document.getElementById('restartLog');
+  if (!cont) return;
+  let log = Array.isArray(d.unbound_restart_log) ? d.unbound_restart_log : (d.unbound_restart_log ? [d.unbound_restart_log] : []);
+  if (!log.length) {
+    cont.innerHTML = '<div class="muted">Nessun riavvio rilevato dall\'ultimo avvio della dashboard.</div>';
+    return;
+  }
+  log = log.slice().reverse();
+  cont.innerHTML = log.map(r => `
+    <div class="rpz-fresh-row">
+      <span class="esito-warn">${r.orario || '--'}</span>
+      <span>era in esecuzione da <b>${fmtDurata(r.uptime_precedente_sec)}</b> prima del riavvio</span>
+    </div>
+  `).join('');
+}
+
+// === DISTRIBUZIONE ORARIA DEI BLOCCHI (BAR CHART) ===
+function renderBlocchiOrari(d) {
+  const svg = document.getElementById('chartBlocchiOrari');
+  const info = document.getElementById('blocchiOrariInfo');
+  if (!svg) return;
+  const bo = d.blocchi_orari;
+  const ore = (bo && Array.isArray(bo.ore)) ? bo.ore : null;
+  if (!ore || ore.every(v => v === 0)) {
+    svg.innerHTML = '<text x="300" y="65" text-anchor="middle" fill="var(--dim)" font-size="13">Nessun blocco registrato nel log corrente&hellip;</text>';
+    if (info) info.textContent = 'In attesa di dati...';
+    return;
+  }
+  const w = 600, h = 130, padX = 6, padY = 20, gap = 2;
+  const maxV = Math.max(...ore, 1);
+  const barW = (w - padX * 2) / 24 - gap;
+  let bars = '';
+  for (let i = 0; i < 24; i++) {
+    const v = ore[i];
+    const barH = (v / maxV) * (h - padY * 2);
+    const x = padX + i * ((w - padX * 2) / 24);
+    const y = h - padY - barH;
+    const colore = (bo.ora_picco === i) ? 'var(--red-bright)' : 'var(--accent)';
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barH,1).toFixed(1)}" fill="${colore}" opacity="0.85"></rect>`;
+    if (i % 3 === 0) {
+      bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 4}" text-anchor="middle" fill="var(--dim)" font-size="9">${String(i).padStart(2,'0')}</text>`;
+    }
+  }
+  bars += `<text x="${padX}" y="12" fill="var(--dim)" font-size="11">${fmt(maxV)}</text>`;
+  svg.innerHTML = bars;
+  if (info) {
+    info.textContent = (bo.ora_picco >= 0)
+      ? `Ora di picco: ${String(bo.ora_picco).padStart(2,'0')}:00 &middot; ${fmt(bo.picco)} blocchi`.replace('&middot;', '·')
+      : 'In attesa di dati...';
+  }
+}
+
+// === LOG FALLBACK DNS ===
+function renderDnsFallbackLog(d) {
+  const cont = document.getElementById('dnsFallbackLog');
+  if (!cont) return;
+  const fb = d.dns_fallback_log;
+  let eventi = fb && Array.isArray(fb.eventi) ? fb.eventi : (fb && fb.eventi ? [fb.eventi] : []);
+  if (!eventi.length) {
+    cont.innerHTML = '<div class="muted">Nessun fallback su resolver upstream rilevato nel log corrente.</div>';
+    return;
+  }
+  cont.innerHTML = eventi.map(e => `
+    <div class="rpz-fresh-row">
+      <span class="esito-warn">${e.orario || '--'} &middot; ${e.dominio || '-'}</span>
+      <span>${(e.n_tentativi || 0)} tentativi: ${(e.resolver_tentati || []).join(' &rarr; ')} <span class="muted">(esito: ${e.rcode_finale || '-'})</span></span>
+    </div>
+  `).join('');
+}
+
+// === STATO WINDOWS UPDATE ===
+function renderWinUpdate(d) {
+  const cont = document.getElementById('statsWinUpdate');
+  if (!cont) return;
+  const w = d.windows_update;
+  if (!w) { cont.innerHTML = '<div class="muted">Dati non disponibili.</div>'; return; }
+  const giorniTxt = (w.giorni_fa >= 0) ? `${w.giorni_fa} giorni fa` : '-';
+  const rebootBadge = w.riavvio_richiesto
+    ? '<span class="esito-warn">&#9888;&#65039; Riavvio in attesa</span>'
+    : '<span class="esito-ok">&#10003; Nessun riavvio in attesa</span>';
+  cont.innerHTML = `
+    <div class="stat"><div class="val" style="font-size:1.1em">${w.ultimo_agg_installato}</div><div class="lbl">Ultimo aggiornamento installato (${giorniTxt})</div></div>
+    <div class="stat"><div class="val" style="font-size:1.1em">${w.ultima_ricerca}</div><div class="lbl">Ultima ricerca aggiornamenti</div></div>
+    <div class="stat"><div class="val" style="font-size:0.85em">${rebootBadge}</div><div class="lbl">Stato riavvio</div></div>
+  `;
+  if (w.errore) {
+    cont.innerHTML += `<div class="muted" style="width:100%; margin-top:6px;">${w.errore}</div>`;
+  }
+}
+
 function filtraLiveRcode() {
   const input = document.getElementById('inputRicercaRcode');
   if (!input) return;
@@ -1645,9 +2194,11 @@ async function confirmRestart() {
   showRestartOverlay('&#128472;&#65039;', 'Riavvio della Dashboard in corso...', 'Rilascio e verifica della porta ' + location.port + ' in esecuzione...');
 
   let attempts = 0;
+  const SOFT_LIMIT = 35;   // dopo questo tempo, avviso "morbido" ma continua ad attendere
+  const HARD_LIMIT = 90;   // oltre questo, rinuncia davvero
   const checkInterval = setInterval(async () => {
     attempts++;
-    updateRestartProgress((attempts / 35) * 95);
+    updateRestartProgress((attempts / HARD_LIMIT) * 95);
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
       if (res.ok) {
@@ -1661,9 +2212,14 @@ async function confirmRestart() {
       }
     } catch(e) {}
 
-    if (attempts > 35) {
+    if (attempts === SOFT_LIMIT) {
+      document.getElementById('restartOverlaySub').textContent =
+        'Sta impiegando più del previsto (possibile scansione antivirus del processo appena avviato)... continuo ad attendere.';
+    }
+
+    if (attempts > HARD_LIMIT) {
       clearInterval(checkInterval);
-      alert("Il riavvio sta impiegando più tempo del previsto. Ricarica la pagina tra qualche secondo.");
+      alert("Il riavvio non è ancora completato dopo " + HARD_LIMIT + " secondi. Ricarica manualmente la pagina tra qualche secondo, oppure controlla che il processo sia effettivamente ripartito.");
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
@@ -1691,9 +2247,11 @@ async function confirmRestartUnbound() {
 
   let attempts = 0;
   let seenDown = false;
+  const SOFT_LIMIT = 35;    // dopo questo tempo, avviso "morbido" ma continua ad attendere
+  const HARD_LIMIT = 150;   // il ricaricamento delle blocklist RPZ può richiedere parecchio
   const checkInterval = setInterval(async () => {
     attempts++;
-    updateRestartProgress((attempts / 35) * 95);
+    updateRestartProgress((attempts / HARD_LIMIT) * 95);
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
       if (res.ok) {
@@ -1713,9 +2271,14 @@ async function confirmRestartUnbound() {
       }
     } catch(e) {}
 
-    if (attempts > 35) {
+    if (attempts === SOFT_LIMIT) {
+      document.getElementById('restartOverlaySub').textContent =
+        'Sta impiegando più del previsto (probabile ricaricamento delle blocklist RPZ)... continuo ad attendere.';
+    }
+
+    if (attempts > HARD_LIMIT) {
       clearInterval(checkInterval);
-      alert("Il riavvio di Unbound sta impiegando più tempo del previsto. Controlla lo stato del servizio.");
+      alert("Il riavvio di Unbound non risulta ancora completato dopo " + HARD_LIMIT + " secondi. Controlla lo stato del servizio manualmente (potrebbe essere ancora al lavoro sul caricamento delle blocklist).");
       if (btn) {
         btn.disabled = false;
         btn.innerHTML = '&#128737;&#65039; Riavvia Unbound';
@@ -1926,12 +2489,34 @@ async function refresh(forceVersions) {
     updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
     let rpzDettaglio = bf.rpz_dettaglio || [];
     if (!Array.isArray(rpzDettaglio)) { rpzDettaglio = [rpzDettaglio]; }
-    document.getElementById('rpzDettaglio').innerHTML = rpzDettaglio.map(r =>
-      `<div style="display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.05); padding:1px 0;">
-        <span>${r.emoji || '&#128737;'} ${r.nome || '-'}</span>
-        <b style="color:var(--accent); text-align:right; margin-left:8px;">${fmt(r.regole || 0)}</b>
-      </div>`
-    ).join('');
+
+    let freschezzaListe = (d.rpz_freshness && d.rpz_freshness.liste) || [];
+    if (!Array.isArray(freschezzaListe)) { freschezzaListe = [freschezzaListe]; }
+    const freschezzaByTag = {};
+    freschezzaListe.forEach(f => { freschezzaByTag[f.tag] = f; });
+    const labelEsito = { ok: 'AGGIORNATA', attenzione: 'DA VERIFICARE', scaduta: 'NON AGGIORNATA', mancante: 'FILE MANCANTE', sconosciuto: 'N/D' };
+    const classeEsito = { ok: 'esito-ok', attenzione: 'esito-attenzione', scaduta: 'esito-warn', mancante: 'esito-warn', sconosciuto: 'muted' };
+
+    document.getElementById('rpzDettaglio').innerHTML = rpzDettaglio.map(r => {
+      const fr = freschezzaByTag[r.tag];
+      let rigaFreschezza = '';
+      if (fr) {
+        const cls = classeEsito[fr.esito] || 'muted';
+        const lbl = labelEsito[fr.esito] || fr.esito;
+        const oreTxt = (typeof fr.ore_fa === 'number' && fr.ore_fa >= 0) ? `${fr.ore_fa} ore fa` : '--';
+        rigaFreschezza = `<div style="display:flex; justify-content:space-between; font-size:0.92em; margin-top:1px;">
+          <span class="${cls}">${lbl}</span>
+          <span class="muted">${fr.ultimo_agg || 'N/D'} (${oreTxt})</span>
+        </div>`;
+      }
+      return `<div style="border-bottom:1px solid rgba(255,255,255,0.05); padding:3px 0;">
+        <div style="display:flex; justify-content:space-between;">
+          <span>${r.emoji || '&#128737;'} ${r.nome || '-'}</span>
+          <b style="color:var(--accent); text-align:right; margin-left:8px;">${fmt(r.regole || 0)}</b>
+        </div>
+        ${rigaFreschezza}
+      </div>`;
+    }).join('');
 
     const ramData = bf.unbound_ram_data || {};
     document.getElementById('valUnboundRam').textContent = (ramData.ws_mb || 0) + ' MB';
@@ -2288,6 +2873,13 @@ async function refresh(forceVersions) {
       }
       listeDiv.appendChild(det);
     });
+
+    renderStorico(d);
+    renderAnomalie(d);
+    renderRestartLog(d);
+    renderBlocchiOrari(d);
+    renderDnsFallbackLog(d);
+    renderWinUpdate(d);
 
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
