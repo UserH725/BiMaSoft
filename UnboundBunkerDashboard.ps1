@@ -876,6 +876,14 @@ function Get-BunkerStatusJson {
     
     $script:CachedStatusJson = ($obj | ConvertTo-Json -Depth 8 -Compress)
     $script:LastJsonCacheTime = Get-Date
+
+    # Pubblica il risultato nella hashtable sincronizzata condivisa col runspace HTTP,
+    # cosi' il thread che risponde alle richieste non deve mai ricalcolare nulla.
+    if ($script:BunkerSyncHash) {
+        $script:BunkerSyncHash.Json = $script:CachedStatusJson
+        $script:BunkerSyncHash.Ts   = $script:LastJsonCacheTime
+    }
+
     return $script:CachedStatusJson
 }
 
@@ -2203,7 +2211,45 @@ setInterval(() => {
 </html>
 '@
 
+# === RACCOLTA DATI IN BACKGROUND (runspace separato, thread indipendente) ===
+# Obiettivo: il ciclo che accetta le connessioni HTTP non deve MAI eseguire
+# lavoro pesante (Get-CimInstance, spawn di unbound-control.exe, letture log).
+# Un runspace dedicato ricalcola Get-BunkerStatusJson ogni ~1.5s e pubblica il
+# risultato in una hashtable sincronizzata; il server HTTP si limita a leggerla.
+function Start-BackgroundCollectorLoop {
+    Write-DashLog "Ciclo di raccolta dati in background avviato (PID $PID)."
+    while ($true) {
+        try { Get-BunkerStatusJson | Out-Null } catch { Write-DashLog "Errore nel ciclo di raccolta background: $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 1500
+    }
+}
+
+function Start-BackgroundCollector {
+    $script:BunkerSyncHash = [hashtable]::Synchronized(@{ Json = $null; Ts = [DateTime]::MinValue })
+
+    $bgRunspace = [runspacefactory]::CreateRunspace()
+    $bgRunspace.ApartmentState = "MTA"
+    $bgRunspace.ThreadOptions  = "ReuseThread"
+    $bgRunspace.Open()
+    $bgRunspace.SessionStateProxy.SetVariable('BunkerSyncHash', $script:BunkerSyncHash)
+
+    $bgPowerShell = [powershell]::Create()
+    $bgPowerShell.Runspace = $bgRunspace
+    [void]$bgPowerShell.AddScript({
+        param($ScriptPath)
+        $script:IsBackgroundCollector = $true
+        . $ScriptPath
+    }).AddArgument($script:CurrentScriptPath)
+
+    $script:BgPowerShell = $bgPowerShell
+    $script:BgRunspace   = $bgRunspace
+    $script:BgHandle     = $bgPowerShell.BeginInvoke()
+
+    Write-DashLog "Runspace di raccolta dati in background avviato (thread separato dal server HTTP)."
+}
+
 # === SERVER HTTP LOCALE (LOOPBACK ONLY) ===
+function Start-DashboardServer {
 $listener = New-Object System.Net.HttpListener
 $startedOk = $false
 $triedPrefixes = @($Prefix, "http://localhost:$Port/")
@@ -2225,10 +2271,22 @@ foreach ($tryPrefix in $triedPrefixes) {
 
 if (-not $startedOk) {
     Write-Host "[ERRORE] Impossibile avviare il listener HTTP su porta $Port."
-    exit 1
+    try {
+        $owner = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($owner) {
+            $ownerProc = Get-Process -Id $owner.OwningProcess -ErrorAction SilentlyContinue
+            Write-DashLog "Porta $Port gia' occupata da PID $($owner.OwningProcess) ($($ownerProc.ProcessName), avviato $($ownerProc.StartTime))."
+        }
+    } catch {}
+    Write-DashLog "Impossibile avviare il listener su $Port dopo tutti i tentativi. Uscita immediata (nessun thread di raccolta avviato)."
+    [Environment]::Exit(1)
 }
 
 Write-Host "[OK] Unbound Bunker DASHBOARD LIVE in ascolto su $Prefix (Ctrl+C per arrestare)"
+
+# Il raccoglitore dati in background parte SOLO ora, a listener gia' confermato
+# attivo: cosi' un bind fallito non lascia mai in esecuzione un thread orfano.
+Start-BackgroundCollector
 
 try { [System.IO.File]::WriteAllText($PidFile, [string]$PID) } catch { Write-DashLog "Impossibile scrivere PID file: $($_.Exception.Message)" }
 
@@ -2241,7 +2299,18 @@ try {
         try {
             if ($request.Url.AbsolutePath -eq "/api/status") {
                 $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
-                $json = Get-BunkerStatusJson -ForceVersions:$forceVersions
+                if ($forceVersions) {
+                    # Richiesta manuale e rara (es. dopo un riavvio): calcolo diretto accettabile.
+                    $json = Get-BunkerStatusJson -ForceVersions
+                } elseif ($script:BunkerSyncHash -and $script:BunkerSyncHash.Json) {
+                    # Percorso normale (poll ogni 2s): nessun calcolo qui, solo lettura
+                    # del dato gia' pronto pubblicato dal runspace di background.
+                    $json = $script:BunkerSyncHash.Json
+                } else {
+                    # Fallback solo nei primissimi istanti, prima che il runspace di
+                    # background abbia completato il suo primo ciclo.
+                    $json = Get-BunkerStatusJson
+                }
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
@@ -2298,4 +2367,16 @@ try {
     $listener.Stop()
     $listener.Close()
     try { if (Test-Path -LiteralPath $PidFile) { Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue } } catch {}
+}
+}
+
+# === AVVIO ===
+# $script:IsBackgroundCollector e' impostato SOLO nel runspace di background
+# (vedi Start-BackgroundCollector), che dot-sorgenta di nuovo questo stesso file:
+# in quel caso deve solo raccogliere dati, MAI avviare un secondo listener HTTP
+# ne' un secondo runspace di raccolta.
+if ($script:IsBackgroundCollector) {
+    Start-BackgroundCollectorLoop
+} else {
+    Start-DashboardServer
 }
