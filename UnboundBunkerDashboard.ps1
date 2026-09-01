@@ -938,6 +938,82 @@ $HtmlPage = @'
     box-shadow: none;
   }
 
+  .btn-restart-unbound {
+    background: rgba(79, 179, 255, 0.20);
+    color: var(--accent);
+    border: 1.5px solid var(--accent);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: inherit;
+    font-size: 0.85em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    white-space: nowrap;
+  }
+  .btn-restart-unbound:hover {
+    background: rgba(79, 179, 255, 0.40);
+    box-shadow: 0 0 14px rgba(79, 179, 255, 0.6);
+    transform: translateY(-1px);
+  }
+  .btn-restart-unbound:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .restart-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 15, 20, 0.88);
+    backdrop-filter: blur(2px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+  }
+  .restart-overlay.active { display: flex; }
+  .restart-overlay-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 40px;
+    min-width: 360px;
+    max-width: 90vw;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+  .restart-overlay-icon { font-size: 2.4em; margin-bottom: 8px; }
+  .restart-overlay-title { font-size: 1.15em; font-weight: bold; color: var(--text); margin-bottom: 6px; }
+  .restart-overlay-sub { font-size: 0.85em; color: var(--dim); margin-bottom: 20px; }
+  .restart-progress-track {
+    width: 100%;
+    height: 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .restart-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 8px;
+    transition: width 0.4s ease;
+    background-image: repeating-linear-gradient(45deg, var(--accent) 0 12px, rgba(79,179,255,0.35) 12px 24px);
+    background-size: 34px 34px;
+    animation: restart-stripes 0.9s linear infinite;
+  }
+  @keyframes restart-stripes {
+    from { background-position: 0 0; }
+    to { background-position: 34px 0; }
+  }
+  .restart-progress-pct { margin-top: 10px; font-size: 0.85em; color: var(--dim); letter-spacing: 0.5px; }
+
   h1 { 
     font-size: 2em; margin: 0 0 6px 0; font-weight: bold;
     background: linear-gradient(90deg, #d7e2ec 0%, #0099ff 25%, #ffffff 50%, #0099ff 75%, #d7e2ec 100%);
@@ -1162,10 +1238,25 @@ $HtmlPage = @'
     <button id="btnRestart" onclick="confirmRestart()" class="btn-restart" title="Riavvia la Dashboard ed esegui la verifica della porta">
       &#128472;&#65039; Riavvia Dashboard
     </button>
+    <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-restart-unbound" title="Riavvia il servizio Windows di Unbound">
+      &#128737;&#65039; Riavvia Unbound
+    </button>
     <div class="clock-box">
       <div class="clock-time" id="clockTime">--:--:--</div>
       <div class="clock-date" id="clockDate">-----------------</div>
     </div>
+  </div>
+</div>
+
+<div class="restart-overlay" id="restartOverlay">
+  <div class="restart-overlay-box">
+    <div class="restart-overlay-icon" id="restartOverlayIcon">&#9203;</div>
+    <div class="restart-overlay-title" id="restartOverlayTitle">Riavvio in corso...</div>
+    <div class="restart-overlay-sub" id="restartOverlaySub"></div>
+    <div class="restart-progress-track">
+      <div class="restart-progress-fill" id="restartProgressFill" style="width:0%;"></div>
+    </div>
+    <div class="restart-progress-pct" id="restartProgressPct">0%</div>
   </div>
 </div>
 
@@ -1512,6 +1603,30 @@ function filtraLiveRcode() {
   });
 }
 
+function showRestartOverlay(icon, title, sub) {
+  document.getElementById('restartOverlayIcon').innerHTML = icon;
+  document.getElementById('restartOverlayTitle').textContent = title;
+  document.getElementById('restartOverlaySub').textContent = sub;
+  updateRestartProgress(0);
+  document.getElementById('restartOverlay').classList.add('active');
+}
+
+function updateRestartProgress(pct) {
+  const p = Math.min(100, Math.max(0, pct));
+  const fill = document.getElementById('restartProgressFill');
+  const label = document.getElementById('restartProgressPct');
+  if (fill) fill.style.width = p + '%';
+  if (label) label.textContent = Math.round(p) + '%';
+}
+
+function hideRestartOverlay() {
+  updateRestartProgress(100);
+  setTimeout(() => {
+    const ov = document.getElementById('restartOverlay');
+    if (ov) ov.classList.remove('active');
+  }, 500);
+}
+
 async function confirmRestart() {
   if (!confirm("Sei sicuro di voler riavviare la Dashboard?\n\nVerrà eseguita la procedura automatica di rilascio e verifica della porta " + location.port + ".")) return;
 
@@ -1527,10 +1642,12 @@ async function confirmRestart() {
 
   setLiveStatus(false);
   document.getElementById('subheader').textContent = 'Riavvio in corso... Rilascio e controllo porta ' + location.port + ' in esecuzione...';
+  showRestartOverlay('&#128472;&#65039;', 'Riavvio della Dashboard in corso...', 'Rilascio e verifica della porta ' + location.port + ' in esecuzione...');
 
   let attempts = 0;
   const checkInterval = setInterval(async () => {
     attempts++;
+    updateRestartProgress((attempts / 35) * 95);
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
       if (res.ok) {
@@ -1539,6 +1656,7 @@ async function confirmRestart() {
           btn.disabled = false;
           btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
         }
+        hideRestartOverlay();
         refresh(true);
       }
     } catch(e) {}
@@ -1550,6 +1668,59 @@ async function confirmRestart() {
         btn.disabled = false;
         btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
       }
+      document.getElementById('restartOverlay').classList.remove('active');
+    }
+  }, 1000);
+}
+
+async function confirmRestartUnbound() {
+  if (!confirm("Sei sicuro di voler riavviare il servizio Unbound?\n\nLa risoluzione DNS potrebbe interrompersi per qualche secondo durante il riavvio.")) return;
+
+  const btn = document.getElementById('btnRestartUnbound');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '&#9203; Riavvio in corso...';
+  }
+
+  try {
+    await fetch('/api/restart-unbound', { method: 'POST', cache: 'no-store' });
+  } catch(e) {}
+
+  document.getElementById('subheader').textContent = 'Riavvio del servizio Unbound in corso...';
+  showRestartOverlay('&#128737;&#65039;', 'Riavvio del servizio Unbound in corso...', 'La risoluzione DNS potrebbe interrompersi per qualche secondo...');
+
+  let attempts = 0;
+  let seenDown = false;
+  const checkInterval = setInterval(async () => {
+    attempts++;
+    updateRestartProgress((attempts / 35) * 95);
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.engine_attivo) {
+          seenDown = true;
+        }
+        if (data.engine_attivo && (seenDown || attempts > 3)) {
+          clearInterval(checkInterval);
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '&#128737;&#65039; Riavvia Unbound';
+          }
+          hideRestartOverlay();
+          refresh(true);
+        }
+      }
+    } catch(e) {}
+
+    if (attempts > 35) {
+      clearInterval(checkInterval);
+      alert("Il riavvio di Unbound sta impiegando più tempo del previsto. Controlla lo stato del servizio.");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '&#128737;&#65039; Riavvia Unbound';
+      }
+      document.getElementById('restartOverlay').classList.remove('active');
     }
   }, 1000);
 }
@@ -2339,6 +2510,22 @@ try {
 
                 Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
                 break
+            } elseif ($request.Url.AbsolutePath -eq "/api/restart-unbound" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di riavvio del servizio Unbound ricevuta dall'interfaccia Web."
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes('{"status":"restarting"}')
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.OutputStream.Close()
+
+                # Riavvio del servizio eseguito in un processo esterno per non bloccare
+                # il loop principale della Dashboard durante l'operazione.
+                $restartUnboundCmd = "try { Restart-Service -Name 'unbound' -Force -ErrorAction Stop } catch { " +
+                                      "try { Stop-Service -Name 'unbound' -Force -ErrorAction SilentlyContinue; " +
+                                      "Start-Sleep -Seconds 2; Start-Service -Name 'unbound' -ErrorAction SilentlyContinue } catch {} }"
+
+                Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartUnboundCmd`"" -WindowStyle Hidden
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
