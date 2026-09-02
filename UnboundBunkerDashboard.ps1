@@ -1571,6 +1571,10 @@ $HtmlPage = @'
       &#128260; Forza Aggiornamento RPZ
     </button>
     <span id="forceRpzStatus" class="muted" style="font-size:0.8em; max-width:220px;"></span>
+    <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-restart-unbound" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
+      &#11015;&#65039; Aggiorna Dashboard da GitHub
+    </button>
+    <span id="updateDashStatus" class="muted" style="font-size:0.8em; max-width:260px;"></span>
     <div class="clock-box">
       <div class="clock-time" id="clockTime">--:--:--</div>
       <div class="clock-date" id="clockDate">-----------------</div>
@@ -2321,6 +2325,39 @@ async function confirmForceRpzUpdate() {
     btn.disabled = false;
     btn.innerHTML = '&#128260; Forza Aggiornamento RPZ';
   }
+  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
+}
+
+// === AGGIORNA DASHBOARD DA GITHUB (SELF-UPDATE) ===
+// Stesso schema di sicurezza del self-update del BAT: il file .ps1 viene
+// scaricato e verificato via SHA256 lato server PRIMA di essere installato.
+// Se tutto va bene la dashboard si riavvia da sola (stesso meccanismo del
+// bottone "Riavvia Dashboard"): la connessione cade per qualche secondo,
+// poi il polling normale la ritrova gia' sulla nuova versione.
+async function confirmUpdateDashboard() {
+  if (!confirm("Scaricare l'ultima versione della dashboard dal repository GitHub?\n\nSe l'hash SHA256 non corrisponde l'aggiornamento viene annullato automaticamente e la versione attuale resta invariata. Se invece va a buon fine, la dashboard si riavvia da sola (perderai la connessione per qualche secondo).")) return;
+
+  const btn = document.getElementById('btnUpdateDash');
+  const status = document.getElementById('updateDashStatus');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Download e verifica in corso...'; }
+  if (status) status.textContent = '';
+
+  try {
+    const res = await fetch('/api/update-dashboard', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'updated') {
+      if (status) status.textContent = 'Aggiornamento riuscito, riavvio in corso...';
+      if (btn) btn.innerHTML = '&#9203; Riavvio in corso...';
+      setTimeout(() => location.reload(), 6000);
+      return;
+    } else {
+      if (status) status.textContent = 'Aggiornamento annullato: ' + (data.error || 'errore sconosciuto');
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Errore di rete durante la richiesta.';
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#11015;&#65039; Aggiorna Dashboard da GitHub'; }
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
@@ -3181,6 +3218,84 @@ try {
                 if ($esito -eq "error") { $response.StatusCode = 500 }
                 $response.ContentLength64 = $buffer.Length
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            } elseif ($request.Url.AbsolutePath -eq "/api/update-dashboard" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di auto-aggiornamento della dashboard ricevuta dall'interfaccia Web."
+
+                # Stesso repo e stesso schema di sicurezza gia' usato dal self-update del
+                # BAT (versione_script_bat.txt / SELF-UPDATE): scarica il file .TXT (il
+                # .ps1 pubblicato come .TXT sul repo) + il suo .sha256, verifica l'hash
+                # PRIMA di toccare qualunque cosa, e solo se combacia sostituisce il file
+                # e si riavvia. Se il download fallisce o l'hash non combacia, la
+                # dashboard continua a girare invariata: nessun aggiornamento "a metà".
+                $esito = "error"
+                $errMsg = $null
+                $needRestart = $false
+                $targetScript = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
+
+                try {
+                    $cloudUrl    = "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.TXT"
+                    $cloudShaUrl = "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.sha256"
+                    $tmpFile     = Join-Path $UbDir "UnboundBunkerDashboard_update.ps1.tmp"
+                    $tmpSha      = Join-Path $UbDir "UnboundBunkerDashboard_update.sha256.tmp"
+                    Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $tmpSha  -Force -ErrorAction SilentlyContinue
+
+                    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+                    $wc = New-Object System.Net.WebClient
+                    $wc.DownloadFile($cloudUrl, $tmpFile)
+                    $wc.DownloadFile($cloudShaUrl, $tmpSha)
+
+                    if (-not (Test-Path -LiteralPath $tmpFile) -or -not (Test-Path -LiteralPath $tmpSha)) {
+                        throw "Download del file o dell'hash SHA256 dal repository fallito."
+                    }
+
+                    $fileSize = (Get-Item -LiteralPath $tmpFile).Length
+                    if ($fileSize -lt 20480) {
+                        throw "File scaricato sospettosamente piccolo ($fileSize byte): aggiornamento annullato per sicurezza."
+                    }
+
+                    $expectedSha = ((Get-Content -LiteralPath $tmpSha -Raw) -split '\s+')[0].Trim()
+                    $localSha    = (Get-FileHash -LiteralPath $tmpFile -Algorithm SHA256).Hash
+
+                    if ($expectedSha -and $localSha -and ($localSha.ToUpper() -eq $expectedSha.ToUpper())) {
+                        $stamp   = (Get-Date).ToString("yyyyMMdd_HHmmss")
+                        $bakFile = Join-Path $UbDir "UnboundBunkerDashboard_$stamp.BKP"
+                        Copy-Item -LiteralPath $targetScript -Destination $bakFile -Force
+                        Move-Item -LiteralPath $tmpFile -Destination $targetScript -Force
+                        Remove-Item -LiteralPath $tmpSha -Force -ErrorAction SilentlyContinue
+                        Write-DashLog "Dashboard aggiornata dal repository GitHub. Backup salvato in: $bakFile"
+                        $esito = "updated"
+                        $needRestart = $true
+                    } else {
+                        throw "Verifica SHA256 fallita (atteso: $expectedSha, calcolato: $localSha): aggiornamento annullato per sicurezza."
+                    }
+                } catch {
+                    $errMsg = $_.Exception.Message
+                    Write-DashLog "Errore nell'auto-aggiornamento della dashboard: $errMsg"
+                }
+
+                $respObj = [ordered]@{ status = $esito }
+                if ($errMsg) { $respObj.error = $errMsg }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($respObj | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                if ($esito -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+
+                if ($needRestart) {
+                    $response.OutputStream.Close()
+                    $restartCmd = "Start-Sleep -Seconds 1; " +
+                                  "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
+                                  "for (`$i=0; `$i -lt 20; `$i++) { " +
+                                  "  `$conn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue; " +
+                                  "  if (-not `$conn) { break }; " +
+                                  "  Start-Sleep -Milliseconds 500 " +
+                                  "}; " +
+                                  "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`"' -WindowStyle Hidden"
+                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
+                    break
+                }
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
