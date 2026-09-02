@@ -778,19 +778,27 @@ function Get-RpzFreshness {
             emoji      = $lista.Emoji
             ultimo_agg = "N/D"
             ore_fa     = -1
+            eta_txt    = "--"
             esito      = "sconosciuto"
         }
         if ([System.IO.File]::Exists($file)) {
             try {
-                $mtime = (Get-Item -LiteralPath $file).LastWriteTime
-                $oreFa = [math]::Round(((Get-Date) - $mtime).TotalHours, 1)
+                $mtime  = (Get-Item -LiteralPath $file).LastWriteTime
+                $totMin = [math]::Round(((Get-Date) - $mtime).TotalMinutes, 0)
+                if ($totMin -lt 0) { $totMin = 0 }
+                $oreInt = [math]::Floor($totMin / 60)
+                $minRes = $totMin % 60
+                $oreFa  = [math]::Round(($totMin / 60.0), 1)
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
                 $stato.ore_fa     = $oreFa
-                $stato.esito      = if ($oreFa -lt 24) { "ok" } elseif ($oreFa -lt 72) { "attenzione" } else { "scaduta" }
+                $stato.eta_txt    = "$oreInt ore $minRes min fa"
+                # Soglie: <12h verde (ok), 12-24h giallo (attenzione), 24-36h arancione (critica), >36h rosso (scaduta)
+                $stato.esito      = if ($oreFa -lt 12) { "ok" } elseif ($oreFa -lt 24) { "attenzione" } elseif ($oreFa -lt 36) { "critica" } else { "scaduta" }
                 if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
             } catch {}
         } else {
             $stato.esito = "mancante"
+            if ($piuVecchiaOre -lt 999) { $piuVecchiaOre = 999 }
         }
         $risultati += $stato
     }
@@ -1213,6 +1221,7 @@ $HtmlPage = @'
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
     --green:#208b4c; --green-bright:#3ddc84; --red:#c0392b; --red-bright:#ff5c5c;
     --amber:#d35400; --accent:#4fb3ff; --purple:#b388ff; --amber-bright:#ffb300;
+    --orange-bright:#ff8c1a;
   }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font-family: "Consolas","Cascadia Mono",monospace; margin: 0; padding: 20px; }
@@ -1497,6 +1506,19 @@ $HtmlPage = @'
     border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
   }
 
+  .bunker-layout {
+    display: flex; gap: 10px; margin-bottom: 22px; align-items: stretch; flex-wrap: wrap;
+  }
+  .bunker-rpz-panel {
+    flex: 1 1 380px; max-width: 460px; display: flex; flex-direction: column;
+  }
+  .bunker-badges-grid {
+    flex: 3 1 620px; margin-bottom: 0;
+  }
+  @media (max-width: 900px) {
+    .bunker-rpz-panel { max-width: none; }
+  }
+
   .boost-item { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
   .boost-item-header { display: flex; justify-content: space-between; font-size: 0.78em; color: var(--dim); margin-bottom: 5px; font-weight: bold; }
   .boost-item-val { color: var(--text); }
@@ -1569,6 +1591,7 @@ $HtmlPage = @'
   .esito-warn { color: var(--red-bright); font-weight: bold; }
   .esito-ok { color: var(--green-bright); }
   .esito-attenzione { color: var(--amber-bright); font-weight: bold; }
+  .esito-critica { color: var(--orange-bright); font-weight: bold; }
   .latency { color: var(--accent); font-weight: bold; }
   .muted { color: var(--dim); }
 
@@ -1711,13 +1734,14 @@ $HtmlPage = @'
 </div>
 <div class="sub" style="margin: -8px 0 14px 2px;">&#9889; Le 4 metriche sopra compongono il BUNKER GAIN (somma dei punti, poi limitata tra 25% e 80%).</div>
 
-<div class="bunker-subrow">
-  <div class="boost-item boost-item-wide boost-item-extrawide">
+<div class="bunker-layout">
+  <div class="boost-item bunker-rpz-panel">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRpzRules" style="width:100%"></div></div>
-    <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.5; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:4px 18px;"></div>
+    <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.5; display:grid; grid-template-columns: 1fr; gap:4px;"></div>
   </div>
 
+  <div class="bunker-subrow bunker-badges-grid">
   <div class="boost-item">
     <div class="boost-item-header"><span>&#129504; RAM WORKING SET</span><span class="boost-item-val" id="valUnboundRam">-- MB</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barUnboundRam" style="width:100%"></div></div>
@@ -1767,6 +1791,7 @@ $HtmlPage = @'
     <div class="boost-item-header"><span>&#128225; PROTOCOLLO TCP / UDP</span><span class="boost-item-val" id="valTcpUdp">--</span></div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barTcpUdp" style="width:0%"></div></div>
     <div id="tcpUdpDettaglio" style="margin-top:6px; font-size:0.74em; line-height:1.7;"></div>
+  </div>
   </div>
 </div>
 
@@ -2614,19 +2639,19 @@ async function refresh(forceVersions) {
     if (!Array.isArray(freschezzaListe)) { freschezzaListe = [freschezzaListe]; }
     const freschezzaByTag = {};
     freschezzaListe.forEach(f => { freschezzaByTag[f.tag] = f; });
-    const labelEsito = { ok: 'AGGIORNATA', attenzione: 'DA VERIFICARE', scaduta: 'NON AGGIORNATA', mancante: 'FILE MANCANTE', sconosciuto: 'N/D' };
-    const classeEsito = { ok: 'esito-ok', attenzione: 'esito-attenzione', scaduta: 'esito-warn', mancante: 'esito-warn', sconosciuto: 'muted' };
+    const labelEsito = { ok: 'AGGIORNATA', attenzione: 'DA VERIFICARE', critica: 'DA VERIFICARE', scaduta: 'NON AGGIORNATA', mancante: 'FILE MANCANTE', sconosciuto: 'N/D' };
+    const classeEsito = { ok: 'esito-ok', attenzione: 'esito-attenzione', critica: 'esito-critica', scaduta: 'esito-warn', mancante: 'esito-warn', sconosciuto: 'esito-warn' };
 
     document.getElementById('rpzDettaglio').innerHTML = rpzDettaglio.map(r => {
       const fr = freschezzaByTag[r.tag];
       let rigaFreschezza = '';
       if (fr) {
-        const cls = classeEsito[fr.esito] || 'muted';
+        const cls = classeEsito[fr.esito] || 'esito-warn';
         const lbl = labelEsito[fr.esito] || fr.esito;
-        const oreTxt = (typeof fr.ore_fa === 'number' && fr.ore_fa >= 0) ? `${fr.ore_fa} ore fa` : '--';
+        const oreTxt = fr.eta_txt || ((typeof fr.ore_fa === 'number' && fr.ore_fa >= 0) ? `${fr.ore_fa} ore fa` : '--');
         rigaFreschezza = `<div style="display:flex; justify-content:space-between; font-size:0.92em; margin-top:1px;">
           <span class="${cls}">${lbl}</span>
-          <span class="muted">${fr.ultimo_agg || 'N/D'} (${oreTxt})</span>
+          <span class="${cls}">${fr.ultimo_agg || 'N/D'} (${oreTxt})</span>
         </div>`;
       }
       return `<div style="border-bottom:1px solid rgba(255,255,255,0.05); padding:3px 0;">
