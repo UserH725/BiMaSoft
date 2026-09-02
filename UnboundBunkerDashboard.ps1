@@ -1596,13 +1596,13 @@ $HtmlPage = @'
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
   .live-log-row { display: flex; gap: 18px; margin-bottom: 18px; align-items: stretch; flex-wrap: wrap; }
-  .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; gap: 18px; }
+  .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; justify-content: space-between; gap: 18px; }
   .live-log-left .panel { margin-bottom: 0; }
   .live-log-panel { flex: 1 1 300px; display: flex; flex-direction: column; min-width: 280px; margin-bottom: 0; }
   .live-log-feed {
     flex: 1; overflow-y: auto; overflow-x: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
     line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px; min-height: 140px; position: relative;
+    padding: 8px 10px; min-height: 540px; position: relative;
   }
   .live-log-track {
     display: flex; flex-direction: column;
@@ -2269,9 +2269,9 @@ function renderLiveLogFeed(d) {
     return; // nessuna attività: il pannello resta fermo, niente da animare
   }
 
-  // feed[0] è il più recente: prendo gli ultimi 12 e li rimetto in
+  // feed[0] è il più recente: prendo gli ultimi 30 e li rimetto in
   // ordine cronologico (più vecchio in alto, più recente in basso).
-  const voci = feed.slice(0, 12).slice().reverse();
+  const voci = feed.slice(0, 30).slice().reverse();
   const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
   if (signature === liveLogSignature) return; // nessun evento nuovo: resto fermo
 
