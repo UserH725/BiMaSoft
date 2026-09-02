@@ -68,7 +68,7 @@ call :AUTO_TUNING_HARDWARE
 :: INIZIALIZZAZIONE RAM DISK (Zero Usura SSD per Log e Statistiche)
 :: ==================================================================
 set "RAM_DRIVE=R:"
-set "RAM_SIZE=250M"
+set "RAM_SIZE=200M"
 
 sc query imdsksvc >nul 2>&1
 if !errorlevel! NEQ 0 (
@@ -122,7 +122,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.0"
+set "LOCAL_VER=1020.1"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -3208,7 +3208,7 @@ echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m======================================================================================================================================================
 echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
 echo ======================================================================================================================================================
-echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
+echo  Versione UNBOUND      locale: !UB_LOCAL_VER!  - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
 echo                                                       *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
@@ -3450,28 +3450,37 @@ set "CRZ2_OUT=%~3"
 set "CRZ2_ARGS2=%~4"
 set "CRZ2_REF=%~5"
 set "CURL_TRY_NUM=1"
-curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+:: -C - : riprende un download parziale dal punto in cui si era interrotto
+:: (curl legge la dimensione gia' presente in CRZ2_OUT e chiede al server il
+:: resto via header Range). Fondamentale per i file HaGeZi grandi/multi-parte
+:: (es. TIF): senza resume, ogni retry ripartiva da zero e con una rete
+:: instabile (micro-interruzioni WireGuard/WARP) il download non convergeva
+:: mai. Se CRZ2_OUT non esiste ancora, -C - equivale a un download normale.
+curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=2"
-curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=3"
-curl -s -f %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 :: sorgente primaria esaurita, tento la secondaria (fallback)
+:: NB: si continua a riprendere lo stesso CRZ2_OUT anche passando a
+:: CRZ2_URL2 (jsDelivr serve lo stesso contenuto della sorgente primaria,
+:: quindi gli offset di byte restano coerenti).
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=4"
-curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=5"
-curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=6"
-curl -s -f %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
