@@ -3286,6 +3286,9 @@ try {
                     }
                 } catch {
                     $errMsg = $_.Exception.Message
+                    if ($errMsg -match '\(404\)') {
+                        $errMsg = "$errMsg — il file non risulta ancora pubblicato sul repository all'URL atteso ($cloudUrl / $cloudShaUrl). Verifica che UnboundBunkerDashboard.TXT e UnboundBunkerDashboard.sha256 siano presenti nel repo prima di riprovare."
+                    }
                     Write-DashLog "Errore nell'auto-aggiornamento della dashboard: $errMsg"
                 }
 
