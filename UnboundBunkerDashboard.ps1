@@ -3320,6 +3320,8 @@ try {
                     $finalScript   = $targetScript
                     $currentLogFile = $LogFile
                     $restartHelper = "R:\_dashboard_restart_helper.ps1"
+                    $stdOutLog     = "R:\_dashboard_stdout.log"
+                    $stdErrLog     = "R:\_dashboard_stderr.log"
                     $restartScript = @"
 try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Avviato, PID vecchio processo: $currentPid." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
 Start-Sleep -Seconds 1
@@ -3334,8 +3336,10 @@ for (`$i = 0; `$i -lt 20; `$i++) {
 try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Porta $waitPort libera: `$portFree. Verifico esistenza script: $finalScript" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
 try {
     if (-not (Test-Path -LiteralPath '$finalScript')) { throw "File non trovato: $finalScript" }
-    `$p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden -PassThru
-    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Nuovo processo avviato, PID `$(`$p.Id)." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
+    Remove-Item -LiteralPath '$stdOutLog' -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath '$stdErrLog' -Force -ErrorAction SilentlyContinue
+    `$p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden -RedirectStandardOutput '$stdOutLog' -RedirectStandardError '$stdErrLog' -PassThru
+    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Nuovo processo avviato, PID `$(`$p.Id). stdout/stderr redirette su $stdOutLog / $stdErrLog." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
 } catch {
     "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] ERRORE avvio nuovo processo: `$(`$_.Exception.Message)" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
 }
