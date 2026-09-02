@@ -1475,22 +1475,15 @@ $HtmlPage = @'
   @keyframes liveBadgeBlink { 50% { opacity: 0.45; } }
 
   .live-bar-track {
-    position: relative; flex: 1 1 auto; min-width: 0; height: 11px; border-radius: 6px; overflow: hidden;
-    background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; height: 11px;
   }
-  .live-bar-scan {
-    position: absolute; top: 0; left: -40%; height: 100%; width: 40%; border-radius: 6px;
-    background: linear-gradient(90deg, transparent, var(--green-bright), transparent);
-    box-shadow: 0 0 10px var(--green-bright);
-    animation: liveScanMove 1.3s linear infinite;
+  .live-pulse-dot {
+    width: 6px; height: 6px; border-radius: 1px; background: var(--green-bright); flex-shrink: 0;
+    animation: liveDotBlink 1.8s ease-in-out infinite;
   }
-  @keyframes liveScanMove {
-    0% { left: -40%; }
-    100% { left: 100%; }
-  }
-  .live-bar-track.offline { background: rgba(255, 92, 92, 0.22); }
-  .live-bar-track.offline .live-bar-scan {
-    animation: none; left: 0; width: 100%; opacity: 0.65;
+  @keyframes liveDotBlink { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
+  .live-bar-track.offline .live-pulse-dot {
+    background: var(--red-bright); animation: none; opacity: 0.85;
     background: var(--red-bright); box-shadow: 0 0 10px var(--red-bright);
   }
 
@@ -1602,6 +1595,20 @@ $HtmlPage = @'
   .grid-three-columns { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
+  .live-log-row { display: flex; gap: 18px; margin-bottom: 18px; align-items: stretch; flex-wrap: wrap; }
+  .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; gap: 18px; }
+  .live-log-left .panel { margin-bottom: 0; }
+  .live-log-panel { flex: 1 1 300px; display: flex; flex-direction: column; min-width: 280px; margin-bottom: 0; }
+  .live-log-feed {
+    flex: 1; overflow: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
+    line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; min-height: 140px;
+  }
+  .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: liveLogFadeIn 0.4s ease; }
+  .live-log-line:nth-child(n+7) { opacity: 0.55; }
+  .live-log-line:nth-child(n+10) { opacity: 0.3; }
+  @keyframes liveLogFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
   .storico-grid { display: flex; gap: 18px; flex-wrap: wrap; }
   .storico-chart-box { flex: 1; min-width: 260px; }
   .storico-chart-title { font-size: 0.9em; font-weight: bold; color: var(--accent); margin-bottom: 4px; }
@@ -1662,22 +1669,31 @@ $HtmlPage = @'
     <span class="status-dot ok" id="liveDot"></span>
     <span id="liveLabel">DASHBOARD ATTIVA - Dati in tempo reale</span>
   </div>
-  <div class="live-bar-track" id="liveBarTrack"><div class="live-bar-scan"></div></div>
+  <div class="live-bar-track" id="liveBarTrack"></div>
 </div>
 
-<div class="panel panel-versioni">
-  <h2>&#127760; Connettivit&agrave; IP</h2>
-  <div id="statsIpConn" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
-</div>
+<div class="live-log-row">
+  <div class="live-log-left">
+    <div class="panel panel-versioni">
+      <h2>&#127760; Connettivit&agrave; IP</h2>
+      <div id="statsIpConn" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+    </div>
 
-<div class="panel panel-versioni">
-  <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-  <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
-</div>
+    <div class="panel panel-versioni">
+      <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
+      <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+    </div>
 
-<div class="panel panel-versioni">
-  <h2>&#128295; Windows Update</h2>
-  <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+    <div class="panel panel-versioni">
+      <h2>&#128295; Windows Update</h2>
+      <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+    </div>
+  </div>
+
+  <div class="panel live-log-panel">
+    <h2>&#128225; Attivit&agrave; Live</h2>
+    <div id="liveLogFeed" class="live-log-feed"></div>
+  </div>
 </div>
 
 <div class="badges" id="badges"></div>
@@ -1986,6 +2002,19 @@ function playOfflineBeep() {
   } catch (e) {}
 }
 
+function buildLiveDotGrid() {
+  const track = document.getElementById('liveBarTrack');
+  if (!track || track.childElementCount > 0) return;
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'live-pulse-dot';
+    dot.style.animationDelay = (i * 0.13).toFixed(2) + 's';
+    track.appendChild(dot);
+  }
+}
+buildLiveDotGrid();
+
 function setLiveStatus(isLive) {
   const dot = document.getElementById('liveDot');
   const badge = document.getElementById('liveBadge');
@@ -2212,6 +2241,27 @@ function renderWinUpdate(d) {
   if (w.errore) {
     cont.innerHTML += `<div class="muted" style="width:100%; margin-top:6px;">${w.errore}</div>`;
   }
+}
+
+function renderLiveLogFeed(d) {
+  const cont = document.getElementById('liveLogFeed');
+  if (!cont) return;
+  let feed = d.live_rcode_feed || [];
+  if (!Array.isArray(feed)) { feed = [feed]; }
+  if (feed.length === 0) {
+    cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
+    return;
+  }
+  const righe = feed.slice(0, 12).map(f => {
+    const code = (f.rcode || '').toUpperCase();
+    let colore = 'var(--dim)';
+    if (code === 'NOERROR') colore = 'var(--green-bright)';
+    else if (code === 'NXDOMAIN') colore = 'var(--red-bright)';
+    else if (code === 'SERVFAIL') colore = 'var(--amber-bright)';
+    const dominio = (f.dominio || '-').length > 34 ? (f.dominio.slice(0, 34) + '\u2026') : (f.dominio || '-');
+    return `<div class="live-log-line"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
+  }).join('');
+  cont.innerHTML = righe;
 }
 
 function filtraLiveRcode() {
@@ -3025,6 +3075,7 @@ async function refresh(forceVersions) {
     renderBlocchiOrari(d);
     renderDnsFallbackLog(d);
     renderWinUpdate(d);
+    renderLiveLogFeed(d);
 
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
