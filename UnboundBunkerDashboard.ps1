@@ -2470,7 +2470,7 @@ async function confirmUpdateDashboard() {
     if (res.ok && data.status === 'updated') {
       if (status) status.textContent = 'Aggiornamento riuscito, riavvio in corso...';
       if (btn) btn.innerHTML = '&#9203; Riavvio in corso...';
-      setTimeout(() => { location.href = location.pathname + '?dashboard_updated=1'; }, 6000);
+      waitForDashboardRestartAfterUpdate();
       return;
     } else {
       if (status) status.textContent = 'Aggiornamento annullato: ' + (data.error || 'errore sconosciuto');
@@ -2481,6 +2481,46 @@ async function confirmUpdateDashboard() {
 
   if (btn) { btn.disabled = false; btn.innerHTML = '&#11015;&#65039; Aggiorna Dashboard da GitHub'; }
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
+}
+
+// Dopo un aggiornamento riuscito il file .ps1 e' cambiato: a differenza del
+// semplice riavvio, qui serve un vero ricaricamento della pagina (non un
+// refresh dei soli dati) per ricevere l'HTML/JS della nuova versione.
+// Stesso schema di attesa/overlay del riavvio normale (soft/hard limit +
+// avviso "possibile scansione antivirus"), cambia solo l'esito finale.
+function waitForDashboardRestartAfterUpdate() {
+  setLiveStatus(false);
+  document.getElementById('subheader').textContent = 'Aggiornamento applicato, riavvio della Dashboard in corso...';
+  showRestartOverlay('&#11015;&#65039;', 'Aggiornamento applicato, riavvio della Dashboard...', 'La nuova versione sta ripartendo, attendere...');
+
+  let attempts = 0;
+  const SOFT_LIMIT = 35;   // dopo questo tempo, avviso "morbido" ma continua ad attendere
+  const HARD_LIMIT = 90;   // oltre questo, rinuncia davvero
+  const checkInterval = setInterval(async () => {
+    attempts++;
+    updateRestartProgress((attempts / HARD_LIMIT) * 95);
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      if (res.ok) {
+        clearInterval(checkInterval);
+        updateRestartProgress(100);
+        location.href = location.pathname + '?dashboard_updated=1';
+      }
+    } catch(e) {}
+
+    if (attempts === SOFT_LIMIT) {
+      document.getElementById('restartOverlaySub').textContent =
+        'Sta impiegando più del previsto (possibile scansione antivirus del processo appena avviato)... continuo ad attendere.';
+    }
+
+    if (attempts > HARD_LIMIT) {
+      clearInterval(checkInterval);
+      alert("Il riavvio dopo l'aggiornamento non risulta ancora completato dopo " + HARD_LIMIT + " secondi. Ricarica manualmente la pagina tra qualche secondo, oppure controlla che il processo sia effettivamente ripartito.");
+      document.getElementById('restartOverlay').classList.remove('active');
+      const btn = document.getElementById('btnUpdateDash');
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#11015;&#65039; Aggiorna Dashboard da GitHub'; }
+    }
+  }, 1000);
 }
 
 async function refresh(forceVersions) {
