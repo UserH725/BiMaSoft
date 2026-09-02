@@ -1,6 +1,6 @@
-# ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
-# ======================================================================================= #
+# =======================================================================================#
+# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)      #
+# =======================================================================================#
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
 $UbDir  = "C:\Program Files\Unbound"
