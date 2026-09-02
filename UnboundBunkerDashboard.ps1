@@ -1,6 +1,6 @@
-# ======================================================================================= #
-# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
-# ======================================================================================= #
+# =======================================================================================#
+# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)      #
+# =======================================================================================#
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
 $UbDir  = "C:\Program Files\Unbound"
@@ -27,6 +27,31 @@ function Write-DashLog {
 trap {
     Write-DashLog "ERRORE NON GESTITO: $($_.Exception.Message) | Riga: $($_.InvocationInfo.ScriptLineNumber)"
     continue
+}
+
+# === LETTURA SICURA FILE DI LOG IN USO (BYPASS FILE LOCK) ===
+function Get-SafeLogLines {
+    param(
+        [string]$Path,
+        [int]$Tail = 0
+    )
+    if (-not [System.IO.File]::Exists($Path)) { return @() }
+    try {
+        $fs = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+        $lines = New-Object System.Collections.Generic.List[string]
+        while (-not $sr.EndOfStream) {
+            [void]$lines.Add($sr.ReadLine())
+        }
+        $sr.Close()
+        $fs.Close()
+        if ($Tail -gt 0 -and $lines.Count -gt $Tail) {
+            return $lines.GetRange($lines.Count - $Tail, $Tail)
+        }
+        return $lines
+    } catch {
+        return @()
+    }
 }
 
 $RpzListe = @(
@@ -452,11 +477,7 @@ $script:LogTailCacheTtlSec = 2
 
 function Get-RpzLogTailCached {
     if (((Get-Date) - $script:LogTailCacheTime).TotalSeconds -ge $script:LogTailCacheTtlSec -or $script:LogTailCacheLines.Count -eq 0) {
-        $lines = @()
-        if ([System.IO.File]::Exists($RpzLog)) {
-            try { $lines = Get-Content -LiteralPath $RpzLog -Tail 1000 -ErrorAction SilentlyContinue } catch {}
-        }
-        $script:LogTailCacheLines = $lines
+        $script:LogTailCacheLines = Get-SafeLogLines -Path $RpzLog -Tail 1000
         $script:LogTailCacheTime  = Get-Date
     }
     return $script:LogTailCacheLines
@@ -501,7 +522,7 @@ function Get-LiveRcodeFeed {
                     }
                     $currentUpstream = $zap
                 }
-                elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\]\s+(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
+                elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                     $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
                     $feed += @{
                         orario    = $matches[1]
@@ -713,15 +734,12 @@ function Get-RpzBreakdown {
 
     $liste = @()
     $blkTotale = 0
-    $rpzLines = $null
-    if ([System.IO.File]::Exists($RpzLog)) {
-        try { $rpzLines = Get-Content -LiteralPath $RpzLog -ErrorAction SilentlyContinue } catch {}
-    }
+    $rpzLines = Get-SafeLogLines -Path $RpzLog
     foreach ($lista in $RpzListe) {
         $domini = @()
         $conteggioLista = 0
-        if ($rpzLines) {
-            $rx = [regex]("\[" + [regex]::Escape($lista.Tag) + "\]\s+(\S+)\s+rpz-nxdomain")
+        if ($rpzLines -and $rpzLines.Count -gt 0) {
+            $rx = [regex]("\[" + [regex]::Escape($lista.Tag) + "\]\s+(?:.*?\s+)?(\S+)\s+rpz-nxdomain")
             $matchDomini = foreach ($ln in $rpzLines) {
                 $mm = $rx.Match($ln)
                 if ($mm.Success) { $mm.Groups[1].Value.TrimEnd('.') }
@@ -811,7 +829,7 @@ function Get-HealthSnapshot {
     return $null
 }
 
-# === LOG FALLBACK DNS (CAMBIO RESOLVER UPSTREAM PER TIMEOUT/ERRORE) ===
+# === LOG FALLBACK DNS ===
 $script:DnsFallbackCache     = $null
 $script:DnsFallbackCacheTime = [DateTime]::MinValue
 $script:DnsFallbackCacheTtlSec = 5
@@ -866,13 +884,10 @@ function Get-BlocksHourlyDistribution {
     }
 
     $ore = New-Object int[] 24
-    $rpzLines = $null
-    if ([System.IO.File]::Exists($RpzLog)) {
-        try { $rpzLines = Get-Content -LiteralPath $RpzLog -ErrorAction SilentlyContinue } catch {}
-    }
-    if ($rpzLines) {
+    $rpzLines = Get-SafeLogLines -Path $RpzLog
+    if ($rpzLines -and $rpzLines.Count -gt 0) {
         foreach ($ln in $rpzLines) {
-            if ($ln -match '^(\d{2}):\d{2}:\d{2}.*?\[[a-zA-Z0-9_\-]+\]\s+\S+\s+rpz-(nxdomain|nodata)') {
+            if ($ln -match '(\d{2}):\d{2}:\d{2}.*?\brpz') {
                 $h = [int]$matches[1]
                 if ($h -ge 0 -and $h -le 23) { $ore[$h]++ }
             }
@@ -2153,7 +2168,7 @@ function renderRestartLog(d) {
   `).join('');
 }
 
-// === DISTRIBUZIONE ORARIA DEI BLOCCHI (BAR CHART) ===
+// === DISTRIBUZIONE ORARIA DEI BLOCCHI RPZ (BAR CHART) ===
 function renderBlocchiOrari(d) {
   const svg = document.getElementById('chartBlocchiOrari');
   const info = document.getElementById('blocchiOrariInfo');
@@ -2899,6 +2914,21 @@ async function refresh(forceVersions) {
       bRam.innerHTML = '&#128190; RAM R:\ ' + d.ram_disk.used_mb + '/' + d.ram_disk.tot_mb + ' MB (' + d.ram_disk.pct + '%)';
       badges.appendChild(bRam);
     }
+
+    let maxAgeHours = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
+    let rpzStatePct = 100;
+    if (maxAgeHours > 24) {
+      let extraHours = Math.floor(maxAgeHours - 24);
+      rpzStatePct = Math.max(50, 100 - (extraHours * 2));
+    }
+    const bRpzState = document.createElement('span');
+    let rpzStateStyle = 'ok';
+    if (rpzStatePct < 75) { rpzStateStyle = 'bad'; }
+    else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
+    bRpzState.className = 'badge ' + rpzStateStyle;
+    bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
+    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 24h: 100%\n- Oltre 24h: -2% per ogni ora fino a un minimo del 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
+    badges.appendChild(bRpzState);
 
     const bBlocchi = document.createElement('span');
     bBlocchi.className = 'badge blocchi';
