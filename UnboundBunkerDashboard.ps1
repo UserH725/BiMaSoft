@@ -1341,6 +1341,29 @@ $HtmlPage = @'
   }
   .restart-progress-pct { margin-top: 10px; font-size: 0.85em; color: var(--dim); letter-spacing: 0.5px; }
 
+  .update-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-12px);
+    background: var(--panel);
+    border: 1.5px solid var(--green-bright);
+    color: var(--text);
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-size: 0.95em;
+    font-weight: bold;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .update-toast.active {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
   h1 { 
     font-size: 2em; margin: 0 0 6px 0; font-weight: bold;
     background: linear-gradient(90deg, #d7e2ec 0%, #0099ff 25%, #ffffff 50%, #0099ff 75%, #d7e2ec 100%);
@@ -1596,6 +1619,8 @@ $HtmlPage = @'
   </button>
   <span id="updateDashStatus" class="muted button-row-status"></span>
 </div>
+
+<div class="update-toast" id="updateToast">&#9989; Aggiornamento dashboard avvenuto</div>
 
 <div class="restart-overlay" id="restartOverlay">
   <div class="restart-overlay-box">
@@ -2199,6 +2224,13 @@ function hideRestartOverlay() {
   }, 500);
 }
 
+function showUpdateToast() {
+  const t = document.getElementById('updateToast');
+  if (!t) return;
+  t.classList.add('active');
+  setTimeout(() => t.classList.remove('active'), 4000);
+}
+
 async function confirmRestart() {
   if (!confirm("Sei sicuro di voler riavviare la Dashboard?\n\nVerrà eseguita la procedura automatica di rilascio e verifica della porta " + location.port + ".")) return;
 
@@ -2363,7 +2395,7 @@ async function confirmUpdateDashboard() {
     if (res.ok && data.status === 'updated') {
       if (status) status.textContent = 'Aggiornamento riuscito, riavvio in corso...';
       if (btn) btn.innerHTML = '&#9203; Riavvio in corso...';
-      setTimeout(() => location.reload(), 6000);
+      setTimeout(() => { location.href = location.pathname + '?dashboard_updated=1'; }, 6000);
       return;
     } else {
       if (status) status.textContent = 'Aggiornamento annullato: ' + (data.error || 'errore sconosciuto');
@@ -3050,6 +3082,11 @@ async function refresh(forceVersions) {
   } finally {
     isRefreshing = false;
   }
+}
+
+if (new URLSearchParams(location.search).get('dashboard_updated') === '1') {
+  history.replaceState(null, '', location.pathname);
+  showUpdateToast();
 }
 
 refresh(true);
