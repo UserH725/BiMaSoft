@@ -3189,7 +3189,10 @@ async function refresh(forceVersions) {
       if (feedRcode.length === 0) {
         tbodyRcode.innerHTML = '<tr><td colspan="5" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
       } else {
-        feedRcode.forEach(f => {
+        // feedRcode[0] è il più recente: lo rimetto in ordine cronologico
+        // (più vecchio in cima, più recente in fondo alla tabella).
+        const feedCronologico = feedRcode.slice().reverse();
+        feedCronologico.forEach(f => {
           const tr = document.createElement('tr');
           let badgeStyle = 'background: rgba(127, 147, 166, 0.2); color: var(--dim); border: 1px solid var(--dim);';
           const code = (f.rcode || 'UNKNOWN').toUpperCase();
