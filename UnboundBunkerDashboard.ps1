@@ -1596,7 +1596,7 @@ $HtmlPage = @'
   .grid-three-columns > div { flex: 1; min-width: 310px; margin-bottom: 0; }
 
   .live-log-row { display: flex; gap: 18px; margin-bottom: 18px; align-items: stretch; flex-wrap: wrap; }
-  .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; justify-content: space-between; gap: 18px; }
+  .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; gap: 18px; }
   .live-log-left .panel { margin-bottom: 0; }
   .live-log-panel { flex: 1 1 300px; display: flex; flex-direction: column; min-width: 280px; margin-bottom: 0; }
   .live-log-feed {
@@ -1675,6 +1675,8 @@ $HtmlPage = @'
   <div class="live-bar-track" id="liveBarTrack"></div>
 </div>
 
+<div class="badges" id="badges"></div>
+
 <div class="live-log-row">
   <div class="live-log-left">
     <div class="panel panel-versioni">
@@ -1699,7 +1701,6 @@ $HtmlPage = @'
   </div>
 </div>
 
-<div class="badges" id="badges"></div>
 
 <div class="boost-subrow">
   <div class="boost-item">
