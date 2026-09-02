@@ -1,6 +1,6 @@
-# =======================================================================================#
-# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)      #
-# =======================================================================================#
+# ======================================================================================= #
+# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
+# ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
 $UbDir  = "C:\Program Files\Unbound"
@@ -3237,18 +3237,19 @@ try {
                 Write-DashLog "Richiesta di auto-aggiornamento della dashboard ricevuta dall'interfaccia Web."
 
                 # Stesso repo e stesso schema di sicurezza gia' usato dal self-update del
-                # BAT (versione_script_bat.txt / SELF-UPDATE): scarica il file .TXT (il
-                # .ps1 pubblicato come .TXT sul repo) + il suo .sha256, verifica l'hash
-                # PRIMA di toccare qualunque cosa, e solo se combacia sostituisce il file
-                # e si riavvia. Se il download fallisce o l'hash non combacia, la
-                # dashboard continua a girare invariata: nessun aggiornamento "a metà".
+                # BAT: scarica il file .ps1 direttamente (qui, a differenza del BAT, resta
+                # .ps1 sul repo, con l'hash .sha256 generato automaticamente da GitHub) e
+                # verifica l'hash PRIMA di toccare qualunque cosa; solo se combacia
+                # sostituisce il file e si riavvia. Se il download fallisce o l'hash non
+                # combacia, la dashboard continua a girare invariata: nessun aggiornamento
+                # "a metà".
                 $esito = "error"
                 $errMsg = $null
                 $needRestart = $false
                 $targetScript = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
 
                 try {
-                    $cloudUrl    = "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.TXT"
+                    $cloudUrl    = "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1"
                     $cloudShaUrl = "https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.sha256"
                     $tmpFile     = Join-Path $UbDir "UnboundBunkerDashboard_update.ps1.tmp"
                     $tmpSha      = Join-Path $UbDir "UnboundBunkerDashboard_update.sha256.tmp"
@@ -3287,7 +3288,7 @@ try {
                 } catch {
                     $errMsg = $_.Exception.Message
                     if ($errMsg -match '\(404\)') {
-                        $errMsg = "$errMsg — il file non risulta ancora pubblicato sul repository all'URL atteso ($cloudUrl / $cloudShaUrl). Verifica che UnboundBunkerDashboard.TXT e UnboundBunkerDashboard.sha256 siano presenti nel repo prima di riprovare."
+                        $errMsg = "$errMsg — il file non risulta ancora pubblicato sul repository all'URL atteso ($cloudUrl / $cloudShaUrl). Verifica che UnboundBunkerDashboard.ps1 e UnboundBunkerDashboard.sha256 siano presenti nel repo prima di riprovare."
                     }
                     Write-DashLog "Errore nell'auto-aggiornamento della dashboard: $errMsg"
                 }
