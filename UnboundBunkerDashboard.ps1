@@ -755,10 +755,6 @@ function Get-SessionTotal {
 }
 
 # === FRESCHEZZA AGGIORNAMENTI BLOCKLIST RPZ ===
-# Ogni lista viene scritta da UnboundBunkerManager.BAT SOLO al termine di un
-# download riuscito (il file .conf non viene toccato se il download fallisce),
-# quindi la data di ultima modifica del file coincide con l'ultimo aggiornamento
-# riuscito, non con l'ultimo tentativo.
 $script:RpzFreshnessCache     = $null
 $script:RpzFreshnessCacheTime = [DateTime]::MinValue
 $script:RpzFreshnessCacheTtlSec = 300
@@ -792,7 +788,6 @@ function Get-RpzFreshness {
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
                 $stato.ore_fa     = $oreFa
                 $stato.eta_txt    = "$oreInt ore $minRes min fa"
-                # Soglie: <12h verde (ok), 12-24h giallo (attenzione), 24-36h arancione (critica), >36h rosso (scaduta)
                 $stato.esito      = if ($oreFa -lt 12) { "ok" } elseif ($oreFa -lt 24) { "attenzione" } elseif ($oreFa -lt 36) { "critica" } else { "scaduta" }
                 if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
             } catch {}
@@ -817,10 +812,6 @@ function Get-HealthSnapshot {
 }
 
 # === LOG FALLBACK DNS (CAMBIO RESOLVER UPSTREAM PER TIMEOUT/ERRORE) ===
-# Quando per una stessa interrogazione compaiono piu' righe "sending query to"
-# con IP diversi prima della risposta finale, significa che Unbound e' dovuto
-# passare al forwarder successivo nella lista (il precedente non ha risposto
-# in tempo o ha restituito errore). Qui contiamo e mostriamo questi eventi.
 $script:DnsFallbackCache     = $null
 $script:DnsFallbackCacheTime = [DateTime]::MinValue
 $script:DnsFallbackCacheTtlSec = 5
@@ -864,7 +855,7 @@ function Get-DnsFallbackLog {
     return $result
 }
 
-# === DISTRIBUZIONE ORARIA DEI BLOCCHI RPZ (per ora del giorno, 0-23) ===
+# === DISTRIBUZIONE ORARIA DEI BLOCCHI RPZ ===
 $script:BlocksHourlyCache     = $null
 $script:BlocksHourlyCacheTime = [DateTime]::MinValue
 $script:BlocksHourlyCacheTtlSec = 15
@@ -899,8 +890,6 @@ function Get-BlocksHourlyDistribution {
 }
 
 # === STATO WINDOWS UPDATE ===
-# Interrogare la Windows Update Agent COM API puo' richiedere qualche secondo,
-# quindi cache lunga (15 minuti) per non bloccare il ciclo del collector.
 $script:WinUpdateCache     = $null
 $script:WinUpdateCacheTime = [DateTime]::MinValue
 $script:WinUpdateCacheTtlSec = 900
@@ -954,18 +943,11 @@ function Get-WindowsUpdateStatus {
     return $result
 }
 
-# === GLOBAL JSON CACHE TO PREVENT HTTP BLOCKING ===
+# === GLOBAL JSON CACHE ===
 $script:LastJsonCacheTime = [DateTime]::MinValue
 $script:CachedStatusJson  = $null
 
 # === RILEVAMENTO ANOMALIE DI TRAFFICO ===
-# Approccio volutamente semplice (nessun ML): per ogni dominio si tiene una
-# media mobile esponenziale (EWMA) delle query/minuto. Se in un minuto un
-# dominio supera sia una soglia assoluta (>=8 query) sia 4 volte la sua
-# media storica, scatta un allarme. Il tallying usa gli stessi eventi gia'
-# estratti per il Live Feed (nessun parsing aggiuntivo del log), con un set
-# di deduplica per non ricontare le righe che restano nella coda del log
-# tra un ciclo e l'altro del raccoglitore in background.
 function Update-AnomalyTracking {
     param($liveRcode)
 
@@ -1001,18 +983,12 @@ function Update-AnomalyTracking {
                 })
                 while ($script:AnomalyAlerts.Count -gt 30) { $script:AnomalyAlerts.RemoveAt(0) }
             }
-            # alpha 0.3: la media si adatta ma non insegue ogni singolo picco
             $st.ewma = if ($st.ewma -eq 0) { $conta } else { (0.3 * $conta) + (0.7 * $st.ewma) }
             $st.contaMinuto = 0
         }
         $script:AnomalyLastMinuteTs = $now
     }
 
-    # Il set di deduplica cresce con ogni riga nuova vista nel log; una pulizia
-    # periodica evita che cresca all'infinito su una dashboard rimasta accesa
-    # per giorni. Puo' causare un minimo doppio conteggio subito dopo la
-    # pulizia (le righe ancora in coda vengono riviste una volta) ma non e'
-    # sufficiente da solo a far scattare un allarme, e capita al massimo ogni 5 minuti.
     if (($now - $script:AnomalyLastPruneTs).TotalSeconds -ge 300) {
         $script:AnomalySeenEvents.Clear()
         $script:AnomalyLastPruneTs = $now
@@ -1065,12 +1041,6 @@ function Get-BunkerStatusJson {
         (Get-Date).AddSeconds(-$stats.base.uptime_secondi).ToString("dd.MM.yyyy HH:mm:ss")
     } else { "N/D" }
 
-    # === STORICO RIAVVII SERVIZIO UNBOUND ===
-    # unbound-control espone un contatore "time.up" che riparte da zero a ogni
-    # avvio del processo: quando il valore scende rispetto alla lettura
-    # precedente (invece di crescere) significa che nel frattempo il servizio
-    # e' stato riavviato (crash, "sc failure", riavvio manuale...). Non
-    # sappiamo distinguere la causa da qui, solo che e' successo.
     if (-not $script:UnboundRestartLog) {
         $script:UnboundRestartLog    = New-Object System.Collections.Generic.List[object]
         $script:UnboundLastUptimeSec = $null
@@ -1099,15 +1069,12 @@ function Get-BunkerStatusJson {
     }
     $stats.base.blocchi_pct = $pctBlocchi
 
-    # === CAMPIONAMENTO STORICO (per i grafici di andamento) ===
-    # Un punto al minuto, buffer circolare in memoria: si azzera a ogni riavvio
-    # della dashboard, coerentemente con "totale_sessione" (dall'ultimo avvio).
     if (-not $script:HistoryBuffer) {
         $script:HistoryBuffer          = New-Object System.Collections.Generic.List[object]
         $script:HistoryLastSampleTime  = [DateTime]::MinValue
         $script:HistoryLastQueryTotali = $null
         $script:HistoryIntervalSec     = 60
-        $script:HistoryMaxPoints       = 360   # 6 ore a 1 campione/minuto
+        $script:HistoryMaxPoints       = 360
     }
     $nowTs = Get-Date
     if ($script:HistoryBuffer.Count -eq 0 -or ($nowTs - $script:HistoryLastSampleTime).TotalSeconds -ge $script:HistoryIntervalSec) {
@@ -1115,7 +1082,7 @@ function Get-BunkerStatusJson {
         if ($null -ne $script:HistoryLastQueryTotali -and $script:HistoryLastSampleTime -ne [DateTime]::MinValue) {
             $deltaSec = ($nowTs - $script:HistoryLastSampleTime).TotalSeconds
             $deltaQ   = $stats.base.query_totali - $script:HistoryLastQueryTotali
-            if ($deltaQ -lt 0) { $deltaQ = 0 }   # contatore azzerato da un riavvio del servizio Unbound
+            if ($deltaQ -lt 0) { $deltaQ = 0 }
             if ($deltaSec -gt 0) { $qps = [math]::Round($deltaQ / $deltaSec, 2) }
         }
         $latOk = @($radar | Where-Object { $_.ok })
@@ -1198,8 +1165,6 @@ function Get-BunkerStatusJson {
     $script:CachedStatusJson = ($obj | ConvertTo-Json -Depth 8 -Compress)
     $script:LastJsonCacheTime = Get-Date
 
-    # Pubblica il risultato nella hashtable sincronizzata condivisa col runspace HTTP,
-    # cosi' il thread che risponde alle richieste non deve mai ricalcolare nulla.
     if ($script:BunkerSyncHash) {
         $script:BunkerSyncHash.Json = $script:CachedStatusJson
         $script:BunkerSyncHash.Ts   = $script:LastJsonCacheTime
@@ -1413,7 +1378,7 @@ $HtmlPage = @'
   .cache-highlight b { color: var(--green-bright); font-size: 1.15em; margin-left: 6px; }
 
   .gain-highlight {
-    margin-left: auto; font-size: 1em; padding: 10px 18px; border-radius: 8px;
+    font-size: 1em; padding: 10px 18px; border-radius: 8px;
     border: 2px solid var(--amber-bright); box-shadow: 0 0 24px rgba(255, 179, 0, 0.5);
     text-shadow: 0 1px 4px rgba(0,0,0,0.9); transition: all 0.4s ease-in-out;
   }
@@ -1489,7 +1454,7 @@ $HtmlPage = @'
 
   .boost-subrow {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px; margin-bottom: 12px; background: #0e141b; border: 1px solid var(--border);
+    gap: 8px; margin-bottom: 8px; background: #0e141b; border: 1px solid var(--border);
     border-radius: 8px; padding: 10px;
   }
 
@@ -1598,7 +1563,13 @@ $HtmlPage = @'
   .live-log-row { display: flex; gap: 18px; margin-bottom: 18px; align-items: stretch; flex-wrap: wrap; }
   .live-log-left { flex: 2 1 460px; display: flex; flex-direction: column; gap: 18px; }
   .live-log-left .panel { margin-bottom: 0; }
-  .live-log-panel { flex: 1 1 300px; display: flex; flex-direction: column; min-width: 280px; margin-bottom: 0; }
+  .badges-panel { flex: 1 1 auto; display: flex; align-items: center; }
+  .badges-panel .badges {
+    margin-bottom: 0; width: 100%; align-content: space-evenly; row-gap: 14px;
+  }
+  .badges-panel .badge { font-size: 0.95em; padding: 10px 14px; }
+  .badges-panel .gain-highlight { margin-left: 0; }
+  .live-log-panel { flex: 1.6 1 380px; display: flex; flex-direction: column; min-width: 380px; margin-bottom: 0; }
   .live-log-feed {
     flex: 1; overflow-y: auto; overflow-x: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
     line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
@@ -1608,7 +1579,6 @@ $HtmlPage = @'
     display: flex; flex-direction: column;
   }
   .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* Ingresso una tantum per le righe nuove: nessun loop, si ferma da sola quando non arrivano eventi. */
   @keyframes liveLogEntra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .live-log-line.nuova { animation: liveLogEntra 0.4s ease; }
 
@@ -1651,6 +1621,7 @@ $HtmlPage = @'
     &#11015;&#65039; Aggiorna Dashboard da GitHub
   </button>
   <span id="updateDashStatus" class="muted button-row-status"></span>
+  <div id="bunkerGainContainer" style="margin-left: auto; display: flex; align-items: center;"></div>
 </div>
 
 <div class="update-toast" id="updateToast">&#9989; Aggiornamento dashboard avvenuto</div>
@@ -1675,13 +1646,15 @@ $HtmlPage = @'
   <div class="live-bar-track" id="liveBarTrack"></div>
 </div>
 
-<div class="badges" id="badges"></div>
+<div class="panel badges-panel">
+  <div class="badges" id="badges"></div>
+</div>
 
 <div class="live-log-row">
   <div class="live-log-left">
     <div class="panel panel-versioni">
       <h2>&#127760; Connettivit&agrave; IP</h2>
-      <div id="statsIpConn" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+      <div id="statsIpConn" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%;"></div>
     </div>
 
     <div class="panel panel-versioni">
@@ -1693,6 +1666,61 @@ $HtmlPage = @'
       <h2>&#128295; Windows Update</h2>
       <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
     </div>
+
+    <!-- INCASTRATO A SINISTRA: BUNKER BOOST METRICHE + DETTAGLIO GAIN -->
+    <div class="panel" style="margin-bottom: 0;">
+      <h2>&#128640; Bunker Boost Score &amp; Guadagno (Gain)</h2>
+      <div class="boost-subrow">
+        <div class="boost-item">
+          <div class="boost-item-header"><span>CACHE REALE (NO RPZ) &middot; 30%</span><span class="boost-item-val" id="valRealCache">--%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barRealCache" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>EFFICIENZA LATENZA &middot; 25%</span><span class="boost-item-val" id="valLatScore">--%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barLatScore" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>UPSTREAM DoT ONLINE &middot; 15%</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barUpstreamScore" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC &middot; 15%</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barDnssecScore" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>RISERVA QPS &middot; 5%</span><span class="boost-item-val" id="valQpsScore">100%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barQpsScore" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>SALUTE SISTEMA &middot; 10%</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
+        </div>
+        <div class="boost-item" style="grid-column: 1 / -1;">
+          <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info</span><span class="boost-item-val" id="valPrefetchScore">--</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
+        </div>
+      </div>
+
+      <div style="font-size: 0.85em; font-weight: bold; color: var(--accent); margin: 10px 0 6px 0; border-top: 1px solid var(--border); padding-top: 8px;">&#9889; Dettaglio Punteggio Guadagno (Bunker Gain)</div>
+      <div class="boost-subrow" id="gainSubrow" style="margin-bottom: 0;">
+        <div class="boost-item">
+          <div class="boost-item-header"><span>&#9889; GUADAGNO LATENZA</span><span class="boost-item-val" id="valGainLat">-- / 40 pt</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barGainLat" style="width:0%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>&#128737; GUADAGNO BLOCCHI RPZ</span><span class="boost-item-val" id="valGainRpz">-- / 20 pt</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRpz" style="width:0%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>&#128190; GUADAGNO RAM DISK</span><span class="boost-item-val" id="valGainRam">-- / 10 pt</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRam" style="width:0%"></div></div>
+        </div>
+        <div class="boost-item">
+          <div class="boost-item-header"><span>&#127760; GUADAGNO DoT/PREFETCH</span><span class="boost-item-val" id="valGainDot">-- / 10 pt</span></div>
+          <div class="g-bar-bg"><div class="g-bar-fill" id="barGainDot" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="panel live-log-panel">
@@ -1700,59 +1728,6 @@ $HtmlPage = @'
     <div id="liveLogFeed" class="live-log-feed"></div>
   </div>
 </div>
-
-
-<div class="boost-subrow">
-  <div class="boost-item">
-    <div class="boost-item-header"><span>CACHE REALE (NO RPZ) &middot; peso 30%</span><span class="boost-item-val" id="valRealCache">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barRealCache" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>EFFICIENZA LATENZA &middot; peso 25%</span><span class="boost-item-val" id="valLatScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barLatScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>UPSTREAM DoT ONLINE &middot; peso 15%</span><span class="boost-item-val" id="valUpstreamScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barUpstreamScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>INTEGRIT&Agrave; DNSSEC &middot; peso 15%</span><span class="boost-item-val" id="valDnssecScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barDnssecScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>RISERVA CAPACIT&Agrave; (QPS) &middot; peso 5%</span><span class="boost-item-val" id="valQpsScore">100% (Riposo)</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barQpsScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>SALUTE SISTEMA &middot; peso 10%</span><span class="boost-item-val" id="valHealthScore">--%</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barHealthScore" style="width:100%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>PRONTEZZA PREFETCH &middot; info (100% = non serve)</span><span class="boost-item-val" id="valPrefetchScore">--</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barPrefetchScore" style="width:100%"></div></div>
-  </div>
-</div>
-<div class="sub" style="margin: -8px 0 14px 2px;">&#128640; Le 6 metriche sopra con "peso" compongono il BUNKER BOOST SCORE (somma pesata). "Prontezza Prefetch" &egrave; informativo e non entra nel calcolo: scala invertita, 100% significa che la cache &egrave; gi&agrave; efficiente e non necessita di rinnovi anticipati.</div>
-
-<div class="boost-subrow" id="gainSubrow">
-  <div class="boost-item">
-    <div class="boost-item-header"><span>&#9889; GUADAGNO LATENZA</span><span class="boost-item-val" id="valGainLat">-- / 40 pt</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainLat" style="width:0%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>&#128737; GUADAGNO BLOCCHI RPZ</span><span class="boost-item-val" id="valGainRpz">-- / 20 pt</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRpz" style="width:0%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>&#128190; GUADAGNO RAM DISK</span><span class="boost-item-val" id="valGainRam">-- / 10 pt</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainRam" style="width:0%"></div></div>
-  </div>
-  <div class="boost-item">
-    <div class="boost-item-header"><span>&#127760; GUADAGNO DoT/PREFETCH</span><span class="boost-item-val" id="valGainDot">-- / 10 pt</span></div>
-    <div class="g-bar-bg"><div class="g-bar-fill" id="barGainDot" style="width:0%"></div></div>
-  </div>
-</div>
-<div class="sub" style="margin: -8px 0 14px 2px;">&#9889; Le 4 metriche sopra compongono il BUNKER GAIN (somma dei punti, poi limitata tra 25% e 80%).</div>
 
 <div class="bunker-layout">
   <div class="boost-item bunker-rpz-panel">
@@ -2010,9 +1985,9 @@ function buildLiveDotGrid() {
   const track = document.getElementById('liveBarTrack');
   if (!track) return;
   const larghezza = track.clientWidth || 300;
-  const spazioPerPunto = 16; // punto (6px) + spaziatura minima stimata
+  const spazioPerPunto = 16;
   const count = Math.max(10, Math.floor(larghezza / spazioPerPunto));
-  if (track.childElementCount === count) return; // gia' costruita con lo stesso numero di punti
+  if (track.childElementCount === count) return;
   track.innerHTML = '';
   for (let i = 0; i < count; i++) {
     const dot = document.createElement('div');
@@ -2253,7 +2228,7 @@ function renderWinUpdate(d) {
 }
 
 let liveLogSignature = '';
-let liveLogChiaviRese = []; // chiavi (orario|dominio) attualmente mostrate, in ordine cronologico
+let liveLogChiaviRese = [];
 
 function renderLiveLogFeed(d) {
   const cont = document.getElementById('liveLogFeed');
@@ -2267,14 +2242,12 @@ function renderLiveLogFeed(d) {
       liveLogSignature = 'empty';
       liveLogChiaviRese = [];
     }
-    return; // nessuna attività: il pannello resta fermo, niente da animare
+    return;
   }
 
-  // feed[0] è il più recente: prendo gli ultimi 30 e li rimetto in
-  // ordine cronologico (più vecchio in alto, più recente in basso).
   const voci = feed.slice(0, 30).slice().reverse();
   const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
-  if (signature === liveLogSignature) return; // nessun evento nuovo: resto fermo
+  if (signature === liveLogSignature) return;
 
   liveLogSignature = signature;
   const eraVuoto = liveLogChiaviRese.length === 0;
@@ -2286,17 +2259,13 @@ function renderLiveLogFeed(d) {
     if (code === 'NOERROR') colore = 'var(--green-bright)';
     else if (code === 'NXDOMAIN') colore = 'var(--red-bright)';
     else if (code === 'SERVFAIL') colore = 'var(--amber-bright)';
-    const dominio = (f.dominio || '-').length > 34 ? (f.dominio.slice(0, 34) + '\u2026') : (f.dominio || '-');
-    // Solo le righe davvero nuove rispetto al giro precedente ricevono
-    // l'animazione di ingresso (una tantum, non un loop continuo).
+    const dominio = (f.dominio || '-').length > 120 ? (f.dominio.slice(0, 120) + '\u2026') : (f.dominio || '-');
     const nuova = !eraVuoto && !liveLogChiaviRese.includes(chiaviNuove[idx]);
     return `<div class="live-log-line${nuova ? ' nuova' : ''}"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
   }).join('');
 
   cont.innerHTML = `<div class="live-log-track">${righe}</div>`;
   liveLogChiaviRese = chiaviNuove;
-
-  // Tengo la vista ancorata in fondo, dove stanno gli eventi più recenti.
   cont.scrollTop = cont.scrollHeight;
 }
 
@@ -2360,8 +2329,8 @@ async function confirmRestart() {
   showRestartOverlay('&#128472;&#65039;', 'Riavvio della Dashboard in corso...', 'Rilascio e verifica della porta ' + location.port + ' in esecuzione...');
 
   let attempts = 0;
-  const SOFT_LIMIT = 35;   // dopo questo tempo, avviso "morbido" ma continua ad attendere
-  const HARD_LIMIT = 90;   // oltre questo, rinuncia davvero
+  const SOFT_LIMIT = 35;
+  const HARD_LIMIT = 90;
   const checkInterval = setInterval(async () => {
     attempts++;
     updateRestartProgress((attempts / HARD_LIMIT) * 95);
@@ -2413,8 +2382,8 @@ async function confirmRestartUnbound() {
 
   let attempts = 0;
   let seenDown = false;
-  const SOFT_LIMIT = 35;    // dopo questo tempo, avviso "morbido" ma continua ad attendere
-  const HARD_LIMIT = 150;   // il ricaricamento delle blocklist RPZ può richiedere parecchio
+  const SOFT_LIMIT = 35;
+  const HARD_LIMIT = 150;
   const checkInterval = setInterval(async () => {
     attempts++;
     updateRestartProgress((attempts / HARD_LIMIT) * 95);
@@ -2454,12 +2423,6 @@ async function confirmRestartUnbound() {
   }, 1000);
 }
 
-// === FORZA AGGIORNAMENTO RPZ ===
-// Non esiste un segnale "completato" affidabile da qui (il download e il
-// riavvio di Unbound avvengono in un processo BAT esterno indipendente),
-// quindi niente overlay con progresso finto: si avvia il task e si dà un
-// riscontro onesto, poi si lascia che il pannello "Freschezza Blocklist"
-// (rpz_freshness) rifletta l'aggiornamento reale nei minuti successivi.
 async function confirmForceRpzUpdate() {
   if (!confirm("Avviare subito i task pianificati di aggiornamento RPZ?\n\n\u2022 Unbound_Bunker_2h (HaGeZi/Spamhaus/TIF)\n\u2022 Unbound_Bunker_AbuseCh30m (abuse.ch URLhaus/ThreatFox)\n\nIl download e il ricaricamento delle blocklist possono richiedere alcuni minuti.")) return;
 
@@ -2486,12 +2449,6 @@ async function confirmForceRpzUpdate() {
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
-// === AGGIORNA DASHBOARD DA GITHUB (SELF-UPDATE) ===
-// Stesso schema di sicurezza del self-update del BAT: il file .ps1 viene
-// scaricato e verificato via SHA256 lato server PRIMA di essere installato.
-// Se tutto va bene la dashboard si riavvia da sola (stesso meccanismo del
-// bottone "Riavvia Dashboard"): la connessione cade per qualche secondo,
-// poi il polling normale la ritrova gia' sulla nuova versione.
 async function confirmUpdateDashboard() {
   if (!confirm("Scaricare l'ultima versione della dashboard dal repository GitHub?\n\nSe l'hash SHA256 non corrisponde l'aggiornamento viene annullato automaticamente e la versione attuale resta invariata. Se invece va a buon fine, la dashboard si riavvia da sola (perderai la connessione per qualche secondo).")) return;
 
@@ -2519,19 +2476,14 @@ async function confirmUpdateDashboard() {
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
-// Dopo un aggiornamento riuscito il file .ps1 e' cambiato: a differenza del
-// semplice riavvio, qui serve un vero ricaricamento della pagina (non un
-// refresh dei soli dati) per ricevere l'HTML/JS della nuova versione.
-// Stesso schema di attesa/overlay del riavvio normale (soft/hard limit +
-// avviso "possibile scansione antivirus"), cambia solo l'esito finale.
 function waitForDashboardRestartAfterUpdate() {
   setLiveStatus(false);
   document.getElementById('subheader').textContent = 'Aggiornamento applicato, riavvio della Dashboard in corso...';
   showRestartOverlay('&#11015;&#65039;', 'Aggiornamento applicato, riavvio della Dashboard...', 'La nuova versione sta ripartendo, attendere...');
 
   let attempts = 0;
-  const SOFT_LIMIT = 35;   // dopo questo tempo, avviso "morbido" ma continua ad attendere
-  const HARD_LIMIT = 90;   // oltre questo, rinuncia davvero
+  const SOFT_LIMIT = 35;
+  const HARD_LIMIT = 90;
   const checkInterval = setInterval(async () => {
     attempts++;
     updateRestartProgress((attempts / HARD_LIMIT) * 95);
@@ -2587,27 +2539,31 @@ async function refresh(forceVersions) {
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_lan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv4 Lan:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_lan || 'N/D'}</span>
+        <span style="color:var(--dim); font-weight:bold;">Ipv4 Lan</span>
         <span class="${ipc.ipv4_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
-      </div>
-      <div class="stat-ver">
-        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_lan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv6 Lan:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_lan || 'N/D'}</span>
-        <span class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold;">:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_lan || 'N/D'}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_wan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_wan || 'N/D'}</span>${locV4Str}
+        <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN</span>
         <span class="${ipc.ipv4_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold;">:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_wan || 'N/D'}</span>${locV4Str}
+      </div>
+      <div class="stat-ver">
+        <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_lan_ok ? 'ok' : 'bad'}"></span></div>
+        <span style="color:var(--dim); font-weight:bold;">Ipv6 Lan</span>
+        <span class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold;">:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_lan || 'N/D'}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_wan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}</span>${locV6Str}
+        <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN</span>
         <span class="${ipc.ipv6_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold;">:</span>
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}</span>${locV6Str}
       </div>
     `;
 
@@ -2963,6 +2919,7 @@ async function refresh(forceVersions) {
 
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
+    bCache.style.marginLeft = 'auto';
     bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore + '%\nUpstream DoT online (peso 15%): ' + upstreamScore + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
     badges.appendChild(bCache);
@@ -2980,7 +2937,12 @@ async function refresh(forceVersions) {
     bGain.style.boxShadow = `0 0 24px hsla(${hueEnd}, 90%, 50%, 0.6)`;
 
     bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
-    badges.appendChild(bGain);
+
+    const gainContainer = document.getElementById('bunkerGainContainer');
+    if (gainContainer) {
+      gainContainer.innerHTML = '';
+      gainContainer.appendChild(bGain);
+    }
 
     const st = d.statistiche_live || {};
     const rc = st.rcode || { noerror:0, nxdomain:0, servfail:0 };
@@ -3190,8 +3152,6 @@ async function refresh(forceVersions) {
       if (feedRcode.length === 0) {
         tbodyRcode.innerHTML = '<tr><td colspan="5" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
       } else {
-        // feedRcode[0] è il più recente: lo rimetto in ordine cronologico
-        // (più vecchio in cima, più recente in fondo alla tabella).
         const feedCronologico = feedRcode.slice().reverse();
         feedCronologico.forEach(f => {
           const tr = document.createElement('tr');
@@ -3255,10 +3215,6 @@ setInterval(() => {
 '@
 
 # === RACCOLTA DATI IN BACKGROUND (runspace separato, thread indipendente) ===
-# Obiettivo: il ciclo che accetta le connessioni HTTP non deve MAI eseguire
-# lavoro pesante (Get-CimInstance, spawn di unbound-control.exe, letture log).
-# Un runspace dedicato ricalcola Get-BunkerStatusJson ogni ~1.5s e pubblica il
-# risultato in una hashtable sincronizzata; il server HTTP si limita a leggerla.
 function Start-BackgroundCollectorLoop {
     Write-DashLog "Ciclo di raccolta dati in background avviato (PID $PID)."
     while ($true) {
@@ -3327,8 +3283,6 @@ if (-not $startedOk) {
 
 Write-Host "[OK] Unbound Bunker DASHBOARD LIVE in ascolto su $Prefix (Ctrl+C per arrestare)"
 
-# Il raccoglitore dati in background parte SOLO ora, a listener gia' confermato
-# attivo: cosi' un bind fallito non lascia mai in esecuzione un thread orfano.
 Start-BackgroundCollector
 
 try { [System.IO.File]::WriteAllText($PidFile, [string]$PID) } catch { Write-DashLog "Impossibile scrivere PID file: $($_.Exception.Message)" }
@@ -3343,15 +3297,10 @@ try {
             if ($request.Url.AbsolutePath -eq "/api/status") {
                 $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
                 if ($forceVersions) {
-                    # Richiesta manuale e rara (es. dopo un riavvio): calcolo diretto accettabile.
                     $json = Get-BunkerStatusJson -ForceVersions
                 } elseif ($script:BunkerSyncHash -and $script:BunkerSyncHash.Json) {
-                    # Percorso normale (poll ogni 2s): nessun calcolo qui, solo lettura
-                    # del dato gia' pronto pubblicato dal runspace di background.
                     $json = $script:BunkerSyncHash.Json
                 } else {
-                    # Fallback solo nei primissimi istanti, prima che il runspace di
-                    # background abbia completato il suo primo ciclo.
                     $json = Get-BunkerStatusJson
                 }
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
@@ -3370,7 +3319,6 @@ try {
 
                 $targetScript = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
                 
-                # Script esterno per riavvio pulito con controllo rilascio porta TCP
                 $restartCmd = "Start-Sleep -Seconds 1; " +
                               "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
                               "for (`$i=0; `$i -lt 20; `$i++) { " +
@@ -3391,8 +3339,6 @@ try {
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
                 $response.OutputStream.Close()
 
-                # Riavvio del servizio eseguito in un processo esterno per non bloccare
-                # il loop principale della Dashboard durante l'operazione.
                 $restartUnboundCmd = "try { Restart-Service -Name 'unbound' -Force -ErrorAction Stop } catch { " +
                                       "try { Stop-Service -Name 'unbound' -Force -ErrorAction SilentlyContinue; " +
                                       "Start-Sleep -Seconds 2; Start-Service -Name 'unbound' -ErrorAction SilentlyContinue } catch {} }"
@@ -3404,10 +3350,6 @@ try {
                 $esito = "started"
                 $errMsg = $null
                 try {
-                    # Avviati come processo esterno: gli stessi task pianificati usati dal
-                    # BAT per il refresh biorario (Unbound_Bunker_2h, HaGeZi/Spamhaus/TIF)
-                    # e per il refresh abuse.ch (Unbound_Bunker_AbuseCh30m, URLhaus/ThreatFox).
-                    # Il BAT gestisce da solo download, rotazione backup e riavvio di Unbound.
                     $forceRpzCmd = "Start-ScheduledTask -TaskName 'Unbound_Bunker_2h' -ErrorAction SilentlyContinue; " +
                                    "Start-ScheduledTask -TaskName 'Unbound_Bunker_AbuseCh30m' -ErrorAction SilentlyContinue"
                     Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$forceRpzCmd`"" -WindowStyle Hidden
@@ -3428,13 +3370,6 @@ try {
             } elseif ($request.Url.AbsolutePath -eq "/api/update-dashboard" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di auto-aggiornamento della dashboard ricevuta dall'interfaccia Web."
 
-                # Stesso repo e stesso schema di sicurezza gia' usato dal self-update del
-                # BAT: scarica il file .ps1 direttamente (qui, a differenza del BAT, resta
-                # .ps1 sul repo, con l'hash .sha256 generato automaticamente da GitHub) e
-                # verifica l'hash PRIMA di toccare qualunque cosa; solo se combacia
-                # sostituisce il file e si riavvia. Se il download fallisce o l'hash non
-                # combacia, la dashboard continua a girare invariata: nessun aggiornamento
-                # "a metà".
                 $esito = "error"
                 $errMsg = $null
                 $needRestart = $false
@@ -3497,11 +3432,6 @@ try {
                 if ($needRestart) {
                     $response.OutputStream.Close()
 
-                    # Stesso identico meccanismo del pulsante "Riavvia Dashboard"
-                    # (gia' collaudato e funzionante su questo sistema) - vedi sopra
-                    # il gestore di /api/restart-dashboard. La causa reale del mancato
-                    # avvio dopo l'auto-update non era questo pattern di riavvio, ma un
-                    # carattere Unicode corrotto altrove nel file scaricato (gia' risolto).
                     $restartCmd = "Start-Sleep -Seconds 1; " +
                                   "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
                                   "for (`$i=0; `$i -lt 20; `$i++) { " +
@@ -3545,10 +3475,6 @@ try {
 }
 
 # === AVVIO ===
-# $script:IsBackgroundCollector e' impostato SOLO nel runspace di background
-# (vedi Start-BackgroundCollector), che dot-sorgenta di nuovo questo stesso file:
-# in quel caso deve solo raccogliere dati, MAI avviare un secondo listener HTTP
-# ne' un secondo runspace di raccolta.
 if ($script:IsBackgroundCollector) {
     Start-BackgroundCollectorLoop
 } else {
