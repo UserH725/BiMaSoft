@@ -1600,17 +1600,17 @@ $HtmlPage = @'
   .live-log-left .panel { margin-bottom: 0; }
   .live-log-panel { flex: 1 1 300px; display: flex; flex-direction: column; min-width: 280px; margin-bottom: 0; }
   .live-log-feed {
-    flex: 1; overflow: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
+    flex: 1; overflow-y: auto; overflow-x: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
     line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
     padding: 8px 10px; min-height: 140px; position: relative;
   }
   .live-log-track {
-    position: absolute; top: 8px; left: 10px; right: 10px;
-    transition: opacity 0.35s ease;
+    display: flex; flex-direction: column;
   }
-  .live-log-track.fading { opacity: 0; }
   .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  @keyframes liveLogScroll { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
+  /* Ingresso una tantum per le righe nuove: nessun loop, si ferma da sola quando non arrivano eventi. */
+  @keyframes liveLogEntra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .live-log-line.nuova { animation: liveLogEntra 0.4s ease; }
 
   .storico-grid { display: flex; gap: 18px; flex-wrap: wrap; }
   .storico-chart-box { flex: 1; min-width: 260px; }
@@ -2252,59 +2252,51 @@ function renderWinUpdate(d) {
 }
 
 let liveLogSignature = '';
+let liveLogChiaviRese = []; // chiavi (orario|dominio) attualmente mostrate, in ordine cronologico
 
 function renderLiveLogFeed(d) {
   const cont = document.getElementById('liveLogFeed');
   if (!cont) return;
   let feed = d.live_rcode_feed || [];
   if (!Array.isArray(feed)) { feed = [feed]; }
+
   if (feed.length === 0) {
     if (liveLogSignature !== 'empty') {
       cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
       liveLogSignature = 'empty';
+      liveLogChiaviRese = [];
     }
-    return;
+    return; // nessuna attività: il pannello resta fermo, niente da animare
   }
 
-  const voci = feed.slice(0, 12);
+  // feed[0] è il più recente: prendo gli ultimi 12 e li rimetto in
+  // ordine cronologico (più vecchio in alto, più recente in basso).
+  const voci = feed.slice(0, 12).slice().reverse();
   const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
-  if (signature === liveLogSignature) return; // nessun evento nuovo, non tocco l'animazione in corso
-  liveLogSignature = signature;
+  if (signature === liveLogSignature) return; // nessun evento nuovo: resto fermo
 
-  const righe = voci.map(f => {
+  liveLogSignature = signature;
+  const eraVuoto = liveLogChiaviRese.length === 0;
+  const chiaviNuove = voci.map(f => (f.orario || '') + '|' + (f.dominio || ''));
+
+  const righe = voci.map((f, idx) => {
     const code = (f.rcode || '').toUpperCase();
     let colore = 'var(--dim)';
     if (code === 'NOERROR') colore = 'var(--green-bright)';
     else if (code === 'NXDOMAIN') colore = 'var(--red-bright)';
     else if (code === 'SERVFAIL') colore = 'var(--amber-bright)';
     const dominio = (f.dominio || '-').length > 34 ? (f.dominio.slice(0, 34) + '\u2026') : (f.dominio || '-');
-    return `<div class="live-log-line"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
+    // Solo le righe davvero nuove rispetto al giro precedente ricevono
+    // l'animazione di ingresso (una tantum, non un loop continuo).
+    const nuova = !eraVuoto && !liveLogChiaviRese.includes(chiaviNuove[idx]);
+    return `<div class="live-log-line${nuova ? ' nuova' : ''}"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
   }).join('');
 
-  // Contenuto duplicato due volte: a met\u00e0 corsa (translateY(-50%)) il
-  // secondo blocco combacia esattamente col primo, dando un loop continuo
-  // senza scatti invece del semplice replace ad ogni poll.
-  const durataSec = Math.max(voci.length * 2.2, 6);
-  const nuovoTrack = `<div class="live-log-track" style="animation-duration:${durataSec}s;">${righe}${righe}</div>`;
+  cont.innerHTML = `<div class="live-log-track">${righe}</div>`;
+  liveLogChiaviRese = chiaviNuove;
 
-  const trackEsistente = cont.querySelector('.live-log-track');
-  if (!trackEsistente) {
-    cont.innerHTML = nuovoTrack;
-    requestAnimationFrame(() => {
-      const t = cont.querySelector('.live-log-track');
-      if (t) t.style.animation = `liveLogScroll ${durataSec}s linear infinite`;
-    });
-    return;
-  }
-
-  // Dati cambiati mentre l'animazione gira gi\u00e0: dissolvenza breve invece
-  // di un taglio netto, poi si riparte con lo scorrimento continuo.
-  trackEsistente.classList.add('fading');
-  setTimeout(() => {
-    cont.innerHTML = nuovoTrack;
-    const t = cont.querySelector('.live-log-track');
-    if (t) t.style.animation = `liveLogScroll ${durataSec}s linear infinite`;
-  }, 350);
+  // Tengo la vista ancorata in fondo, dove stanno gli eventi più recenti.
+  cont.scrollTop = cont.scrollHeight;
 }
 
 function filtraLiveRcode() {
