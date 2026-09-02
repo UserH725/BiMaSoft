@@ -3288,7 +3288,7 @@ try {
                 } catch {
                     $errMsg = $_.Exception.Message
                     if ($errMsg -match '\(404\)') {
-                        $errMsg = "$errMsg — il file non risulta ancora pubblicato sul repository all'URL atteso ($cloudUrl / $cloudShaUrl). Verifica che UnboundBunkerDashboard.ps1 e UnboundBunkerDashboard.sha256 siano presenti nel repo prima di riprovare."
+                        $errMsg = "$errMsg - il file non risulta ancora pubblicato sul repository all'URL atteso ($cloudUrl / $cloudShaUrl). Verifica che UnboundBunkerDashboard.ps1 e UnboundBunkerDashboard.sha256 siano presenti nel repo prima di riprovare."
                     }
                     Write-DashLog "Errore nell'auto-aggiornamento della dashboard: $errMsg"
                 }
@@ -3305,53 +3305,20 @@ try {
                 if ($needRestart) {
                     $response.OutputStream.Close()
 
-                    # Script di riavvio scritto su file in chiaro su R:\ e lanciato via
-                    # -File (NON -Command/-EncodedCommand): evita sia il quoting annidato
-                    # che si otteneva costruendo la riga di comando a mano, sia il rischio
-                    # che un blob Base64/-Command venga scambiato per offuscamento da
-                    # GravityZone/HyperDetect (gia' successo in passato con blob inline
-                    # che facevano chiamate HTTP). Un .ps1 in chiaro su disco e' molto
-                    # piu' trasparente per un motore euristico. Gli argomenti del
-                    # processo finale sono passati come ARRAY, cosi' Start-Process li
-                    # quota correttamente da solo (utile anche se $targetScript dovesse
-                    # ricadere su "C:\Program Files\Unbound\...").
-                    $currentPid    = $PID
-                    $waitPort      = $Port
-                    $finalScript   = $targetScript
-                    $currentLogFile = $LogFile
-                    $restartHelper = "R:\_dashboard_restart_helper.ps1"
-                    $stdOutLog     = "R:\_dashboard_stdout.log"
-                    $stdErrLog     = "R:\_dashboard_stderr.log"
-                    $restartScript = @"
-try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Avviato, PID vecchio processo: $currentPid." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
-Start-Sleep -Seconds 1
-Stop-Process -Id $currentPid -Force -ErrorAction SilentlyContinue
-try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Vecchio processo terminato, attendo liberazione porta $waitPort." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
-`$portFree = `$false
-for (`$i = 0; `$i -lt 20; `$i++) {
-    `$conn = Get-NetTCPConnection -LocalPort $waitPort -ErrorAction SilentlyContinue
-    if (-not `$conn) { `$portFree = `$true; break }
-    Start-Sleep -Milliseconds 500
-}
-try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Porta $waitPort libera: `$portFree. Verifico esistenza script: $finalScript" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
-try {
-    if (-not (Test-Path -LiteralPath '$finalScript')) { throw "File non trovato: $finalScript" }
-    Remove-Item -LiteralPath '$stdOutLog' -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath '$stdErrLog' -Force -ErrorAction SilentlyContinue
-    `$p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden -RedirectStandardOutput '$stdOutLog' -RedirectStandardError '$stdErrLog' -PassThru
-    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Nuovo processo avviato, PID `$(`$p.Id). stdout/stderr redirette su $stdOutLog / $stdErrLog." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
-} catch {
-    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] ERRORE avvio nuovo processo: `$(`$_.Exception.Message)" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
-}
-Remove-Item -LiteralPath '$restartHelper' -Force -ErrorAction SilentlyContinue
-"@
-                    try {
-                        [System.IO.File]::WriteAllText($restartHelper, $restartScript, [System.Text.Encoding]::UTF8)
-                        Write-DashLog "Helper di riavvio scritto in $restartHelper, avvio processo esterno."
-                        Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$restartHelper) -WindowStyle Hidden
-                    } catch {
-                        Write-DashLog "Impossibile scrivere/avviare l'helper di riavvio: $($_.Exception.Message)"
-                    }
+                    # Stesso identico meccanismo del pulsante "Riavvia Dashboard"
+                    # (gia' collaudato e funzionante su questo sistema) - vedi sopra
+                    # il gestore di /api/restart-dashboard. La causa reale del mancato
+                    # avvio dopo l'auto-update non era questo pattern di riavvio, ma un
+                    # carattere Unicode corrotto altrove nel file scaricato (gia' risolto).
+                    $restartCmd = "Start-Sleep -Seconds 1; " +
+                                  "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
+                                  "for (`$i=0; `$i -lt 20; `$i++) { " +
+                                  "  `$conn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue; " +
+                                  "  if (-not `$conn) { break }; " +
+                                  "  Start-Sleep -Milliseconds 500 " +
+                                  "}; " +
+                                  "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`"' -WindowStyle Hidden"
+                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
                     break
                 }
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
