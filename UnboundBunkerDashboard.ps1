@@ -883,7 +883,7 @@ function Get-BlocksHourlyDistribution {
         return $script:BlocksHourlyCache
     }
 
-    $ore = New-Object int[] 24
+    $ore = @(0) * 24
     $rpzLines = Get-SafeLogLines -Path $RpzLog
     if ($rpzLines -and $rpzLines.Count -gt 0) {
         foreach ($ln in $rpzLines) {
