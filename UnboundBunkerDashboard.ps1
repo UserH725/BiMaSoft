@@ -1,6 +1,6 @@
-# =======================================================================================#
-# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)      #
-# =======================================================================================#
+# ======================================================================================= #
+# UNBOUND BUNKER - DASHBOARD LIVE (sola lettura in RAM - BOOT ISTANTANEO ASINCRONO)    #
+# ======================================================================================= #
 
 # === CONFIGURAZIONE PERCORSI E PORTA ===
 $UbDir  = "C:\Program Files\Unbound"
@@ -3304,15 +3304,29 @@ try {
 
                 if ($needRestart) {
                     $response.OutputStream.Close()
-                    $restartCmd = "Start-Sleep -Seconds 1; " +
-                                  "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
-                                  "for (`$i=0; `$i -lt 20; `$i++) { " +
-                                  "  `$conn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue; " +
-                                  "  if (-not `$conn) { break }; " +
-                                  "  Start-Sleep -Milliseconds 500 " +
-                                  "}; " +
-                                  "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`"' -WindowStyle Hidden"
-                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
+
+                    # Script di riavvio costruito come blocco multilinea e lanciato via
+                    # -EncodedCommand (Base64): elimina del tutto il problema del quoting
+                    # annidato che si presentava costruendo la riga di comando a mano
+                    # attraverso due livelli di Start-Process -Command "...".
+                    # Gli argomenti del processo finale sono passati come ARRAY, cosi'
+                    # Start-Process li quota correttamente da solo (utile anche se
+                    # $targetScript dovesse ricadere su "C:\Program Files\Unbound\...").
+                    $currentPid = $PID
+                    $waitPort   = $Port
+                    $finalScript = $targetScript
+                    $restartScript = @"
+Start-Sleep -Seconds 1
+Stop-Process -Id $currentPid -Force -ErrorAction SilentlyContinue
+for (`$i = 0; `$i -lt 20; `$i++) {
+    `$conn = Get-NetTCPConnection -LocalPort $waitPort -ErrorAction SilentlyContinue
+    if (-not `$conn) { break }
+    Start-Sleep -Milliseconds 500
+}
+Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden
+"@
+                    $encodedRestart = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($restartScript))
+                    Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encodedRestart) -WindowStyle Hidden
                     break
                 }
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
