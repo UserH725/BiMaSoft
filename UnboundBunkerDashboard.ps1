@@ -3318,16 +3318,27 @@ try {
                     $currentPid    = $PID
                     $waitPort      = $Port
                     $finalScript   = $targetScript
+                    $currentLogFile = $LogFile
                     $restartHelper = "R:\_dashboard_restart_helper.ps1"
                     $restartScript = @"
+try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Avviato, PID vecchio processo: $currentPid." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
 Start-Sleep -Seconds 1
 Stop-Process -Id $currentPid -Force -ErrorAction SilentlyContinue
+try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Vecchio processo terminato, attendo liberazione porta $waitPort." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
+`$portFree = `$false
 for (`$i = 0; `$i -lt 20; `$i++) {
     `$conn = Get-NetTCPConnection -LocalPort $waitPort -ErrorAction SilentlyContinue
-    if (-not `$conn) { break }
+    if (-not `$conn) { `$portFree = `$true; break }
     Start-Sleep -Milliseconds 500
 }
-Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden
+try { "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Porta $waitPort libera: `$portFree. Verifico esistenza script: $finalScript" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8 } catch {}
+try {
+    if (-not (Test-Path -LiteralPath '$finalScript')) { throw "File non trovato: $finalScript" }
+    `$p = Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden -PassThru
+    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] Nuovo processo avviato, PID `$(`$p.Id)." | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
+} catch {
+    "[`$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] [RESTART-HELPER] ERRORE avvio nuovo processo: `$(`$_.Exception.Message)" | Out-File -LiteralPath '$currentLogFile' -Append -Encoding utf8
+}
 Remove-Item -LiteralPath '$restartHelper' -Force -ErrorAction SilentlyContinue
 "@
                     try {
