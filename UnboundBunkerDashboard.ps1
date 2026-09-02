@@ -3305,16 +3305,20 @@ try {
                 if ($needRestart) {
                     $response.OutputStream.Close()
 
-                    # Script di riavvio costruito come blocco multilinea e lanciato via
-                    # -EncodedCommand (Base64): elimina del tutto il problema del quoting
-                    # annidato che si presentava costruendo la riga di comando a mano
-                    # attraverso due livelli di Start-Process -Command "...".
-                    # Gli argomenti del processo finale sono passati come ARRAY, cosi'
-                    # Start-Process li quota correttamente da solo (utile anche se
-                    # $targetScript dovesse ricadere su "C:\Program Files\Unbound\...").
-                    $currentPid = $PID
-                    $waitPort   = $Port
-                    $finalScript = $targetScript
+                    # Script di riavvio scritto su file in chiaro su R:\ e lanciato via
+                    # -File (NON -Command/-EncodedCommand): evita sia il quoting annidato
+                    # che si otteneva costruendo la riga di comando a mano, sia il rischio
+                    # che un blob Base64/-Command venga scambiato per offuscamento da
+                    # GravityZone/HyperDetect (gia' successo in passato con blob inline
+                    # che facevano chiamate HTTP). Un .ps1 in chiaro su disco e' molto
+                    # piu' trasparente per un motore euristico. Gli argomenti del
+                    # processo finale sono passati come ARRAY, cosi' Start-Process li
+                    # quota correttamente da solo (utile anche se $targetScript dovesse
+                    # ricadere su "C:\Program Files\Unbound\...").
+                    $currentPid    = $PID
+                    $waitPort      = $Port
+                    $finalScript   = $targetScript
+                    $restartHelper = "R:\_dashboard_restart_helper.ps1"
                     $restartScript = @"
 Start-Sleep -Seconds 1
 Stop-Process -Id $currentPid -Force -ErrorAction SilentlyContinue
@@ -3324,9 +3328,15 @@ for (`$i = 0; `$i -lt 20; `$i++) {
     Start-Sleep -Milliseconds 500
 }
 Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$finalScript') -WindowStyle Hidden
+Remove-Item -LiteralPath '$restartHelper' -Force -ErrorAction SilentlyContinue
 "@
-                    $encodedRestart = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($restartScript))
-                    Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encodedRestart) -WindowStyle Hidden
+                    try {
+                        [System.IO.File]::WriteAllText($restartHelper, $restartScript, [System.Text.Encoding]::UTF8)
+                        Write-DashLog "Helper di riavvio scritto in $restartHelper, avvio processo esterno."
+                        Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$restartHelper) -WindowStyle Hidden
+                    } catch {
+                        Write-DashLog "Impossibile scrivere/avviare l'helper di riavvio: $($_.Exception.Message)"
+                    }
                     break
                 }
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
