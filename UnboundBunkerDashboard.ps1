@@ -1475,7 +1475,7 @@ $HtmlPage = @'
   @keyframes liveBadgeBlink { 50% { opacity: 0.45; } }
 
   .live-bar-track {
-    display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; height: 11px;
+    display: flex; align-items: center; justify-content: space-between; gap: 5px; flex: 1 1 auto; min-width: 0; height: 11px;
   }
   .live-pulse-dot {
     width: 6px; height: 6px; border-radius: 1px; background: var(--green-bright); flex-shrink: 0;
@@ -1602,12 +1602,15 @@ $HtmlPage = @'
   .live-log-feed {
     flex: 1; overflow: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
     line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px; min-height: 140px;
+    padding: 8px 10px; min-height: 140px; position: relative;
   }
-  .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: liveLogFadeIn 0.4s ease; }
-  .live-log-line:nth-child(n+7) { opacity: 0.55; }
-  .live-log-line:nth-child(n+10) { opacity: 0.3; }
-  @keyframes liveLogFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .live-log-track {
+    position: absolute; top: 8px; left: 10px; right: 10px;
+    transition: opacity 0.35s ease;
+  }
+  .live-log-track.fading { opacity: 0; }
+  .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @keyframes liveLogScroll { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
 
   .storico-grid { display: flex; gap: 18px; flex-wrap: wrap; }
   .storico-chart-box { flex: 1; min-width: 260px; }
@@ -2004,15 +2007,20 @@ function playOfflineBeep() {
 
 function buildLiveDotGrid() {
   const track = document.getElementById('liveBarTrack');
-  if (!track || track.childElementCount > 0) return;
-  const count = 14;
+  if (!track) return;
+  const larghezza = track.clientWidth || 300;
+  const spazioPerPunto = 16; // punto (6px) + spaziatura minima stimata
+  const count = Math.max(10, Math.floor(larghezza / spazioPerPunto));
+  if (track.childElementCount === count) return; // gia' costruita con lo stesso numero di punti
+  track.innerHTML = '';
   for (let i = 0; i < count; i++) {
     const dot = document.createElement('div');
     dot.className = 'live-pulse-dot';
-    dot.style.animationDelay = (i * 0.13).toFixed(2) + 's';
+    dot.style.animationDelay = ((i / count) * 1.8).toFixed(2) + 's';
     track.appendChild(dot);
   }
 }
+window.addEventListener('resize', () => { buildLiveDotGrid(); });
 buildLiveDotGrid();
 
 function setLiveStatus(isLive) {
@@ -2243,16 +2251,27 @@ function renderWinUpdate(d) {
   }
 }
 
+let liveLogSignature = '';
+
 function renderLiveLogFeed(d) {
   const cont = document.getElementById('liveLogFeed');
   if (!cont) return;
   let feed = d.live_rcode_feed || [];
   if (!Array.isArray(feed)) { feed = [feed]; }
   if (feed.length === 0) {
-    cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
+    if (liveLogSignature !== 'empty') {
+      cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
+      liveLogSignature = 'empty';
+    }
     return;
   }
-  const righe = feed.slice(0, 12).map(f => {
+
+  const voci = feed.slice(0, 12);
+  const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
+  if (signature === liveLogSignature) return; // nessun evento nuovo, non tocco l'animazione in corso
+  liveLogSignature = signature;
+
+  const righe = voci.map(f => {
     const code = (f.rcode || '').toUpperCase();
     let colore = 'var(--dim)';
     if (code === 'NOERROR') colore = 'var(--green-bright)';
@@ -2261,7 +2280,31 @@ function renderLiveLogFeed(d) {
     const dominio = (f.dominio || '-').length > 34 ? (f.dominio.slice(0, 34) + '\u2026') : (f.dominio || '-');
     return `<div class="live-log-line"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
   }).join('');
-  cont.innerHTML = righe;
+
+  // Contenuto duplicato due volte: a met\u00e0 corsa (translateY(-50%)) il
+  // secondo blocco combacia esattamente col primo, dando un loop continuo
+  // senza scatti invece del semplice replace ad ogni poll.
+  const durataSec = Math.max(voci.length * 2.2, 6);
+  const nuovoTrack = `<div class="live-log-track" style="animation-duration:${durataSec}s;">${righe}${righe}</div>`;
+
+  const trackEsistente = cont.querySelector('.live-log-track');
+  if (!trackEsistente) {
+    cont.innerHTML = nuovoTrack;
+    requestAnimationFrame(() => {
+      const t = cont.querySelector('.live-log-track');
+      if (t) t.style.animation = `liveLogScroll ${durataSec}s linear infinite`;
+    });
+    return;
+  }
+
+  // Dati cambiati mentre l'animazione gira gi\u00e0: dissolvenza breve invece
+  // di un taglio netto, poi si riparte con lo scorrimento continuo.
+  trackEsistente.classList.add('fading');
+  setTimeout(() => {
+    cont.innerHTML = nuovoTrack;
+    const t = cont.querySelector('.live-log-track');
+    if (t) t.style.animation = `liveLogScroll ${durataSec}s linear infinite`;
+  }, 350);
 }
 
 function filtraLiveRcode() {
