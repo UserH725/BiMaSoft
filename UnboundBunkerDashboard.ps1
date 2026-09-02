@@ -1222,6 +1222,20 @@ $HtmlPage = @'
   .clock-time { font-size: 2em; font-weight: bold; color: var(--accent); line-height: 1.1; }
   .clock-date { font-size: 0.9em; color: var(--dim); margin-top: 2px; text-transform: capitalize; }
 
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .button-row-status { font-size: 0.8em; }
+
   .btn-restart {
     background: rgba(211, 84, 0, 0.25);
     color: var(--amber-bright);
@@ -1560,26 +1574,27 @@ $HtmlPage = @'
     <h1>&#128737; UNBOUND BUNKER - DASHBOARD LIVE - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
-  <div style="display: flex; align-items: center; gap: 12px;">
-    <button id="btnRestart" onclick="confirmRestart()" class="btn-restart" title="Riavvia la Dashboard ed esegui la verifica della porta">
-      &#128472;&#65039; Riavvia Dashboard
-    </button>
-    <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-restart-unbound" title="Riavvia il servizio Windows di Unbound">
-      &#128737;&#65039; Riavvia Unbound
-    </button>
-    <button id="btnForceRpz" onclick="confirmForceRpzUpdate()" class="btn-restart-unbound" title="Avvia subito i task pianificati di aggiornamento RPZ (HaGeZi/Spamhaus/TIF + abuse.ch)">
-      &#128260; Forza Aggiornamento RPZ
-    </button>
-    <span id="forceRpzStatus" class="muted" style="font-size:0.8em; max-width:220px;"></span>
-    <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-restart-unbound" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
-      &#11015;&#65039; Aggiorna Dashboard da GitHub
-    </button>
-    <span id="updateDashStatus" class="muted" style="font-size:0.8em; max-width:260px;"></span>
-    <div class="clock-box">
-      <div class="clock-time" id="clockTime">--:--:--</div>
-      <div class="clock-date" id="clockDate">-----------------</div>
-    </div>
+  <div class="clock-box">
+    <div class="clock-time" id="clockTime">--:--:--</div>
+    <div class="clock-date" id="clockDate">-----------------</div>
   </div>
+</div>
+
+<div class="button-row" id="buttonRow">
+  <button id="btnRestart" onclick="confirmRestart()" class="btn-restart" title="Riavvia la Dashboard ed esegui la verifica della porta">
+    &#128260; Riavvia Dashboard
+  </button>
+  <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-restart-unbound" title="Riavvia il servizio Windows di Unbound">
+    &#128737;&#65039; Riavvia Unbound
+  </button>
+  <button id="btnForceRpz" onclick="confirmForceRpzUpdate()" class="btn-restart-unbound" title="Avvia subito i task pianificati di aggiornamento RPZ (HaGeZi/Spamhaus/TIF + abuse.ch)">
+    &#128229; Forza Aggiornamento RPZ
+  </button>
+  <span id="forceRpzStatus" class="muted button-row-status"></span>
+  <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-restart-unbound" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
+    &#11015;&#65039; Aggiorna Dashboard da GitHub
+  </button>
+  <span id="updateDashStatus" class="muted button-row-status"></span>
 </div>
 
 <div class="restart-overlay" id="restartOverlay">
