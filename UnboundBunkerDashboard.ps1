@@ -2940,8 +2940,8 @@ async function refresh(forceVersions) {
 
     let maxAgeHours = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
     let rpzStatePct = 100;
-    if (maxAgeHours > 24) {
-      let extraHours = Math.floor(maxAgeHours - 24);
+    if (maxAgeHours > 36) {
+      let extraHours = Math.floor(maxAgeHours - 36);
       rpzStatePct = Math.max(50, 100 - (extraHours * 2));
     }
     const bRpzState = document.createElement('span');
@@ -2950,7 +2950,7 @@ async function refresh(forceVersions) {
     else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
     bRpzState.className = 'badge ' + rpzStateStyle;
     bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
-    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 24h: 100%\n- Oltre 24h: -2% per ogni ora fino a un minimo del 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
+    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 36h: 100%\n- Oltre 36h: -2% per ogni ora fino a un minimo del 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
     badges.appendChild(bRpzState);
 
     const bBlocchi = document.createElement('span');
