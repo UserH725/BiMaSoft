@@ -2534,7 +2534,7 @@ function renderLiveLogFeed(d) {
     return;
   }
 
-  const voci = feed.slice(0, 30).slice().reverse();
+  const voci = feed.slice().reverse();
   const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
   if (signature === liveLogSignature) return;
 
