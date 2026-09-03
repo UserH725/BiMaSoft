@@ -829,7 +829,7 @@ function Get-RpzFreshness {
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
                 $stato.ore_fa     = $oreFa
                 $stato.eta_txt    = "$oreInt ore $minRes min fa"
-                $stato.esito      = if ($oreFa -lt 12) { "ok" } elseif ($oreFa -lt 24) { "attenzione" } elseif ($oreFa -lt 36) { "critica" } else { "scaduta" }
+                $stato.esito      = if ($oreFa -le 36) { "ok" } elseif ($oreFa -lt 61) { "attenzione" } else { "scaduta" }
                 if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
             } catch {}
         } else {
@@ -842,6 +842,66 @@ function Get-RpzFreshness {
     $result = @{ liste = $risultati; piu_vecchia_ore = $piuVecchiaOre }
     $script:RpzFreshnessCache     = $result
     $script:RpzFreshnessCacheTime = Get-Date
+    return $result
+}
+
+# === ULTIMA ESECUZIONE DEI TASK PIANIFICATI DI VERIFICA/AGGIORNAMENTO LISTE RPZ ===
+# Usa schtasks.exe direttamente (non il modulo ScheduledTasks) per coerenza con il
+# resto del codice, che ha gia' scartato Register-ScheduledTask/quel modulo per
+# inaffidabilita' su questa macchina (vedi /api/force-rpz-update sopra).
+$script:RpzTaskLastRunCache      = $null
+$script:RpzTaskLastRunCacheTime  = [DateTime]::MinValue
+$script:RpzTaskLastRunCacheTtlSec = 120
+
+function Get-RpzTaskLastRun {
+    if ($script:RpzTaskLastRunCache -and ((Get-Date) - $script:RpzTaskLastRunCacheTime).TotalSeconds -lt $script:RpzTaskLastRunCacheTtlSec) {
+        return $script:RpzTaskLastRunCache
+    }
+
+    $taskNames  = @("Unbound_Bunker_2h", "Unbound_Bunker_AbuseCh30m")
+    $risultati  = @()
+    $piuRecente = $null
+
+    foreach ($tn in $taskNames) {
+        $stato = [ordered]@{
+            task        = $tn
+            ultimo_run  = "N/D"
+            min_fa      = -1
+            last_result = "N/D"
+        }
+        try {
+            $csvRaw = & schtasks.exe /Query /TN $tn /V /FO CSV 2>$null
+            if ($LASTEXITCODE -eq 0 -and $csvRaw) {
+                $row = ($csvRaw | ConvertFrom-Csv) | Select-Object -First 1
+                if ($row) {
+                    $runProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)last ?run ?time|esecuzione precedente|ultima esecuzione' } |
+                        Select-Object -First 1
+                    $resProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)last ?result|ultimo risultato|risultato precedente' } |
+                        Select-Object -First 1
+                    if ($runProp -and $runProp.Value -and ($runProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
+                        try {
+                            $dt = [DateTime]::Parse($runProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
+                            $stato.ultimo_run = $dt.ToString("dd.MM.yyyy HH:mm")
+                            $stato.min_fa     = [math]::Round(((Get-Date) - $dt).TotalMinutes, 0)
+                            if (-not $piuRecente -or $dt -gt $piuRecente) { $piuRecente = $dt }
+                        } catch {}
+                    }
+                    if ($resProp -and $resProp.Value) { $stato.last_result = $resProp.Value }
+                }
+            }
+        } catch {}
+        $risultati += $stato
+    }
+
+    $result = [ordered]@{
+        tasks               = $risultati
+        piu_recente         = if ($piuRecente) { $piuRecente.ToString("dd.MM.yyyy HH:mm") } else { "N/D" }
+        piu_recente_min_fa  = if ($piuRecente) { [math]::Round(((Get-Date) - $piuRecente).TotalMinutes, 0) } else { -1 }
+    }
+    $script:RpzTaskLastRunCache     = $result
+    $script:RpzTaskLastRunCacheTime = Get-Date
     return $result
 }
 
@@ -1053,6 +1113,7 @@ function Get-BunkerStatusJson {
     $rootRadar   = Get-RootServersRadar
     $rpz         = Get-RpzBreakdown
     $rpzFresh    = Get-RpzFreshness
+    $rpzTaskRun  = Get-RpzTaskLastRun
     $sessione    = Get-SessionTotal
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
@@ -1158,6 +1219,7 @@ function Get-BunkerStatusJson {
         net_speed        = $netSpeed
         rpz_log_age_min  = $rpzAgeMinutes
         rpz_freshness    = $rpzFresh
+        rpz_task_last_run = $rpzTaskRun
         storico          = $script:HistoryBuffer
         anomalie_traffico = $trafficAnomalie
         unbound_restart_log = $script:UnboundRestartLog
@@ -1770,6 +1832,7 @@ $HtmlPage = @'
 <div class="bunker-layout">
   <div class="boost-item bunker-rpz-panel">
     <div class="boost-item-header"><span>&#128737; VOLUME SCUDO RPZ</span><span class="boost-item-val" id="valRpzRules">-- regole</span></div>
+    <div style="font-size:0.72em; color:var(--text-secondary,#999); margin-top:-2px; margin-bottom:4px;" id="valRpzTaskCheck">Ultimo controllo liste: --</div>
     <div class="g-bar-bg"><div class="g-bar-fill" id="barRpzRules" style="width:100%"></div></div>
     <div id="rpzDettaglio" style="margin-top:8px; font-size:0.75em; line-height:1.5; display:grid; grid-template-columns: 1fr; gap:4px;"></div>
   </div>
@@ -2751,6 +2814,25 @@ async function refresh(forceVersions) {
     const bf = d.bunker_features || {};
 
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
+
+    const rpzTaskRun = d.rpz_task_last_run || {};
+    const valRpzTaskCheckEl = document.getElementById('valRpzTaskCheck');
+    if (valRpzTaskCheckEl) {
+      if (rpzTaskRun.piu_recente && rpzTaskRun.piu_recente !== 'N/D') {
+        const minFa = rpzTaskRun.piu_recente_min_fa;
+        let etaTxt = '';
+        if (typeof minFa === 'number' && minFa >= 0) {
+          const oreInt = Math.floor(minFa / 60);
+          const minRes = minFa % 60;
+          etaTxt = oreInt > 0 ? ` (${oreInt}h ${minRes}m fa)` : ` (${minRes}m fa)`;
+        }
+        valRpzTaskCheckEl.textContent = `Ultimo controllo liste: ${rpzTaskRun.piu_recente}${etaTxt}`;
+        valRpzTaskCheckEl.title = (rpzTaskRun.tasks || []).map(t => `${t.task}: ${t.ultimo_run} (${t.last_result})`).join(' | ');
+      } else {
+        valRpzTaskCheckEl.textContent = 'Ultimo controllo liste: N/D';
+      }
+    }
+
     let maxAgeHoursForRules = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
     const barRpzRulesEl = document.getElementById('barRpzRules');
     if (barRpzRulesEl) {
@@ -2770,8 +2852,8 @@ async function refresh(forceVersions) {
     if (!Array.isArray(freschezzaListe)) { freschezzaListe = [freschezzaListe]; }
     const freschezzaByTag = {};
     freschezzaListe.forEach(f => { freschezzaByTag[f.tag] = f; });
-    const labelEsito = { ok: 'AGGIORNATA', attenzione: 'DA VERIFICARE', critica: 'DA VERIFICARE', scaduta: 'NON AGGIORNATA', mancante: 'FILE MANCANTE', sconosciuto: 'N/D' };
-    const classeEsito = { ok: 'esito-ok', attenzione: 'esito-attenzione', critica: 'esito-critica', scaduta: 'esito-warn', mancante: 'esito-warn', sconosciuto: 'esito-warn' };
+    const labelEsito = { ok: 'AGGIORNATA', attenzione: 'DA VERIFICARE', scaduta: 'NON AGGIORNATA', mancante: 'FILE MANCANTE', sconosciuto: 'N/D' };
+    const classeEsito = { ok: 'esito-ok', attenzione: 'esito-attenzione', scaduta: 'esito-warn', mancante: 'esito-warn', sconosciuto: 'esito-warn' };
 
     document.getElementById('rpzDettaglio').innerHTML = rpzDettaglio.map(r => {
       const fr = freschezzaByTag[r.tag];
