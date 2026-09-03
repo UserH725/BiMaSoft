@@ -3400,17 +3400,35 @@ try {
             } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di aggiornamento forzato RPZ ricevuta dall'interfaccia Web."
 
-                $esito = "started"
-                $errMsg = $null
-                try {
-                    $forceRpzCmd = "Start-ScheduledTask -TaskName 'Unbound_Bunker_2h' -ErrorAction SilentlyContinue; " +
-                                   "Start-ScheduledTask -TaskName 'Unbound_Bunker_AbuseCh30m' -ErrorAction SilentlyContinue"
-                    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$forceRpzCmd`"" -WindowStyle Hidden
-                } catch {
-                    $esito = "error"
-                    $errMsg = $_.Exception.Message
-                    Write-DashLog "Errore nell'avvio dei task RPZ: $errMsg"
+                # [FIX] Start-ScheduledTask (modulo PowerShell ScheduledTasks) e' lo stesso
+                # modulo gia' rivelatosi inaffidabile su questo tipo di macchina (vedi storico
+                # in UnboundBunkerManager.BAT: Register-ScheduledTask abbandonato per errori
+                # "Parametro non corretto" su qualunque principal/RunLevel). Si usa quindi
+                # schtasks.exe direttamente, come gia' fatto nel BAT per la creazione dei task,
+                # e si legge l'errorlevel/output reale invece di dare per scontato il successo
+                # (prima con -ErrorAction SilentlyContinue un fallimento restava invisibile e
+                # l'esito riportato era sempre "started").
+                $rpzTasks = @("Unbound_Bunker_2h", "Unbound_Bunker_AbuseCh30m")
+                $taskResults = @()
+                $anyFailed = $false
+                foreach ($rpzTask in $rpzTasks) {
+                    try {
+                        $out = & schtasks.exe /run /tn $rpzTask 2>&1 | Out-String
+                        $ok  = ($LASTEXITCODE -eq 0)
+                        if (-not $ok) { $anyFailed = $true }
+                        $taskResults += "$rpzTask -> $(if ($ok) { 'OK' } else { "FALLITO (exit $LASTEXITCODE)" }): $($out.Trim())"
+                    } catch {
+                        $anyFailed = $true
+                        $taskResults += "$rpzTask -> ECCEZIONE: $($_.Exception.Message)"
+                    }
                 }
+                Write-DashLog ("Esito avvio task RPZ: " + ($taskResults -join " | "))
+                if ($anyFailed -and (($taskResults -join " ") -match "(?i)access is denied|accesso negato|negata")) {
+                    Write-DashLog "I task RPZ sono registrati per girare come SYSTEM: per avviarli manualmente il processo Dashboard deve essere lui stesso elevato (Amministratore/SYSTEM). Verificare con quale account/task e' partita l'istanza Dashboard attuale."
+                }
+
+                $esito  = if ($anyFailed) { "error" } else { "started" }
+                $errMsg = if ($anyFailed) { ($taskResults -join " | ") } else { $null }
 
                 $respObj = [ordered]@{ status = $esito }
                 if ($errMsg) { $respObj.error = $errMsg }
