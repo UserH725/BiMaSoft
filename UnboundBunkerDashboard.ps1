@@ -1819,7 +1819,7 @@ $HtmlPage = @'
   .live-log-feed {
     flex: 1; overflow-y: auto; overflow-x: hidden; font-family: "Consolas","Cascadia Mono",monospace; font-size: 0.78em;
     line-height: 1.8; background: #080c10; border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px; min-height: 540px; position: relative;
+    padding: 8px 10px; min-height: 540px; max-height: 860px; position: relative;
   }
   .live-log-track {
     display: flex; flex-direction: column;
@@ -2534,7 +2534,7 @@ function renderLiveLogFeed(d) {
     return;
   }
 
-  const voci = feed.slice().reverse();
+  const voci = feed.slice(0, 150).slice().reverse();
   const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
   if (signature === liveLogSignature) return;
 
