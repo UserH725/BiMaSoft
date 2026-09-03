@@ -1730,11 +1730,14 @@ $HtmlPage = @'
   .periodic-tasks-grid { display: flex; flex-direction: column; gap: 6px; width: 100%; }
   .periodic-task-chip {
     background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 6px 12px;
-    display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px;
+    display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 14px;
     font-size: 0.8em; width: 100%; box-sizing: border-box;
   }
-  .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; flex: 0 0 auto; }
-  .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.92em; text-align: right; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; flex: 0 1 auto; }
+  .periodic-task-chip .ptc-info { flex: 0 0 auto; margin-left: auto; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+  .periodic-task-chip .ptc-eta { font-size: 0.92em; }
+  .periodic-task-chip .ptc-sep { color: var(--dim); opacity: 0.5; }
+  .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.85em; text-align: right; }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
@@ -2479,7 +2482,11 @@ function renderPeriodicTasks(d) {
     const titleAttr = `Prossima esecuzione prevista: ${t.prossimo_run || 'N/D'} | Ultimo risultato: ${t.last_result || 'N/D'}`;
     return `<div class="periodic-task-chip" title="${titleAttr}">
       <span class="ptc-nome ${cls}">${t.nome || '-'}</span>
-      <span class="ptc-run">${t.ultimo_run || 'N/D'} <span class="${cls}">(${etaTxt})</span></span>
+      <span class="ptc-info">
+        <span class="ptc-eta ${cls}">${etaTxt}</span>
+        <span class="ptc-sep">&middot;</span>
+        <span class="ptc-run">${t.ultimo_run || 'N/D'}</span>
+      </span>
     </div>`;
   }).join('');
 }
