@@ -55,6 +55,10 @@ exit
 
 :FONT_OK
 title UNBOUND BUNKER by Mauro Bigoni
+if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
+if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
+if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
+
 :: --- BLOCCA CHIUSURA, MINIMIZZA, INGRANDISCI E DOPPIO CLICK SULLA BARRA DEL TITOLO ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags); [DllImport(\"user32.dll\")] public static extern bool EnableMenuItem(IntPtr hMenu, uint uIDEnableItem, uint uEnable); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex); [DllImport(\"user32.dll\")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong); [DllImport(\"user32.dll\")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::EnableMenuItem($menu, 0xF120, 0x0001); $CS::EnableMenuItem($menu, 0xF030, 0x0001); $CS::EnableMenuItem($menu, 0xF020, 0x0001); $CS::EnableMenuItem($menu, 0xF060, 0x0001); $CS::DeleteMenu($menu, 0xF060, 0); $CS::DeleteMenu($menu, 0xF020, 0); $CS::DeleteMenu($menu, 0xF030, 0); $CS::DeleteMenu($menu, 0xF120, 0); $style = $CS::GetWindowLong($hwnd, -16); $style = $style -band (-bnot 0x00020000) -band (-bnot 0x00010000) -band (-bnot 0x00040000) -band (-bnot 0x00C00000); $CS::SetWindowLong($hwnd, -16, $style); $CS::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 0, 0, 0x0037); $CS::ShowWindow($hwnd, 3); }" >nul 2>&1
 
@@ -122,7 +126,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.4"
+set "LOCAL_VER=1020.5"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
