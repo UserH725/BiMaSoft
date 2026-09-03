@@ -845,64 +845,111 @@ function Get-RpzFreshness {
     return $result
 }
 
-# === ULTIMA ESECUZIONE DEI TASK PIANIFICATI DI VERIFICA/AGGIORNAMENTO LISTE RPZ ===
-# Usa schtasks.exe direttamente (non il modulo ScheduledTasks) per coerenza con il
-# resto del codice, che ha gia' scartato Register-ScheduledTask/quel modulo per
-# inaffidabilita' su questa macchina (vedi /api/force-rpz-update sopra).
-$script:RpzTaskLastRunCache      = $null
-$script:RpzTaskLastRunCacheTime  = [DateTime]::MinValue
-$script:RpzTaskLastRunCacheTtlSec = 120
+# === STATO DEI TASK PIANIFICATI DEL BUNKER (RPZ, statistiche, NTP, ecc.) ===
+# Interroga UNA volta sola, con schtasks.exe (non il modulo ScheduledTasks, gia'
+# scartato altrove nel codice per inaffidabilita' su questa macchina - vedi
+# /api/force-rpz-update), TUTTI i task il cui nome contiene "Unbound_Bunker",
+# cosi' da non dover elencare a mano ogni singolo task pianificato dal BAT.
+$script:BunkerTasksCache      = $null
+$script:BunkerTasksCacheTime  = [DateTime]::MinValue
+$script:BunkerTasksCacheTtlSec = 120
+
+function Get-BunkerScheduledTasks {
+    if ($script:BunkerTasksCache -and ((Get-Date) - $script:BunkerTasksCacheTime).TotalSeconds -lt $script:BunkerTasksCacheTtlSec) {
+        return $script:BunkerTasksCache
+    }
+
+    $risultati = @()
+    try {
+        $csvRaw = & schtasks.exe /Query /FO CSV /V 2>$null
+        if ($LASTEXITCODE -eq 0 -and $csvRaw) {
+            $rows = $csvRaw | ConvertFrom-Csv
+            foreach ($row in $rows) {
+                $nameProp = $row.PSObject.Properties |
+                    Where-Object { $_.Name -match '(?i)^task ?name$|nome attivit' } |
+                    Select-Object -First 1
+                if (-not $nameProp -or -not $nameProp.Value) { continue }
+                $taskNameFull = $nameProp.Value.TrimStart('\')
+                if ($taskNameFull -notmatch '(?i)Unbound_Bunker') { continue }
+
+                $runProp = $row.PSObject.Properties |
+                    Where-Object { $_.Name -match '(?i)^last ?run ?time$|esecuzione precedente' } |
+                    Select-Object -First 1
+                $nextProp = $row.PSObject.Properties |
+                    Where-Object { $_.Name -match '(?i)^next ?run ?time$|esecuzione successiva' } |
+                    Select-Object -First 1
+                $resProp = $row.PSObject.Properties |
+                    Where-Object { $_.Name -match '(?i)^last ?result$|ultimo risultato|risultato' } |
+                    Select-Object -First 1
+
+                $stato = [ordered]@{
+                    nome         = $taskNameFull
+                    ultimo_run   = "N/D"
+                    min_fa       = -1
+                    prossimo_run = "N/D"
+                    last_result  = "N/D"
+                    esito        = "sconosciuto"
+                }
+
+                $dtRun = $null
+                if ($runProp -and $runProp.Value -and ($runProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
+                    try {
+                        $dtRun = [DateTime]::Parse($runProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
+                        $stato.ultimo_run = $dtRun.ToString("dd.MM.yyyy HH:mm")
+                        $stato.min_fa     = [math]::Round(((Get-Date) - $dtRun).TotalMinutes, 0)
+                    } catch {}
+                }
+                $dtNext = $null
+                if ($nextProp -and $nextProp.Value -and ($nextProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
+                    try {
+                        $dtNext = [DateTime]::Parse($nextProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
+                        $stato.prossimo_run = $dtNext.ToString("dd.MM.yyyy HH:mm")
+                    } catch {}
+                }
+                if ($resProp -and $resProp.Value) { $stato.last_result = $resProp.Value }
+
+                $resultOk = ($stato.last_result -match '^0$|^0x0$')
+                if ($dtRun) {
+                    if ($stato.last_result -ne "N/D" -and -not $resultOk) {
+                        $stato.esito = "attenzione"
+                    } elseif ($dtNext -and $dtNext -lt (Get-Date)) {
+                        # prossima esecuzione prevista gia' nel passato: il task e' probabilmente
+                        # in ritardo/bloccato/disabilitato invece di girare regolarmente
+                        $stato.esito = "attenzione"
+                    } else {
+                        $stato.esito = "ok"
+                    }
+                }
+
+                $risultati += $stato
+            }
+        }
+    } catch {}
+
+    $risultati = @($risultati | Sort-Object nome)
+    $result = [ordered]@{ tasks = $risultati }
+    $script:BunkerTasksCache     = $result
+    $script:BunkerTasksCacheTime = Get-Date
+    return $result
+}
 
 function Get-RpzTaskLastRun {
-    if ($script:RpzTaskLastRunCache -and ((Get-Date) - $script:RpzTaskLastRunCacheTime).TotalSeconds -lt $script:RpzTaskLastRunCacheTtlSec) {
-        return $script:RpzTaskLastRunCache
+    $rpzTaskNames = @("Unbound_Bunker_2h", "Unbound_Bunker_AbuseCh30m")
+    $tutti   = Get-BunkerScheduledTasks
+    $subset  = @($tutti.tasks | Where-Object { $rpzTaskNames -contains $_.nome })
+
+    $conRun = @($subset | Where-Object { $_.min_fa -ge 0 } | Sort-Object min_fa)
+    $piuRecenteTask = $conRun | Select-Object -First 1
+
+    $tasksOut = $subset | ForEach-Object {
+        [ordered]@{ task = $_.nome; ultimo_run = $_.ultimo_run; last_result = $_.last_result }
     }
 
-    $taskNames  = @("Unbound_Bunker_2h", "Unbound_Bunker_AbuseCh30m")
-    $risultati  = @()
-    $piuRecente = $null
-
-    foreach ($tn in $taskNames) {
-        $stato = [ordered]@{
-            task        = $tn
-            ultimo_run  = "N/D"
-            min_fa      = -1
-            last_result = "N/D"
-        }
-        try {
-            $csvRaw = & schtasks.exe /Query /TN $tn /V /FO CSV 2>$null
-            if ($LASTEXITCODE -eq 0 -and $csvRaw) {
-                $row = ($csvRaw | ConvertFrom-Csv) | Select-Object -First 1
-                if ($row) {
-                    $runProp = $row.PSObject.Properties |
-                        Where-Object { $_.Name -match '(?i)last ?run ?time|esecuzione precedente|ultima esecuzione' } |
-                        Select-Object -First 1
-                    $resProp = $row.PSObject.Properties |
-                        Where-Object { $_.Name -match '(?i)last ?result|ultimo risultato|risultato precedente' } |
-                        Select-Object -First 1
-                    if ($runProp -and $runProp.Value -and ($runProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
-                        try {
-                            $dt = [DateTime]::Parse($runProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
-                            $stato.ultimo_run = $dt.ToString("dd.MM.yyyy HH:mm")
-                            $stato.min_fa     = [math]::Round(((Get-Date) - $dt).TotalMinutes, 0)
-                            if (-not $piuRecente -or $dt -gt $piuRecente) { $piuRecente = $dt }
-                        } catch {}
-                    }
-                    if ($resProp -and $resProp.Value) { $stato.last_result = $resProp.Value }
-                }
-            }
-        } catch {}
-        $risultati += $stato
+    return [ordered]@{
+        tasks              = $tasksOut
+        piu_recente        = if ($piuRecenteTask) { $piuRecenteTask.ultimo_run } else { "N/D" }
+        piu_recente_min_fa = if ($piuRecenteTask) { $piuRecenteTask.min_fa } else { -1 }
     }
-
-    $result = [ordered]@{
-        tasks               = $risultati
-        piu_recente         = if ($piuRecente) { $piuRecente.ToString("dd.MM.yyyy HH:mm") } else { "N/D" }
-        piu_recente_min_fa  = if ($piuRecente) { [math]::Round(((Get-Date) - $piuRecente).TotalMinutes, 0) } else { -1 }
-    }
-    $script:RpzTaskLastRunCache     = $result
-    $script:RpzTaskLastRunCacheTime = Get-Date
-    return $result
 }
 
 function Get-HealthSnapshot {
@@ -1114,6 +1161,7 @@ function Get-BunkerStatusJson {
     $rpz         = Get-RpzBreakdown
     $rpzFresh    = Get-RpzFreshness
     $rpzTaskRun  = Get-RpzTaskLastRun
+    $bunkerTasks = Get-BunkerScheduledTasks
     $sessione    = Get-SessionTotal
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
@@ -1220,6 +1268,7 @@ function Get-BunkerStatusJson {
         rpz_log_age_min  = $rpzAgeMinutes
         rpz_freshness    = $rpzFresh
         rpz_task_last_run = $rpzTaskRun
+        periodic_tasks   = $bunkerTasks
         storico          = $script:HistoryBuffer
         anomalie_traffico = $trafficAnomalie
         unbound_restart_log = $script:UnboundRestartLog
@@ -1613,6 +1662,17 @@ $HtmlPage = @'
   .stat-ver:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
   .ver-status-ok { color: var(--green-bright); font-size: 0.75em; font-weight: bold; }
   .ver-status-warn { color: var(--amber-bright); font-size: 0.75em; font-weight: bold; }
+
+  .winupdate-tasks-row { display: flex; gap: 18px; margin-bottom: 12px; align-items: stretch; flex-wrap: wrap; }
+  .winupdate-tasks-row > .panel-versioni { margin-bottom: 0; flex-direction: column; align-items: flex-start; }
+  .winupdate-third { flex: 1 1 220px; }
+  .periodic-tasks-twothird { flex: 2 1 340px; }
+  .periodic-task-chip {
+    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 5px 10px;
+    display: flex; flex-direction: column; gap: 2px; font-size: 0.8em; min-width: 150px;
+  }
+  .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; }
+  .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.92em; }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
@@ -1762,9 +1822,16 @@ $HtmlPage = @'
       <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
     </div>
 
-    <div class="panel panel-versioni">
-      <h2>&#128295; Windows Update</h2>
-      <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+    <div class="winupdate-tasks-row">
+      <div class="panel panel-versioni winupdate-third">
+        <h2>&#128295; Windows Update</h2>
+        <div id="statsWinUpdate" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+      </div>
+
+      <div class="panel panel-versioni periodic-tasks-twothird">
+        <h2>&#128197; Task Pianificati</h2>
+        <div id="statsPeriodicTasks" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; width: 100%;"></div>
+      </div>
     </div>
 
     <!-- INCASTRATO A SINISTRA: BUNKER BOOST METRICHE + DETTAGLIO GAIN -->
@@ -2326,6 +2393,33 @@ function renderWinUpdate(d) {
   if (w.errore) {
     cont.innerHTML += `<div class="muted" style="width:100%; margin-top:6px;">${w.errore}</div>`;
   }
+}
+
+// === ULTIMA ESECUZIONE DEI TASK PIANIFICATI (RPZ, statistiche, NTP, ecc.) ===
+function renderPeriodicTasks(d) {
+  const cont = document.getElementById('statsPeriodicTasks');
+  if (!cont) return;
+  let tasks = (d.periodic_tasks && d.periodic_tasks.tasks) || [];
+  if (!Array.isArray(tasks)) { tasks = [tasks]; }
+  if (!tasks.length) {
+    cont.innerHTML = '<div class="muted">Nessun task pianificato rilevato.</div>';
+    return;
+  }
+  const classeEsito = { ok: 'esito-ok', attenzione: 'esito-warn', sconosciuto: 'esito-warn' };
+  cont.innerHTML = tasks.map(t => {
+    const cls = classeEsito[t.esito] || 'esito-warn';
+    let etaTxt = '--';
+    if (typeof t.min_fa === 'number' && t.min_fa >= 0) {
+      const oreInt = Math.floor(t.min_fa / 60);
+      const minRes = t.min_fa % 60;
+      etaTxt = oreInt > 0 ? `${oreInt}h ${minRes}m fa` : `${minRes}m fa`;
+    }
+    const titleAttr = `Prossima esecuzione prevista: ${t.prossimo_run || 'N/D'} | Ultimo risultato: ${t.last_result || 'N/D'}`;
+    return `<div class="periodic-task-chip" title="${titleAttr}">
+      <span class="ptc-nome ${cls}">${t.nome || '-'}</span>
+      <span class="ptc-run">${t.ultimo_run || 'N/D'} <span class="${cls}">(${etaTxt})</span></span>
+    </div>`;
+  }).join('');
 }
 
 let liveLogSignature = '';
@@ -3259,6 +3353,7 @@ async function refresh(forceVersions) {
     renderBlocchiOrari(d);
     renderDnsFallbackLog(d);
     renderWinUpdate(d);
+    renderPeriodicTasks(d);
     renderLiveLogFeed(d);
 
     const s = d.totale_sessione;
