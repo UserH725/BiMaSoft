@@ -1669,17 +1669,38 @@ $HtmlPage = @'
   }
   @keyframes liveBadgeBlink { 50% { opacity: 0.45; } }
 
-  .live-bar-track {
-    display: flex; align-items: center; justify-content: space-between; gap: 5px; flex: 1 1 auto; min-width: 0; height: 11px;
+.live-bar-track {
+    position: relative; flex: 1 1 auto; height: 14px; margin-left: 15px;
+    background: #080c10; border: 1px solid var(--border); border-radius: 4px;
+    overflow: hidden;
+    /* Centra perfettamente l'animazione */
+    display: flex; align-items: center; justify-content: center; 
   }
-  .live-pulse-dot {
-    width: 6px; height: 6px; border-radius: 1px; background: var(--green-bright); flex-shrink: 0;
-    animation: liveDotBlink 1.8s ease-in-out infinite;
+  
+  .live-scanner {
+    position: absolute; top: 0; left: -5%; height: 100%; width: 110%;
+    /* Crea la sfumatura: trasparente ai lati, verde acceso al centro */
+    background: linear-gradient(90deg, transparent 0%, rgba(61, 220, 132, 0.1) 15%, var(--green-bright) 50%, rgba(61, 220, 132, 0.1) 85%, transparent 100%);
+    /* Animazione del battito lento e fluido */
+    animation: heartbeatPulse 2s ease-in-out infinite;
   }
-  @keyframes liveDotBlink { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
-  .live-bar-track.offline .live-pulse-dot {
-    background: var(--red-bright); animation: none; opacity: 0.85;
-    background: var(--red-bright); box-shadow: 0 0 10px var(--red-bright);
+  
+  /* STATO OFFLINE: Colore rosso fuoco sfumato e lampeggio d'allarme */
+  .live-bar-track.offline .live-scanner {
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 92, 92, 0.2) 15%, var(--red-bright) 50%, rgba(255, 92, 92, 0.2) 85%, transparent 100%);
+    animation: offlineBlink 1s steps(2, start) infinite;
+  }
+  
+  /* Definisce il "respiro/battito": cambia opacità e si contrae/espande orizzontalmente */
+  @keyframes heartbeatPulse {
+    0%, 100% { opacity: 0.15; transform: scaleX(0.9); }
+    50% { opacity: 1; transform: scaleX(1); }
+  }
+  
+  /* Lampeggio netto e intermittente per lo stato di offline */
+  @keyframes offlineBlink {
+    0%, 100% { opacity: 1; transform: scaleX(1); }
+    50% { opacity: 0.1; }
   }
 
   .boost-subrow {
@@ -2242,16 +2263,8 @@ function playOfflineBeep() {
 function buildLiveDotGrid() {
   const track = document.getElementById('liveBarTrack');
   if (!track) return;
-  const larghezza = track.clientWidth || 300;
-  const spazioPerPunto = 16;
-  const count = Math.max(10, Math.floor(larghezza / spazioPerPunto));
-  if (track.childElementCount === count) return;
-  track.innerHTML = '';
-  for (let i = 0; i < count; i++) {
-    const dot = document.createElement('div');
-    dot.className = 'live-pulse-dot';
-    dot.style.animationDelay = ((i / count) * 1.8).toFixed(2) + 's';
-    track.appendChild(dot);
+  if (track.childElementCount === 0) {
+    track.innerHTML = '<div class="live-scanner"></div>';
   }
 }
 window.addEventListener('resize', () => { buildLiveDotGrid(); });
