@@ -1419,62 +1419,83 @@ $HtmlPage = @'
   }
   .button-row-status { font-size: 0.8em; }
 
-  .btn-restart {
-    background: rgba(211, 84, 0, 0.25);
-    color: var(--amber-bright);
-    border: 1.5px solid var(--amber-bright);
-    border-radius: 8px;
-    padding: 8px 14px;
+  /* Base comune a tutti i pulsanti azione: stessa dimensione, padding,
+     font e spaziatura per tutti. Solo il colore cambia da modificatore
+     a modificatore, cosi' i pulsanti restano omogenei ma distinguibili. */
+  .btn-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 188px;
+    padding: 10px 16px;
     font-family: inherit;
     font-size: 0.85em;
     font-weight: bold;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 6px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     white-space: nowrap;
   }
-  .btn-restart:hover {
-    background: rgba(211, 84, 0, 0.45);
-    box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
-    transform: translateY(-1px);
-  }
-  .btn-restart:disabled {
+  .btn-action:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
+  .btn-action:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
 
-  .btn-restart-unbound {
+  .btn-amber {
+    background: rgba(255, 179, 0, 0.20);
+    color: var(--amber-bright);
+    border: 1.5px solid var(--amber-bright);
+  }
+  .btn-amber:hover:not(:disabled) {
+    background: rgba(255, 179, 0, 0.40);
+    box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
+  }
+
+  .btn-blue {
     background: rgba(79, 179, 255, 0.20);
     color: var(--accent);
     border: 1.5px solid var(--accent);
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-family: inherit;
-    font-size: 0.85em;
-    font-weight: bold;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    white-space: nowrap;
   }
-  .btn-restart-unbound:hover {
+  .btn-blue:hover:not(:disabled) {
     background: rgba(79, 179, 255, 0.40);
     box-shadow: 0 0 14px rgba(79, 179, 255, 0.6);
-    transform: translateY(-1px);
   }
-  .btn-restart-unbound:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
+
+  .btn-purple {
+    background: rgba(179, 136, 255, 0.20);
+    color: var(--purple);
+    border: 1.5px solid var(--purple);
+  }
+  .btn-purple:hover:not(:disabled) {
+    background: rgba(179, 136, 255, 0.40);
+    box-shadow: 0 0 14px rgba(179, 136, 255, 0.6);
+  }
+
+  .btn-green {
+    background: rgba(61, 220, 132, 0.18);
+    color: var(--green-bright);
+    border: 1.5px solid var(--green-bright);
+  }
+  .btn-green:hover:not(:disabled) {
+    background: rgba(61, 220, 132, 0.36);
+    box-shadow: 0 0 14px rgba(61, 220, 132, 0.55);
+  }
+
+  .btn-red {
+    background: rgba(255, 92, 92, 0.18);
+    color: var(--red-bright);
+    border: 1.5px solid var(--red-bright);
+  }
+  .btn-red:hover:not(:disabled) {
+    background: rgba(255, 92, 92, 0.36);
+    box-shadow: 0 0 14px rgba(255, 92, 92, 0.55);
   }
 
   .restart-overlay {
@@ -1832,17 +1853,21 @@ $HtmlPage = @'
 </div>
 
 <div class="button-row" id="buttonRow">
-  <button id="btnRestart" onclick="confirmRestart()" class="btn-restart" title="Riavvia la Dashboard ed esegui la verifica della porta">
+  <button id="btnRestart" onclick="confirmRestart()" class="btn-action btn-amber" title="Riavvia la Dashboard ed esegui la verifica della porta">
     &#128260; Riavvia Dashboard
   </button>
-  <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-restart-unbound" title="Riavvia il servizio Windows di Unbound">
+  <button id="btnRestartUnbound" onclick="confirmRestartUnbound()" class="btn-action btn-blue" title="Riavvia il servizio Windows di Unbound">
     &#128737;&#65039; Riavvia Unbound
   </button>
-  <button id="btnForceRpz" onclick="confirmForceRpzUpdate()" class="btn-restart-unbound" title="Avvia subito i task pianificati di aggiornamento RPZ (HaGeZi/Spamhaus/TIF + abuse.ch)">
+  <button id="btnRestartManager" onclick="confirmRestartManager()" class="btn-action btn-purple" title="Rilancia lo scheduled task Unbound_Bunker_Boot che avvia UnboundBunkerManager.BAT">
+    &#128295; Riavvia Manager .BAT
+  </button>
+  <span id="restartManagerStatus" class="muted button-row-status"></span>
+  <button id="btnForceRpz" onclick="confirmForceRpzUpdate()" class="btn-action btn-green" title="Avvia subito i task pianificati di aggiornamento RPZ (HaGeZi/Spamhaus/TIF + abuse.ch)">
     &#128229; Forza Aggiornamento RPZ
   </button>
   <span id="forceRpzStatus" class="muted button-row-status"></span>
-  <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-restart-unbound" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
+  <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-action btn-red" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
     &#11015;&#65039; Aggiorna Dashboard da GitHub
   </button>
   <span id="updateDashStatus" class="muted button-row-status"></span>
@@ -2604,7 +2629,7 @@ async function confirmRestart() {
         clearInterval(checkInterval);
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
+          btn.innerHTML = '&#128260; Riavvia Dashboard';
         }
         hideRestartOverlay();
         refresh(true);
@@ -2621,7 +2646,7 @@ async function confirmRestart() {
       alert("Il riavvio non è ancora completato dopo " + HARD_LIMIT + " secondi. Ricarica manualmente la pagina tra qualche secondo, oppure controlla che il processo sia effettivamente ripartito.");
       if (btn) {
         btn.disabled = false;
-        btn.innerHTML = '&#128472;&#65039; Riavvia Dashboard';
+        btn.innerHTML = '&#128260; Riavvia Dashboard';
       }
       document.getElementById('restartOverlay').classList.remove('active');
     }
@@ -2685,6 +2710,33 @@ async function confirmRestartUnbound() {
       document.getElementById('restartOverlay').classList.remove('active');
     }
   }, 1000);
+}
+
+async function confirmRestartManager() {
+  if (!confirm("Riavviare UnboundBunkerManager.BAT?\n\nVerrà rilanciato lo scheduled task \"Unbound_Bunker_Boot\": il manager rieseguirà l'intera procedura di avvio (controlli, auto-tuning, eventuale self-update, ripianificazione task). Non c'è un segnale affidabile di completamento: verifica lo stato manualmente dopo qualche minuto.")) return;
+
+  const btn = document.getElementById('btnRestartManager');
+  const status = document.getElementById('restartManagerStatus');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Avvio in corso...'; }
+  if (status) status.textContent = '';
+
+  try {
+    const res = await fetch('/api/restart-manager', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'started') {
+      if (status) status.textContent = 'Task avviato alle ' + new Date().toLocaleTimeString('it-IT') + '. Verifica manualmente l\'esito tra qualche minuto.';
+    } else {
+      if (status) status.textContent = 'Errore nell\'avvio del task: ' + (data.error || 'sconosciuto');
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Errore di rete durante la richiesta.';
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '&#128295; Riavvia Manager .BAT';
+  }
+  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
 async function confirmForceRpzUpdate() {
@@ -3654,6 +3706,40 @@ try {
                                       "Start-Sleep -Seconds 2; Start-Service -Name 'unbound' -ErrorAction SilentlyContinue } catch {} }"
 
                 Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartUnboundCmd`"" -WindowStyle Hidden
+            } elseif ($request.Url.AbsolutePath -eq "/api/restart-manager" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di riavvio di UnboundBunkerManager.BAT (task Unbound_Bunker_Boot) ricevuta dall'interfaccia Web."
+
+                # Stesso motivo del blocco RPZ qui sotto: si usa schtasks.exe
+                # direttamente invece del modulo ScheduledTasks, gia' inaffidabile
+                # su questa macchina.
+                $managerTask = "Unbound_Bunker_Boot"
+                $anyFailed = $false
+                $taskResult = ""
+                try {
+                    $out = & schtasks.exe /run /tn $managerTask 2>&1 | Out-String
+                    $ok  = ($LASTEXITCODE -eq 0)
+                    if (-not $ok) { $anyFailed = $true }
+                    $taskResult = "$managerTask -> $(if ($ok) { 'OK' } else { "FALLITO (exit $LASTEXITCODE)" }): $($out.Trim())"
+                } catch {
+                    $anyFailed = $true
+                    $taskResult = "$managerTask -> ECCEZIONE: $($_.Exception.Message)"
+                }
+                Write-DashLog ("Esito avvio task manager: " + $taskResult)
+                if ($anyFailed -and ($taskResult -match "(?i)access is denied|accesso negato|negata")) {
+                    Write-DashLog "Il task $managerTask e' registrato per girare come SYSTEM/Amministratore: per avviarlo manualmente il processo Dashboard deve essere lui stesso elevato. Verificare con quale account/task e' partita l'istanza Dashboard attuale."
+                }
+
+                $esito  = if ($anyFailed) { "error" } else { "started" }
+                $errMsg = if ($anyFailed) { $taskResult } else { $null }
+
+                $respObj = [ordered]@{ status = $esito }
+                if ($errMsg) { $respObj.error = $errMsg }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($respObj | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                if ($esito -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
             } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di aggiornamento forzato RPZ ricevuta dall'interfaccia Web."
 
