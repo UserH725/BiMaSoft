@@ -2946,7 +2946,7 @@ async function refresh(forceVersions) {
     }
     const bRpzState = document.createElement('span');
     let rpzStateStyle = 'ok';
-    if (rpzStatePct < 75) { rpzStateStyle = 'bad'; }
+    if (rpzStatePct <= 50) { rpzStateStyle = 'bad'; }
     else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
     bRpzState.className = 'badge ' + rpzStateStyle;
     bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
