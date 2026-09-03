@@ -29,6 +29,29 @@ trap {
     continue
 }
 
+# === AUTO-RIPARAZIONE BOM UTF-8 ===
+# Se il file dello script perde il BOM (modifica con editor che salva senza BOM,
+# ripristino di un vecchio backup, download che non lo preserva, ecc.), PowerShell 5.1
+# lo rilegge con la codepage ANSI di sistema invece che UTF-8 e corrompe ogni carattere
+# accentato/speciale (mojibake, es. "piu" -> "piÃ¹", "." -> "Â."). Questo controllo gira
+# a ogni avvio, ripara il file sul disco e riavvia il processo prima che qualunque
+# stringa dello script venga letta con la codifica sbagliata.
+try {
+    $bomCheckBytes = [System.IO.File]::ReadAllBytes($script:CurrentScriptPath)
+    $hasBom = ($bomCheckBytes.Length -ge 3) -and ($bomCheckBytes[0] -eq 0xEF) -and ($bomCheckBytes[1] -eq 0xBB) -and ($bomCheckBytes[2] -eq 0xBF)
+    if (-not $hasBom) {
+        $fixedBytes = New-Object byte[] ($bomCheckBytes.Length + 3)
+        $fixedBytes[0] = 0xEF; $fixedBytes[1] = 0xBB; $fixedBytes[2] = 0xBF
+        [Array]::Copy($bomCheckBytes, 0, $fixedBytes, 3, $bomCheckBytes.Length)
+        [System.IO.File]::WriteAllBytes($script:CurrentScriptPath, $fixedBytes)
+        Write-DashLog "AUTO-RIPARAZIONE: BOM UTF-8 mancante nel file dashboard, aggiunto automaticamente. Riavvio il processo per applicare la codifica corretta."
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($script:CurrentScriptPath)`"" -WindowStyle Hidden
+        exit 0
+    }
+} catch {
+    Write-DashLog "AUTO-RIPARAZIONE BOM fallita: $($_.Exception.Message)"
+}
+
 # === LETTURA SICURA FILE DI LOG IN USO (BYPASS FILE LOCK) ===
 function Get-SafeLogLines {
     param(
@@ -3431,6 +3454,23 @@ try {
                     $localSha    = (Get-FileHash -LiteralPath $tmpFile -Algorithm SHA256).Hash
 
                     if ($expectedSha -and $localSha -and ($localSha.ToUpper() -eq $expectedSha.ToUpper())) {
+                        # Garantisce il BOM UTF-8 sul file installato, indipendentemente dal fatto
+                        # che il file pubblicato sul repo GitHub lo contenga o meno (la verifica
+                        # SHA256 sopra ha gia' controllato l'integrita' dei byte scaricati).
+                        try {
+                            $updBytes = [System.IO.File]::ReadAllBytes($tmpFile)
+                            $updHasBom = ($updBytes.Length -ge 3) -and ($updBytes[0] -eq 0xEF) -and ($updBytes[1] -eq 0xBB) -and ($updBytes[2] -eq 0xBF)
+                            if (-not $updHasBom) {
+                                $updFixed = New-Object byte[] ($updBytes.Length + 3)
+                                $updFixed[0] = 0xEF; $updFixed[1] = 0xBB; $updFixed[2] = 0xBF
+                                [Array]::Copy($updBytes, 0, $updFixed, 3, $updBytes.Length)
+                                [System.IO.File]::WriteAllBytes($tmpFile, $updFixed)
+                                Write-DashLog "Auto-aggiornamento: BOM UTF-8 assente nel file scaricato dal repository, aggiunto prima dell'installazione."
+                            }
+                        } catch {
+                            Write-DashLog "Impossibile verificare/riparare il BOM sul file di aggiornamento: $($_.Exception.Message)"
+                        }
+
                         $stamp   = (Get-Date).ToString("yyyyMMdd_HHmmss")
                         $bakFile = Join-Path $UbDir "UnboundBunkerDashboard_$stamp.BKP"
                         Copy-Item -LiteralPath $targetScript -Destination $bakFile -Force
