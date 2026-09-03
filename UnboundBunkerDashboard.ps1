@@ -2751,7 +2751,18 @@ async function refresh(forceVersions) {
     const bf = d.bunker_features || {};
 
     document.getElementById('valRpzRules').textContent = fmt(bf.total_rpz_rules || 0) + ' regole';
-    updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? 100 : 0);
+    let maxAgeHoursForRules = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
+    const barRpzRulesEl = document.getElementById('barRpzRules');
+    if (barRpzRulesEl) {
+      barRpzRulesEl.style.width = (bf.total_rpz_rules > 0 ? 100 : 0) + '%';
+      if (bf.total_rpz_rules > 0 && maxAgeHoursForRules <= 36) {
+        barRpzRulesEl.style.background = 'linear-gradient(90deg, #196f3d 0%, #145a32 100%)';
+      } else if (bf.total_rpz_rules > 0 && maxAgeHoursForRules < 61) {
+        barRpzRulesEl.style.background = 'linear-gradient(90deg, #d35400 0%, #f1c40f 100%)';
+      } else {
+        barRpzRulesEl.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
+      }
+    }
     let rpzDettaglio = bf.rpz_dettaglio || [];
     if (!Array.isArray(rpzDettaglio)) { rpzDettaglio = [rpzDettaglio]; }
 
