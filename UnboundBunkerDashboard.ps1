@@ -1727,13 +1727,14 @@ $HtmlPage = @'
   .winupdate-tasks-row > .panel-versioni { margin-bottom: 0; flex-direction: column; align-items: flex-start; }
   .winupdate-third { flex: 1 1 220px; }
   .periodic-tasks-twothird { flex: 2 1 340px; }
-  .periodic-tasks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; width: 100%; }
+  .periodic-tasks-grid { display: flex; flex-direction: column; gap: 6px; width: 100%; }
   .periodic-task-chip {
-    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 5px 10px;
-    display: flex; flex-direction: column; gap: 2px; font-size: 0.8em;
+    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 6px 12px;
+    display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 0.8em; width: 100%; box-sizing: border-box;
   }
-  .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; }
-  .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.92em; }
+  .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; flex: 0 0 auto; }
+  .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.92em; text-align: right; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
