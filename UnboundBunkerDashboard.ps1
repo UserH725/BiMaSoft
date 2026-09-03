@@ -846,10 +846,18 @@ function Get-RpzFreshness {
 }
 
 # === STATO DEI TASK PIANIFICATI DEL BUNKER (RPZ, statistiche, NTP, ecc.) ===
-# Interroga UNA volta sola, con schtasks.exe (non il modulo ScheduledTasks, gia'
-# scartato altrove nel codice per inaffidabilita' su questa macchina - vedi
-# /api/force-rpz-update), TUTTI i task il cui nome contiene "Unbound_Bunker",
+# Interroga UNA volta sola TUTTI i task il cui nome contiene "Unbound_Bunker",
 # cosi' da non dover elencare a mano ogni singolo task pianificato dal BAT.
+# Metodo primario: modulo ScheduledTasks (Get-ScheduledTask/-TaskInfo), che
+# restituisce LastRunTime/NextRunTime gia' come [DateTime] nativi - a differenza
+# di "schtasks.exe /FO CSV", il cui output testuale va parsato con [DateTime]::Parse
+# e puo' fallire silenziosamente (risultando in "N/D" per tutto) se la cultura con
+# cui schtasks formatta le date non coincide con quella del processo che legge
+# (es. dashboard eseguita come SYSTEM vs sessione utente interattiva). Il modulo
+# ScheduledTasks era gia' stato scartato altrove nel codice, ma solo per la
+# REGISTRAZIONE di nuovi task (Register-ScheduledTask, vedi /api/force-rpz-update):
+# qui si usa solo in LETTURA, operazione molto piu' affidabile. schtasks.exe resta
+# come fallback nel solo caso in cui il modulo non sia disponibile sulla macchina.
 $script:BunkerTasksCache      = $null
 $script:BunkerTasksCacheTime  = [DateTime]::MinValue
 $script:BunkerTasksCacheTtlSec = 120
@@ -860,71 +868,123 @@ function Get-BunkerScheduledTasks {
     }
 
     $risultati = @()
+    $moduloOk  = $false
+
     try {
-        $csvRaw = & schtasks.exe /Query /FO CSV /V 2>$null
-        if ($LASTEXITCODE -eq 0 -and $csvRaw) {
-            $rows = $csvRaw | ConvertFrom-Csv
-            foreach ($row in $rows) {
-                $nameProp = $row.PSObject.Properties |
-                    Where-Object { $_.Name -match '(?i)^task ?name$|nome attivit' } |
-                    Select-Object -First 1
-                if (-not $nameProp -or -not $nameProp.Value) { continue }
-                $taskNameFull = $nameProp.Value.TrimStart('\')
-                if ($taskNameFull -notmatch '(?i)Unbound_Bunker') { continue }
-
-                $runProp = $row.PSObject.Properties |
-                    Where-Object { $_.Name -match '(?i)^last ?run ?time$|esecuzione precedente' } |
-                    Select-Object -First 1
-                $nextProp = $row.PSObject.Properties |
-                    Where-Object { $_.Name -match '(?i)^next ?run ?time$|esecuzione successiva' } |
-                    Select-Object -First 1
-                $resProp = $row.PSObject.Properties |
-                    Where-Object { $_.Name -match '(?i)^last ?result$|ultimo risultato|risultato' } |
-                    Select-Object -First 1
-
-                $stato = [ordered]@{
-                    nome         = $taskNameFull
-                    ultimo_run   = "N/D"
-                    min_fa       = -1
-                    prossimo_run = "N/D"
-                    last_result  = "N/D"
-                    esito        = "sconosciuto"
-                }
-
-                $dtRun = $null
-                if ($runProp -and $runProp.Value -and ($runProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
-                    try {
-                        $dtRun = [DateTime]::Parse($runProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
-                        $stato.ultimo_run = $dtRun.ToString("dd.MM.yyyy HH:mm")
-                        $stato.min_fa     = [math]::Round(((Get-Date) - $dtRun).TotalMinutes, 0)
-                    } catch {}
-                }
-                $dtNext = $null
-                if ($nextProp -and $nextProp.Value -and ($nextProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
-                    try {
-                        $dtNext = [DateTime]::Parse($nextProp.Value, [System.Globalization.CultureInfo]::CurrentCulture)
-                        $stato.prossimo_run = $dtNext.ToString("dd.MM.yyyy HH:mm")
-                    } catch {}
-                }
-                if ($resProp -and $resProp.Value) { $stato.last_result = $resProp.Value }
-
-                $resultOk = ($stato.last_result -match '^0$|^0x0$')
-                if ($dtRun) {
-                    if ($stato.last_result -ne "N/D" -and -not $resultOk) {
-                        $stato.esito = "attenzione"
-                    } elseif ($dtNext -and $dtNext -lt (Get-Date)) {
-                        # prossima esecuzione prevista gia' nel passato: il task e' probabilmente
-                        # in ritardo/bloccato/disabilitato invece di girare regolarmente
-                        $stato.esito = "attenzione"
-                    } else {
-                        $stato.esito = "ok"
+        $tasks = Get-ScheduledTask -TaskName "Unbound_Bunker*" -ErrorAction Stop
+        $moduloOk = $true
+        foreach ($task in $tasks) {
+            $stato = [ordered]@{
+                nome         = $task.TaskName
+                ultimo_run   = "N/D"
+                min_fa       = -1
+                prossimo_run = "N/D"
+                last_result  = "N/D"
+                esito        = "sconosciuto"
+            }
+            try {
+                $info = $task | Get-ScheduledTaskInfo -ErrorAction Stop
+                if ($info) {
+                    if ($info.LastRunTime -and $info.LastRunTime.Year -gt 1900) {
+                        $stato.ultimo_run = $info.LastRunTime.ToString("dd.MM.yyyy HH:mm")
+                        $stato.min_fa     = [math]::Round(((Get-Date) - $info.LastRunTime).TotalMinutes, 0)
+                    }
+                    if ($info.NextRunTime -and $info.NextRunTime.Year -gt 1900) {
+                        $stato.prossimo_run = $info.NextRunTime.ToString("dd.MM.yyyy HH:mm")
+                    }
+                    if ($null -ne $info.LastTaskResult) {
+                        $stato.last_result = "0x{0:X}" -f $info.LastTaskResult
+                        $resultOk = ($info.LastTaskResult -eq 0)
+                        if ($stato.min_fa -ge 0) {
+                            if (-not $resultOk) {
+                                $stato.esito = "attenzione"
+                            } elseif ($task.State -ne 'Disabled' -and $info.NextRunTime -and $info.NextRunTime.Year -gt 1900 -and $info.NextRunTime -lt (Get-Date)) {
+                                # prossima esecuzione prevista gia' nel passato: il task e' probabilmente
+                                # in ritardo/bloccato invece di girare regolarmente
+                                $stato.esito = "attenzione"
+                            } else {
+                                $stato.esito = "ok"
+                            }
+                        }
                     }
                 }
-
-                $risultati += $stato
-            }
+            } catch {}
+            $risultati += $stato
         }
-    } catch {}
+    } catch {
+        $moduloOk = $false
+    }
+
+    if (-not $moduloOk) {
+        # Fallback: modulo ScheduledTasks non disponibile su questa macchina
+        try {
+            $csvRaw = & schtasks.exe /Query /FO CSV /V 2>$null
+            if ($LASTEXITCODE -eq 0 -and $csvRaw) {
+                $rows = $csvRaw | ConvertFrom-Csv
+                foreach ($row in $rows) {
+                    $nameProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^task ?name$|nome attivit' } |
+                        Select-Object -First 1
+                    if (-not $nameProp -or -not $nameProp.Value) { continue }
+                    $taskNameFull = $nameProp.Value.TrimStart('\')
+                    if ($taskNameFull -notmatch '(?i)Unbound_Bunker') { continue }
+
+                    $runProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^last ?run ?time$|esecuzione precedente' } |
+                        Select-Object -First 1
+                    $nextProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^next ?run ?time$|esecuzione successiva' } |
+                        Select-Object -First 1
+                    $resProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^last ?result$|ultimo risultato|risultato' } |
+                        Select-Object -First 1
+
+                    $stato = [ordered]@{
+                        nome         = $taskNameFull
+                        ultimo_run   = "N/D"
+                        min_fa       = -1
+                        prossimo_run = "N/D"
+                        last_result  = "N/D"
+                        esito        = "sconosciuto"
+                    }
+
+                    $dtRun = $null
+                    if ($runProp -and $runProp.Value -and ($runProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
+                        foreach ($cultura in @([System.Globalization.CultureInfo]::CurrentCulture, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.CultureInfo]::GetCultureInfo("en-US"), [System.Globalization.CultureInfo]::GetCultureInfo("it-IT"))) {
+                            if ($dtRun) { break }
+                            try { $dtRun = [DateTime]::Parse($runProp.Value, $cultura) } catch {}
+                        }
+                        if ($dtRun) {
+                            $stato.ultimo_run = $dtRun.ToString("dd.MM.yyyy HH:mm")
+                            $stato.min_fa     = [math]::Round(((Get-Date) - $dtRun).TotalMinutes, 0)
+                        }
+                    }
+                    $dtNext = $null
+                    if ($nextProp -and $nextProp.Value -and ($nextProp.Value -notmatch '(?i)^(N/A|N/D)$')) {
+                        foreach ($cultura in @([System.Globalization.CultureInfo]::CurrentCulture, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.CultureInfo]::GetCultureInfo("en-US"), [System.Globalization.CultureInfo]::GetCultureInfo("it-IT"))) {
+                            if ($dtNext) { break }
+                            try { $dtNext = [DateTime]::Parse($nextProp.Value, $cultura) } catch {}
+                        }
+                        if ($dtNext) { $stato.prossimo_run = $dtNext.ToString("dd.MM.yyyy HH:mm") }
+                    }
+                    if ($resProp -and $resProp.Value) { $stato.last_result = $resProp.Value }
+
+                    $resultOk = ($stato.last_result -match '^0$|^0x0$')
+                    if ($dtRun) {
+                        if ($stato.last_result -ne "N/D" -and -not $resultOk) {
+                            $stato.esito = "attenzione"
+                        } elseif ($dtNext -and $dtNext -lt (Get-Date)) {
+                            $stato.esito = "attenzione"
+                        } else {
+                            $stato.esito = "ok"
+                        }
+                    }
+
+                    $risultati += $stato
+                }
+            }
+        } catch {}
+    }
 
     $risultati = @($risultati | Sort-Object nome)
     $result = [ordered]@{ tasks = $risultati }
@@ -1667,9 +1727,10 @@ $HtmlPage = @'
   .winupdate-tasks-row > .panel-versioni { margin-bottom: 0; flex-direction: column; align-items: flex-start; }
   .winupdate-third { flex: 1 1 220px; }
   .periodic-tasks-twothird { flex: 2 1 340px; }
+  .periodic-tasks-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; width: 100%; }
   .periodic-task-chip {
     background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 5px 10px;
-    display: flex; flex-direction: column; gap: 2px; font-size: 0.8em; min-width: 150px;
+    display: flex; flex-direction: column; gap: 2px; font-size: 0.8em;
   }
   .periodic-task-chip .ptc-nome { font-weight: bold; color: var(--text, #ddd); word-break: break-word; }
   .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.92em; }
@@ -1830,7 +1891,7 @@ $HtmlPage = @'
 
       <div class="panel panel-versioni periodic-tasks-twothird">
         <h2>&#128197; Task Pianificati</h2>
-        <div id="statsPeriodicTasks" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; width: 100%;"></div>
+        <div id="statsPeriodicTasks" class="periodic-tasks-grid"></div>
       </div>
     </div>
 
