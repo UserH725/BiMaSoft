@@ -122,7 +122,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.3"
+set "LOCAL_VER=1020.4"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -3384,20 +3384,28 @@ exit /b
 :: SUBITO dopo la call, prima di qualunque altra chiamata a curl.
 :: Uso: call :CURL_RETRY "<url>" "<file_output>" "<argomenti_extra>"
 :: ==================================================================
+:: [FIX ANTI-BLOCCO] Aggiunti --connect-timeout 8 --max-time 25 a tutte le
+:: chiamate curl di questo blocco (CURL_RETRY / CURL_RETRY_Z / CURL_RETRY_Z2).
+:: Senza timeout espliciti curl attende a tempo indefinito una connessione
+:: che si apre ma non trasferisce dati (es. micro-interruzioni WireGuard/WARP,
+:: CDN che stalla): con 10+ download sequenziali nel ciclo biorario, bastava
+:: una sola fonte "appesa" per tenere in esecuzione l'intero task per molto
+:: piu' tempo del previsto. Ora un download bloccato fallisce in ~25s al
+:: massimo e si passa subito al retry/mirror successivo.
 :CURL_RETRY
 set "CRT_URL=%~1"
 set "CRT_OUT=%~2"
 set "CRT_ARGS=%~3"
 set "CURL_TRY_NUM=1"
-curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=2"
-curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=3"
-curl -s -f %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
@@ -3417,15 +3425,15 @@ set "CRZ_OUT=%~2"
 set "CRZ_ARGS=%~3"
 set "CRZ_REF=%~4"
 set "CURL_TRY_NUM=1"
-curl -s -f %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=2"
-curl -s -f %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=3"
-curl -s -f %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
@@ -3456,15 +3464,15 @@ set "CURL_TRY_NUM=1"
 :: (es. TIF): senza resume, ogni retry ripartiva da zero e con una rete
 :: instabile (micro-interruzioni WireGuard/WARP) il download non convergeva
 :: mai. Se CRZ2_OUT non esiste ancora, -C - equivale a un download normale.
-curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=2"
-curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=3"
-curl -s -f -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 :: sorgente primaria esaurita, tento la secondaria (fallback)
 :: NB: si continua a riprendere lo stesso CRZ2_OUT anche passando a
@@ -3472,15 +3480,15 @@ if not errorlevel 1 exit /b 0
 :: quindi gli offset di byte restano coerenti).
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=4"
-curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 3 /nobreak >nul
 set "CURL_TRY_NUM=5"
-curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 timeout /t 6 /nobreak >nul
 set "CURL_TRY_NUM=6"
-curl -s -f -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
+curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 set "CURL_TRY_NUM=0"
 exit /b 1
