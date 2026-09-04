@@ -59,7 +59,7 @@ title UNBOUND BUNKER by Mauro Bigoni
 title UNBOUND BUNKER by Mauro Bigoni
 
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
-set "LOCAL_VER=1020.6"
+set "LOCAL_VER=1020.8"
 set "UB_DIR=C:\Program Files\Unbound"
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
