@@ -59,7 +59,7 @@ title UNBOUND BUNKER by Mauro Bigoni
 title UNBOUND BUNKER by Mauro Bigoni
 
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
-set "LOCAL_VER=1020.8"
+set "LOCAL_VER=1021.0"
 set "UB_DIR=C:\Program Files\Unbound"
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
@@ -4125,7 +4125,7 @@ set "XML_START_BOUND=!TDATE!T!XML_START!"
 echo ^<?xml version="1.0" encoding="UTF-16"?^>
 echo ^<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"^>
 echo   ^<RegistrationInfo^>
-echo     ^<Description^>Unbound Bunker - Task pianificato (Forzatura uscita pulita 0x0)^</Description^>
+echo     ^<Description^>Unbound Bunker - Task pianificato ^(Forzatura uscita pulita 0x0^)^</Description^>
 echo   ^</RegistrationInfo^>
 echo   ^<Triggers^>
 echo     ^<CalendarTrigger^>
