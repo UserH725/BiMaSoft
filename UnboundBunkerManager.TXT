@@ -55,9 +55,72 @@ exit
 
 :FONT_OK
 title UNBOUND BUNKER by Mauro Bigoni
+:FONT_OK
+title UNBOUND BUNKER by Mauro Bigoni
+
+:: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
+set "LOCAL_VER=1020.6"
+set "UB_DIR=C:\Program Files\Unbound"
+set "SERVICE_CONF=%UB_DIR%\service.conf"
+set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
+set "SELF_BAT=%UB_DIR%\UnboundBunkerManager.BAT"
+set "CLOUD_BAT_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerManager.TXT"
+set "CLOUD_BAT_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerManager.sha256"
+set "CLOUD_SVC_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf"
+
+:: --- PERCORSI LISTE E ROTAZIONE BACKUP ---
+set "NCACHE_BAK=%UB_DIR%\named.cache.bak1"
+set "NCACHE_BAK2=%UB_DIR%\named.cache.bak2"
+set "NCACHE_BAK3=%UB_DIR%\named.cache.bak3"
+set "RZONE_BAK=%UB_DIR%\root.zone.bak1"
+set "RZONE_BAK2=%UB_DIR%\root.zone.bak2"
+set "RZONE_BAK3=%UB_DIR%\root.zone.bak3"
+set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
+set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak1"
+set "HZ_PRO_PLUS_BAK2=%HZ_PRO_PLUS%.bak2"
+set "HZ_PRO_PLUS_BAK3=%HZ_PRO_PLUS%.bak3"
+set "HZ_TIF=%UB_DIR%\hagezi-tif.conf"
+set "HZ_TIF_BAK=%HZ_TIF%.bak1"
+set "HZ_TIF_BAK2=%HZ_TIF%.bak2"
+set "HZ_TIF_BAK3=%HZ_TIF%.bak3"
+set "HZ_TIF_IPS=%UB_DIR%\hagezi-tif-ips.conf"
+set "HZ_TIF_IPS_BAK=%HZ_TIF_IPS%.bak1"
+set "HZ_TIF_IPS_BAK2=%HZ_TIF_IPS%.bak2"
+set "HZ_TIF_IPS_BAK3=%HZ_TIF_IPS%.bak3"
+set "SH_DROP=%UB_DIR%\spamhaus-drop-v4.conf"
+set "SH_DROP_BAK=%SH_DROP%.bak1"
+set "SH_DROP_BAK2=%SH_DROP%.bak2"
+set "SH_DROP_BAK3=%SH_DROP%.bak3"
+set "SH_DROP6=%UB_DIR%\spamhaus-drop-v6.conf"
+set "SH_DROP6_BAK=%SH_DROP6%.bak1"
+set "SH_DROP6_BAK2=%SH_DROP6%.bak2"
+set "SH_DROP6_BAK3=%SH_DROP6%.bak3"
+set "HZ_DYNDNS=%UB_DIR%\hagezi-dyndns.conf"
+set "HZ_DYNDNS_BAK=%HZ_DYNDNS%.bak1"
+set "HZ_DYNDNS_BAK2=%HZ_DYNDNS%.bak2"
+set "HZ_DYNDNS_BAK3=%HZ_DYNDNS%.bak3"
+set "HZ_HOSTER=%UB_DIR%\hagezi-hoster.conf"
+set "HZ_HOSTER_BAK=%HZ_HOSTER%.bak1"
+set "HZ_HOSTER_BAK2=%HZ_HOSTER%.bak2"
+set "HZ_HOSTER_BAK3=%HZ_HOSTER%.bak3"
+set "HZ_SPAMTLDS=%UB_DIR%\hagezi-spamtlds.conf"
+set "HZ_SPAMTLDS_BAK=%HZ_SPAMTLDS%.bak1"
+set "HZ_SPAMTLDS_BAK2=%HZ_SPAMTLDS%.bak2"
+set "HZ_SPAMTLDS_BAK3=%HZ_SPAMTLDS%.bak3"
+set "URLHAUS=%UB_DIR%\urlhaus.conf"
+set "URLHAUS_BAK=%URLHAUS%.bak1"
+set "URLHAUS_BAK2=%URLHAUS%.bak2"
+set "URLHAUS_BAK3=%URLHAUS%.bak3"
+set "THREATFOX=%UB_DIR%\threatfox.conf"
+set "THREATFOX_BAK=%THREATFOX%.bak1"
+set "THREATFOX_BAK2=%THREATFOX%.bak2"
+set "THREATFOX_BAK3=%THREATFOX%.bak3"
+
+:: --- SALTI AI TASK IN BACKGROUND ---
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
+
 
 :: --- BLOCCA CHIUSURA, MINIMIZZA, INGRANDISCI E DOPPIO CLICK SULLA BARRA DEL TITOLO ---
 powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle -like '*UNBOUND BUNKER*'} | Select-Object -First 1).MainWindowHandle; if($hwnd) { $CS = Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert); [DllImport(\"user32.dll\")] public static extern bool DeleteMenu(IntPtr hMenu, uint uPosition, uint uFlags); [DllImport(\"user32.dll\")] public static extern bool EnableMenuItem(IntPtr hMenu, uint uIDEnableItem, uint uEnable); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); [DllImport(\"user32.dll\")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex); [DllImport(\"user32.dll\")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong); [DllImport(\"user32.dll\")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);' -Name 'WinAPI' -PassThru; $menu = $CS::GetSystemMenu($hwnd, $false); $CS::EnableMenuItem($menu, 0xF120, 0x0001); $CS::EnableMenuItem($menu, 0xF030, 0x0001); $CS::EnableMenuItem($menu, 0xF020, 0x0001); $CS::EnableMenuItem($menu, 0xF060, 0x0001); $CS::DeleteMenu($menu, 0xF060, 0); $CS::DeleteMenu($menu, 0xF020, 0); $CS::DeleteMenu($menu, 0xF030, 0); $CS::DeleteMenu($menu, 0xF120, 0); $style = $CS::GetWindowLong($hwnd, -16); $style = $style -band (-bnot 0x00020000) -band (-bnot 0x00010000) -band (-bnot 0x00040000) -band (-bnot 0x00C00000); $CS::SetWindowLong($hwnd, -16, $style); $CS::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 0, 0, 0x0037); $CS::ShowWindow($hwnd, 3); }" >nul 2>&1
@@ -126,7 +189,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.6"
+set "LOCAL_VER=1020.7"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -2080,7 +2143,8 @@ ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
 if errorlevel 1 (
     call :LOGFAIL "REFRESH" "Rete non raggiungibile, refresh saltato"
-    exit /b
+    cmd /c exit 0
+    exit 0
 )
 
 if not exist "%UB_DIR%" (
@@ -2773,7 +2837,7 @@ if "!CHANGED!"=="1" (
     call :DNS_FALLBACK_ON
     net start unbound >nul 2>&1
     :: Verifica stabilità: attendo 2 secondi affinché Unbound sia pronto ad accettare query
-    timeout /t 2 >nul
+    ping -n 3 127.0.0.1 >nul
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
     call :DNS_FALLBACK_OFF
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
@@ -2783,21 +2847,14 @@ if "!CHANGED!"=="1" (
 )
 
 :: Salva timestamp del refresh
-echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%"
-:: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh,
-:: indipendentemente dal fatto che CHANGED sia 0 o 1.
+echo %TODAY%-%time:~0,2%%time:~3,2% > "%LAST_REFRESH_FILE%" 2>nul
+:: [FIX] Ripristina sempre il DNS su 127.0.0.1 prima di uscire dal refresh
 call :DNS_FALLBACK_OFF
-exit /b
 
-:: ============================================================================
-:: REFRESH DEDICATO ABUSE.CH (URLHAUS + THREATFOX) OGNI 30 MINUTI
-:: Sottoinsieme snello di :REFRESH_FILES_ONLY: aggiorna solo le due fonti piu'
-:: dinamiche (URLhaus rigenera il proprio RPZ ogni 5 minuti), senza toccare
-:: BAT/service.conf/HaGeZi/Spamhaus/root.zone/NTP - quelli restano sul ciclo
-:: biorario standard. Stessa rete di sicurezza (ping, DNS fallback, restart
-:: condizionale solo se cambia qualcosa) ma senza gli step pesanti (silent
-:: update, NTP resync) che non hanno senso ripetere ogni 30 minuti.
-:: ============================================================================
+:: --- FORZATURA ASSOLUTA USCITA PULITA (0x0) ---
+cmd /c exit 0
+exit 0
+
 :REFRESH_ABUSECH_ONLY
 title UNBOUND BUNKER - REFRESH ABUSE.CH (30 MIN)
 
@@ -2805,7 +2862,8 @@ ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
 if errorlevel 1 (
     call :LOGFAIL "REFRESH-ABUSECH" "Rete non raggiungibile, refresh saltato"
-    exit /b
+    cmd /c exit 0
+    exit 0
 )
 
 if not exist "%UB_DIR%" (
@@ -2902,19 +2960,20 @@ if "!CHANGED!"=="1" (
     call :DNS_FALLBACK_ON
     net start unbound >nul 2>&1
     :: Verifica stabilita': attendo 2 secondi affinche' Unbound sia pronto ad accettare query
-    timeout /t 2 >nul
+    ping -n 3 127.0.0.1 >nul
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound e' attivo
     call :DNS_FALLBACK_OFF
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH-ABUSECH" "Servizio riavviato dopo refresh abuse.ch"
 ) else (
     call :LOGSTEP "REFRESH-ABUSECH" "Nessun file cambiato, riavvio saltato"
-    :: [FIX] Ripristina comunque il DNS su 127.0.0.1: se il ping iniziale aveva
-    :: gia' Unbound giu' per altri motivi il fallback potrebbe essere rimasto
-    :: attivo da un ciclo precedente; stessa rete di sicurezza degli altri cicli.
+    :: [FIX] Ripristina comunque il DNS su 127.0.0.1:
     call :DNS_FALLBACK_OFF
 )
-exit /b
+
+:: --- FORZATURA ASSOLUTA USCITA PULITA (0x0) ---
+cmd /c exit 0
+exit 0
 
 :: ============================================================================
 :: REPORT STATISTICO BIORARIO: query totali, blocchi RPZ, cache hit.
@@ -2928,6 +2987,16 @@ exit /b
 :: ============================================================================
 :DAILY_REPORT_ONLY
 title UNBOUND BUNKER - REPORT BIORARIO
+
+:: [FIX-TG] Rete di sicurezza: UB_DIR e' valorizzato solo nel percorso di
+:: avvio interattivo/--scheduled (FASE 1). I lanci in background con
+:: --refresh saltano direttamente qui, quindi va ricalcolato se risulta
+:: vuoto - stesso pattern gia' usato piu' sotto per TOTAL_RAM_GB/UB_LOCAL_VER.
+if "!UB_DIR!"=="" set "UB_DIR=C:\Program Files\Unbound"
+
+:: [FIX-TG] Traccia incondizionata dell'ingresso nella funzione, per avere
+:: certezza (invece di assenza di prove) se il ciclo biorario arriva fin qui.
+echo [%date% %time%] DAILY_REPORT_ONLY avviato - UB_DIR=%UB_DIR% >> "%WINDIR%\Temp\ub_report_debug.log"
 
 if not exist "%UB_DIR%" (
     call :LOGFAIL "REPORT" "Directory Unbound non trovata, report saltato"
@@ -3020,7 +3089,7 @@ if errorlevel 1 (
 
 :: --- REPERIMENTO VARIABILI HARDWARE E VERSIONI (per execution da Task Scheduler) ---
 if "!TOTAL_RAM_GB!"=="" call :AUTO_TUNING_HARDWARE >nul 2>&1
-if "!UB_LOCAL_VER!"=="" call :CHECK_UNBOUND_VERSION >nul 2>&1
+if "!UB_LOCAL_VER!"=="" call :CHECK_UNBOUND_VERSION "--scheduled" >nul 2>&1
 if "!LOCAL_SVC_VER!"=="" if exist "!LOCAL_SVC_VER_FILE!" (
     set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
@@ -3040,7 +3109,11 @@ if "!SVC_VER!"=="N/A" (
 )
 
 :: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
-powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $dUrlhaus = Get-DomDet @('urlhaus'); $dThreatFox = Get-DomDet @('threatfox'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 *UNBOUND BUNKER - REPORT BIORARIO*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '=============================================' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER!/Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER!/Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER!/Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '=============================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus.........: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF..............: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS..........: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6)...: `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS...........: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster...: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs.: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '• 🦠 abuse.ch URLhaus........: `!BLK_URLHAUS!` blocchi' + $(if ($dUrlhaus) { [char]10 + $dUrlhaus } else { '' }) + [char]10 + '• 🕸️ abuse.ch ThreatFox......: `!BLK_THREATFOX!` blocchi' + $(if ($dThreatFox) { [char]10 + $dThreatFox } else { '' }) + [char]10 + '=============================================' + [char]10 + '!IPV4_LINE!' + [char]10 + '!IPV6_LINE!' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>&1
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $dUrlhaus = Get-DomDet @('urlhaus'); $dThreatFox = Get-DomDet @('threatfox'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 *UNBOUND BUNKER - REPORT BIORARIO*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '=============================================' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER!/Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER!/Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER!/Cloud v!SVC_VER!' + [char]10 + '=============================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '=============================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus.........: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF..............: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS..........: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6)...: `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS...........: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster...: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs.: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '• 🦠 abuse.ch URLhaus........: `!BLK_URLHAUS!` blocchi' + $(if ($dUrlhaus) { [char]10 + $dUrlhaus } else { '' }) + [char]10 + '• 🕸️ abuse.ch ThreatFox......: `!BLK_THREATFOX!` blocchi' + $(if ($dThreatFox) { [char]10 + $dThreatFox } else { '' }) + [char]10 + '=============================================' + [char]10 + '!IPV4_LINE!' + [char]10 + '!IPV6_LINE!' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+:: [FIX-TG] Conferma incondizionata che il blocco di invio e' stato
+:: eseguito (a prescindere dall'esito), per distinguere in futuro un
+:: mancato invio da un blocco mai raggiunto.
+echo [%date% %time%] Report biorario: blocco invio eseguito (v. telegram_error.log per eventuali errori) >> "%UB_DIR%\report_biorario_debug.log"
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 
 :: [DASHBOARD LIVE] Accumulatore di sessione chirurgico (sola AGGIUNTA in append: legge le variabili gia' calcolate sopra, non modifica nulla, scrive PRIMA dello svuotamento log)
@@ -3060,7 +3133,7 @@ if exist "%RPZ_LOG%" (
 :: --- (rimosso il marcatore anti-doppio-invio: ogni invio e' ora legittimo) ---
 
 call :LOGSTEP "REPORT" "Report biorario inviato: !TOT_QUERIES! query, !BLK_TOT! blocchi RPZ totali"
-exit /b
+exit /b 0
 
 :CONFIG_ERROR
 color 0C
@@ -3136,7 +3209,7 @@ exit
 :DNS_FALLBACK_ON
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
 call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 9.9.9.9"
-exit /b
+exit /b 0
 
 :: ==================================================================
 :: SUBROUTINE: ripristina DNS di sistema su 127.0.0.1 (Unbound locale)
@@ -3148,7 +3221,7 @@ powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Obje
 :: una sola volta in Fase 5 e non si autoriparava mai se l'adattatore lo perdeva.
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1 / ::1"
-exit /b
+exit /b 0
 
 :RESOLVE_HOST
 set "%~2="
@@ -3379,11 +3452,11 @@ set "CRT_ARGS=%~3"
 set "CURL_TRY_NUM=1"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=2"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 6 /nobreak >nul
+ping -n 7 127.0.0.1 >nul
 set "CURL_TRY_NUM=3"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
@@ -3407,11 +3480,11 @@ set "CRZ_REF=%~4"
 set "CURL_TRY_NUM=1"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=2"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 6 /nobreak >nul
+ping -n 7 127.0.0.1 >nul
 set "CURL_TRY_NUM=3"
 curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
 if not errorlevel 1 exit /b 0
@@ -3446,11 +3519,11 @@ set "CURL_TRY_NUM=1"
 :: mai. Se CRZ2_OUT non esiste ancora, -C - equivale a un download normale.
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=2"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 6 /nobreak >nul
+ping -n 7 127.0.0.1 >nul
 set "CURL_TRY_NUM=3"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
@@ -3458,15 +3531,15 @@ if not errorlevel 1 exit /b 0
 :: NB: si continua a riprendere lo stesso CRZ2_OUT anche passando a
 :: CRZ2_URL2 (jsDelivr serve lo stesso contenuto della sorgente primaria,
 :: quindi gli offset di byte restano coerenti).
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=4"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=5"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-timeout /t 6 /nobreak >nul
+ping -n 7 127.0.0.1 >nul
 set "CURL_TRY_NUM=6"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
 if not errorlevel 1 exit /b 0
@@ -3956,7 +4029,7 @@ echo !FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m                  PROCESSO CORRETTAMENTE CONCLUSO in !ELAPSED! secondi.      Chiusura automatica....
 timeout /t 3 >nul
-exit
+exit 0
 
 :: ==================================================================
 :: SUBROUTINE: VERIFICA CONNETTIVITA' IPv4/IPv6 (semaforo per Telegram)
@@ -3971,7 +4044,7 @@ set "IPV6_LINE=🟢 Connettività IPv6: OK"
 ping -6 -n 1 -w 2000 2606:4700:4700::1111 >nul 2>&1
 if errorlevel 1 ping -6 -n 1 -w 2000 2620:fe::fe >nul 2>&1
 if errorlevel 1 set "IPV6_LINE=🔴 Connettività IPv6: ASSENTE"
-goto :eof
+exit /b 0
 
 :: ==================================================================
 :: SUBROUTINE: INVIO TELEMETRIA E SEGNALAZIONE ANOMALIE A TELEGRAM
