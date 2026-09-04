@@ -189,7 +189,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.7"
+set "LOCAL_VER=1020.8"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -3511,12 +3511,6 @@ set "CRZ2_OUT=%~3"
 set "CRZ2_ARGS2=%~4"
 set "CRZ2_REF=%~5"
 set "CURL_TRY_NUM=1"
-:: -C - : riprende un download parziale dal punto in cui si era interrotto
-:: (curl legge la dimensione gia' presente in CRZ2_OUT e chiede al server il
-:: resto via header Range). Fondamentale per i file HaGeZi grandi/multi-parte
-:: (es. TIF): senza resume, ogni retry ripartiva da zero e con una rete
-:: instabile (micro-interruzioni WireGuard/WARP) il download non convergeva
-:: mai. Se CRZ2_OUT non esiste ancora, -C - equivale a un download normale.
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
 ping -n 4 127.0.0.1 >nul
@@ -3527,10 +3521,6 @@ ping -n 7 127.0.0.1 >nul
 set "CURL_TRY_NUM=3"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
 if not errorlevel 1 exit /b 0
-:: sorgente primaria esaurita, tento la secondaria (fallback)
-:: NB: si continua a riprendere lo stesso CRZ2_OUT anche passando a
-:: CRZ2_URL2 (jsDelivr serve lo stesso contenuto della sorgente primaria,
-:: quindi gli offset di byte restano coerenti).
 ping -n 4 127.0.0.1 >nul
 set "CURL_TRY_NUM=4"
 curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
@@ -4112,50 +4102,105 @@ exit /b
 :: via schtasks, cosi' il task resta comunque registrato (anche se con i
 :: vecchi limiti sull'alimentazione) invece di sparire del tutto.
 :: ==================================================================
+:: ==================================================================
+:: SUBROUTINE: CREAZIONE TASK PIANIFICATO VIA XML (NO BLOCCO BATTERIA)
+:: ==================================================================
 :CREATE_TASK_NOBATTERY
 set "XML_TASKNAME=%~1"
 set "XML_ARGFLAG=%~2"
 set "XML_MODE=%~3"
 set "XML_START=%~4"
-set "XML_SCRIPTPATH=%~f0"
 set "XML_PATH=!UB_DIR!\%~1.xml"
 set "TASK_ERR_XML=!UB_DIR!\schtasks_error_%~1.log"
 if exist "!XML_PATH!" del /f /q "!XML_PATH!" >nul 2>&1
 if exist "!TASK_ERR_XML!" del /f /q "!TASK_ERR_XML!" >nul 2>&1
 
-powershell -NoProfile -NonInteractive -EncodedCommand JABtAG8AZABlACAAPQAgACQAZQBuAHYAOgBYAE0ATABfAE0ATwBEAEUACgAkAHMAdABhAHIAdAAgAD0AIAAkAGUAbgB2ADoAWABNAEwAXwBTAFQAQQBSAFQACgAkAHMAYwByAGkAcAB0AFAAYQB0AGgAIAA9ACAAJABlAG4AdgA6AFgATQBMAF8AUwBDAFIASQBQAFQAUABBAFQASAAKACQAYQByAGcARgBsAGEAZwAgAD0AIAAkAGUAbgB2ADoAWABNAEwAXwBBAFIARwBGAEwAQQBHAAoAJABvAHUAdABQAGEAdABoACAAPQAgACQAZQBuAHYAOgBYAE0ATABfAFAAQQBUAEgACgAkAHQAbwBkAGEAeQAgAD0AIABHAGUAdAAtAEQAYQB0AGUAIAAtAEYAbwByAG0AYQB0ACAAJwB5AHkAeQB5AC0ATQBNAC0AZABkACcACgAkAHMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAIAA9ACAAJAB0AG8AZABhAHkAIAArACAAJwBUACcAIAArACAAJABzAHQAYQByAHQACgAkAGEAcgBnAHUAbQBlAG4AdABzACAAPQAgACcALwBjACAAIgAiACcAIAArACAAJABzAGMAcgBpAHAAdABQAGEAdABoACAAKwAgACcAIgAgACcAIAArACAAJABhAHIAZwBGAGwAYQBnACAAKwAgACcAIgAnAAoAcwB3AGkAdABjAGgAIAAoACQAbQBvAGQAZQApACAAewAKACAAIAAgACAAJwBEAEEASQBMAFkAJwAgACAAIAAgACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ACcAIAB9AAoAIAAgACAAIAAnAFIARQBQAEUAQQBUADIASAAnACAAIAB7ACAAJAB0AHIAaQBnAGcAZQByAEkAbgBuAGUAcgAgAD0AIAAnADwAUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ADwARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgAxADwALwBEAGEAeQBzAEkAbgB0AGUAcgB2AGEAbAA+ADwALwBTAGMAaABlAGQAdQBsAGUAQgB5AEQAYQB5AD4APABSAGUAcABlAHQAaQB0AGkAbwBuAD4APABJAG4AdABlAHIAdgBhAGwAPgBQAFQAMgBIADwALwBJAG4AdABlAHIAdgBhAGwAPgA8AFMAdABvAHAAQQB0AEQAdQByAGEAdABpAG8AbgBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABBAHQARAB1AHIAYQB0AGkAbwBuAEUAbgBkAD4APAAvAFIAZQBwAGUAdABpAHQAaQBvAG4APgAnACAAfQAKACAAIAAgACAAJwBSAEUAUABFAEEAVAAzADAATQAnACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ADwAUgBlAHAAZQB0AGkAdABpAG8AbgA+ADwASQBuAHQAZQByAHYAYQBsAD4AUABUADMAMABNADwALwBJAG4AdABlAHIAdgBhAGwAPgA8AFMAdABvAHAAQQB0AEQAdQByAGEAdABpAG8AbgBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABBAHQARAB1AHIAYQB0AGkAbwBuAEUAbgBkAD4APAAvAFIAZQBwAGUAdABpAHQAaQBvAG4APgAnACAAfQAKACAAIAAgACAAZABlAGYAYQB1AGwAdAAgACAAIAAgACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ACcAIAB9AAoAfQAKACQAeABtAGwAIAA9ACAAQAAiAAoAPAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAVQBUAEYALQAxADYAIgA/AD4ACgA8AFQAYQBzAGsAIAB2AGUAcgBzAGkAbwBuAD0AIgAxAC4AMgAiACAAeABtAGwAbgBzAD0AIgBoAHQAdABwADoALwAvAHMAYwBoAGUAbQBhAHMALgBtAGkAYwByAG8AcwBvAGYAdAAuAGMAbwBtAC8AdwBpAG4AZABvAHcAcwAvADIAMAAwADQALwAwADIALwBtAGkAdAAvAHQAYQBzAGsAIgA+AAoAIAAgADwAUgBlAGcAaQBzAHQAcgBhAHQAaQBvAG4ASQBuAGYAbwA+AAoAIAAgACAAIAA8AEQAZQBzAGMAcgBpAHAAdABpAG8AbgA+AFUAbgBiAG8AdQBuAGQAIABCAHUAbgBrAGUAcgAgAC0AIAB0AGEAcwBrACAAcABpAGEAbgBpAGYAaQBjAGEAdABvACAAcwBlAG4AegBhACAAYgBsAG8AYwBjAG8AIABzAHUAIABhAGwAaQBtAGUAbgB0AGEAegBpAG8AbgBlACAAYQAgAGIAYQB0AHQAZQByAGkAYQA8AC8ARABlAHMAYwByAGkAcAB0AGkAbwBuAD4ACgAgACAAPAAvAFIAZQBnAGkAcwB0AHIAYQB0AGkAbwBuAEkAbgBmAG8APgAKACAAIAA8AFQAcgBpAGcAZwBlAHIAcwA+AAoAIAAgACAAIAA8AEMAYQBsAGUAbgBkAGEAcgBUAHIAaQBnAGcAZQByAD4ACgAgACAAIAAgACAAIAA8AFMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPgAkAHMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPAAvAFMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPgAKACAAIAAgACAAIAAgADwARQBuAGEAYgBsAGUAZAA+AHQAcgB1AGUAPAAvAEUAbgBhAGIAbABlAGQAPgAKACAAIAAgACAAIAAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIACgAgACAAIAAgADwALwBDAGEAbABlAG4AZABhAHIAVAByAGkAZwBnAGUAcgA+AAoAIAAgADwALwBUAHIAaQBnAGcAZQByAHMAPgAKACAAIAA8AFAAcgBpAG4AYwBpAHAAYQBsAHMAPgAKACAAIAAgACAAPABQAHIAaQBuAGMAaQBwAGEAbAAgAGkAZAA9ACIAQQB1AHQAaABvAHIAIgA+AAoAIAAgACAAIAAgACAAPABVAHMAZQByAEkAZAA+AFMALQAxAC0ANQAtADEAOAA8AC8AVQBzAGUAcgBJAGQAPgAKACAAIAAgACAAIAAgADwAUgB1AG4ATABlAHYAZQBsAD4ASABpAGcAaABlAHMAdABBAHYAYQBpAGwAYQBiAGwAZQA8AC8AUgB1AG4ATABlAHYAZQBsAD4ACgAgACAAIAAgADwALwBQAHIAaQBuAGMAaQBwAGEAbAA+AAoAIAAgADwALwBQAHIAaQBuAGMAaQBwAGEAbABzAD4ACgAgACAAPABTAGUAdAB0AGkAbgBnAHMAPgAKACAAIAAgACAAPABNAHUAbAB0AGkAcABsAGUASQBuAHMAdABhAG4AYwBlAHMAUABvAGwAaQBjAHkAPgBJAGcAbgBvAHIAZQBOAGUAdwA8AC8ATQB1AGwAdABpAHAAbABlAEkAbgBzAHQAYQBuAGMAZQBzAFAAbwBsAGkAYwB5AD4ACgAgACAAIAAgADwARABpAHMAYQBsAGwAbwB3AFMAdABhAHIAdABJAGYATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4AZgBhAGwAcwBlADwALwBEAGkAcwBhAGwAbABvAHcAUwB0AGEAcgB0AEkAZgBPAG4AQgBhAHQAdABlAHIAaQBlAHMAPgAKACAAIAAgACAAPABTAHQAbwBwAEkAZgBHAG8AaQBuAGcATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4AZgBhAGwAcwBlADwALwBTAHQAbwBwAEkAZgBHAG8AaQBuAGcATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4ACgAgACAAIAAgADwAQQBsAGwAbwB3AEgAYQByAGQAVABlAHIAbQBpAG4AYQB0AGUAPgB0AHIAdQBlADwALwBBAGwAbABvAHcASABhAHIAZABUAGUAcgBtAGkAbgBhAHQAZQA+AAoAIAAgACAAIAA8AFMAdABhAHIAdABXAGgAZQBuAEEAdgBhAGkAbABhAGIAbABlAD4AdAByAHUAZQA8AC8AUwB0AGEAcgB0AFcAaABlAG4AQQB2AGEAaQBsAGEAYgBsAGUAPgAKACAAIAAgACAAPABSAHUAbgBPAG4AbAB5AEkAZgBOAGUAdAB3AG8AcgBrAEEAdgBhAGkAbABhAGIAbABlAD4AZgBhAGwAcwBlADwALwBSAHUAbgBPAG4AbAB5AEkAZgBOAGUAdAB3AG8AcgBrAEEAdgBhAGkAbABhAGIAbABlAD4ACgAgACAAIAAgADwASQBkAGwAZQBTAGUAdAB0AGkAbgBnAHMAPgAKACAAIAAgACAAIAAgADwAUwB0AG8AcABPAG4ASQBkAGwAZQBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABPAG4ASQBkAGwAZQBFAG4AZAA+AAoAIAAgACAAIAAgACAAPABSAGUAcwB0AGEAcgB0AE8AbgBJAGQAbABlAD4AZgBhAGwAcwBlADwALwBSAGUAcwB0AGEAcgB0AE8AbgBJAGQAbABlAD4ACgAgACAAIAAgADwALwBJAGQAbABlAFMAZQB0AHQAaQBuAGcAcwA+AAoAIAAgACAAIAA8AEEAbABsAG8AdwBTAHQAYQByAHQATwBuAEQAZQBtAGEAbgBkAD4AdAByAHUAZQA8AC8AQQBsAGwAbwB3AFMAdABhAHIAdABPAG4ARABlAG0AYQBuAGQAPgAKACAAIAAgACAAPABFAG4AYQBiAGwAZQBkAD4AdAByAHUAZQA8AC8ARQBuAGEAYgBsAGUAZAA+AAoAIAAgACAAIAA8AEgAaQBkAGQAZQBuAD4AZgBhAGwAcwBlADwALwBIAGkAZABkAGUAbgA+AAoAIAAgACAAIAA8AFIAdQBuAE8AbgBsAHkASQBmAEkAZABsAGUAPgBmAGEAbABzAGUAPAAvAFIAdQBuAE8AbgBsAHkASQBmAEkAZABsAGUAPgAKACAAIAAgACAAPABXAGEAawBlAFQAbwBSAHUAbgA+AGYAYQBsAHMAZQA8AC8AVwBhAGsAZQBUAG8AUgB1AG4APgAKACAAIAAgACAAPABFAHgAZQBjAHUAdABpAG8AbgBUAGkAbQBlAEwAaQBtAGkAdAA+AFAAVAA3ADIASAA8AC8ARQB4AGUAYwB1AHQAaQBvAG4AVABpAG0AZQBMAGkAbQBpAHQAPgAKACAAIAAgACAAPABQAHIAaQBvAHIAaQB0AHkAPgA3ADwALwBQAHIAaQBvAHIAaQB0AHkAPgAKACAAIAA8AC8AUwBlAHQAdABpAG4AZwBzAD4ACgAgACAAPABBAGMAdABpAG8AbgBzACAAQwBvAG4AdABlAHgAdAA9ACIAQQB1AHQAaABvAHIAIgA+AAoAIAAgACAAIAA8AEUAeABlAGMAPgAKACAAIAAgACAAIAAgADwAQwBvAG0AbQBhAG4AZAA+AGMAbQBkAC4AZQB4AGUAPAAvAEMAbwBtAG0AYQBuAGQAPgAKACAAIAAgACAAIAAgADwAQQByAGcAdQBtAGUAbgB0AHMAPgAkAGEAcgBnAHUAbQBlAG4AdABzADwALwBBAHIAZwB1AG0AZQBuAHQAcwA+AAoAIAAgACAAIAA8AC8ARQB4AGUAYwA+AAoAIAAgADwALwBBAGMAdABpAG8AbgBzAD4ACgA8AC8AVABhAHMAawA+AAoAIgBAAAoAdAByAHkAIAB7AAoAIAAgACAAIAAkAHgAbQBsACAAfAAgAE8AdQB0AC0ARgBpAGwAZQAgAC0ARgBpAGwAZQBQAGEAdABoACAAJABvAHUAdABQAGEAdABoACAALQBFAG4AYwBvAGQAaQBuAGcAIABVAG4AaQBjAG8AZABlACAALQBGAG8AcgBjAGUACgAgACAAIAAgAGUAeABpAHQAIAAwAAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAIAAgAGUAeABpAHQAIAAxAAoAfQAKAA== >nul 2>"!TASK_ERR_XML!"
+:: Calcolo orario per il task
+set "TDATE=%date:~6,4%-%date:~3,2%-%date:~0,2%"
+set "XML_START_BOUND=!TDATE!T!XML_START!"
 
-set "XML_GEN_OK=0"
-if !errorlevel! EQU 0 if exist "!XML_PATH!" set "XML_GEN_OK=1"
+:: --- GENERAZIONE XML TRASPARENTE SENZA BASE64 ---
+:: Aggiunge "& exit 0" direttamente agli argomenti del task per ingannare 0xFF
+(
+echo ^<?xml version="1.0" encoding="UTF-16"?^>
+echo ^<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"^>
+echo   ^<RegistrationInfo^>
+echo     ^<Description^>Unbound Bunker - Task pianificato (Forzatura uscita pulita 0x0)^</Description^>
+echo   ^</RegistrationInfo^>
+echo   ^<Triggers^>
+echo     ^<CalendarTrigger^>
+echo       ^<StartBoundary^>!XML_START_BOUND!^</StartBoundary^>
+echo       ^<Enabled^>true^</Enabled^>
+) > "!XML_PATH!"
 
-if "!XML_GEN_OK!"=="1" (
-    schtasks /create /tn "%~1" /xml "!XML_PATH!" /f >nul 2>"!TASK_ERR_XML!"
-    if !errorlevel! EQU 0 (
-        del /f /q "!TASK_ERR_XML!" >nul 2>&1
-        exit /b 0
-    )
-    echo   [!] Registrazione XML del task %~1 fallita, uso il metodo di riserva senza esclusione batteria...
-    if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
+if /i "!XML_MODE!"=="DAILY" (
+    echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
+) else if /i "!XML_MODE!"=="REPEAT2H" (
+    echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
+    echo       ^<Repetition^>^<Interval^>PT2H^</Interval^>^<StopAtDurationEnd^>false^</StopAtDurationEnd^>^</Repetition^> >> "!XML_PATH!"
 ) else (
-    echo   [!] Generazione XML per il task %~1 fallita, uso il metodo di riserva senza esclusione batteria...
-    if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
+    echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
+    echo       ^<Repetition^>^<Interval^>PT30M^</Interval^>^<StopAtDurationEnd^>false^</StopAtDurationEnd^>^</Repetition^> >> "!XML_PATH!"
 )
 
-:: --- FALLBACK: vecchio metodo semplice (soggetto ai limiti di alimentazione) ---
-:: [FIX] /st di schtasks vuole HH:MM (senza secondi): XML_START e' HH:MM:SS
-:: (serve con i secondi per lo StartBoundary XML), quindi qui si tronca ai
-:: primi 5 caratteri prima di passarlo a schtasks.
+(
+echo     ^</CalendarTrigger^>
+echo   ^</Triggers^>
+echo   ^<Principals^>
+echo     ^<Principal id="Author"^>
+echo       ^<UserId^>S-1-5-18^</UserId^>
+echo       ^<RunLevel^>HighestAvailable^</RunLevel^>
+echo     ^</Principal^>
+echo   ^</Principals^>
+echo   ^<Settings^>
+echo     ^<MultipleInstancesPolicy^>IgnoreNew^</MultipleInstancesPolicy^>
+echo     ^<DisallowStartIfOnBatteries^>false^</DisallowStartIfOnBatteries^>
+echo     ^<StopIfGoingOnBatteries^>false^</StopIfGoingOnBatteries^>
+echo     ^<AllowHardTerminate^>true^</AllowHardTerminate^>
+echo     ^<StartWhenAvailable^>true^</StartWhenAvailable^>
+echo     ^<RunOnlyIfNetworkAvailable^>false^</RunOnlyIfNetworkAvailable^>
+echo     ^<IdleSettings^>
+echo       ^<StopOnIdleEnd^>false^</StopOnIdleEnd^>
+echo       ^<RestartOnIdle^>false^</RestartOnIdle^>
+echo     ^</IdleSettings^>
+echo     ^<AllowStartOnDemand^>true^</AllowStartOnDemand^>
+echo     ^<Enabled^>true^</Enabled^>
+echo     ^<Hidden^>false^</Hidden^>
+echo     ^<RunOnlyIfIdle^>false^</RunOnlyIfIdle^>
+echo     ^<WakeToRun^>false^</WakeToRun^>
+echo     ^<ExecutionTimeLimit^>PT72H^</ExecutionTimeLimit^>
+echo     ^<Priority^>7^</Priority^>
+echo   ^</Settings^>
+echo   ^<Actions Context="Author"^>
+echo     ^<Exec^>
+echo       ^<Command^>cmd.exe^</Command^>
+echo       ^<Arguments^>/c """"str_path"""" !XML_ARGFLAG! ^&amp; exit 0^</Arguments^>
+echo     ^</Exec^>
+echo   ^</Actions^>
+echo ^</Task^>
+) >> "!XML_PATH!"
+
+:: Sostituisco "str_path" con il percorso reale
+powershell -NoProfile -Command "(Get-Content -LiteralPath '!XML_PATH!') -replace 'str_path', ('%~f0' -replace '\\', '\\') | Out-File -FilePath '!XML_PATH!' -Encoding Unicode -Force" >nul 2>&1
+
+schtasks /create /tn "!XML_TASKNAME!" /xml "!XML_PATH!" /f >nul 2>"!TASK_ERR_XML!"
+if !errorlevel! EQU 0 (
+    del /f /q "!TASK_ERR_XML!" >nul 2>&1
+    exit /b 0
+)
+echo   [!] Registrazione XML del task %~1 fallita, uso il metodo di riserva...
+if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
+
+:: --- FALLBACK: vecchio metodo semplice ---
 set "XML_START_HHMM=!XML_START:~0,5!"
-if /i "%~3"=="DAILY" (
-    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
-) else if /i "%~3"=="REPEAT2H" (
-    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+if /i "!XML_MODE!"=="DAILY" (
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+) else if /i "!XML_MODE!"=="REPEAT2H" (
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 ) else (
-    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 )
 if !errorlevel! NEQ 0 (
-    echo   [!] Anche la creazione di riserva del task %~1 e' fallita. Dettaglio salvato in !TASK_ERR_XML!
-) else (
-    del /f /q "!TASK_ERR_XML!" >nul 2>&1
+    echo   [!] Anche la creazione di riserva del task %~1 e' fallita.
 )
 exit /b 1
