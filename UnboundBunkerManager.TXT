@@ -126,7 +126,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1020.5"
+set "LOCAL_VER=1020.6"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -399,16 +399,8 @@ set "TASK_NAME_ABUSECH=Unbound_Bunker_AbuseCh30m"
 :: [FIX] Come per il task biorario: sempre sovrascritto (schtasks /f) ad ogni
 :: avvio invece che solo se assente, cosi' eventuali modifiche future a orario
 :: o comando si propagano da sole su tutti i PC senza intervento manuale.
-echo [+] Creazione/aggiornamento del task pianificato giornaliero...
-set "TASK_ERR_DAILY=!UB_DIR!\schtasks_error_daily.log"
-if exist "!TASK_ERR_DAILY!" del /f /q "!TASK_ERR_DAILY!" >nul 2>&1
-schtasks /create /tn "%TASK_NAME%" /tr "cmd.exe /c \"\"%~f0\" --scheduled\"" /sc daily /st 07:00 /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_DAILY!"
-if !errorlevel! NEQ 0 (
-    echo   [!] Creazione/aggiornamento task giornaliero fallita. Dettaglio salvato in !TASK_ERR_DAILY!
-    if exist "!TASK_ERR_DAILY!" type "!TASK_ERR_DAILY!"
-) else (
-    del /f /q "!TASK_ERR_DAILY!" >nul 2>&1
-)
+echo [+] Creazione/aggiornamento del task pianificato giornaliero (XML, nessun blocco batteria)...
+call :CREATE_TASK_NOBATTERY "%TASK_NAME%" "--scheduled" "DAILY" "07:00:00"
 
 :CHECK_OLD_HOURLY
 :: Pulizia vecchio task orario se rimasto
@@ -445,16 +437,8 @@ del /f /q "!TASK_ERR_CLEANUP!" >nul 2>&1
 :: allineato alle ore esatte .00 grazie a /st 00:00 (00:00, 02:00, 04:00, ...);
 :: 2) eventuali modifiche future allo schedule/comando si propagano da sole su
 :: tutti i PC al prossimo avvio, senza dover ritoccare a mano il task su ciascuno.
-echo [+] Creazione/aggiornamento del task pianificato ogni 2 ore (allineato alle .00)...
-set "TASK_ERR_2H=!UB_DIR!\schtasks_error_2h.log"
-if exist "!TASK_ERR_2H!" del /f /q "!TASK_ERR_2H!" >nul 2>&1
-schtasks /create /tn "%TASK_NAME_2H%" /tr "cmd.exe /c \"\"%~f0\" --refresh\"" /sc hourly /mo 2 /st 00:00 /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_2H!"
-if !errorlevel! NEQ 0 (
-    echo   [!] Creazione/aggiornamento task ogni 2 ore fallita. Dettaglio salvato in !TASK_ERR_2H!
-    if exist "!TASK_ERR_2H!" type "!TASK_ERR_2H!"
-) else (
-    del /f /q "!TASK_ERR_2H!" >nul 2>&1
-)
+echo [+] Creazione/aggiornamento del task pianificato ogni 2 ore (XML, nessun blocco batteria, allineato alle .00)...
+call :CREATE_TASK_NOBATTERY "%TASK_NAME_2H%" "--refresh" "REPEAT2H" "00:00:00"
 
 :: 2B. CREAZIONE/AGGIORNAMENTO TASK ABUSE.CH (URLHAUS + THREATFOX) OGNI 30 MINUTI
 :: URLhaus rigenera il proprio RPZ ogni 5 minuti; ThreatFox con cadenza simile.
@@ -464,16 +448,8 @@ if !errorlevel! NEQ 0 (
 :: liste (HaGeZi/Spamhaus) restano sul ciclo biorario standard: non serve
 :: aggiornarle piu' spesso e un intervallo piu' stretto per tutto lo stack
 :: sprecherebbe banda/CPU senza benefici reali.
-echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (abuse.ch URLhaus/ThreatFox)...
-set "TASK_ERR_ABUSECH=!UB_DIR!\schtasks_error_abusech.log"
-if exist "!TASK_ERR_ABUSECH!" del /f /q "!TASK_ERR_ABUSECH!" >nul 2>&1
-schtasks /create /tn "%TASK_NAME_ABUSECH%" /tr "cmd.exe /c \"\"%~f0\" --refreshabusech\"" /sc minute /mo 30 /st 00:00 /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_ABUSECH!"
-if !errorlevel! NEQ 0 (
-    echo   [!] Creazione/aggiornamento task abuse.ch fallita. Dettaglio salvato in !TASK_ERR_ABUSECH!
-    if exist "!TASK_ERR_ABUSECH!" type "!TASK_ERR_ABUSECH!"
-) else (
-    del /f /q "!TASK_ERR_ABUSECH!" >nul 2>&1
-)
+echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (XML, nessun blocco batteria, abuse.ch URLhaus/ThreatFox)...
+call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT30M" "00:00:00"
 
 :: 2C. PULIZIA TASK WATCHDOG DASHBOARD (RIMOSSO: causava race condition con i
 :: riavvii nativi della dashboard - boot, ciclo biorario, task giornaliero -
@@ -4044,3 +4020,69 @@ set "%~2=0"
 if not exist "%~1" exit /b
 for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "try { [Linq.Enumerable]::Count([System.IO.File]::ReadLines('%~1')).ToString('N0') } catch { '0' }"`) do set "%~2=%%C"
 exit /b
+
+:: ==================================================================
+:: SUBROUTINE: CREAZIONE TASK PIANIFICATO VIA XML (NO BLOCCO BATTERIA)
+:: Uso: call :CREATE_TASK_NOBATTERY "<NomeTask>" "<FlagArgomento>" "<Modo>" "<OraAvvio HH:MM:SS>"
+:: <Modo> = DAILY | REPEAT2H | REPEAT30M
+:: [FIX] schtasks /create in forma semplice (senza /xml) eredita i default di
+:: Windows per il risparmio energia: "Non avviare se a batteria" e "Interrompi
+:: se passa a batteria" (vedi schtasks /query /v su Unbound_Bunker_2h: campo
+:: "Risparmio energia"). Su questa macchina questo ha causato il mancato avvio
+:: notturno dei task Daily/2h/AbuseCh30m. Questa subroutine genera invece un
+:: file XML completo (via PowerShell -EncodedCommand, per evitare ogni
+:: problema di escaping delle virgolette dell'XML dentro cmd.exe) che
+:: disattiva esplicitamente DisallowStartIfOnBatteries/StopIfGoingOnBatteries
+:: e abilita StartWhenAvailable (recupero automatico se un avvio pianificato
+:: viene perso, es. PC spento). Se la generazione XML o la registrazione
+:: falliscono per qualunque motivo, si ricade sulla vecchia creazione semplice
+:: via schtasks, cosi' il task resta comunque registrato (anche se con i
+:: vecchi limiti sull'alimentazione) invece di sparire del tutto.
+:: ==================================================================
+:CREATE_TASK_NOBATTERY
+set "XML_TASKNAME=%~1"
+set "XML_ARGFLAG=%~2"
+set "XML_MODE=%~3"
+set "XML_START=%~4"
+set "XML_SCRIPTPATH=%~f0"
+set "XML_PATH=!UB_DIR!\%~1.xml"
+set "TASK_ERR_XML=!UB_DIR!\schtasks_error_%~1.log"
+if exist "!XML_PATH!" del /f /q "!XML_PATH!" >nul 2>&1
+if exist "!TASK_ERR_XML!" del /f /q "!TASK_ERR_XML!" >nul 2>&1
+
+powershell -NoProfile -NonInteractive -EncodedCommand JABtAG8AZABlACAAPQAgACQAZQBuAHYAOgBYAE0ATABfAE0ATwBEAEUACgAkAHMAdABhAHIAdAAgAD0AIAAkAGUAbgB2ADoAWABNAEwAXwBTAFQAQQBSAFQACgAkAHMAYwByAGkAcAB0AFAAYQB0AGgAIAA9ACAAJABlAG4AdgA6AFgATQBMAF8AUwBDAFIASQBQAFQAUABBAFQASAAKACQAYQByAGcARgBsAGEAZwAgAD0AIAAkAGUAbgB2ADoAWABNAEwAXwBBAFIARwBGAEwAQQBHAAoAJABvAHUAdABQAGEAdABoACAAPQAgACQAZQBuAHYAOgBYAE0ATABfAFAAQQBUAEgACgAkAHQAbwBkAGEAeQAgAD0AIABHAGUAdAAtAEQAYQB0AGUAIAAtAEYAbwByAG0AYQB0ACAAJwB5AHkAeQB5AC0ATQBNAC0AZABkACcACgAkAHMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAIAA9ACAAJAB0AG8AZABhAHkAIAArACAAJwBUACcAIAArACAAJABzAHQAYQByAHQACgAkAGEAcgBnAHUAbQBlAG4AdABzACAAPQAgACcALwBjACAAIgAiACcAIAArACAAJABzAGMAcgBpAHAAdABQAGEAdABoACAAKwAgACcAIgAgACcAIAArACAAJABhAHIAZwBGAGwAYQBnACAAKwAgACcAIgAnAAoAcwB3AGkAdABjAGgAIAAoACQAbQBvAGQAZQApACAAewAKACAAIAAgACAAJwBEAEEASQBMAFkAJwAgACAAIAAgACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ACcAIAB9AAoAIAAgACAAIAAnAFIARQBQAEUAQQBUADIASAAnACAAIAB7ACAAJAB0AHIAaQBnAGcAZQByAEkAbgBuAGUAcgAgAD0AIAAnADwAUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ADwARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgAxADwALwBEAGEAeQBzAEkAbgB0AGUAcgB2AGEAbAA+ADwALwBTAGMAaABlAGQAdQBsAGUAQgB5AEQAYQB5AD4APABSAGUAcABlAHQAaQB0AGkAbwBuAD4APABJAG4AdABlAHIAdgBhAGwAPgBQAFQAMgBIADwALwBJAG4AdABlAHIAdgBhAGwAPgA8AFMAdABvAHAAQQB0AEQAdQByAGEAdABpAG8AbgBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABBAHQARAB1AHIAYQB0AGkAbwBuAEUAbgBkAD4APAAvAFIAZQBwAGUAdABpAHQAaQBvAG4APgAnACAAfQAKACAAIAAgACAAJwBSAEUAUABFAEEAVAAzADAATQAnACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ADwAUgBlAHAAZQB0AGkAdABpAG8AbgA+ADwASQBuAHQAZQByAHYAYQBsAD4AUABUADMAMABNADwALwBJAG4AdABlAHIAdgBhAGwAPgA8AFMAdABvAHAAQQB0AEQAdQByAGEAdABpAG8AbgBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABBAHQARAB1AHIAYQB0AGkAbwBuAEUAbgBkAD4APAAvAFIAZQBwAGUAdABpAHQAaQBvAG4APgAnACAAfQAKACAAIAAgACAAZABlAGYAYQB1AGwAdAAgACAAIAAgACAAewAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIAIAA9ACAAJwA8AFMAYwBoAGUAZAB1AGwAZQBCAHkARABhAHkAPgA8AEQAYQB5AHMASQBuAHQAZQByAHYAYQBsAD4AMQA8AC8ARABhAHkAcwBJAG4AdABlAHIAdgBhAGwAPgA8AC8AUwBjAGgAZQBkAHUAbABlAEIAeQBEAGEAeQA+ACcAIAB9AAoAfQAKACQAeABtAGwAIAA9ACAAQAAiAAoAPAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAVQBUAEYALQAxADYAIgA/AD4ACgA8AFQAYQBzAGsAIAB2AGUAcgBzAGkAbwBuAD0AIgAxAC4AMgAiACAAeABtAGwAbgBzAD0AIgBoAHQAdABwADoALwAvAHMAYwBoAGUAbQBhAHMALgBtAGkAYwByAG8AcwBvAGYAdAAuAGMAbwBtAC8AdwBpAG4AZABvAHcAcwAvADIAMAAwADQALwAwADIALwBtAGkAdAAvAHQAYQBzAGsAIgA+AAoAIAAgADwAUgBlAGcAaQBzAHQAcgBhAHQAaQBvAG4ASQBuAGYAbwA+AAoAIAAgACAAIAA8AEQAZQBzAGMAcgBpAHAAdABpAG8AbgA+AFUAbgBiAG8AdQBuAGQAIABCAHUAbgBrAGUAcgAgAC0AIAB0AGEAcwBrACAAcABpAGEAbgBpAGYAaQBjAGEAdABvACAAcwBlAG4AegBhACAAYgBsAG8AYwBjAG8AIABzAHUAIABhAGwAaQBtAGUAbgB0AGEAegBpAG8AbgBlACAAYQAgAGIAYQB0AHQAZQByAGkAYQA8AC8ARABlAHMAYwByAGkAcAB0AGkAbwBuAD4ACgAgACAAPAAvAFIAZQBnAGkAcwB0AHIAYQB0AGkAbwBuAEkAbgBmAG8APgAKACAAIAA8AFQAcgBpAGcAZwBlAHIAcwA+AAoAIAAgACAAIAA8AEMAYQBsAGUAbgBkAGEAcgBUAHIAaQBnAGcAZQByAD4ACgAgACAAIAAgACAAIAA8AFMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPgAkAHMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPAAvAFMAdABhAHIAdABCAG8AdQBuAGQAYQByAHkAPgAKACAAIAAgACAAIAAgADwARQBuAGEAYgBsAGUAZAA+AHQAcgB1AGUAPAAvAEUAbgBhAGIAbABlAGQAPgAKACAAIAAgACAAIAAgACQAdAByAGkAZwBnAGUAcgBJAG4AbgBlAHIACgAgACAAIAAgADwALwBDAGEAbABlAG4AZABhAHIAVAByAGkAZwBnAGUAcgA+AAoAIAAgADwALwBUAHIAaQBnAGcAZQByAHMAPgAKACAAIAA8AFAAcgBpAG4AYwBpAHAAYQBsAHMAPgAKACAAIAAgACAAPABQAHIAaQBuAGMAaQBwAGEAbAAgAGkAZAA9ACIAQQB1AHQAaABvAHIAIgA+AAoAIAAgACAAIAAgACAAPABVAHMAZQByAEkAZAA+AFMALQAxAC0ANQAtADEAOAA8AC8AVQBzAGUAcgBJAGQAPgAKACAAIAAgACAAIAAgADwAUgB1AG4ATABlAHYAZQBsAD4ASABpAGcAaABlAHMAdABBAHYAYQBpAGwAYQBiAGwAZQA8AC8AUgB1AG4ATABlAHYAZQBsAD4ACgAgACAAIAAgADwALwBQAHIAaQBuAGMAaQBwAGEAbAA+AAoAIAAgADwALwBQAHIAaQBuAGMAaQBwAGEAbABzAD4ACgAgACAAPABTAGUAdAB0AGkAbgBnAHMAPgAKACAAIAAgACAAPABNAHUAbAB0AGkAcABsAGUASQBuAHMAdABhAG4AYwBlAHMAUABvAGwAaQBjAHkAPgBJAGcAbgBvAHIAZQBOAGUAdwA8AC8ATQB1AGwAdABpAHAAbABlAEkAbgBzAHQAYQBuAGMAZQBzAFAAbwBsAGkAYwB5AD4ACgAgACAAIAAgADwARABpAHMAYQBsAGwAbwB3AFMAdABhAHIAdABJAGYATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4AZgBhAGwAcwBlADwALwBEAGkAcwBhAGwAbABvAHcAUwB0AGEAcgB0AEkAZgBPAG4AQgBhAHQAdABlAHIAaQBlAHMAPgAKACAAIAAgACAAPABTAHQAbwBwAEkAZgBHAG8AaQBuAGcATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4AZgBhAGwAcwBlADwALwBTAHQAbwBwAEkAZgBHAG8AaQBuAGcATwBuAEIAYQB0AHQAZQByAGkAZQBzAD4ACgAgACAAIAAgADwAQQBsAGwAbwB3AEgAYQByAGQAVABlAHIAbQBpAG4AYQB0AGUAPgB0AHIAdQBlADwALwBBAGwAbABvAHcASABhAHIAZABUAGUAcgBtAGkAbgBhAHQAZQA+AAoAIAAgACAAIAA8AFMAdABhAHIAdABXAGgAZQBuAEEAdgBhAGkAbABhAGIAbABlAD4AdAByAHUAZQA8AC8AUwB0AGEAcgB0AFcAaABlAG4AQQB2AGEAaQBsAGEAYgBsAGUAPgAKACAAIAAgACAAPABSAHUAbgBPAG4AbAB5AEkAZgBOAGUAdAB3AG8AcgBrAEEAdgBhAGkAbABhAGIAbABlAD4AZgBhAGwAcwBlADwALwBSAHUAbgBPAG4AbAB5AEkAZgBOAGUAdAB3AG8AcgBrAEEAdgBhAGkAbABhAGIAbABlAD4ACgAgACAAIAAgADwASQBkAGwAZQBTAGUAdAB0AGkAbgBnAHMAPgAKACAAIAAgACAAIAAgADwAUwB0AG8AcABPAG4ASQBkAGwAZQBFAG4AZAA+AGYAYQBsAHMAZQA8AC8AUwB0AG8AcABPAG4ASQBkAGwAZQBFAG4AZAA+AAoAIAAgACAAIAAgACAAPABSAGUAcwB0AGEAcgB0AE8AbgBJAGQAbABlAD4AZgBhAGwAcwBlADwALwBSAGUAcwB0AGEAcgB0AE8AbgBJAGQAbABlAD4ACgAgACAAIAAgADwALwBJAGQAbABlAFMAZQB0AHQAaQBuAGcAcwA+AAoAIAAgACAAIAA8AEEAbABsAG8AdwBTAHQAYQByAHQATwBuAEQAZQBtAGEAbgBkAD4AdAByAHUAZQA8AC8AQQBsAGwAbwB3AFMAdABhAHIAdABPAG4ARABlAG0AYQBuAGQAPgAKACAAIAAgACAAPABFAG4AYQBiAGwAZQBkAD4AdAByAHUAZQA8AC8ARQBuAGEAYgBsAGUAZAA+AAoAIAAgACAAIAA8AEgAaQBkAGQAZQBuAD4AZgBhAGwAcwBlADwALwBIAGkAZABkAGUAbgA+AAoAIAAgACAAIAA8AFIAdQBuAE8AbgBsAHkASQBmAEkAZABsAGUAPgBmAGEAbABzAGUAPAAvAFIAdQBuAE8AbgBsAHkASQBmAEkAZABsAGUAPgAKACAAIAAgACAAPABXAGEAawBlAFQAbwBSAHUAbgA+AGYAYQBsAHMAZQA8AC8AVwBhAGsAZQBUAG8AUgB1AG4APgAKACAAIAAgACAAPABFAHgAZQBjAHUAdABpAG8AbgBUAGkAbQBlAEwAaQBtAGkAdAA+AFAAVAA3ADIASAA8AC8ARQB4AGUAYwB1AHQAaQBvAG4AVABpAG0AZQBMAGkAbQBpAHQAPgAKACAAIAAgACAAPABQAHIAaQBvAHIAaQB0AHkAPgA3ADwALwBQAHIAaQBvAHIAaQB0AHkAPgAKACAAIAA8AC8AUwBlAHQAdABpAG4AZwBzAD4ACgAgACAAPABBAGMAdABpAG8AbgBzACAAQwBvAG4AdABlAHgAdAA9ACIAQQB1AHQAaABvAHIAIgA+AAoAIAAgACAAIAA8AEUAeABlAGMAPgAKACAAIAAgACAAIAAgADwAQwBvAG0AbQBhAG4AZAA+AGMAbQBkAC4AZQB4AGUAPAAvAEMAbwBtAG0AYQBuAGQAPgAKACAAIAAgACAAIAAgADwAQQByAGcAdQBtAGUAbgB0AHMAPgAkAGEAcgBnAHUAbQBlAG4AdABzADwALwBBAHIAZwB1AG0AZQBuAHQAcwA+AAoAIAAgACAAIAA8AC8ARQB4AGUAYwA+AAoAIAAgADwALwBBAGMAdABpAG8AbgBzAD4ACgA8AC8AVABhAHMAawA+AAoAIgBAAAoAdAByAHkAIAB7AAoAIAAgACAAIAAkAHgAbQBsACAAfAAgAE8AdQB0AC0ARgBpAGwAZQAgAC0ARgBpAGwAZQBQAGEAdABoACAAJABvAHUAdABQAGEAdABoACAALQBFAG4AYwBvAGQAaQBuAGcAIABVAG4AaQBjAG8AZABlACAALQBGAG8AcgBjAGUACgAgACAAIAAgAGUAeABpAHQAIAAwAAoAfQAgAGMAYQB0AGMAaAAgAHsACgAgACAAIAAgAGUAeABpAHQAIAAxAAoAfQAKAA== >nul 2>"!TASK_ERR_XML!"
+
+set "XML_GEN_OK=0"
+if !errorlevel! EQU 0 if exist "!XML_PATH!" set "XML_GEN_OK=1"
+
+if "!XML_GEN_OK!"=="1" (
+    schtasks /create /tn "%~1" /xml "!XML_PATH!" /f >nul 2>"!TASK_ERR_XML!"
+    if !errorlevel! EQU 0 (
+        del /f /q "!TASK_ERR_XML!" >nul 2>&1
+        exit /b 0
+    )
+    echo   [!] Registrazione XML del task %~1 fallita, uso il metodo di riserva senza esclusione batteria...
+    if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
+) else (
+    echo   [!] Generazione XML per il task %~1 fallita, uso il metodo di riserva senza esclusione batteria...
+    if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
+)
+
+:: --- FALLBACK: vecchio metodo semplice (soggetto ai limiti di alimentazione) ---
+:: [FIX] /st di schtasks vuole HH:MM (senza secondi): XML_START e' HH:MM:SS
+:: (serve con i secondi per lo StartBoundary XML), quindi qui si tronca ai
+:: primi 5 caratteri prima di passarlo a schtasks.
+set "XML_START_HHMM=!XML_START:~0,5!"
+if /i "%~3"=="DAILY" (
+    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+) else if /i "%~3"=="REPEAT2H" (
+    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+) else (
+    schtasks /create /tn "%~1" /tr "cmd.exe /c \"\"%~f0\" %~2\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+)
+if !errorlevel! NEQ 0 (
+    echo   [!] Anche la creazione di riserva del task %~1 e' fallita. Dettaglio salvato in !TASK_ERR_XML!
+) else (
+    del /f /q "!TASK_ERR_XML!" >nul 2>&1
+)
+exit /b 1
