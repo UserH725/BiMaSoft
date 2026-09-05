@@ -189,7 +189,7 @@ set "START_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1022.0"
+set "LOCAL_VER=1023.0"
 set "UB_DIR=C:\Program Files\Unbound"
 
 :: [DEFENDER] Esclusioni antivirus automatiche (sola AGGIUNTA: non modifica la logica sopra/sotto).
@@ -3838,22 +3838,53 @@ exit /b
 :CHECK_UNBOUND_VERSION
 set "UB_LOCAL_VER=N/A"
 set "UB_CLOUD_VER=N/A"
+set "UB_DL_URL=N/A"
 set "UB_OUT_TMP=%TEMP%\ub_core_check.txt"
 if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
 
-:: 1. Esecuzione PowerShell su una singola riga piatta
-::    FIX: usa # come separatore invece di ^| per evitare l'errore di sintassi
-::         causato dall'interpretazione del pipe da parte di CMD
-powershell -NoProfile -Command "$l='N/A'; $c='N/A'; $u='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch {}; ($l + '#' + $c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
-
-:: 2. Lettura del risultato (3 token: versione locale # versione cloud # url download)
-if not exist "%UB_OUT_TMP%" goto :UB_OUTPUT
-for /f "usebackq tokens=1,2,3 delims=#" %%A in ("%UB_OUT_TMP%") do (
-    set "UB_LOCAL_VER=%%A"
-    set "UB_CLOUD_VER=%%B"
-    set "UB_DL_URL=%%C"
+:: 1. Versione locale del binario (nessuna chiamata di rete): sempre eseguita
+powershell -NoProfile -Command "$l='N/A'; try { if (Test-Path '%UB_DIR%\unbound.exe') { $raw = & '%UB_DIR%\unbound.exe' -h 2>&1 | Out-String; if ($raw -match 'Version\s+([0-9\.]+)') { $l = $matches[1] } } } catch {}; $l | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+if exist "%UB_OUT_TMP%" (
+    set /p UB_LOCAL_VER=<"%UB_OUT_TMP%"
+    del /f /q "%UB_OUT_TMP%" >nul 2>&1
 )
-del /f /q "%UB_OUT_TMP%" >nul 2>&1
+if "!UB_LOCAL_VER!"=="" set "UB_LOCAL_VER=N/A"
+
+:: 2. Versione cloud (GitHub API): throttlata con cache su file, per non
+::    rischiare il rate-limit di GitHub (60 richieste/ora per IP) dato che
+::    questa subroutine viene invocata anche a ogni ciclo biorario. Gli
+::    errori reali (non più ignorati in silenzio) finiscono in
+::    unbound_cloud_check_error.log per diagnosi futura.
+set "UB_CLOUD_CACHE=!UB_DIR!\unbound_cloud_cache.txt"
+set "UB_CLOUD_ERR_LOG=!UB_DIR!\unbound_cloud_check_error.log"
+set "UB_CLOUD_FROM_CACHE=0"
+if exist "!UB_CLOUD_CACHE!" (
+    call :FILE_AGE_HOURS "!UB_CLOUD_CACHE!" UBC_AGE
+    if !UBC_AGE! LSS 20 (
+        for /f "usebackq tokens=1,2 delims=#" %%A in ("!UB_CLOUD_CACHE!") do (
+            set "UB_CLOUD_VER=%%A"
+            set "UB_DL_URL=%%B"
+        )
+        set "UB_CLOUD_FROM_CACHE=1"
+    )
+)
+
+if "!UB_CLOUD_FROM_CACHE!"=="0" (
+    if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
+    powershell -NoProfile -Command "$c='N/A'; $u='N/A'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch { $errLine = '[' + (Get-Date) + '] ' + $_.Exception.Message; $errLine | Out-File -FilePath '!UB_CLOUD_ERR_LOG!' -Append -Encoding utf8 }; ($c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+    if exist "%UB_OUT_TMP%" (
+        for /f "usebackq tokens=1,2 delims=#" %%A in ("%UB_OUT_TMP%") do (
+            set "UB_CLOUD_VER=%%A"
+            set "UB_DL_URL=%%B"
+        )
+        del /f /q "%UB_OUT_TMP%" >nul 2>&1
+    )
+    if "!UB_CLOUD_VER!"=="" set "UB_CLOUD_VER=N/A"
+    if "!UB_DL_URL!"=="" set "UB_DL_URL=N/A"
+    if not "!UB_CLOUD_VER!"=="N/A" (
+        echo !UB_CLOUD_VER!#!UB_DL_URL!> "!UB_CLOUD_CACHE!"
+    )
+)
 
 :UB_OUTPUT
 if "!UB_LOCAL_VER!"=="" set "UB_LOCAL_VER=N/A"
