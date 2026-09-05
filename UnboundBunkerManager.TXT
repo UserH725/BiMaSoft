@@ -235,6 +235,18 @@ if not "!CLOUD_VER!"=="N/A" (
     if !CLD_INT! GTR !LOC_INT! set "UPDATE_NEEDED=1"
 )
 
+:: --- CIRCUIT BREAKER: blocca il self-update dopo 3 tentativi falliti di
+:: convergenza (evita loop di riavvii se la versione cloud non converge mai
+:: con quella scritta nel file scaricato).
+set "SUG_FILE=!UB_DIR!\self_update_attempts.txt"
+set "SUG_COUNT=0"
+if exist "!SUG_FILE!" set /p SUG_COUNT=<"!SUG_FILE!"
+if "!SUG_COUNT!"=="" set "SUG_COUNT=0"
+if "!UPDATE_NEEDED!"=="1" if !SUG_COUNT! GEQ 3 (
+    call :LOGFAIL "CORE" "Self-update BAT bloccato dopo !SUG_COUNT! tentativi senza convergenza (locale v!LOCAL_VER! vs cloud v!CLOUD_VER!). Verificare manualmente il file sorgente su GitHub."
+    set "UPDATE_NEEDED=0"
+)
+
 if "!UPDATE_NEEDED!"=="1" (
     echo.
     echo ==================================================================
@@ -292,12 +304,15 @@ if "!UPDATE_NEEDED!"=="1" (
             if /i "!LOCAL_SHA!"=="!EXPECTED_SHA!" (
                 echo   [OK] Hash SHA256 verificato con successo.
                 for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
+                    set /a "SUG_COUNT+=1"
+                    echo !SUG_COUNT!> "!SUG_FILE!"
                     echo ==================================================================
                     echo   AGGIORNAMENTO COMPLETATO CON SUCCESSO !!
                     echo ==================================================================
                     echo   Versione installata: v!CLOUD_VER!
                     echo   File aggiornato: !SELF_BAT!
                     echo   Backup precedente: !BAK_FILE!
+                    echo   Tentativo di convergenza numero !SUG_COUNT!/3.
                     echo   Il nuovo script sara' avviato automaticamente in 2 secondi.
                     echo ==================================================================
                     set "UPDATER_HELPER=%TEMP%\ub_self_update_helper.bat"
@@ -337,6 +352,7 @@ if "!UPDATE_NEEDED!"=="1" (
         echo.
     )
 ) else (
+    if exist "!SUG_FILE!" del /f /q "!SUG_FILE!" >nul 2>&1
     echo !ESC![32m  [OK] Script BAT aggiornato alla versione attuale v!LOCAL_VER!.!ESC![0m
     echo.
 )
@@ -2181,7 +2197,15 @@ if exist "%VER_TMP%" (
 if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
     set "LOC_INT=!LOCAL_VER:.=!"
     set "CLD_INT=!CLOUD_VER:.=!"
-    if !CLD_INT! GTR !LOC_INT! (
+    set "SUG_FILE=!UB_DIR!\self_update_attempts.txt"
+    set "SUG_COUNT=0"
+    if exist "!SUG_FILE!" set /p SUG_COUNT=<"!SUG_FILE!"
+    if "!SUG_COUNT!"=="" set "SUG_COUNT=0"
+    if !CLD_INT! LEQ !LOC_INT! if exist "!SUG_FILE!" del /f /q "!SUG_FILE!" >nul 2>&1
+    if !CLD_INT! GTR !LOC_INT! if !SUG_COUNT! GEQ 3 (
+        call :LOGFAIL "REFRESH" "Self-update BAT bloccato dopo !SUG_COUNT! tentativi senza convergenza (locale v!LOCAL_VER! vs cloud v!CLOUD_VER!). Verificare manualmente il file sorgente su GitHub."
+    )
+    if !CLD_INT! GTR !LOC_INT! if !SUG_COUNT! LSS 3 (
         call :LOGSTEP "REFRESH" "ATTENZIONE, rilevato aggiornamento del file BAT: v!LOCAL_VER! -> v!CLOUD_VER!"
         set "FILE_TO_BAK=%~f0"
         if exist "!SELF_BAT!" set "FILE_TO_BAK=!SELF_BAT!"
@@ -2212,7 +2236,9 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
             del /f /q "!SHA_TMP_R!" >nul 2>&1
             if /i "!LOCAL_SHA_R!"=="!EXPECTED_SHA_R!" (
                 for %%I in ("!UPDATE_TMP!") do if %%~zI GTR 0 (
-                    call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER! (SHA256 OK). Riavvio programmato dopo la chiusura dell'istanza corrente..."
+                    set /a "SUG_COUNT+=1"
+                    echo !SUG_COUNT!> "!SUG_FILE!"
+                    call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER! (SHA256 OK, tentativo !SUG_COUNT!/3). Riavvio programmato dopo la chiusura dell'istanza corrente..."
                     set "UPDATER_HELPER=%TEMP%\ub_self_update_helper.bat"
                     (
                         echo @echo off
