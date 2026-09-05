@@ -303,7 +303,7 @@ if "!UPDATE_NEEDED!"=="1" (
                     echo ==================================================================
                     timeout /t 2 >nul
                     start "" "!SELF_BAT!"
-                    exit
+                    exit /b 0
                 ) else (
                     echo   [     WARN     ] File scaricato vuoto. Aggiornamento annullato.
                     del /f /q "!UPDATE_TMP!" >nul 2>&1
@@ -2209,7 +2209,7 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
                     move /y "!UPDATE_TMP!" "!SELF_BAT!" >nul 2>&1
                     call :LOGSTEP "REFRESH" "BAT aggiornato silenziosamente a v!CLOUD_VER! (SHA256 OK). Riavvio script..."
                     start "" "!SELF_BAT!" --refresh
-                    exit
+                    exit /b 0
                 )
             ) else (
                 call :LOGFAIL "REFRESH" "Mismatch SHA256 BAT cloud nel refresh — aggiornamento annullato per sicurezza"
@@ -2230,7 +2230,8 @@ if exist "%VER_TMP%" (
     set /p SVC_VER=<"%VER_TMP%"
     del /f /q "%VER_TMP%" >nul 2>&1
 )
-if not "!SVC_VER!"="" if not "!SVC_VER!"=="N/A" (
+if "!SVC_VER!"=="" set "SVC_VER=N/A"
+if not "!SVC_VER!"=="N/A" (
     set "LOCAL_SVC_VER=N/A"
     if exist "!LOCAL_SVC_VER_FILE!" set /p LOCAL_SVC_VER=<"!LOCAL_SVC_VER_FILE!"
     set "LOCAL_SVC_VER=!LOCAL_SVC_VER: =!"
@@ -4174,14 +4175,14 @@ echo   ^</Settings^>
 echo   ^<Actions Context="Author"^>
 echo     ^<Exec^>
 echo       ^<Command^>cmd.exe^</Command^>
-echo       ^<Arguments^>/c """"str_path"""" !XML_ARGFLAG! ^&amp; exit 0^</Arguments^>
+echo       ^<Arguments^>/c ""str_path" !XML_ARGFLAG! ^&amp; exit 0"^</Arguments^>
 echo     ^</Exec^>
 echo   ^</Actions^>
 echo ^</Task^>
 ) >> "!XML_PATH!"
 
 :: Sostituisco "str_path" con il percorso reale
-powershell -NoProfile -Command "(Get-Content -LiteralPath '!XML_PATH!') -replace 'str_path', ('%~f0' -replace '\\', '\\') | Out-File -FilePath '!XML_PATH!' -Encoding Unicode -Force" >nul 2>&1
+powershell -NoProfile -Command "(Get-Content -LiteralPath '!XML_PATH!') -replace 'str_path', '%~f0' | Out-File -FilePath '!XML_PATH!' -Encoding Unicode -Force" >nul 2>&1
 
 schtasks /create /tn "!XML_TASKNAME!" /xml "!XML_PATH!" /f >nul 2>"!TASK_ERR_XML!"
 if !errorlevel! EQU 0 (
