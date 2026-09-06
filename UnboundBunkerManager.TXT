@@ -55,14 +55,24 @@ exit
 
 :FONT_OK
 title UNBOUND BUNKER by Mauro Bigoni
-:FONT_OK
-title UNBOUND BUNKER by Mauro Bigoni
-
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1025.0"
+set "LOCAL_VER=1026.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
+:: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
+:: stava dopo "goto :REFRESH_FILES_ONLY" quindi il task biorario non la vedeva mai,
+:: causando "if !LG_AGE_DAYS! GEQ %LASTGOOD_MAX_AGE_DAYS% (" con secondo operando
+:: vuoto in :LASTGOOD_AGE_WARN -> "Sintassi del comando errata." ad ogni chiamata.
+:: Eta' massima (in giorni) oltre la quale un file .raw.lastgood usato come
+:: fallback viene segnalato come dato potenzialmente obsoleto (vedi :LASTGOOD_AGE_WARN)
+set "LASTGOOD_MAX_AGE_DAYS=14"
+:: [FIX] Stesso problema per TODAY e LAST_REFRESH_FILE: erano definite dopo il
+:: dispatch, quindi nel task biorario "echo %TODAY%-%time..% > %LAST_REFRESH_FILE%"
+:: (fine ciclo refresh) diventava "echo -HHMM > """ -> "Impossibile trovare il
+:: percorso specificato." (timestamp dell'ultimo refresh mai salvato).
+set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
+set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
 set "SELF_BAT=%UB_DIR%\UnboundBunkerManager.BAT"
@@ -617,7 +627,6 @@ goto :TASKS_DONE
 
 set "CONSOLE_COLOR=0A"
 set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
-set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "HZ_PRO_PLUS=%UB_DIR%\hagezi-pro-plus.conf"
 set "HZ_PRO_PLUS_BAK=%HZ_PRO_PLUS%.bak1"
 set "HZ_PRO_PLUS_BAK2=%HZ_PRO_PLUS%.bak2"
@@ -638,9 +647,6 @@ set "SH_DROP6=%UB_DIR%\spamhaus-drop-v6.conf"
 set "SH_DROP6_BAK=%SH_DROP6%.bak1"
 set "SH_DROP6_BAK2=%SH_DROP6%.bak2"
 set "SH_DROP6_BAK3=%SH_DROP6%.bak3"
-:: Eta' massima (in giorni) oltre la quale un file .raw.lastgood usato come
-:: fallback viene segnalato come dato potenzialmente obsoleto (vedi :LASTGOOD_AGE_WARN)
-set "LASTGOOD_MAX_AGE_DAYS=14"
 set "HZ_DYNDNS=%UB_DIR%\hagezi-dyndns.conf"
 set "HZ_DYNDNS_BAK=%HZ_DYNDNS%.bak1"
 set "HZ_DYNDNS_BAK2=%HZ_DYNDNS%.bak2"
@@ -704,8 +710,6 @@ set "F10J_ACT="
 set "F10J_RES="
 set "F14_ACT="
 set "F14_RES="
-
-set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
 
 :: --- MIGRAZIONE ONE-SHOT: vecchi .bak singoli -> nuovo schema .bak1 ---
 if exist "%HZ_PRO_PLUS%.bak" if not exist "%HZ_PRO_PLUS_BAK%" ren "%HZ_PRO_PLUS%.bak" "hagezi-pro-plus.conf.bak1" >nul 2>&1
@@ -3265,9 +3269,9 @@ exit /b 0
 
 :RESOLVE_HOST
 set "%~2="
-for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
+for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
 if "!%~2!"=="" (
-    for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 9.9.9.9 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq ''A''}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
+    for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 9.9.9.9 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
 )
 exit /b
 
