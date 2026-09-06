@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1026.0"
+set "LOCAL_VER=1027.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -911,6 +911,32 @@ if "!DASH_SIZE_OK!"=="1" (
 ) else (
     echo   [!] Dashboard NON avviata: file mancante o non valido in "!DASH_PS1!".
 )
+
+:: --- VERSIONE DASHBOARD: locale (estratta dal .ps1 gia' presente su !RAM_DRIVE!) e
+:: cloud (estratta al volo dal .ps1 pubblicato su GitHub), entrambe via regex su
+:: "Versione X.X" gia' presente nel <title>/<h1> della dashboard - nessun nuovo file
+:: di versione da mantenere su GitHub, embedded nel .ps1 stesso come richiesto.
+set "DASH_LOCAL_VER=N/D"
+if "!DASH_SIZE_OK!"=="1" if exist "!DASH_PS1!" (
+    set "DVER_TMP=%TEMP%\ub_dash_local_ver.txt"
+    if exist "!DVER_TMP!" del /f /q "!DVER_TMP!" >nul 2>&1
+    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP!', $matches[1]) } } catch {}" >nul 2>&1
+    if exist "!DVER_TMP!" (
+        set /p DASH_LOCAL_VER=<"!DVER_TMP!"
+        del /f /q "!DVER_TMP!" >nul 2>&1
+    )
+)
+if "!DASH_LOCAL_VER!"=="" set "DASH_LOCAL_VER=N/D"
+
+set "DASH_CLOUD_VER=N/D"
+set "DVER_TMP2=%TEMP%\ub_dash_cloud_ver.txt"
+if exist "!DVER_TMP2!" del /f /q "!DVER_TMP2!" >nul 2>&1
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP2!', $matches[1]) } } catch {}" >nul 2>&1
+if exist "!DVER_TMP2!" (
+    set /p DASH_CLOUD_VER=<"!DVER_TMP2!"
+    del /f /q "!DVER_TMP2!" >nul 2>&1
+)
+if "!DASH_CLOUD_VER!"=="" set "DASH_CLOUD_VER=N/D"
 
 :: [DASHBOARD RESTART HELPER] Genera un BAT standalone per riavviare la sola
 :: Dashboard Live senza rieseguire l'intera procedura di avvio del Bunker.
@@ -3308,7 +3334,7 @@ echo ===========================================================================
 echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
 echo  Versione SERVICE.CONF locale: !LOCAL_SVC_VER! - Cloud: !SVC_VER! *** Key-cache: !KEY_CACHE! - Neg-cache: !NEG_CACHE! - Infra-hosts: !INFRA_HOSTS! - Tcp in/out: !INCOMING_TCP!/!OUTGOING_TCP!
-echo                                                       *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
+echo  Versione DASHBOARD    locale: !DASH_LOCAL_VER! - Cloud: !DASH_CLOUD_VER! *** MinWorkingSet !MIN_WS! bytes - MaxWorkingSet !MAX_WS! bytes
 echo  FORWARDER ATTIVI (!FWD_COUNT!): !FWD_LIST!
 echo ======================================================================================================================================================
 echo  PROGRESSO: [%BARRA%] %P_VAL%%%
