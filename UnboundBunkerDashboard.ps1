@@ -829,7 +829,7 @@ function Get-RpzFreshness {
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
                 $stato.ore_fa     = $oreFa
                 $stato.eta_txt    = "$oreInt ore $minRes min fa"
-                $stato.esito      = if ($oreFa -le 36) { "ok" } elseif ($oreFa -lt 61) { "attenzione" } else { "scaduta" }
+                $stato.esito      = if ($oreFa -le 96) { "ok" } elseif ($oreFa -lt 168) { "attenzione" } else { "scaduta" }
                 if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
             } catch {}
         } else {
@@ -3065,9 +3065,9 @@ async function refresh(forceVersions) {
     const barRpzRulesEl = document.getElementById('barRpzRules');
     if (barRpzRulesEl) {
       barRpzRulesEl.style.width = (bf.total_rpz_rules > 0 ? 100 : 0) + '%';
-      if (bf.total_rpz_rules > 0 && maxAgeHoursForRules <= 36) {
+      if (bf.total_rpz_rules > 0 && maxAgeHoursForRules <= 96) {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #196f3d 0%, #145a32 100%)';
-      } else if (bf.total_rpz_rules > 0 && maxAgeHoursForRules < 61) {
+      } else if (bf.total_rpz_rules > 0 && maxAgeHoursForRules < 168) {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #d35400 0%, #f1c40f 100%)';
       } else {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
@@ -3261,9 +3261,9 @@ async function refresh(forceVersions) {
 
     let maxAgeHours = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
     let rpzStatePct = 100;
-    if (maxAgeHours > 36) {
-      let extraHours = Math.floor(maxAgeHours - 36);
-      rpzStatePct = Math.max(50, 100 - (extraHours * 2));
+    if (maxAgeHours > 96) {
+      let extraHours = Math.floor(maxAgeHours - 96);
+      rpzStatePct = Math.max(50, Math.round(100 - (extraHours * (50 / 72))));
     }
     const bRpzState = document.createElement('span');
     let rpzStateStyle = 'ok';
@@ -3271,7 +3271,7 @@ async function refresh(forceVersions) {
     else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
     bRpzState.className = 'badge ' + rpzStateStyle;
     bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
-    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 36h: 100%\n- Oltre 36h: -2% per ogni ora fino a un minimo del 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
+    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 96h (4gg): 100%\n- Tra 96h e 168h (7gg): calo lineare fino al 50%\n- Oltre 168h (7gg): minimo 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
     badges.appendChild(bRpzState);
 
     const bBlocchi = document.createElement('span');
