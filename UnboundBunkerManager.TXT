@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1029.0"
+set "LOCAL_VER=1030.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -847,6 +847,31 @@ set "DASH_MIN_SIZE=5000"
 set "DASH_SIZE_OK=0"
 if exist "!DASH_PS1!" (
     for %%A in ("!DASH_PS1!") do if %%~zA GTR !DASH_MIN_SIZE! set "DASH_SIZE_OK=1"
+)
+
+:: [FIX-DASH-VER] Il file su !RAM_DRIVE! puo' essere gia' presente e di dimensione
+:: valida ma NON aggiornato: il task Boot scatta "onlogon" (non "onstart"), quindi
+:: puo' rieseguirsi senza un vero riavvio (e con l'Avvio Rapido di Windows attivo
+:: anche un riavvio "vero" puo' far sopravvivere il RAM disk). Prima di saltare il
+:: download si confronta quindi la versione locale con quella sul repo: se diverse,
+:: si forza comunque il ri-download sotto.
+if "!DASH_SIZE_OK!"=="1" (
+    set "DVER_CHECK_LOCAL=%TEMP%\ub_dash_ver_check_local.txt"
+    set "DVER_CHECK_CLOUD=%TEMP%\ub_dash_ver_check_cloud.txt"
+    if exist "!DVER_CHECK_LOCAL!" del /f /q "!DVER_CHECK_LOCAL!" >nul 2>&1
+    if exist "!DVER_CHECK_CLOUD!" del /f /q "!DVER_CHECK_CLOUD!" >nul 2>&1
+    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_LOCAL!', $matches[1]) } } catch {}" >nul 2>&1
+    powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_CLOUD!', $matches[1]) } } catch {}" >nul 2>&1
+    set "DVER_CHECK_LOCAL_VAL="
+    set "DVER_CHECK_CLOUD_VAL="
+    if exist "!DVER_CHECK_LOCAL!" set /p DVER_CHECK_LOCAL_VAL=<"!DVER_CHECK_LOCAL!"
+    if exist "!DVER_CHECK_CLOUD!" set /p DVER_CHECK_CLOUD_VAL=<"!DVER_CHECK_CLOUD!"
+    if exist "!DVER_CHECK_LOCAL!" del /f /q "!DVER_CHECK_LOCAL!" >nul 2>&1
+    if exist "!DVER_CHECK_CLOUD!" del /f /q "!DVER_CHECK_CLOUD!" >nul 2>&1
+    if not "!DVER_CHECK_CLOUD_VAL!"=="" if not "!DVER_CHECK_CLOUD_VAL!"=="!DVER_CHECK_LOCAL_VAL!" (
+        echo   [..] Versione dashboard su !RAM_DRIVE! ^(!DVER_CHECK_LOCAL_VAL!^) diversa da quella sul repo ^(!DVER_CHECK_CLOUD_VAL!^): forzato ri-download.
+        set "DASH_SIZE_OK=0"
+    )
 )
 
 if "!DASH_SIZE_OK!"=="1" (
