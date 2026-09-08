@@ -350,20 +350,22 @@ $script:WanCacheData = @{
 }
 
 function Get-IpConnectivityStatus {
-    $ip4Lan = $null
+    # IPv4 LAN: Raccoglie TUTTI gli indirizzi validi (esclude loopback e APIPA)
+    $ip4LanList = @()
     try {
-        $ip4Lan = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        $ip4LanList = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
             Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
             Sort-Object -Property InterfaceMetric |
-            Select-Object -First 1 -ExpandProperty IPAddress
+            Select-Object -ExpandProperty IPAddress
     } catch {}
 
-    $ip6Lan = $null
+    # IPv6 LAN: Raccoglie TUTTI gli indirizzi validi (esclude link-local e loopback)
+    $ip6LanList = @()
     try {
-        $ip6Lan = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+        $ip6LanList = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
             Where-Object { $_.IPAddress -notmatch '^fe80:|^::1$' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.AddressState -eq 'Preferred' } |
             Sort-Object -Property InterfaceMetric |
-            Select-Object -First 1 -ExpandProperty IPAddress
+            Select-Object -ExpandProperty IPAddress
     } catch {}
 
     if (((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
@@ -421,10 +423,10 @@ function Get-IpConnectivityStatus {
     }
 
     return [ordered]@{
-        ipv4_lan    = if ($ip4Lan) { $ip4Lan } else { "N/D" }
-        ipv4_lan_ok = [bool]$ip4Lan
-        ipv6_lan    = if ($ip6Lan) { $ip6Lan } else { "N/D" }
-        ipv6_lan_ok = [bool]$ip6Lan
+        ipv4_lan    = if ($ip4LanList.Count -gt 0) { $ip4LanList -join ", " } else { "N/D" }
+        ipv4_lan_ok = ($ip4LanList.Count -gt 0)
+        ipv6_lan    = if ($ip6LanList.Count -gt 0) { $ip6LanList -join ", " } else { "N/D" }
+        ipv6_lan_ok = ($ip6LanList.Count -gt 0)
         ipv4_wan    = $script:WanCacheData.ipv4_wan
         ipv4_wan_ok = $script:WanCacheData.ipv4_wan_ok
         ipv4_loc    = $script:WanCacheData.ipv4_loc
@@ -806,7 +808,9 @@ function Get-RpzFreshness {
     }
 
     $risultati = @()
-    $piuVecchiaOre = 0
+    $peggioreScore = 100
+    $listaPiuCritica = ""
+
     foreach ($lista in $RpzListe) {
         $file = Join-Path $UbDir "$($lista.Tag).conf"
         $stato = [ordered]@{
@@ -818,6 +822,18 @@ function Get-RpzFreshness {
             eta_txt    = "--"
             esito      = "sconosciuto"
         }
+
+        # 1. Definizione delle soglie dinamiche basate sul tag
+        if ($lista.Tag -match 'urlhaus|threatfox|hagezi-tif') {
+            $tOk = 12; $tWarn = 24
+        } elseif ($lista.Tag -match 'spamhaus') {
+            $tOk = 48; $tWarn = 72
+        } else {
+            $tOk = 96; $tWarn = 168
+        }
+
+        $scoreAttuale = 100
+
         if ([System.IO.File]::Exists($file)) {
             try {
                 $mtime  = (Get-Item -LiteralPath $file).LastWriteTime
@@ -829,17 +845,33 @@ function Get-RpzFreshness {
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
                 $stato.ore_fa     = $oreFa
                 $stato.eta_txt    = "$oreInt ore $minRes min fa"
-                $stato.esito      = if ($oreFa -le 96) { "ok" } elseif ($oreFa -lt 168) { "attenzione" } else { "scaduta" }
-                if ($oreFa -gt $piuVecchiaOre) { $piuVecchiaOre = $oreFa }
+                
+                # 2. Assegnazione dell'esito in base alla propria soglia
+                if ($oreFa -le $tOk) {
+                    $stato.esito = "ok"
+                } elseif ($oreFa -lt $tWarn) {
+                    $stato.esito = "attenzione"
+                    # Degrado lineare del punteggio da 100% a 50%
+                    $scoreAttuale = [math]::Round(100 - ((($oreFa - $tOk) / ($tWarn - $tOk)) * 50))
+                } else {
+                    $stato.esito = "scaduta"
+                    $scoreAttuale = 50
+                }
             } catch {}
         } else {
             $stato.esito = "mancante"
-            if ($piuVecchiaOre -lt 999) { $piuVecchiaOre = 999 }
+            $scoreAttuale = 0
         }
+
+        if ($scoreAttuale -lt $peggioreScore) { 
+            $peggioreScore = $scoreAttuale
+            $listaPiuCritica = $lista.Nome
+        }
+
         $risultati += $stato
     }
 
-    $result = @{ liste = $risultati; piu_vecchia_ore = $piuVecchiaOre }
+    $result = @{ liste = $risultati; score_globale = $peggioreScore; lista_critica = $listaPiuCritica }
     $script:RpzFreshnessCache     = $result
     $script:RpzFreshnessCacheTime = Get-Date
     return $result
@@ -1389,7 +1421,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1031.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1032.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -1864,7 +1896,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1031.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1032.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3061,13 +3093,13 @@ async function refresh(forceVersions) {
       }
     }
 
-    let maxAgeHoursForRules = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
+    let rpzGlobalScore = (d.rpz_freshness && typeof d.rpz_freshness.score_globale === 'number') ? d.rpz_freshness.score_globale : 100;
     const barRpzRulesEl = document.getElementById('barRpzRules');
     if (barRpzRulesEl) {
       barRpzRulesEl.style.width = (bf.total_rpz_rules > 0 ? 100 : 0) + '%';
-      if (bf.total_rpz_rules > 0 && maxAgeHoursForRules <= 96) {
+      if (bf.total_rpz_rules > 0 && rpzGlobalScore >= 90) {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #196f3d 0%, #145a32 100%)';
-      } else if (bf.total_rpz_rules > 0 && maxAgeHoursForRules < 168) {
+      } else if (bf.total_rpz_rules > 0 && rpzGlobalScore >= 60) {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #d35400 0%, #f1c40f 100%)';
       } else {
         barRpzRulesEl.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
@@ -3259,19 +3291,16 @@ async function refresh(forceVersions) {
       badges.appendChild(bRam);
     }
 
-    let maxAgeHours = (d.rpz_freshness && typeof d.rpz_freshness.piu_vecchia_ore === 'number') ? d.rpz_freshness.piu_vecchia_ore : 0;
-    let rpzStatePct = 100;
-    if (maxAgeHours > 96) {
-      let extraHours = Math.floor(maxAgeHours - 96);
-      rpzStatePct = Math.max(50, Math.round(100 - (extraHours * (50 / 72))));
-    }
+    let rpzStatePct = (d.rpz_freshness && typeof d.rpz_freshness.score_globale === 'number') ? d.rpz_freshness.score_globale : 100;
+    let listaCritica = (d.rpz_freshness && d.rpz_freshness.lista_critica) ? d.rpz_freshness.lista_critica : '';
+    
     const bRpzState = document.createElement('span');
     let rpzStateStyle = 'ok';
     if (rpzStatePct <= 50) { rpzStateStyle = 'bad'; }
     else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
     bRpzState.className = 'badge ' + rpzStateStyle;
     bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
-    bRpzState.title = 'Stato aggiornamento liste RPZ:\n- Liste aggiornate < 96h (4gg): 100%\n- Tra 96h e 168h (7gg): calo lineare fino al 50%\n- Oltre 168h (7gg): minimo 50%\n- Anzianità lista più vecchia: ' + (maxAgeHours > 0 ? maxAgeHours + 'h' : 'N/D');
+    bRpzState.title = 'Stato aggiornamento liste RPZ (soglie dinamiche):\n- Malware (URLhaus/ThreatFox/TIF): 12h\n- Spamhaus: 48h\n- Liste Generiche (Pro Plus/DynDNS): 96h\n' + (listaCritica ? '- Lista che incide sul punteggio: ' + listaCritica : '');
     badges.appendChild(bRpzState);
 
     const bBlocchi = document.createElement('span');
