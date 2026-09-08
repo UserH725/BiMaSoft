@@ -1,6 +1,6 @@
 @echo off
 :: ===================================================================================
-:: =         UNBOUND BUNKER MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA            =
+:: =      UNBOUND BUNKER CERBERO MANAGER - INFORMAZIONI OPERATIVE DI EMERGENZA       =
 :: ===================================================================================
 :: CODICE STRUTTURATO PER ELIMINAZIONE SFARFALLIO (ZERO POWERSHELL NELL'UI LOOP).
 :: FUNZIONAMENTO IN CASO DI BLACKOUT RETE:
@@ -54,10 +54,10 @@ start "UNBOUND BUNKER" cmd /k ""%~f0""
 exit
 
 :FONT_OK
-title UNBOUND BUNKER by Mauro Bigoni
+title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1030.0"
+set "LOCAL_VER=1035.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -3378,7 +3378,9 @@ if not "!CONSOLE_COLOR!"=="!LAST_COLOR!" (
 echo !ESC![H!FLAG_LINE!
 echo !FLAG_LINE!
 echo !ESC![0m!ESC![92m======================================================================================================================================================
-echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING ALL'AVVIO INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
+echo ==                                                    U N B O U N D   B U N K E R   C E R B E R O                                                    =
+echo ======================================================================================================================================================
+echo  SISTEMA DI PROTEZIONE DNS - PROVISIONING INTELLIGENTE CON AI by Mauro Bigoni (c) - %DATE%  - %TIME:~0,8% - PROFILO HARDWARE: "!PROFILE_NAME!"
 echo ======================================================================================================================================================
 echo  Versione UNBOUND      locale: !UB_LOCAL_VER! - Cloud: !UB_CLOUD_VER! *** Memoria RAM: !RAW_RAM! GB - N.Processori: !THREADS! - N. Slabs: !SLABS! - Cache msg-cache-size.: !MSG_CACHE!
 echo  Versione BAT          locale: !LOCAL_VER! - Cloud: !CLOUD_VER! *** Cache record rrset-cache-size: !RRSET_CACHE! - Outgoing-range: !OUT_RANGE! - Num-queries-per-thread: !NUM_Q_THREAD!
