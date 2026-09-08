@@ -1389,7 +1389,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER - DASHBOARD LIVE Versione 1030.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1031.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -1864,7 +1864,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER - DASHBOARD LIVE Versione 1030.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1031.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3659,6 +3659,7 @@ if (-not $startedOk) {
 Write-Host "[OK] Unbound Bunker DASHBOARD LIVE in ascolto su $Prefix (Ctrl+C per arrestare)"
 
 Start-BackgroundCollector
+Start-TrayIcon
 
 try { [System.IO.File]::WriteAllText($PidFile, [string]$PID) } catch { Write-DashLog "Impossibile scrivere PID file: $($_.Exception.Message)" }
 
@@ -3755,6 +3756,7 @@ try {
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
             } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di aggiornamento forzato RPZ ricevuta dall'interfaccia Web."
+
 
                 # [FIX] Start-ScheduledTask (modulo PowerShell ScheduledTasks) e' lo stesso
                 # modulo gia' rivelatosi inaffidabile su questo tipo di macchina (vedi storico
@@ -3917,6 +3919,101 @@ try {
     try { if (Test-Path -LiteralPath $PidFile) { Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue } } catch {}
 }
 }
+
+# === ICONA SYSTEM TRAY (RUNSPACE STA SEPARATO) ===
+function Start-TrayIcon {
+    $trayRunspace = [runspacefactory]::CreateRunspace()
+    $trayRunspace.ApartmentState = "STA" # Requisito fondamentale per Windows Forms / NotifyIcon
+    $trayRunspace.ThreadOptions  = "ReuseThread"
+    $trayRunspace.Open()
+
+    # Passiamo l'URL della dashboard al Runspace
+    $trayRunspace.SessionStateProxy.SetVariable('Prefix', $Prefix)
+    
+    $trayPowerShell = [powershell]::Create()
+    $trayPowerShell.Runspace = $trayRunspace
+    [void]$trayPowerShell.AddScript({
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $TrayIcon = New-Object System.Windows.Forms.NotifyIcon
+        $TrayIcon.Text = "UNBOUND BUNKER`nProtezione Attiva - Clicca per aprire"
+        
+        # Stringa Base64 compatta di un'icona .ico (Scudo Verde di Sicurezza)
+        $iconBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAABILAAATCwAAAAAAAAAAAAD/
+        //8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A
+        ////AP///wD///8A/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP///wD///8A
+        ////AP///wD/AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA////AP///wD///8A
+        ////AP8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD///8A////AP///wD///8A
+        /wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP///wD///8A////AP///wD/AAD/
+        /wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA////AP///wD///8A////AP8AAP//AAD/
+        /wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD///8A////AP///wD///8A/wAA//8AAP//AAD/
+        /wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP///wD///8A////AP///wD/AAD//wAA//8AAP//AAD/
+        /wAA//8AAP//AAD//wAA//8AAP//AAD//wAA////AP///wD///8A////AP8AAP//AAD//wAA//8AAP//AAD/
+        /wAA//8AAP//AAD//wAA//8AAP//AAD///8A////AP///wD///8A/wAA//8AAP//AAD//wAA//8AAP//AAD/
+        /wAA//8AAP//AAD//wAA//8AAP///wD///8A////AP///wD///8A/wAA//8AAP//AAD//wAA//8AAP//AAD/
+        /wAA//8AAP//AAD///8A////AP///wD///8A////AP///wD///8A/wAA//8AAP//AAD//wAA//8AAP//AAD/
+        /wAA////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP8AAP//AAD//wAA//8AAP///wD/
+        //8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/AAD///8A////AP///wD/
+        //8A////AP///wD///8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        AAAAAAAAAAAAAAAAAAAAAA=="
+        
+        try {
+            $iconBytes = [Convert]::FromBase64String(($iconBase64 -replace "\s", ""))
+            $ms = New-Object System.IO.MemoryStream($iconBytes, 0, $iconBytes.Length)
+            $TrayIcon.Icon = New-Object System.Drawing.Icon($ms)
+            $ms.Dispose()
+        } catch {
+            # Fallback di sicurezza: se la stringa Base64 è corrotta, usa lo scudo di sistema
+            $TrayIcon.Icon = [System.Drawing.SystemIcons]::Shield
+        }
+
+        # --- Menu Interattivo (Tasto Destro) ---
+        $Menu = New-Object System.Windows.Forms.ContextMenu
+        
+        $MenuItemOpen = New-Object System.Windows.Forms.MenuItem("Apri Dashboard Live")
+        $MenuItemOpen.DefaultItem = $true
+        $MenuItemOpen.add_Click({ [System.Diagnostics.Process]::Start($Prefix) })
+        
+        $MenuItemRestart = New-Object System.Windows.Forms.MenuItem("Riavvia Motore Unbound")
+        $MenuItemRestart.add_Click({
+            try { Invoke-RestMethod -Uri "${Prefix}api/restart-unbound" -Method Post -TimeoutSec 2 } catch {}
+        })
+
+        $MenuItemExit = New-Object System.Windows.Forms.MenuItem("Nascondi Icona")
+        $MenuItemExit.add_Click({ 
+            $TrayIcon.Visible = $false
+            [System.Windows.Forms.Application]::ExitThread()
+        })
+        
+        $Menu.MenuItems.Add($MenuItemOpen)
+        $Menu.MenuItems.Add("-")
+        $Menu.MenuItems.Add($MenuItemRestart)
+        $Menu.MenuItems.Add("-")
+        $Menu.MenuItems.Add($MenuItemExit)
+        
+        $TrayIcon.ContextMenu = $Menu
+
+        # Doppio click per aprire la dashboard
+        $TrayIcon.add_DoubleClick({
+            [System.Diagnostics.Process]::Start($Prefix)
+        })
+
+        # Pulizia in caso di chiusura del processo main
+        $appDomain = [System.AppDomain]::CurrentDomain
+        Register-ObjectEvent -InputObject $appDomain -EventName ProcessExit -Action {
+            $TrayIcon.Visible = $false
+            $TrayIcon.Dispose()
+        } | Out-Null
+
+        $TrayIcon.Visible = $true
+        [System.Windows.Forms.Application]::Run()
+    })
+
+    $script:TrayHandle = $trayPowerShell.BeginInvoke()
+    Write-DashLog "Runspace Tray Icon avviato (Scudo Verde)."
+}
+
 
 # === AVVIO ===
 if ($script:IsBackgroundCollector) {
