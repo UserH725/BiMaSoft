@@ -1896,7 +1896,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1035.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1051.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2326,8 +2326,13 @@ function setLiveStatus(isLive) {
 }
 
 function fmt(n) {
-  if (n === undefined || n === null) return "-";
-  return Number(n).toLocaleString('it-IT');
+  if (n === undefined || n === null || n === '') return "-";
+  const num = Number(n);
+  if (isNaN(num)) return "-";
+  const negativo = num < 0;
+  const parti = Math.round(Math.abs(num)).toString().split('.');
+  parti[0] = parti[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (negativo ? '-' : '') + parti.join(',');
 }
 
 function updateClock() {
