@@ -837,16 +837,16 @@ function Get-RpzFreshness {
         if ([System.IO.File]::Exists($file)) {
             try {
                 $mtime  = (Get-Item -LiteralPath $file).LastWriteTime
-                $totSec = [math]::Round(((Get-Date) - $mtime).TotalSeconds, 0)
+                $totSec = [int64][math]::Round(((Get-Date) - $mtime).TotalSeconds, 0)
                 if ($totSec -lt 0) { $totSec = 0 }
-                $secRes    = $totSec % 60
-                $totMin    = [math]::Floor($totSec / 60)
-                $minRes    = $totMin % 60
-                $totOre    = [math]::Floor($totMin / 60)
-                $oreRes    = $totOre % 24
-                $totGiorni = [math]::Floor($totOre / 24)
-                $giorniRes = $totGiorni % 365
-                $anniRes   = [math]::Floor($totGiorni / 365)
+                $secRes    = [int]($totSec % 60)
+                $totMin    = [int64][math]::Floor($totSec / 60)
+                $minRes    = [int]($totMin % 60)
+                $totOre    = [int64][math]::Floor($totMin / 60)
+                $oreRes    = [int]($totOre % 24)
+                $totGiorni = [int64][math]::Floor($totOre / 24)
+                $giorniRes = [int]($totGiorni % 365)
+                $anniRes   = [int][math]::Floor($totGiorni / 365)
                 $oreFa     = [math]::Round(($totSec / 3600.0), 1)
                 $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy") + " - " + $mtime.ToString("HH:mm:ss")
                 $stato.ore_fa     = $oreFa
@@ -1433,7 +1433,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1052.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1055.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -1908,7 +1908,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1052.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1055.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
