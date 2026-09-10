@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1050.0"
+set "LOCAL_VER=1051.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -972,6 +972,17 @@ set "DASH_RESTART_BAT=!RAM_DRIVE!\UnboundBunkerDashboard_Restart.BAT"
 echo @echo off > "!DASH_RESTART_BAT!"
 echo chcp 65001 ^>nul >> "!DASH_RESTART_BAT!"
 echo title Unbound Bunker - Riavvio Dashboard >> "!DASH_RESTART_BAT!"
+echo :: --- CONTROLLO PRIVILEGI (stesso pattern lineare del Manager) --- >> "!DASH_RESTART_BAT!"
+echo net session ^>nul 2^>^&1 >> "!DASH_RESTART_BAT!"
+echo if %%errorLevel%% neq 0 goto :DASH_ELEVATE_NOW >> "!DASH_RESTART_BAT!"
+echo goto :DASH_ADMIN_VERIFIED >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo :DASH_ELEVATE_NOW >> "!DASH_RESTART_BAT!"
+echo echo   [!] Servono privilegi di amministratore. Rilancio con elevazione... >> "!DASH_RESTART_BAT!"
+echo powershell -Command "Start-Process -FilePath '%%~f0' -Verb RunAs" >> "!DASH_RESTART_BAT!"
+echo exit /b >> "!DASH_RESTART_BAT!"
+echo. >> "!DASH_RESTART_BAT!"
+echo :DASH_ADMIN_VERIFIED >> "!DASH_RESTART_BAT!"
 echo set "DASH_PS1=%%~dp0UnboundBunkerDashboard.ps1" >> "!DASH_RESTART_BAT!"
 echo set "DASH_MIN_SIZE=5000" >> "!DASH_RESTART_BAT!"
 echo. >> "!DASH_RESTART_BAT!"
