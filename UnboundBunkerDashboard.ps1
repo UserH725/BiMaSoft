@@ -837,14 +837,26 @@ function Get-RpzFreshness {
         if ([System.IO.File]::Exists($file)) {
             try {
                 $mtime  = (Get-Item -LiteralPath $file).LastWriteTime
-                $totMin = [math]::Round(((Get-Date) - $mtime).TotalMinutes, 0)
-                if ($totMin -lt 0) { $totMin = 0 }
-                $oreInt = [math]::Floor($totMin / 60)
-                $minRes = $totMin % 60
-                $oreFa  = [math]::Round(($totMin / 60.0), 1)
-                $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy HH:mm")
+                $totSec = [math]::Round(((Get-Date) - $mtime).TotalSeconds, 0)
+                if ($totSec -lt 0) { $totSec = 0 }
+                $secRes    = $totSec % 60
+                $totMin    = [math]::Floor($totSec / 60)
+                $minRes    = $totMin % 60
+                $totOre    = [math]::Floor($totMin / 60)
+                $oreRes    = $totOre % 24
+                $totGiorni = [math]::Floor($totOre / 24)
+                $giorniRes = $totGiorni % 365
+                $anniRes   = [math]::Floor($totGiorni / 365)
+                $oreFa     = [math]::Round(($totSec / 3600.0), 1)
+                $stato.ultimo_agg = $mtime.ToString("dd.MM.yyyy") + " - " + $mtime.ToString("HH:mm:ss")
                 $stato.ore_fa     = $oreFa
-                $stato.eta_txt    = "$oreInt ore $minRes min fa"
+                $unitaEta = @()
+                if ($anniRes -gt 0) { $unitaEta += "${anniRes}a" }
+                if ($giorniRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$giorniRes gg" }
+                if ($oreRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$oreRes ore" }
+                if ($minRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$minRes min" }
+                $unitaEta += ("{0:D2}" -f $secRes) + " sec"
+                $stato.eta_txt    = ($unitaEta -join ' ') + " fa"
                 
                 # 2. Assegnazione dell'esito in base alla propria soglia
                 if ($oreFa -le $tOk) {
@@ -1421,7 +1433,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1051.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1052.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -1896,7 +1908,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1051.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1052.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3129,7 +3141,7 @@ async function refresh(forceVersions) {
         const oreTxt = fr.eta_txt || ((typeof fr.ore_fa === 'number' && fr.ore_fa >= 0) ? `${fr.ore_fa} ore fa` : '--');
         rigaFreschezza = `<div style="display:flex; justify-content:space-between; font-size:0.92em; margin-top:1px;">
           <span class="${cls}">${lbl}</span>
-          <span class="${cls}">${fr.ultimo_agg || 'N/D'} (${oreTxt})</span>
+          <span class="${cls}">(${oreTxt}) ${fr.ultimo_agg || 'N/D'}</span>
         </div>`;
       }
       return `<div style="border-bottom:1px solid rgba(255,255,255,0.05); padding:3px 0;">
