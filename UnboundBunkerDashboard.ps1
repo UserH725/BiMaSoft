@@ -15,6 +15,7 @@ $HwConf     = Join-Path $UbDir "hardware.conf"
 $SvcConf    = Join-Path $UbDir "service.conf"
 $RpzLog     = "R:\unbound.log"
 $SessionDat = "R:\session_totale.dat"
+$SessionHistoryJson = "R:\session_history.json"
 $HealthJson = "R:\bunker_health.json"
 $LogFile    = "R:\dashboard_error.log"
 $PidFile    = "R:\dashboard.pid"
@@ -797,6 +798,170 @@ function Get-SessionTotal {
     return $null
 }
 
+# === STATISTICHE A FINESTRA SCORREVOLE 24H (bucket orari su R:\) ===
+# Non e' un accumulatore a somma progressiva e non si azzera a mezzanotte:
+# ogni ciclo il delta viene sommato nel bucket dell'ora corrente, e prima di
+# totalizzare si scartano dal file i bucket la cui ora e' finita da piu' di
+# 24h. Risultato: PC acceso 23h -> 23h di dati; PC acceso 25h -> solo le
+# ultime 24h. Allo spegnimento reale R:\ si svuota (ImDisk volatile) e si
+# riparte da zero senza bisogno di logica dedicata.
+$script:SessionHistoryIntervalSec    = 60
+$script:SessionHistoryLastSampleTime = [DateTime]::MinValue
+$script:SessionHistoryLastDat        = $null
+$script:SessionHistoryBucketsCache   = $null
+
+function Get-SessionHistoryTotals {
+    param($Buckets = $null)
+
+    if (-not $Buckets) {
+        if ($script:SessionHistoryBucketsCache) {
+            $Buckets = $script:SessionHistoryBucketsCache
+        } elseif ([System.IO.File]::Exists($SessionHistoryJson)) {
+            try {
+                $raw = Get-Content -LiteralPath $SessionHistoryJson -Raw
+                $Buckets = [ordered]@{}
+                if ($raw) {
+                    $parsed = $raw | ConvertFrom-Json
+                    foreach ($prop in $parsed.PSObject.Properties) { $Buckets[$prop.Name] = $prop.Value }
+                }
+            } catch { $Buckets = [ordered]@{} }
+        } else {
+            $Buckets = [ordered]@{}
+        }
+    }
+
+    $totQuery = [double]0; $totHits = [double]0; $totRpz = [double]0
+    $chiaviOrdinate = @($Buckets.Keys | Sort-Object)
+    foreach ($k in $chiaviOrdinate) {
+        $totQuery += [double]$Buckets[$k].query
+        $totHits  += [double]$Buckets[$k].hits
+        $totRpz   += [double]$Buckets[$k].rpz
+    }
+    $effPct = if ($totQuery -gt 0) { [math]::Round(($totHits / $totQuery) * 100, 1) } else { 0 }
+    $piuVecchio = if ($chiaviOrdinate.Count -gt 0) { $chiaviOrdinate[0] + ":00" } else { $null }
+
+    # Nomi "query"/"blocchi"/"dal" mantenuti per compatibilita' col frontend esistente
+    return [ordered]@{
+        query                 = [int64]$totQuery
+        blocchi               = [int64]$totRpz
+        cache_hits            = [int64]$totHits
+        cache_efficienza_pct  = $effPct
+        ore_coperte           = $chiaviOrdinate.Count
+        dal                   = $piuVecchio
+        finestra              = "Ultime 24h (bucket orari scorrevoli)"
+    }
+}
+
+function Update-SessionHistory {
+    $now = Get-Date
+
+    # Non ricalcolare/riscrivere il file ad ogni polling della dashboard (ogni ~1.5s):
+    # si campiona e si scrive su disco al massimo una volta ogni SessionHistoryIntervalSec.
+    # session_totale.dat comunque cambia solo ogni ~2 ore (ciclo biorario del BAT), quindi
+    # nella stragrande maggioranza dei campionamenti il delta sara' semplicemente zero.
+    if ($script:SessionHistoryLastSampleTime -ne [DateTime]::MinValue -and
+        ($now - $script:SessionHistoryLastSampleTime).TotalSeconds -lt $script:SessionHistoryIntervalSec) {
+        return Get-SessionHistoryTotals
+    }
+    $script:SessionHistoryLastSampleTime = $now
+
+    # session_totale.dat e' scritto dal BAT (routine :DAILY_REPORT_ONLY) come accumulatore
+    # a sola crescita: ad ogni ciclo biorario somma il delta di query/cachehits/blocchi
+    # letto da "unbound-control stats" (che si auto-azzera dopo la lettura, quindi il
+    # valore che il BAT somma e' gia' un delta corretto) PRIMA di troncare il log RPZ.
+    # Per questo qui non serve nessuna euristica di rilevamento riavvio o troncamento
+    # (a differenza dei contatori live "stats_noreset" letti altrove nella dashboard,
+    # che infatti si azzerano ogni 2 ore quando il BAT esegue il report biorario, un
+    # evento che l'uptime del servizio Unbound non riflette): basta leggere due volte
+    # questo file e fare la differenza, che e' per costruzione sempre >= 0.
+    $cur = Get-SessionTotal
+    if (-not $cur) {
+        return Get-SessionHistoryTotals
+    }
+
+    if (-not $script:SessionHistoryLastDat) {
+        # Primo campionamento dopo l'avvio della dashboard: registra solo la baseline,
+        # senza scrivere un bucket (altrimenti si "regalerebbe" alla finestra tutto cio'
+        # che il BAT aveva gia' accumulato prima che la dashboard iniziasse a guardare).
+        $script:SessionHistoryLastDat = $cur
+        return Get-SessionHistoryTotals
+    }
+
+    $deltaQuery = [double]$cur.query     - [double]$script:SessionHistoryLastDat.query
+    $deltaHits  = [double]$cur.cachehits - [double]$script:SessionHistoryLastDat.cachehits
+    $deltaRpz   = [double]$cur.blocchi   - [double]$script:SessionHistoryLastDat.blocchi
+
+    # Un valore minore del precedente puo' capitare solo se R:\ e' stata svuotata
+    # (spegnimento/riavvio reale del PC: ImDisk e' volatile) e il file e' ripartito
+    # da zero: in quel caso tutto il valore corrente e' il delta.
+    if ($deltaQuery -lt 0 -or $deltaHits -lt 0 -or $deltaRpz -lt 0) {
+        $deltaQuery = [double]$cur.query
+        $deltaHits  = [double]$cur.cachehits
+        $deltaRpz   = [double]$cur.blocchi
+    }
+
+    $script:SessionHistoryLastDat = $cur
+
+    if ($deltaQuery -eq 0 -and $deltaHits -eq 0 -and $deltaRpz -eq 0) {
+        return Get-SessionHistoryTotals
+    }
+
+    # Chiave del bucket = ora piena in cui la dashboard ha VISTO cambiare il file
+    # (session_totale.dat si aggiorna solo ogni ~2h, quindi il delta va comunque
+    # attribuito per intero a un'unica ora: qui non c'e' granularita' piu' fine
+    # da recuperare, dato che il BAT non scrive un timestamp per ogni singola query).
+    $bucketKey = $now.ToString("yyyy-MM-dd HH")
+
+    $buckets = [ordered]@{}
+    if ([System.IO.File]::Exists($SessionHistoryJson)) {
+        try {
+            $raw = Get-Content -LiteralPath $SessionHistoryJson -Raw
+            if ($raw) {
+                $parsed = $raw | ConvertFrom-Json
+                foreach ($prop in $parsed.PSObject.Properties) {
+                    $buckets[$prop.Name] = @{
+                        query = [double]$prop.Value.query
+                        hits  = [double]$prop.Value.hits
+                        rpz   = [double]$prop.Value.rpz
+                    }
+                }
+            }
+        } catch { $buckets = [ordered]@{} }
+    }
+
+    if (-not $buckets.Contains($bucketKey)) {
+        $buckets[$bucketKey] = @{ query = [double]0; hits = [double]0; rpz = [double]0 }
+    }
+    $buckets[$bucketKey].query = [double]$buckets[$bucketKey].query + $deltaQuery
+    $buckets[$bucketKey].hits  = [double]$buckets[$bucketKey].hits  + $deltaHits
+    $buckets[$bucketKey].rpz   = [double]$buckets[$bucketKey].rpz   + $deltaRpz
+
+    # Scarta i bucket la cui ora e' terminata da piu' di 24h (finestra scorrevole).
+    # Si confronta la FINE del bucket (inizio ora + 1h) con la soglia, non il numero
+    # di bucket indietro, cosi' l'ora parziale di accensione non viene scartata troppo presto.
+    $sogliaMinima = $now.AddHours(-24)
+    $chiaviDaRimuovere = @()
+    foreach ($k in $buckets.Keys) {
+        $bucketTime = [DateTime]::MinValue
+        $okParse = [DateTime]::TryParseExact($k, "yyyy-MM-dd HH", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$bucketTime)
+        if (-not $okParse -or $bucketTime.AddHours(1) -le $sogliaMinima) {
+            $chiaviDaRimuovere += $k
+        }
+    }
+    foreach ($k in $chiaviDaRimuovere) { $buckets.Remove($k) }
+
+    # Scrittura atomica (file temporaneo + rename) per evitare che una lettura
+    # concorrente della dashboard trovi il JSON troncato a meta' scrittura.
+    try {
+        $tmpPath = "$SessionHistoryJson.tmp"
+        ($buckets | ConvertTo-Json -Depth 4 -Compress) | Set-Content -LiteralPath $tmpPath -Encoding UTF8 -NoNewline
+        Move-Item -LiteralPath $tmpPath -Destination $SessionHistoryJson -Force
+    } catch {}
+
+    $script:SessionHistoryBucketsCache = $buckets
+    return Get-SessionHistoryTotals -Buckets $buckets
+}
+
 # === FRESCHEZZA AGGIORNAMENTI BLOCKLIST RPZ ===
 $script:RpzFreshnessCache     = $null
 $script:RpzFreshnessCacheTime = [DateTime]::MinValue
@@ -1266,7 +1431,7 @@ function Get-BunkerStatusJson {
     $rpzFresh    = Get-RpzFreshness
     $rpzTaskRun  = Get-RpzTaskLastRun
     $bunkerTasks = Get-BunkerScheduledTasks
-    $sessione    = Get-SessionTotal
+    $sessione    = Update-SessionHistory
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
     $ipConn      = Get-IpConnectivityStatus
@@ -1433,7 +1598,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1055.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1056.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -1908,7 +2073,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1055.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1056.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3539,10 +3704,12 @@ async function refresh(forceVersions) {
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
     if (s) {
+      const oreCoperte = (typeof s.ore_coperte === 'number') ? s.ore_coperte : null;
+      const coperturaTxt = oreCoperte !== null ? `${oreCoperte}h coperte` : (s.dal || '-');
       sessDiv.innerHTML = `
-        <div class="stat"><div class="val">${fmt(s.query)}</div><div class="lbl">Query totali</div></div>
-        <div class="stat"><div class="val">${fmt(s.blocchi)}</div><div class="lbl">Blocchi totali</div></div>
-        <div class="stat"><div class="val muted" style="font-size:0.9em">${s.dal || '-'}</div><div class="lbl">Inizio Sessione</div></div>
+        <div class="stat"><div class="val">${fmt(s.query)}</div><div class="lbl">Query (ultime 24h)</div></div>
+        <div class="stat"><div class="val">${fmt(s.blocchi)}</div><div class="lbl">Blocchi (ultime 24h)</div></div>
+        <div class="stat"><div class="val muted" style="font-size:0.9em">${coperturaTxt}</div><div class="lbl">Finestra dati</div></div>
       `;
     } else {
       sessDiv.innerHTML = '<div class="muted">Nessun dato di sessione ancora disponibile</div>';
