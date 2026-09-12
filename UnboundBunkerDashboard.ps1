@@ -1371,8 +1371,6 @@ function Get-BlocksHourlyDistribution {
         return $script:BlocksHourlyCache
     }
 
-    $ore = @(0) * 24
-
     # [FIX] Prima si leggeva da R:\unbound.log (il log live di Unbound), che pero'
     # viene svuotato sia ogni ~2h dal ciclo biorario del BAT (subito dopo l'invio
     # del report Telegram) sia ad ogni riavvio di Unbound/Dashboard (per rilasciare
@@ -1393,21 +1391,40 @@ function Get-BlocksHourlyDistribution {
         } catch { $buckets = [ordered]@{} }
     }
 
-    foreach ($k in $buckets.Keys) {
-        $bucketTime = [DateTime]::MinValue
-        $okParse = [DateTime]::TryParseExact($k, "yyyy-MM-dd HH", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$bucketTime)
-        if ($okParse) {
-            $h = $bucketTime.Hour
-            $ore[$h] += [int][math]::Round([double]$buckets[$k].rpz)
+    # [FIX] In precedenza i bucket venivano ripiegati su un asse fisso "ora del
+    # giorno" 00-23 ($ore[$bucketTime.Hour] += ...), perdendo l'ordine cronologico
+    # reale. Ora si generano SEMPRE 24 slot orari fissi, dall'ora corrente (a
+    # destra) indietro di 23 ore (a sinistra, eventualmente "ieri"), in modo che
+    # il grafico scorra sempre da sinistra (piu' vecchio) a destra (adesso).
+    # Gli slot senza un bucket corrispondente valgono 0 (mostrato comunque).
+    $now = Get-Date
+    $oggiStr = $now.ToString("yyyy-MM-dd")
+    $ore       = @()
+    $etichette = @()
+    $giornoOgg = @()
+    for ($i = 23; $i -ge 0; $i--) {
+        $slotTime = $now.AddHours(-$i)
+        $key = $slotTime.ToString("yyyy-MM-dd HH")
+        $val = 0
+        if ($buckets.Contains($key)) {
+            $val = [int][math]::Round([double]$buckets[$key].rpz)
         }
+        $ore       += $val
+        $etichette += $slotTime.Hour
+        $giornoOgg += ($slotTime.ToString("yyyy-MM-dd") -eq $oggiStr)
     }
 
     $picco = 0
     $oraPicco = -1
-    for ($i = 0; $i -lt 24; $i++) {
+    for ($i = 0; $i -lt $ore.Count; $i++) {
         if ($ore[$i] -gt $picco) { $picco = $ore[$i]; $oraPicco = $i }
     }
-    $result = @{ ore = $ore; picco = $picco; ora_picco = $oraPicco }
+    # Nota: NIENTE prefisso "," qui - questi array sono proprieta' annidate di un
+    # hashtable (non l'input diretto in pipeline di ConvertTo-Json), quindi il
+    # bug di collasso "array con un solo elemento" di PowerShell non si applica;
+    # aggiungere la virgola avrebbe invece creato un doppio annidamento reale
+    # (array-dentro-array) nel JSON, con conseguente rottura del grafico.
+    $result = @{ ore = $ore; etichette = $etichette; oggi = $giornoOgg; picco = $picco; ora_picco = $oraPicco }
     $script:BlocksHourlyCache     = $result
     $script:BlocksHourlyCacheTime = Get-Date
     return $result
@@ -1708,7 +1725,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1059.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1060.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2202,7 +2219,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1059.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1060.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2500,8 +2517,8 @@ $HtmlPage = @'
 
 <div class="panel">
   <h2>&#128200; Distribuzione Oraria dei Blocchi RPZ (per ora del giorno)</h2>
-  <div class="sub">Conteggio blocchi RPZ raggruppati per ora del giorno (00-23), sulle ultime 24h (finestra scorrevole).</div>
-  <svg id="chartBlocchiOrari" viewBox="0 0 600 130" preserveAspectRatio="none" style="width:100%; height:150px;"></svg>
+  <div class="sub">Conteggio blocchi RPZ per ogni ora effettivamente coperta dalle ultime 24h (finestra scorrevole).</div>
+  <svg id="chartBlocchiOrari" viewBox="0 0 600 150" preserveAspectRatio="none" style="width:100%; height:150px;"></svg>
   <div class="storico-range" id="blocchiOrariInfo">In attesa di dati...</div>
 </div>
 
@@ -2774,32 +2791,46 @@ function renderBlocchiOrari(d) {
   if (!svg) return;
   const bo = d.blocchi_orari;
   const ore = (bo && Array.isArray(bo.ore)) ? bo.ore : null;
-  if (!ore || ore.every(v => v === 0)) {
-    svg.innerHTML = '<text x="300" y="65" text-anchor="middle" fill="var(--dim)" font-size="13">Nessun blocco registrato nel log corrente&hellip;</text>';
+  const etichette = (bo && Array.isArray(bo.etichette)) ? bo.etichette : null;
+  if (!ore || !ore.length || !etichette) {
+    svg.innerHTML = '<text x="300" y="75" text-anchor="middle" fill="var(--dim)" font-size="13">Nessun blocco registrato nel log corrente&hellip;</text>';
     if (info) info.textContent = 'In attesa di dati...';
     return;
   }
-  const w = 600, h = 130, padX = 6, padY = 20, gap = 2;
+  const n = ore.length;
+  const w = 600, h = 150, padX = 6, padTop = 18, padBottom = 20, gap = 2;
+  const areaH = h - padTop - padBottom;
   const maxV = Math.max(...ore, 1);
-  const barW = (w - padX * 2) / 24 - gap;
+  const slot = (w - padX * 2) / n;
+  const barW = slot - gap;
   let bars = '';
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < n; i++) {
     const v = ore[i];
-    const barH = (v / maxV) * (h - padY * 2);
-    const x = padX + i * ((w - padX * 2) / 24);
-    const y = h - padY - barH;
+    const barH = (v / maxV) * areaH;
+    const x = padX + i * slot;
+    const y = h - padBottom - barH;
     const colore = (bo.ora_picco === i) ? 'var(--red-bright)' : 'var(--accent)';
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barH,1).toFixed(1)}" fill="${colore}" opacity="0.85"></rect>`;
-    if (i % 3 === 0) {
-      bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 4}" text-anchor="middle" fill="var(--dim)" font-size="9">${String(i).padStart(2,'0')}</text>`;
-    }
+    const yBar = h - padBottom - Math.max(barH, 1);
+    bars += `<rect x="${x.toFixed(1)}" y="${yBar.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(barH,1).toFixed(1)}" fill="${colore}" opacity="0.85"></rect>`;
+
+    // Valore sopra ogni barra, sempre mostrato (anche 0), tenuto entro l'area utile.
+    const yVal = Math.max(y - 3, padTop + 8);
+    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${yVal.toFixed(1)}" text-anchor="middle" fill="var(--text)" font-size="8">${fmt(v)}</text>`;
+
+    // Etichetta oraria per OGNI barra (non piu' una ogni 3). Niente indicazione
+    // "oggi/ieri": con tutte le 24 ore in ordine cronologico la progressione
+    // sinistra->destra e' gia' chiara da sola.
+    const etichettaOra = String(etichette[i]).padStart(2, '0');
+    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="var(--dim)" font-size="8">${etichettaOra}</text>`;
   }
-  bars += `<text x="${padX}" y="12" fill="var(--dim)" font-size="11">${fmt(maxV)}</text>`;
   svg.innerHTML = bars;
   if (info) {
-    info.textContent = (bo.ora_picco >= 0)
-      ? `Ora di picco: ${String(bo.ora_picco).padStart(2,'0')}:00 &middot; ${fmt(bo.picco)} blocchi`.replace('&middot;', '·')
-      : 'In attesa di dati...';
+    if (bo.ora_picco >= 0) {
+      const etichettaPicco = String(etichette[bo.ora_picco]).padStart(2, '0') + ':00';
+      info.textContent = `Ora di picco: ${etichettaPicco} · ${fmt(bo.picco)} blocchi`;
+    } else {
+      info.textContent = 'In attesa di dati...';
+    }
   }
 }
 
