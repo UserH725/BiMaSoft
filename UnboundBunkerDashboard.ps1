@@ -1202,6 +1202,95 @@ function Get-BunkerScheduledTasks {
     return $result
 }
 
+# === STATO LIVE (IN ESECUZIONE ORA) DEI TASK PIANIFICATI ===
+# Query separata e leggerissima rispetto a Get-BunkerScheduledTasks: quest'ultima
+# e' cachata 120s (chiama anche Get-ScheduledTaskInfo per ogni task, piu' costosa),
+# troppo lenta per un indicatore "live". Qui si legge SOLO $task.State
+# (Running/Ready/Queued/Disabled), gia' incluso gratis in Get-ScheduledTask senza
+# bisogno di -TaskInfo, con una cache di 2s allineata al ritmo di polling del
+# frontend (2s): evita di rifare la query se per qualche motivo arrivano due
+# richieste ravvicinate, senza introdurre un ritardo percepibile sull'indicatore.
+# NOTA: per Boot/Daily/2h, nella rarissima finestra di un self-update
+# del BAT (nuova versione rilevata su GitHub), il task madre lancia un helper
+# scollegato via "start" e chiude subito con exit 0: per quei pochi secondi lo
+# stato potrebbe tornare "Ready" mentre l'helper sta ancora finendo il lavoro.
+# Accettabile per un indicatore semplice on/off; il task 30m (AbuseCh30m) non ha
+# questo percorso e il suo stato live e' quindi sempre affidabile al 100%.
+$script:BunkerTasksLiveCache      = $null
+$script:BunkerTasksLiveCacheTime  = [DateTime]::MinValue
+$script:BunkerTasksLiveCacheTtlSec = 2
+
+function Get-BunkerTasksLiveState {
+    if ($script:BunkerTasksLiveCache -and ((Get-Date) - $script:BunkerTasksLiveCacheTime).TotalSeconds -lt $script:BunkerTasksLiveCacheTtlSec) {
+        return $script:BunkerTasksLiveCache
+    }
+
+    $live = @{}
+    $bunkerTaskNames = @('Unbound_Bunker_Boot', 'Unbound_Bunker_Daily', 'Unbound_Bunker_2h', 'Unbound_Bunker_AbuseCh30m')
+    try {
+        # [FIX PERFORMANCE] Niente wildcard "Unbound_Bunker*": Get-ScheduledTask con
+        # wildcard enumera l'INTERO albero dei task pianificati di Windows prima di
+        # filtrare, costoso se richiamato ad ogni polling (2s) invece che ogni 120s
+        # come la query "storica" in Get-BunkerScheduledTasks. Passando i 4 nomi
+        # esatti, il modulo fa una lookup mirata per nome invece di una scansione
+        # completa - stessa informazione, frazione del costo.
+        $tasks = Get-ScheduledTask -TaskName $bunkerTaskNames -ErrorAction Stop
+        foreach ($task in $tasks) {
+            $live[$task.TaskName] = ($task.State -eq 'Running')
+        }
+    } catch {
+        # Fallback: modulo ScheduledTasks non disponibile, stessa strategia di
+        # Get-BunkerScheduledTasks (schtasks.exe /FO CSV), leggendo la colonna
+        # "Status"/"Stato" invece di Last Run/Next Run/Result.
+        try {
+            $csvRaw = & schtasks.exe /Query /FO CSV /V 2>$null
+            if ($LASTEXITCODE -eq 0 -and $csvRaw) {
+                $rows = $csvRaw | ConvertFrom-Csv
+                foreach ($row in $rows) {
+                    $nameProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^task ?name$|nome attivit' } |
+                        Select-Object -First 1
+                    if (-not $nameProp -or -not $nameProp.Value) { continue }
+                    $taskNameFull = $nameProp.Value.TrimStart('\')
+                    if ($taskNameFull -notmatch '(?i)Unbound_Bunker') { continue }
+
+                    $statusProp = $row.PSObject.Properties |
+                        Where-Object { $_.Name -match '(?i)^status$|^stato$' } |
+                        Select-Object -First 1
+                    $isRunning = $statusProp -and $statusProp.Value -match '(?i)^running$|in esecuzione'
+                    $live[$taskNameFull] = [bool]$isRunning
+                }
+            }
+        } catch {}
+    }
+
+    $script:BunkerTasksLiveCache     = $live
+    $script:BunkerTasksLiveCacheTime = Get-Date
+    return $live
+}
+
+# Combina i dati "storici" (cachati 120s: ultimo_run/prossimo_run/last_result/esito)
+# con lo stato live (cachato 2s) aggiungendo il campo in_esecuzione ad ogni task,
+# senza dover abbassare il TTL della query piu' pesante.
+function Get-BunkerScheduledTasksWithLiveState {
+    $base = Get-BunkerScheduledTasks
+    $live = Get-BunkerTasksLiveState
+
+    $tasksOut = @($base.tasks | ForEach-Object {
+        # [FIX] .Clone() su [ordered]@{...} non e' disponibile come metodo
+        # chiamabile su questo PowerShell (5.1): "non contiene un metodo
+        # denominato 'Clone'". Si ricostruisce la ordered dictionary a mano
+        # copiando le chiavi, evitando del tutto la dipendenza da Clone().
+        $orig = $_
+        $t = [ordered]@{}
+        foreach ($key in $orig.Keys) { $t[$key] = $orig[$key] }
+        $t.in_esecuzione = [bool]($live.ContainsKey($orig.nome) -and $live[$orig.nome])
+        $t
+    })
+
+    return [ordered]@{ tasks = $tasksOut }
+}
+
 function Get-RpzTaskLastRun {
     $rpzTaskNames = @("Unbound_Bunker_2h", "Unbound_Bunker_AbuseCh30m")
     $tutti   = Get-BunkerScheduledTasks
@@ -1430,7 +1519,7 @@ function Get-BunkerStatusJson {
     $rpz         = Get-RpzBreakdown
     $rpzFresh    = Get-RpzFreshness
     $rpzTaskRun  = Get-RpzTaskLastRun
-    $bunkerTasks = Get-BunkerScheduledTasks
+    $bunkerTasks = Get-BunkerScheduledTasksWithLiveState
     $sessione    = Update-SessionHistory
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
@@ -1978,9 +2067,9 @@ $HtmlPage = @'
   .winupdate-tasks-row > .panel-versioni { margin-bottom: 0; flex-direction: column; align-items: flex-start; }
   .winupdate-third { flex: 1 1 220px; }
   .periodic-tasks-twothird { flex: 2 1 340px; }
-  .periodic-tasks-grid { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .periodic-tasks-grid { display: flex; flex-direction: column; gap: 11px; width: 100%; }
   .periodic-task-chip {
-    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 6px 12px;
+    background: #090e16; border: 1px solid #1a2a3a; border-radius: 6px; padding: 10px 14px;
     display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 14px;
     font-size: 0.8em; width: 100%; box-sizing: border-box;
   }
@@ -1989,6 +2078,25 @@ $HtmlPage = @'
   .periodic-task-chip .ptc-eta { font-size: 0.92em; }
   .periodic-task-chip .ptc-sep { color: var(--dim); opacity: 0.5; }
   .periodic-task-chip .ptc-run { color: var(--dim); font-size: 0.85em; text-align: right; }
+  .periodic-task-chip.ptc-live {
+    border-color: rgba(255, 214, 0, 0.55);
+    box-shadow: 0 0 10px rgba(255, 214, 0, 0.22);
+  }
+  .ptc-live-badge {
+    display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+    color: #ffd600; font-weight: 800; font-size: 0.82em;
+    letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap;
+  }
+  .ptc-live-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    background: #ffd600;
+    box-shadow: 0 0 6px rgba(255, 214, 0, 0.85);
+    animation: ptcLivePulse 1.1s ease-in-out infinite;
+  }
+  @keyframes ptcLivePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.75); }
+  }
   
   .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:14px; }
   .stat { background:#0e141b; border:1px solid var(--border); border-radius:6px; padding:10px; }
@@ -2731,10 +2839,17 @@ function renderPeriodicTasks(d) {
       const minRes = t.min_fa % 60;
       etaTxt = oreInt > 0 ? `${oreInt}h ${minRes}m fa` : `${minRes}m fa`;
     }
-    const titleAttr = `Prossima esecuzione prevista: ${t.prossimo_run || 'N/D'} | Ultimo risultato: ${t.last_result || 'N/D'}`;
-    return `<div class="periodic-task-chip" title="${titleAttr}">
+    const inEsecuzione = !!t.in_esecuzione;
+    const titleAttr = inEsecuzione
+      ? 'Task in esecuzione adesso'
+      : `Prossima esecuzione prevista: ${t.prossimo_run || 'N/D'} | Ultimo risultato: ${t.last_result || 'N/D'}`;
+    const liveBadge = inEsecuzione
+      ? '<span class="ptc-live-badge"><span class="ptc-live-dot"></span>In esecuzione adesso</span>'
+      : '';
+    return `<div class="periodic-task-chip${inEsecuzione ? ' ptc-live' : ''}" title="${titleAttr}">
       <span class="ptc-nome ${cls}">${t.nome || '-'}</span>
       <span class="ptc-info">
+        ${liveBadge}
         <span class="ptc-eta ${cls}">${etaTxt}</span>
         <span class="ptc-sep">&middot;</span>
         <span class="ptc-run">${t.ultimo_run || 'N/D'}</span>
