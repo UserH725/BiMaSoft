@@ -1372,15 +1372,36 @@ function Get-BlocksHourlyDistribution {
     }
 
     $ore = @(0) * 24
-    $rpzLines = Get-SafeLogLines -Path $RpzLog
-    if ($rpzLines -and $rpzLines.Count -gt 0) {
-        foreach ($ln in $rpzLines) {
-            if ($ln -match '(\d{2}):\d{2}:\d{2}.*?\brpz') {
-                $h = [int]$matches[1]
-                if ($h -ge 0 -and $h -le 23) { $ore[$h]++ }
+
+    # [FIX] Prima si leggeva da R:\unbound.log (il log live di Unbound), che pero'
+    # viene svuotato sia ogni ~2h dal ciclo biorario del BAT (subito dopo l'invio
+    # del report Telegram) sia ad ogni riavvio di Unbound/Dashboard (per rilasciare
+    # il lock prima del troncamento): il grafico "per ora del giorno" ripartiva da
+    # zero molto piu' spesso di quanto il titolo del pannello suggerisse. Si legge
+    # ora da session_history.json, la stessa finestra scorrevole a 24h gia' usata
+    # per "Finestra dati", che sopravvive sia ai troncamenti del log sia ai riavvii
+    # del servizio/della dashboard, e si azzera solo a un vero riavvio di Windows
+    # (R:\ e' un RAM disk volatile via ImDisk).
+    $buckets = [ordered]@{}
+    if ([System.IO.File]::Exists($SessionHistoryJson)) {
+        try {
+            $raw = Get-Content -LiteralPath $SessionHistoryJson -Raw
+            if ($raw) {
+                $parsed = $raw | ConvertFrom-Json
+                foreach ($prop in $parsed.PSObject.Properties) { $buckets[$prop.Name] = $prop.Value }
             }
+        } catch { $buckets = [ordered]@{} }
+    }
+
+    foreach ($k in $buckets.Keys) {
+        $bucketTime = [DateTime]::MinValue
+        $okParse = [DateTime]::TryParseExact($k, "yyyy-MM-dd HH", [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$bucketTime)
+        if ($okParse) {
+            $h = $bucketTime.Hour
+            $ore[$h] += [int][math]::Round([double]$buckets[$k].rpz)
         }
     }
+
     $picco = 0
     $oraPicco = -1
     for ($i = 0; $i -lt 24; $i++) {
@@ -1687,7 +1708,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1057.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1058.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2181,7 +2202,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1057.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1058.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
