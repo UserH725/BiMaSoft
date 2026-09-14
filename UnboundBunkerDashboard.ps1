@@ -442,10 +442,11 @@ $script:CloudVersionsCache       = $null
 $script:CloudVersionsCacheTime   = [DateTime]::MinValue
 $script:CloudVersionsCacheTtlSec = 1800
 $script:UnboundLocalVerCache     = $null
+$script:DashboardLocalVerCache   = $null
 
 function Get-BunkerVersions {
     param([switch]$Force)
-    $result = [ordered]@{ unbound_local = "N/D"; unbound_cloud = "N/D"; conf_local = "N/D"; conf_cloud = "N/D"; bat_local = "N/D"; bat_cloud = "N/D" }
+    $result = [ordered]@{ unbound_local = "N/D"; unbound_cloud = "N/D"; conf_local = "N/D"; conf_cloud = "N/D"; bat_local = "N/D"; bat_cloud = "N/D"; dash_local = "N/D"; dash_cloud = "N/D" }
 
     if (-not $script:UnboundLocalVerCache) {
         $ubExe = Join-Path $UbDir "unbound.exe"
@@ -472,9 +473,26 @@ function Get-BunkerVersions {
         } catch {}
     }
 
+    # Dashboard: numero di versione gia' presente nell'intestazione HTML del file stesso
+    # ("... DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni"), tenuto aggiornato a mano
+    # da Mauro ad ogni modifica pubblicata sul repo - stessa logica di bat_local, letto
+    # dal file in esecuzione (cache indefinita: cambia solo dopo un self-update, che
+    # riavvia il processo).
+    if (-not $script:DashboardLocalVerCache) {
+        $dashPath = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
+        if (Test-Path -LiteralPath $dashPath) {
+            try {
+                $dashLine = Get-Content -LiteralPath $dashPath | Where-Object { $_ -match 'DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)' } | Select-Object -First 1
+                if ($dashLine -match 'Versione\s+([0-9]+(?:\.[0-9]+)*)') { $script:DashboardLocalVerCache = $matches[1] }
+            } catch {}
+        }
+        if (-not $script:DashboardLocalVerCache) { $script:DashboardLocalVerCache = "N/D" }
+    }
+    $result.dash_local = $script:DashboardLocalVerCache
+
     $cloudStale = $Force -or (-not $script:CloudVersionsCache) -or ((Get-Date) - $script:CloudVersionsCacheTime).TotalSeconds -ge $script:CloudVersionsCacheTtlSec
     if ($cloudStale) {
-        if (-not $script:CloudVersionsCache) { $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D" } }
+        if (-not $script:CloudVersionsCache) { $script:CloudVersionsCache = [ordered]@{ unbound_cloud = "N/D"; conf_cloud = "N/D"; bat_cloud = "N/D"; dash_cloud = "N/D" } }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
             $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 1).Content | ConvertFrom-Json
@@ -482,12 +500,17 @@ function Get-BunkerVersions {
         } catch {}
         try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 1).Content.Trim(); if($v){$script:CloudVersionsCache.conf_cloud = $v} } catch {}
         try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 1).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
+        try {
+            $dashCloudRaw = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 2).Content
+            if ($dashCloudRaw -match 'DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)') { $script:CloudVersionsCache.dash_cloud = $matches[1] }
+        } catch {}
         $script:CloudVersionsCacheTime = Get-Date
     }
 
     $result.unbound_cloud = $script:CloudVersionsCache.unbound_cloud
     $result.conf_cloud    = $script:CloudVersionsCache.conf_cloud
     $result.bat_cloud     = $script:CloudVersionsCache.bat_cloud
+    $result.dash_cloud    = $script:CloudVersionsCache.dash_cloud
     return $result
 }
 
@@ -562,6 +585,7 @@ function Get-LiveRcodeFeed {
         } catch {}
     }
     if ($feed.Count -gt 0) {
+        $script:LiveRcodeFeedFull = $feed
         $lastFeed = $feed | Select-Object -Last 300
         $reversed = @()
         for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
@@ -569,7 +593,38 @@ function Get-LiveRcodeFeed {
         }
         return $reversed
     }
+    $script:LiveRcodeFeedFull = @()
     return @()
+}
+
+# === RIEPILOGO CONSENTITE/BLOCCATE DAL FEED LIVE (stessa fonte del pannello Attivita Live) ===
+# A differenza di totale_sessione (bucket orari da session_history.json, aggiornati solo
+# ogni ~2h dal ciclo biorario del BAT), questo riepilogo conta esattamente gli eventi
+# presenti nel feed live sottostante (stessa finestra, stessa fonte R:\unbound.log),
+# cosi' i due numeri coincidono sempre con cio' che scorre nel pannello. Il rovescio della
+# medaglia: la finestra "reale" coperta dipende da quanto e' vecchio il log corrente (si
+# azzera agli stessi eventi di troncamento gia' noti - ciclo biorario, riavvio Unbound/
+# Dashboard), quindi si espone l'orario del dato piu' vecchio disponibile invece di
+# dichiarare una finestra fissa "ultime 24h" che non sarebbe vera.
+function Get-LiveFeedSummary {
+    $feed = $script:LiveRcodeFeedFull
+    if (-not $feed -or $feed.Count -eq 0) {
+        return [ordered]@{ consentite = 0; bloccate = 0; pct_bloccate = 0; dalle = $null; totale = 0 }
+    }
+    $bloccate = 0
+    foreach ($f in $feed) {
+        if ($f.resolver -like "*Scudo RPZ*") { $bloccate++ }
+    }
+    $totale = $feed.Count
+    $consentite = $totale - $bloccate
+    $pctBloccate = if ($totale -gt 0) { [math]::Round(($bloccate / $totale) * 100, 1) } else { 0 }
+    return [ordered]@{
+        consentite   = $consentite
+        bloccate     = $bloccate
+        pct_bloccate = $pctBloccate
+        dalle        = $feed[0].orario
+        totale       = $totale
+    }
 }
 
 # === UPSTREAM RADAR (DOT PORTA 853) ===
@@ -1551,6 +1606,7 @@ function Get-BunkerStatusJson {
     $engineOn    = Get-EngineStatus
     $stats       = Get-LiveStats
     $liveRcode   = Get-LiveRcodeFeed
+    $liveFeedSummary = Get-LiveFeedSummary
     $trafficAnomalie = Update-AnomalyTracking -liveRcode $liveRcode
     $radar       = Get-UpstreamRadar
     $rootRadar   = Get-RootServersRadar
@@ -1669,6 +1725,7 @@ function Get-BunkerStatusJson {
         anomalie_traffico = $trafficAnomalie
         unbound_restart_log = $script:UnboundRestartLog
         live_rcode_feed  = $liveRcode
+        live_feed_summary = $liveFeedSummary
         upstream_radar   = $radar
         root_radar       = $rootRadar
         dns_fallback_log = $dnsFallback
@@ -1725,7 +1782,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1060.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2101,6 +2158,13 @@ $HtmlPage = @'
   .ver-status-ok { color: var(--green-bright); font-size: 0.75em; font-weight: bold; }
   .ver-status-warn { color: var(--amber-bright); font-size: 0.75em; font-weight: bold; }
 
+  /* Pannello "Versioni Componenti" a griglia 2x2 (2 colonne, 2 righe), stesso pattern
+     del pannello di connettivita' IP: ogni .stat-ver e' una card autonoma che occupa
+     una cella intera, cosi' su schermi stretti le 4 righe restano incolonnate 2+2
+     invece di andare a capo in una singola riga lunga. */
+  #statsVersioni { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #statsVersioni .stat-ver { flex-wrap: wrap; }
+
   .winupdate-tasks-row { display: flex; gap: 18px; margin-bottom: 12px; align-items: stretch; flex-wrap: wrap; }
   .winupdate-tasks-row > .panel-versioni { margin-bottom: 0; flex-direction: column; align-items: flex-start; }
   .winupdate-third { flex: 1 1 220px; }
@@ -2203,6 +2267,7 @@ $HtmlPage = @'
   .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   @keyframes liveLogEntra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .live-log-line.nuova { animation: liveLogEntra 0.4s ease; }
+  .live-log-subtitle { font-size: 0.78em; color: var(--text-secondary,#999); margin: -4px 0 8px 0; }
 
   .storico-grid { display: flex; gap: 18px; flex-wrap: wrap; }
   .storico-chart-box { flex: 1; min-width: 260px; }
@@ -2219,7 +2284,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1060.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2358,6 +2423,7 @@ $HtmlPage = @'
 
   <div class="panel live-log-panel">
     <h2>&#128225; Attivit&agrave; Live</h2>
+    <div id="liveLogSummary" class="live-log-subtitle">In attesa di dati...</div>
     <div id="liveLogFeed" class="live-log-feed"></div>
   </div>
 </div>
@@ -2952,6 +3018,20 @@ function renderLiveLogFeed(d) {
   cont.scrollTop = cont.scrollHeight;
 }
 
+function renderLiveLogSummary(d) {
+  const el = document.getElementById('liveLogSummary');
+  if (!el) return;
+  const s = d.live_feed_summary;
+  if (!s || s.totale === 0) {
+    el.innerHTML = 'In attesa di dati...';
+    return;
+  }
+  const rangeTxt = s.dalle ? `dalle ${s.dalle}` : '';
+  el.innerHTML = `<span style="color:var(--green-bright);">${fmt(s.consentite)} consentite</span>` +
+    ` &middot; <span style="color:var(--red-bright);">${fmt(s.bloccate)} bloccate (${s.pct_bloccate.toLocaleString('it-IT')}%)</span>` +
+    (rangeTxt ? ` <span class="muted">(${rangeTxt})</span>` : '');
+}
+
 function filtraLiveRcode() {
   const input = document.getElementById('inputRicercaRcode');
   if (!input) return;
@@ -3249,31 +3329,31 @@ async function refresh(forceVersions) {
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_lan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv4 Lan</span>
-        <span class="${ipc.ipv4_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold; display:inline-block; min-width:64px;">Ipv4 Lan</span>
+        <span style="display:inline-block; min-width:58px;" class="${ipc.ipv4_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
         <span style="color:var(--dim); font-weight:bold;">:</span>
         <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_lan || 'N/D'}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_wan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv4 WAN</span>
-        <span class="${ipc.ipv4_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold; display:inline-block; min-width:64px;">Ipv4 WAN</span>
+        <span style="display:inline-block; min-width:58px;" class="${ipc.ipv4_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv4_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
         <span style="color:var(--dim); font-weight:bold;">:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_wan || 'N/D'}</span>${locV4Str}
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv4_wan || 'N/D'}${locV4Str}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_lan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv6 Lan</span>
-        <span class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold; display:inline-block; min-width:64px;">Ipv6 Lan</span>
+        <span style="display:inline-block; min-width:58px;" class="${ipc.ipv6_lan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_lan_ok ? 'ONLINE' : 'OFFLINE'}</span>
         <span style="color:var(--dim); font-weight:bold;">:</span>
         <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_lan || 'N/D'}</span>
       </div>
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv6_wan_ok ? 'ok' : 'bad'}"></span></div>
-        <span style="color:var(--dim); font-weight:bold;">Ipv6 WAN</span>
-        <span class="${ipc.ipv6_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
+        <span style="color:var(--dim); font-weight:bold; display:inline-block; min-width:64px;">Ipv6 WAN</span>
+        <span style="display:inline-block; min-width:58px;" class="${ipc.ipv6_wan_ok ? 'ver-status-ok' : 'esito-warn'}">${ipc.ipv6_wan_ok ? 'ONLINE' : 'OFFLINE'}</span>
         <span style="color:var(--dim); font-weight:bold;">:</span>
-        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}</span>${locV6Str}
+        <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}${locV6Str}</span>
       </div>
     `;
 
@@ -3296,6 +3376,12 @@ async function refresh(forceVersions) {
         <span style="color:#ffffff; font-weight:bold;">${v.conf_local || 'N/D'}</span>
         <span class="muted" style="font-size:0.8em;">(Cloud: v${v.conf_cloud || 'N/D'})</span>
         ${getVerBadge(v.conf_local, v.conf_cloud)}
+      </div>
+      <div class="stat-ver">
+        <span style="color:var(--dim); font-weight:bold;">&#128421;&#65039; Dashboard:</span>
+        <span style="color:#ffffff; font-weight:bold;">v${v.dash_local || 'N/D'}</span>
+        <span class="muted" style="font-size:0.8em;">(Cloud: v${v.dash_cloud || 'N/D'})</span>
+        ${getVerBadge(v.dash_local, v.dash_cloud)}
       </div>
     `;
 
@@ -3867,6 +3953,7 @@ async function refresh(forceVersions) {
     renderWinUpdate(d);
     renderPeriodicTasks(d);
     renderLiveLogFeed(d);
+    renderLiveLogSummary(d);
 
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
