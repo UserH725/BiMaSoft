@@ -634,57 +634,80 @@ $script:RadarCacheData = @()
 function Get-UpstreamRadar {
     if (((Get-Date) - $script:RadarCacheTime).TotalSeconds -ge 8 -or $script:RadarCacheData.Count -eq 0) {
         $radar = New-Object System.Collections.Generic.List[psobject]
+        $readFailed = $false
         if (Test-Path $SvcConf) {
             try {
-                $lines = Get-Content -LiteralPath $SvcConf -ErrorAction SilentlyContinue
+                $lines = Get-Content -LiteralPath $SvcConf -ErrorAction Stop
                 $lastResolverName = ""
 
                 foreach ($ln in $lines) {
-                    $trimmed = $ln.Trim()
+                    # [FIX] try/catch per singola riga: un errore isolato (es. lettura di
+                    # service.conf in collisione con una scrittura concorrente sul file) non
+                    # deve piu' interrompere il parsing delle righe forward-addr successive,
+                    # altrimenti i resolver dopo il punto di errore sparivano dal radar invece
+                    # di comparire come IRRAGGIUNGIBILE.
+                    try {
+                        $trimmed = $ln.Trim()
 
-                    if ($trimmed -match 'NOME RESOLVER:\s*(.*)') {
-                        $lastResolverName = $matches[1].Trim()
-                    }
-                    elseif ($trimmed.StartsWith('#') -and $trimmed -notmatch 'NOME RESOLVER:') {
-                        $lastResolverName = ""
-                    }
-                    elseif ($trimmed -match 'forward-addr:\s*(\S+?)@(\d+)(?:#(\S+))?') {
-                        $ip   = $matches[1]
-                        $port = [int]$matches[2]
-                        $sni  = $matches[3]
+                        if ($trimmed -match 'NOME RESOLVER:\s*(.*)') {
+                            $lastResolverName = $matches[1].Trim()
+                        }
+                        elseif ($trimmed.StartsWith('#') -and $trimmed -notmatch 'NOME RESOLVER:') {
+                            $lastResolverName = ""
+                        }
+                        elseif ($trimmed -match 'forward-addr:\s*(\S+?)@(\d+)(?:#(\S+))?') {
+                            $ip   = $matches[1]
+                            $port = [int]$matches[2]
+                            $sni  = $matches[3]
 
-                        $tagName = if ($lastResolverName) { $lastResolverName } elseif ($sni) { $sni } else { "Upstream" }
+                            $tagName = if ($lastResolverName) { $lastResolverName } elseif ($sni) { $sni } else { "Upstream" }
 
-                        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-                        $ok = $false
-                        try {
-                            $ipObj = [System.Net.IPAddress]::Parse($ip)
-                            $tcp   = New-Object System.Net.Sockets.TcpClient($ipObj.AddressFamily)
-                            $ar    = $tcp.BeginConnect($ipObj, $port, $null, $null)
-                            if ($ar.AsyncWaitHandle.WaitOne(400, $false)) {
-                                $tcp.EndConnect($ar)
-                                $ok = $tcp.Connected
-                            }
-                            $tcp.Close()
-                        } catch {}
-                        $sw.Stop()
-                        $ms = if ($ok) { $sw.ElapsedMilliseconds } else { 999 }
+                            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                            $ok = $false
+                            try {
+                                $ipObj = [System.Net.IPAddress]::Parse($ip)
+                                $tcp   = New-Object System.Net.Sockets.TcpClient($ipObj.AddressFamily)
+                                $ar    = $tcp.BeginConnect($ipObj, $port, $null, $null)
+                                if ($ar.AsyncWaitHandle.WaitOne(400, $false)) {
+                                    $tcp.EndConnect($ar)
+                                    $ok = $tcp.Connected
+                                }
+                                $tcp.Close()
+                            } catch {}
+                            $sw.Stop()
+                            $ms = if ($ok) { $sw.ElapsedMilliseconds } else { 999 }
 
-                        $radar.Add([pscustomobject]@{
-                            ip   = $ip
-                            tag  = $tagName
-                            port = $port
-                            ok   = $ok
-                            ms   = $ms
-                        })
-                    }
+                            $radar.Add([pscustomobject]@{
+                                ip   = $ip
+                                tag  = $tagName
+                                port = $port
+                                ok   = $ok
+                                ms   = $ms
+                            })
+                        }
+                    } catch {}
                 }
-            } catch {}
+            } catch {
+                # Lettura di service.conf fallita (es. file bloccato/in scrittura in quel momento).
+                $readFailed = $true
+            }
         }
-        
-        $sortedRadar = $radar | Sort-Object @{Expression={$_.ok}; Descending=$true}, @{Expression={$_.ms}; Ascending=$true}
-        $script:RadarCacheData = @($sortedRadar)
-        $script:RadarCacheTime = Get-Date
+
+        # [FIX] Se la lettura e' fallita, oppure il numero di resolver trovati in questo
+        # ciclo e' crollato rispetto all'ultima rilevazione valida (sintomo tipico di una
+        # lettura parziale causata da una scrittura concorrente su service.conf), mantengo
+        # la cache precedente invece di pubblicare un elenco incompleto: i resolver non
+        # devono sparire dalla dashboard, al massimo devono risultare IRRAGGIUNGIBILE.
+        # Il timestamp della cache NON viene aggiornato in questo caso, cosi' il prossimo
+        # ciclo di raccolta (1.5s dopo) riprova subito invece di aspettare 8s pieni.
+        $previousCount = $script:RadarCacheData.Count
+        if (($readFailed -or ($previousCount -gt 0 -and $radar.Count -lt $previousCount)) -and $previousCount -gt 0) {
+            Write-DashLog "Upstream Radar: lettura di service.conf incompleta o fallita in questo ciclo ($($radar.Count)/$previousCount resolver trovati), mantengo l'ultimo elenco valido."
+        } else {
+            $sortedRadar = $radar | Sort-Object @{Expression={$_.ok}; Descending=$true}, @{Expression={$_.ms}; Ascending=$true}
+            $script:RadarCacheData = @($sortedRadar)
+            $script:RadarCacheTime = Get-Date
+        }
     }
     return $script:RadarCacheData
 }
@@ -1782,7 +1805,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1070.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2227,6 +2250,7 @@ $HtmlPage = @'
     padding: 3px 8px !important;
     font-size: 0.82em !important;
     line-height: 1.25 !important;
+    white-space: nowrap !important;
   }
   
   details { margin-top:6px; }
@@ -2284,7 +2308,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1070.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2491,7 +2515,7 @@ $HtmlPage = @'
 </div>
 
 <div class="grid-three-columns">
-  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column;">
+  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column; flex: 0.85;">
     <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
     <div style="display: flex; flex-direction: column; gap: 20px;">
       <div>
@@ -2517,9 +2541,9 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom: 0;">
+  <div class="panel" style="margin-bottom: 0; flex: 1.15;">
     <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-    <div>
+    <div style="overflow-x:auto;">
       <table id="tabellaRadar">
         <thead>
           <tr>
@@ -2537,9 +2561,9 @@ $HtmlPage = @'
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom: 0;">
+  <div class="panel" style="margin-bottom: 0; flex: 1.15;">
     <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
-    <div>
+    <div style="overflow-x:auto;">
       <table id="tabellaRootRadar">
         <thead>
           <tr>
@@ -2736,6 +2760,19 @@ function getVerBadge(loc, cld) {
   if (!cld || cld === 'N/D') return '<span class="ver-status-ok">&#9679; Off</span>';
   if (loc === cld || loc === ('v' + cld) || ('v' + loc) === cld) return '<span class="ver-status-ok">&#10004; OK</span>';
   return '<span class="ver-status-warn">&#9888; v' + cld + '</span>';
+}
+
+// Interpola dal verde brillante (--green-bright, 1o posto) all'arancione
+// (--orange-bright, ultimo posto) in base alla posizione in classifica.
+// Usato per l'Upstream Radar: sostituisce il badge testuale "TOP N" (che
+// andava a capo con nomi resolver lunghi) con un'evidenziazione a colpo
+// d'occhio su tutte le righe, aggiornata ad ogni ciclo di test.
+function rankColor(index, total) {
+  const from = [61, 220, 132];   // --green-bright #3ddc84
+  const to   = [255, 140, 26];   // --orange-bright #ff8c1a
+  const ratio = total > 1 ? index / (total - 1) : 0;
+  const rgb = from.map((c, i) => Math.round(c + (to[i] - c) * ratio));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
 function updateGradientBar(id, pct) {
@@ -3860,18 +3897,16 @@ async function refresh(forceVersions) {
     } else {
       radar.forEach((r, index) => {
         const tr = document.createElement('tr');
-        let tagHtml = r.tag || '-';
-        if (r.ok && index < 3) {
-          tr.style.background = 'rgba(61, 220, 132, 0.20)';
-          tr.style.borderLeft = '4px solid var(--green-bright)';
-          tagHtml += ` <span style="background:var(--green-bright); color:#0b0f14; font-size:0.75em; font-weight:bold; padding:2px 6px; border-radius:4px; margin-left:6px;">TOP ${index + 1}</span>`;
-        }
+        const tagHtml = r.tag || '-';
+        const rc = r.ok ? rankColor(index, radar.length) : 'rgb(255, 92, 92)'; // --red-bright se irraggiungibile
+        tr.style.background = `rgba(${rc.match(/\d+/g).join(', ')}, 0.20)`;
+        tr.style.borderLeft = `4px solid ${rc}`;
 
         const stIcon = `<div class="status-dot-container"><span class="status-dot ${r.ok ? 'ok' : 'bad'}"></span></div>`;
         const stText = r.ok ? '<span class="esito-ok">PORTA 853 OK</span>' : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
         const msText = r.ok ? r.ms + ' ms' : 'TIMEOUT';
 
-        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="${r.ok && index < 3 ? 'color:var(--green-bright); font-weight:bold;' : ''}">${msText}</td><td>${stText}</td>`;
+        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="color:${rc}; font-weight:bold;">${msText}</td><td>${stText}</td>`;
         tbodyRadar.appendChild(tr);
       });
     }
@@ -3885,12 +3920,15 @@ async function refresh(forceVersions) {
       if (rootRadar.length === 0) {
         tbodyRoot.innerHTML = '<tr><td colspan="5" class="muted">Nessun dato Root Server disponibile</td></tr>';
       } else {
-        rootRadar.forEach(r => {
+        rootRadar.forEach((r, index) => {
           const tr = document.createElement('tr');
+          const rc = r.ok ? rankColor(index, rootRadar.length) : 'rgb(255, 92, 92)'; // --red-bright se irraggiungibile
+          tr.style.background = `rgba(${rc.match(/\d+/g).join(', ')}, 0.20)`;
+          tr.style.borderLeft = `4px solid ${rc}`;
+
           const stIcon = `<div class="status-dot-container"><span class="status-dot ${r.ok ? 'ok' : 'bad'}"></span></div>`;
-          let latClass = r.ms < 40 ? 'color: var(--green-bright);' : (r.ms < 100 ? 'color: var(--amber-bright);' : 'color: var(--red-bright);');
-          const msText = r.ok ? `<span style="font-weight:bold; ${latClass}">${r.ms} ms</span>` : '<span class="esito-warn">TIMEOUT</span>';
-          
+          const msText = r.ok ? `<span style="font-weight:bold; color:${rc};">${r.ms} ms</span>` : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
+
           tr.innerHTML = `
             <td>${stIcon}</td>
             <td style="font-weight:bold; color: var(--accent);">${r.tag || '-'}</td>
