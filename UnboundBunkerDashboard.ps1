@@ -60,6 +60,70 @@ function Get-SafeLogLines {
         [int]$Tail = 0
     )
     if (-not [System.IO.File]::Exists($Path)) { return @() }
+
+    # [FIX PERFORMANCE] Quando serve solo la coda (Tail > 0), NON si legge piu'
+    # l'intero file: con R:\unbound.log che puo' crescere a centinaia di migliaia
+    # di righe prima dello svuotamento biorario, la vecchia implementazione
+    # (ReadLine in loop dall'inizio) rendeva questa funzione via via piu' lenta
+    # nel corso delle 2 ore, essendo richiamata ogni 2s da Get-RpzLogTailCached.
+    # Ora si legge a blocchi dalla FINE del file (seek all'indietro) finche' non
+    # si sono raccolte almeno $Tail righe: costo proporzionale a $Tail, non alla
+    # dimensione del file.
+    if ($Tail -gt 0) {
+        try {
+            $fs = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $fileLen = $fs.Length
+            if ($fileLen -eq 0) { $fs.Close(); return @() }
+
+            $chunkSize  = 65536
+            $pos        = $fileLen
+            $newlineCnt = 0
+            $collected  = New-Object System.Collections.Generic.List[byte[]]
+
+            while ($pos -gt 0 -and $newlineCnt -le $Tail) {
+                $readSize = [Math]::Min($chunkSize, $pos)
+                $pos -= $readSize
+                [void]$fs.Seek($pos, [System.IO.SeekOrigin]::Begin)
+                $chunk = New-Object byte[] $readSize
+                $off = 0
+                while ($off -lt $readSize) {
+                    $n = $fs.Read($chunk, $off, $readSize - $off)
+                    if ($n -le 0) { break }
+                    $off += $n
+                }
+                for ($i = 0; $i -lt $readSize; $i++) {
+                    if ($chunk[$i] -eq 10) { $newlineCnt++ }
+                }
+                $collected.Insert(0, $chunk)
+            }
+            $fs.Close()
+
+            $totalBytes = 0
+            foreach ($c in $collected) { $totalBytes += $c.Length }
+            $merged = New-Object byte[] $totalBytes
+            $wpos = 0
+            foreach ($c in $collected) { [System.Buffer]::BlockCopy($c, 0, $merged, $wpos, $c.Length); $wpos += $c.Length }
+
+            $text = [System.Text.Encoding]::UTF8.GetString($merged)
+            $allLines = $text -split "`n" | ForEach-Object { $_.TrimEnd("`r") }
+            if ($allLines.Count -gt 0 -and $allLines[-1] -eq '' ) { $allLines = $allLines[0..([Math]::Max(0,$allLines.Count - 2))] }
+            if ($pos -gt 0 -and $allLines.Count -gt 0) {
+                # Il primo blocco letto puo' iniziare a meta' di una riga (il seek
+                # non e' allineato a un newline): scarto la prima riga incompleta,
+                # a meno di trovarci gia' all'inizio del file (pos = 0).
+                $allLines = $allLines[1..($allLines.Count - 1)]
+            }
+            if ($allLines.Count -gt $Tail) {
+                return $allLines[($allLines.Count - $Tail)..($allLines.Count - 1)]
+            }
+            return $allLines
+        } catch {
+            return @()
+        }
+    }
+
+    # Percorso invariato: lettura completa del file (usata solo quando serve
+    # davvero tutto il contenuto e non e' disponibile una via incrementale).
     try {
         $fs = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
@@ -69,9 +133,6 @@ function Get-SafeLogLines {
         }
         $sr.Close()
         $fs.Close()
-        if ($Tail -gt 0 -and $lines.Count -gt $Tail) {
-            return $lines.GetRange($lines.Count - $Tail, $Tail)
-        }
         return $lines
     } catch {
         return @()
@@ -831,33 +892,109 @@ $script:RpzBreakdownCache       = $null
 $script:RpzBreakdownCacheTime   = [DateTime]::MinValue
 $script:RpzBreakdownCacheTtlSec = 15
 
+# [FIX PERFORMANCE] Stato incrementale: invece di rileggere l'intero
+# R:\unbound.log e riscansionarlo 10 volte (una per lista RPZ) ogni 15s, si
+# tiene un cursore (Offset) sull'ultimo byte gia' processato e un accumulatore
+# persistente dei conteggi per dominio/lista. Ad ogni ciclo si leggono e si
+# processano SOLO i byte aggiunti dall'ultima volta. "Pending" conserva
+# l'eventuale riga finale incompleta (file ancora in scrittura da Unbound) per
+# prependerla al prossimo giro. Quando il file risulta piu' corto
+# dell'Offset salvato (svuotamento biorario via SetLength(0), o riavvio
+# Unbound/Dashboard), si azzera tutto e si riparte da zero — stesso
+# comportamento di prima, che dopo un troncamento ripartiva naturalmente da 0.
+$script:RpzIncrementalState = $null
+
 function Get-RpzBreakdown {
     if ($script:RpzBreakdownCache -and ((Get-Date) - $script:RpzBreakdownCacheTime).TotalSeconds -lt $script:RpzBreakdownCacheTtlSec) {
         return $script:RpzBreakdownCache
     }
 
+    if (-not $script:RpzIncrementalState) {
+        $tagPattern = ($RpzListe | ForEach-Object { [regex]::Escape($_.Tag) }) -join '|'
+        $counts = @{}
+        foreach ($lista in $RpzListe) { $counts[$lista.Tag] = @{} }
+        $script:RpzIncrementalState = @{
+            Offset  = [int64]0
+            Pending = ''
+            Counts  = $counts
+            Regex   = [regex]("\[($tagPattern)\]\s+(?:.*?\s+)?(\S+)\s+rpz-nxdomain")
+        }
+    }
+    $state = $script:RpzIncrementalState
+
+    try {
+        if ([System.IO.File]::Exists($RpzLog)) {
+            $curLen = (New-Object System.IO.FileInfo($RpzLog)).Length
+
+            if ($curLen -lt $state.Offset) {
+                $state.Offset  = [int64]0
+                $state.Pending = ''
+                foreach ($lista in $RpzListe) { $state.Counts[$lista.Tag] = @{} }
+            }
+
+            if ($curLen -gt $state.Offset) {
+                $fs = New-Object System.IO.FileStream($RpzLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                [void]$fs.Seek($state.Offset, [System.IO.SeekOrigin]::Begin)
+                $toRead = [int]($curLen - $state.Offset)
+                $chunk = New-Object byte[] $toRead
+                $readTotal = 0
+                while ($readTotal -lt $toRead) {
+                    $n = $fs.Read($chunk, $readTotal, $toRead - $readTotal)
+                    if ($n -le 0) { break }
+                    $readTotal += $n
+                }
+                $fs.Close()
+
+                $text = $state.Pending + [System.Text.Encoding]::UTF8.GetString($chunk, 0, $readTotal)
+                $state.Offset = $curLen
+
+                $lastNl = $text.LastIndexOf("`n")
+                if ($lastNl -ge 0) {
+                    $state.Pending = $text.Substring($lastNl + 1)
+                    $completeText  = $text.Substring(0, $lastNl)
+                } else {
+                    $state.Pending = $text
+                    $completeText  = ''
+                }
+
+                if ($completeText) {
+                    foreach ($ln in ($completeText -split "`n")) {
+                        $mm = $state.Regex.Match($ln)
+                        if ($mm.Success) {
+                            $tag = $mm.Groups[1].Value
+                            $dn  = $mm.Groups[2].Value.TrimEnd('.')
+                            $bucket = $state.Counts[$tag]
+                            if ($bucket) {
+                                if ($bucket.ContainsKey($dn)) { $bucket[$dn]++ } else { $bucket[$dn] = 1 }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            $state.Offset  = [int64]0
+            $state.Pending = ''
+            foreach ($lista in $RpzListe) { $state.Counts[$lista.Tag] = @{} }
+        }
+    } catch {
+        Write-DashLog "Errore lettura incrementale RPZ log: $($_.Exception.Message)"
+    }
+
     $liste = @()
     $blkTotale = 0
-    $rpzLines = Get-SafeLogLines -Path $RpzLog
     foreach ($lista in $RpzListe) {
+        $bucket = $state.Counts[$lista.Tag]
         $domini = @()
         $conteggioLista = 0
-        if ($rpzLines -and $rpzLines.Count -gt 0) {
-            $rx = [regex]("\[" + [regex]::Escape($lista.Tag) + "\]\s+(?:.*?\s+)?(\S+)\s+rpz-nxdomain")
-            $matchDomini = foreach ($ln in $rpzLines) {
-                $mm = $rx.Match($ln)
-                if ($mm.Success) { $mm.Groups[1].Value.TrimEnd('.') }
-            }
-            if ($matchDomini) {
-                $grp = $matchDomini | Group-Object | Sort-Object Count -Descending
-                foreach ($g in $grp) {
-                    $dn = $g.Name
-                    $wildcard = $false
-                    if ($dn.StartsWith("*.")) { $dn = $dn.Substring(2); $wildcard = $true }
-                    $dn = $dn -replace '[*_\[\]`]', ''
-                    $domini += @{ dominio = $dn; wildcard = $wildcard; conteggio = $g.Count }
-                    $conteggioLista += $g.Count
-                }
+        if ($bucket -and $bucket.Count -gt 0) {
+            $grp = $bucket.GetEnumerator() | Sort-Object Value -Descending
+            foreach ($g in $grp) {
+                $dn = $g.Key
+                $wildcard = $false
+                if ($dn.StartsWith("*.")) { $dn = $dn.Substring(2); $wildcard = $true }
+                $dn = $dn -replace '[*_\[\]`]', ''
+                $domini += @{ dominio = $dn; wildcard = $wildcard; conteggio = $g.Value }
+                $conteggioLista += $g.Value
             }
         }
         $liste += @{ tag = $lista.Tag; nome = $lista.Nome; emoji = $lista.Emoji; conteggio = $conteggioLista; domini = $domini }
@@ -1805,7 +1942,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1070.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1072.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2308,7 +2445,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1070.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1072.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
