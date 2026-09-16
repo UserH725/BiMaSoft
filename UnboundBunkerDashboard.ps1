@@ -587,7 +587,11 @@ $script:LogTailCacheTtlSec = 2
 
 function Get-RpzLogTailCached {
     if (((Get-Date) - $script:LogTailCacheTime).TotalSeconds -ge $script:LogTailCacheTtlSec -or $script:LogTailCacheLines.Count -eq 0) {
-        $script:LogTailCacheLines = Get-SafeLogLines -Path $RpzLog -Tail 1000
+        # [NOTA] 1500 e non 1000: non ogni riga grezza del log e' un evento
+        # (alcune sono solo segnalazioni di cambio upstream, "sending query to"),
+        # quindi per garantire con margine fino a 1000 eventi utili nel feed
+        # serve leggere qualche riga grezza in piu' della soglia finale.
+        $script:LogTailCacheLines = Get-SafeLogLines -Path $RpzLog -Tail 1500
         $script:LogTailCacheTime  = Get-Date
     }
     return $script:LogTailCacheLines
@@ -647,26 +651,83 @@ function Get-LiveRcodeFeed {
     }
     if ($feed.Count -gt 0) {
         $script:LiveRcodeFeedFull = $feed
-        # Restituisce gli ultimi 300 eventi mantenendo l'ORDINE CRONOLOGICO CRESCENTE
-        return ($feed | Select-Object -Last 300)
+        # Restituisce gli ultimi 1000 eventi mantenendo l'ORDINE CRONOLOGICO CRESCENTE
+        return ($feed | Select-Object -Last 1000)
     }
     $script:LiveRcodeFeedFull = @()
     return @()
 }
 
-# === RIEPILOGO CONSENTITE/BLOCCATE DAL FEED LIVE (stessa fonte del pannello Attivita Live) ===
-# A differenza di totale_sessione (bucket orari da session_history.json, aggiornati solo
-# ogni ~2h dal ciclo biorario del BAT), questo riepilogo conta esattamente gli eventi
-# presenti nel feed live sottostante (stessa finestra, stessa fonte R:\unbound.log),
-# cosi' i due numeri coincidono sempre con cio' che scorre nel pannello. Il rovescio della
-# medaglia: la finestra "reale" coperta dipende da quanto e' vecchio il log corrente (si
-# azzera agli stessi eventi di troncamento gia' noti - ciclo biorario, riavvio Unbound/
-# Dashboard), quindi si espone l'orario del dato piu' vecchio disponibile invece di
-# dichiarare una finestra fissa "ultime 24h" che non sarebbe vera.
+# === CONTATORI RUNNING "TOTALI" - DALL'ULTIMO AZZERAMENTO DEL LOG, NON DAL TAIL CACHE ===
+# Il feed sopra (Get-LiveRcodeFeed) e' volutamente una finestra limitata - tail cache da
+# 1000 righe grezze + cap a 300 eventi - per restare leggero ad ogni refresh e leggibile
+# in lista. "Totali" invece deve rispondere a una domanda diversa: quanti eventi sono
+# passati dall'ultima volta che R:\unbound.log e' stato svuotato (avvio/riavvio Unbound
+# o ciclo biorario del BAT)? Per non dover rileggere l'intero file ogni 1-2 secondi, si
+# tiene un puntatore di posizione byte persistente ($script:LiveFeedPos): ad ogni
+# chiamata si leggono SOLO i byte aggiunti dall'ultima volta (costo proporzionale al
+# traffico nuovo, non alla dimensione del file) e si sommano ai contatori cumulativi.
+# Se la lunghezza del file risulta minore della posizione salvata, il file e' stato
+# troncato (azzeramento) e si riparte da zero, registrando il nuovo orario di partenza.
+$script:LiveFeedPos         = 0
+$script:LiveFeedPendingLine = ""
+$script:LiveFeedConsentite  = 0
+$script:LiveFeedBloccate    = 0
+$script:LiveFeedSinceOrario = $null
+
 function Get-LiveFeedSummary {
-    $feed = $script:LiveRcodeFeedFull
-    if (-not $feed -or $feed.Count -eq 0) {
-        return [ordered]@{ 
+    if ([System.IO.File]::Exists($RpzLog)) {
+        try {
+            $fs  = New-Object System.IO.FileStream($RpzLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $len = $fs.Length
+
+            if ($len -lt $script:LiveFeedPos) {
+                # Troncamento rilevato (azzeramento biorario o riavvio Unbound/Dashboard): si riparte da zero.
+                $script:LiveFeedPos         = 0
+                $script:LiveFeedPendingLine = ""
+                $script:LiveFeedConsentite  = 0
+                $script:LiveFeedBloccate    = 0
+                $script:LiveFeedSinceOrario = $null
+            }
+
+            if ($len -gt $script:LiveFeedPos) {
+                $toRead = $len - $script:LiveFeedPos
+                [void]$fs.Seek($script:LiveFeedPos, [System.IO.SeekOrigin]::Begin)
+                $buf = New-Object byte[] $toRead
+                $off = 0
+                while ($off -lt $toRead) {
+                    $n = $fs.Read($buf, $off, $toRead - $off)
+                    if ($n -le 0) { break }
+                    $off += $n
+                }
+                $script:LiveFeedPos += $off
+
+                $text  = $script:LiveFeedPendingLine + [System.Text.Encoding]::UTF8.GetString($buf, 0, $off)
+                $parts = $text -split "`n"
+                # L'ultima porzione puo' essere una riga non ancora completa (senza newline
+                # finale): si tiene da parte per il prossimo giro, senza contarla adesso.
+                $script:LiveFeedPendingLine = $parts[-1]
+                if ($parts.Count -gt 1) {
+                    foreach ($ln0 in $parts[0..($parts.Count - 2)]) {
+                        $ln = $ln0.TrimEnd("`r")
+                        if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
+                            if (-not $script:LiveFeedSinceOrario) { $script:LiveFeedSinceOrario = $matches[1] }
+                            $script:LiveFeedConsentite++
+                        }
+                        elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
+                            if (-not $script:LiveFeedSinceOrario) { $script:LiveFeedSinceOrario = $matches[1] }
+                            $script:LiveFeedBloccate++
+                        }
+                    }
+                }
+            }
+            $fs.Close()
+        } catch {}
+    }
+
+    $totale = $script:LiveFeedConsentite + $script:LiveFeedBloccate
+    if ($totale -eq 0) {
+        return [ordered]@{
             totale         = 0
             consentite     = 0
             pct_consentite = 0
@@ -675,25 +736,17 @@ function Get-LiveFeedSummary {
             dalle          = $null
         }
     }
-    
-    $bloccate = 0
-    foreach ($f in $feed) {
-        if ($f.resolver -like "*Scudo RPZ*") { $bloccate++ }
-    }
-    
-    $totale = $feed.Count
-    $consentite = $totale - $bloccate
-    
-    $pctConsentite = if ($totale -gt 0) { [math]::Round(($consentite / $totale) * 100, 1) } else { 0 }
-    $pctBloccate   = if ($totale -gt 0) { [math]::Round(($bloccate / $totale) * 100, 1) } else { 0 }
-    
+
+    $pctConsentite = [math]::Round(($script:LiveFeedConsentite / $totale) * 100, 1)
+    $pctBloccate   = [math]::Round(($script:LiveFeedBloccate   / $totale) * 100, 1)
+
     return [ordered]@{
         totale         = $totale
-        consentite     = $consentite
+        consentite     = $script:LiveFeedConsentite
         pct_consentite = $pctConsentite
-        bloccate       = $bloccate
+        bloccate       = $script:LiveFeedBloccate
         pct_bloccate   = $pctBloccate
-        dalle          = $feed[0].orario
+        dalle          = $script:LiveFeedSinceOrario
     }
 }
 
@@ -1951,7 +2004,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1075.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1080.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2454,7 +2507,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1075.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1080.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2592,7 +2645,7 @@ $HtmlPage = @'
   </div>
 
   <div class="panel live-log-panel">
-    <h2>&#128225; Attivit&agrave; Live</h2>
+    <h2>&#128225; Attivit&agrave; Live - ultimi 1.000 eventi</h2>
     <div id="liveLogSummary" class="live-log-subtitle">In attesa di dati...</div>
     <div id="liveLogFeed" class="live-log-feed"></div>
   </div>
@@ -3173,17 +3226,11 @@ function renderLiveLogFeed(d) {
     return;
   }
 
-  // Prende gli ultimi 150 elementi nell'ordine nativo (dal meno recente al piu recente)
-  const voci = feed.slice(-150);
-  const totaleEventi = voci.length;
-  // Larghezza fissa della colonna per l'allineamento dei numeri a destra
-  const maxDigits = String(totaleEventi).length;
+  // Prende gli ultimi 1000 elementi nell'ordine nativo (dal meno recente al piu recente)
+  // Stesso cap del server (Select-Object -Last 1000 in Get-LiveRcodeFeed).
+  const voci = feed.slice(-1000);
 
-  const righe = voci.map((f, idx) => {
-    // Numerazione progressiva crescente: 1 alla prima riga (meno recente), N all'ultima (piu recente)
-    const num = idx + 1; 
-    const numPadded = String(num).padStart(maxDigits, '\u00A0'); 
-
+  const righe = voci.map((f) => {
     const code = (f.rcode || '').toUpperCase();
     let colore = 'var(--dim)';
     if (code === 'NOERROR') colore = 'var(--green-bright)';
@@ -3193,7 +3240,6 @@ function renderLiveLogFeed(d) {
     const dominio = (f.dominio || '-').length > 120 ? (f.dominio.slice(0, 120) + '\u2026') : (f.dominio || '-');
     
     return `<div class="live-log-line">` +
-      `<span class="muted" style="display:inline-block; min-width:${maxDigits + 1}ch; text-align:right; margin-right:8px;">${numPadded}.</span>` +
       `<span class="muted">${f.orario || '--:--:--'}</span> ` +
       `<span style="color:${colore};">${dominio}</span>` +
       `</div>`;
