@@ -1232,7 +1232,7 @@ function Get-RpzFreshness {
                 $stato.ore_fa     = $oreFa
                 $unitaEta = @()
                 if ($anniRes -gt 0) { $unitaEta += "${anniRes}a" }
-                if ($giorniRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$giorniRes gg" }
+                if ($giorniRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$giorniRes g" }
                 if ($oreRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$oreRes ore" }
                 if ($minRes -gt 0 -or $unitaEta.Count -gt 0) { $unitaEta += "$minRes min" }
                 $unitaEta += ("{0:D2}" -f $secRes) + " sec"
@@ -1942,7 +1942,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1072.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1073.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2445,7 +2445,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1072.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1073.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
