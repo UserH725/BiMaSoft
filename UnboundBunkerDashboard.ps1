@@ -647,12 +647,8 @@ function Get-LiveRcodeFeed {
     }
     if ($feed.Count -gt 0) {
         $script:LiveRcodeFeedFull = $feed
-        $lastFeed = $feed | Select-Object -Last 300
-        $reversed = @()
-        for ($i = $lastFeed.Count - 1; $i -ge 0; $i--) {
-            $reversed += $lastFeed[$i]
-        }
-        return $reversed
+        # Restituisce gli ultimi 300 eventi mantenendo l'ORDINE CRONOLOGICO CRESCENTE
+        return ($feed | Select-Object -Last 300)
     }
     $script:LiveRcodeFeedFull = @()
     return @()
@@ -670,21 +666,34 @@ function Get-LiveRcodeFeed {
 function Get-LiveFeedSummary {
     $feed = $script:LiveRcodeFeedFull
     if (-not $feed -or $feed.Count -eq 0) {
-        return [ordered]@{ consentite = 0; bloccate = 0; pct_bloccate = 0; dalle = $null; totale = 0 }
+        return [ordered]@{ 
+            totale         = 0
+            consentite     = 0
+            pct_consentite = 0
+            bloccate       = 0
+            pct_bloccate   = 0
+            dalle          = $null
+        }
     }
+    
     $bloccate = 0
     foreach ($f in $feed) {
         if ($f.resolver -like "*Scudo RPZ*") { $bloccate++ }
     }
+    
     $totale = $feed.Count
     $consentite = $totale - $bloccate
-    $pctBloccate = if ($totale -gt 0) { [math]::Round(($bloccate / $totale) * 100, 1) } else { 0 }
+    
+    $pctConsentite = if ($totale -gt 0) { [math]::Round(($consentite / $totale) * 100, 1) } else { 0 }
+    $pctBloccate   = if ($totale -gt 0) { [math]::Round(($bloccate / $totale) * 100, 1) } else { 0 }
+    
     return [ordered]@{
-        consentite   = $consentite
-        bloccate     = $bloccate
-        pct_bloccate = $pctBloccate
-        dalle        = $feed[0].orario
-        totale       = $totale
+        totale         = $totale
+        consentite     = $consentite
+        pct_consentite = $pctConsentite
+        bloccate       = $bloccate
+        pct_bloccate   = $pctBloccate
+        dalle          = $feed[0].orario
     }
 }
 
@@ -1942,7 +1951,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1073.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1075.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2445,7 +2454,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1073.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1075.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3160,35 +3169,38 @@ function renderLiveLogFeed(d) {
   if (!Array.isArray(feed)) { feed = [feed]; }
 
   if (feed.length === 0) {
-    if (liveLogSignature !== 'empty') {
-      cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
-      liveLogSignature = 'empty';
-      liveLogChiaviRese = [];
-    }
+    cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
     return;
   }
 
-  const voci = feed.slice(0, 150).slice().reverse();
-  const signature = voci.map(f => (f.orario || '') + '|' + (f.dominio || '')).join(';');
-  if (signature === liveLogSignature) return;
-
-  liveLogSignature = signature;
-  const eraVuoto = liveLogChiaviRese.length === 0;
-  const chiaviNuove = voci.map(f => (f.orario || '') + '|' + (f.dominio || ''));
+  // Prende gli ultimi 150 elementi nell'ordine nativo (dal meno recente al piu recente)
+  const voci = feed.slice(-150);
+  const totaleEventi = voci.length;
+  // Larghezza fissa della colonna per l'allineamento dei numeri a destra
+  const maxDigits = String(totaleEventi).length;
 
   const righe = voci.map((f, idx) => {
+    // Numerazione progressiva crescente: 1 alla prima riga (meno recente), N all'ultima (piu recente)
+    const num = idx + 1; 
+    const numPadded = String(num).padStart(maxDigits, '\u00A0'); 
+
     const code = (f.rcode || '').toUpperCase();
     let colore = 'var(--dim)';
     if (code === 'NOERROR') colore = 'var(--green-bright)';
     else if (code === 'NXDOMAIN') colore = 'var(--red-bright)';
     else if (code === 'SERVFAIL') colore = 'var(--amber-bright)';
+    
     const dominio = (f.dominio || '-').length > 120 ? (f.dominio.slice(0, 120) + '\u2026') : (f.dominio || '-');
-    const nuova = !eraVuoto && !liveLogChiaviRese.includes(chiaviNuove[idx]);
-    return `<div class="live-log-line${nuova ? ' nuova' : ''}"><span class="muted">${f.orario || '--:--:--'}</span> <span style="color:${colore};">${dominio}</span></div>`;
+    
+    return `<div class="live-log-line">` +
+      `<span class="muted" style="display:inline-block; min-width:${maxDigits + 1}ch; text-align:right; margin-right:8px;">${numPadded}.</span>` +
+      `<span class="muted">${f.orario || '--:--:--'}</span> ` +
+      `<span style="color:${colore};">${dominio}</span>` +
+      `</div>`;
   }).join('');
 
   cont.innerHTML = `<div class="live-log-track">${righe}</div>`;
-  liveLogChiaviRese = chiaviNuove;
+  // Mantiene lo scorrimento automatico focalizzato sul fondo (sull'ultimo evento registrato)
   cont.scrollTop = cont.scrollHeight;
 }
 
@@ -3200,10 +3212,16 @@ function renderLiveLogSummary(d) {
     el.innerHTML = 'In attesa di dati...';
     return;
   }
-  const rangeTxt = s.dalle ? `dalle ${s.dalle}` : '';
-  el.innerHTML = `<span style="color:var(--green-bright);">${fmt(s.consentite)} consentite</span>` +
-    ` &middot; <span style="color:var(--red-bright);">${fmt(s.bloccate)} bloccate (${s.pct_bloccate.toLocaleString('it-IT')}%)</span>` +
-    (rangeTxt ? ` <span class="muted">(${rangeTxt})</span>` : '');
+  
+  const rangeTxt = s.dalle ? ` &middot; (dalle ${s.dalle})` : '';
+  const pctCons = s.pct_consentite.toLocaleString('it-IT');
+  const pctBloc = s.pct_bloccate.toLocaleString('it-IT');
+
+  // Formato: Totali: 100 - 80 consentite (80%) · 20 bloccate (20%) · (dalle 00:16:13)
+  el.innerHTML = `Totali: <b>${fmt(s.totale)}</b> - ` +
+    `<span style="color:var(--green-bright);">${fmt(s.consentite)} consentite (${pctCons}%)</span> &middot; ` +
+    `<span style="color:var(--red-bright);">${fmt(s.bloccate)} bloccate (${pctBloc}%)</span>` +
+    `<span class="muted">${rangeTxt}</span>`;
 }
 
 function filtraLiveRcode() {
