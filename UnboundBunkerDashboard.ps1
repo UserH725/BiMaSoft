@@ -2004,7 +2004,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1080.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1081.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2488,6 +2488,7 @@ $HtmlPage = @'
     display: flex; flex-direction: column;
   }
   .live-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .live-log-num { display: inline-block; min-width: 5.5em; text-align: right; color: var(--text-secondary,#999); margin-right: 6px; }
   @keyframes liveLogEntra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .live-log-line.nuova { animation: liveLogEntra 0.4s ease; }
   .live-log-subtitle { font-size: 0.78em; color: var(--text-secondary,#999); margin: -4px 0 8px 0; }
@@ -2507,7 +2508,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1080.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1081.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3230,7 +3231,12 @@ function renderLiveLogFeed(d) {
   // Stesso cap del server (Select-Object -Last 1000 in Get-LiveRcodeFeed).
   const voci = feed.slice(-1000);
 
-  const righe = voci.map((f) => {
+  // Numero progressivo calcolato a ritroso dal totalizzatore corrente (s.totale),
+  // cosi' l'ultima riga in fondo corrisponde esattamente al totale mostrato sopra
+  // e le righe precedenti scalano di 1 in 1 risalendo la lista.
+  const totaleCorrente = (d.live_feed_summary && d.live_feed_summary.totale) || 0;
+
+  const righe = voci.map((f, idx) => {
     const code = (f.rcode || '').toUpperCase();
     let colore = 'var(--dim)';
     if (code === 'NOERROR') colore = 'var(--green-bright)';
@@ -3238,8 +3244,11 @@ function renderLiveLogFeed(d) {
     else if (code === 'SERVFAIL') colore = 'var(--amber-bright)';
     
     const dominio = (f.dominio || '-').length > 120 ? (f.dominio.slice(0, 120) + '\u2026') : (f.dominio || '-');
+    const numero = totaleCorrente - (voci.length - 1 - idx);
+    const numeroTxt = numero > 0 ? fmt(numero) + '.' : '-';
     
     return `<div class="live-log-line">` +
+      `<span class="live-log-num">${numeroTxt}</span>` +
       `<span class="muted">${f.orario || '--:--:--'}</span> ` +
       `<span style="color:${colore};">${dominio}</span>` +
       `</div>`;
