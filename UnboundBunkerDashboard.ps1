@@ -534,16 +534,18 @@ function Get-BunkerVersions {
         } catch {}
     }
 
-    # Dashboard: numero di versione gia' presente nell'intestazione HTML del file stesso
-    # ("... DASHBOARD LIVE Versione 1061.0 - by Mauro Bigoni"), tenuto aggiornato a mano
-    # da Mauro ad ogni modifica pubblicata sul repo - stessa logica di bat_local, letto
-    # dal file in esecuzione (cache indefinita: cambia solo dopo un self-update, che
-    # riavvia il processo).
+    # Dashboard: numero di versione gia' presente nel tag <title> HTML del file stesso
+    # (es. "<title>...DASHBOARD LIVE Ver. 1081.0 - by Mauro Bigoni</title>"), tenuto
+    # aggiornato a mano da Mauro ad ogni modifica pubblicata sul repo - stessa logica di
+    # bat_local, letto dal file in esecuzione (cache indefinita: cambia solo dopo un
+    # self-update, che riavvia il processo). Il match e' ancorato al tag <title> (non al
+    # solo testo "DASHBOARD LIVE Versione") per non confondersi con eventuali occorrenze
+    # della stessa frase altrove nel file, ad esempio in un commento.
     if (-not $script:DashboardLocalVerCache) {
         $dashPath = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
         if (Test-Path -LiteralPath $dashPath) {
             try {
-                $dashLine = Get-Content -LiteralPath $dashPath | Where-Object { $_ -match 'DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)' } | Select-Object -First 1
+                $dashLine = Get-Content -LiteralPath $dashPath | Where-Object { $_ -match '<title>.*DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)' } | Select-Object -First 1
                 if ($dashLine -match 'Versione\s+([0-9]+(?:\.[0-9]+)*)') { $script:DashboardLocalVerCache = $matches[1] }
             } catch {}
         }
@@ -563,7 +565,7 @@ function Get-BunkerVersions {
         try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_bat.txt' -UseBasicParsing -TimeoutSec 1).Content.Trim(); if($v){$script:CloudVersionsCache.bat_cloud = $v} } catch {}
         try {
             $dashCloudRaw = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 2).Content
-            if ($dashCloudRaw -match 'DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)') { $script:CloudVersionsCache.dash_cloud = $matches[1] }
+            if ($dashCloudRaw -match '<title>.*DASHBOARD LIVE Versione\s+([0-9]+(?:\.[0-9]+)*)') { $script:CloudVersionsCache.dash_cloud = $matches[1] }
         } catch {}
         $script:CloudVersionsCacheTime = Get-Date
     }
