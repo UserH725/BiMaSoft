@@ -676,6 +676,40 @@ $script:LiveFeedConsentite  = 0
 $script:LiveFeedBloccate    = 0
 $script:LiveFeedSinceOrario = $null
 
+# === CERBERO RUNTIME SESSION (persistenza dalla accensione PC) ===
+$script:RuntimeFile = Join-Path (Split-Path $RpzLog -Parent) "cerbero_runtime.json"
+$script:RuntimeConsentite = 0
+$script:RuntimeBloccate = 0
+$script:RuntimeAvvio = Get-Date
+$script:RuntimeLastSave = Get-Date
+
+function Load-CerberoRuntime {
+    try {
+        if (Test-Path $script:RuntimeFile) {
+            $r = Get-Content $script:RuntimeFile -Raw | ConvertFrom-Json
+            if ($r) {
+                $script:RuntimeConsentite = [int]$r.consentite
+                $script:RuntimeBloccate = [int]$r.bloccate
+                $script:RuntimeAvvio = [datetime]$r.avvio
+            }
+        }
+    } catch {}
+}
+
+function Save-CerberoRuntime {
+    try {
+        $obj = [ordered]@{
+            avvio = $script:RuntimeAvvio.ToString("yyyy-MM-ddTHH:mm:ss")
+            consentite = $script:RuntimeConsentite
+            bloccate = $script:RuntimeBloccate
+            ultimo_salvataggio = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        }
+        $obj | ConvertTo-Json | Set-Content -LiteralPath $script:RuntimeFile -Encoding UTF8
+    } catch {}
+}
+
+Load-CerberoRuntime
+
 function Get-LiveFeedSummary {
     if ([System.IO.File]::Exists($RpzLog)) {
         try {
@@ -714,10 +748,12 @@ function Get-LiveFeedSummary {
                         if ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
                             if (-not $script:LiveFeedSinceOrario) { $script:LiveFeedSinceOrario = $matches[1] }
                             $script:LiveFeedConsentite++
+                            $script:RuntimeConsentite++
                         }
                         elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                             if (-not $script:LiveFeedSinceOrario) { $script:LiveFeedSinceOrario = $matches[1] }
                             $script:LiveFeedBloccate++
+                            $script:RuntimeBloccate++
                         }
                     }
                 }
@@ -741,6 +777,11 @@ function Get-LiveFeedSummary {
     $pctConsentite = [math]::Round(($script:LiveFeedConsentite / $totale) * 100, 1)
     $pctBloccate   = [math]::Round(($script:LiveFeedBloccate   / $totale) * 100, 1)
 
+    if (((Get-Date) - $script:RuntimeLastSave).TotalSeconds -ge 30) {
+        Save-CerberoRuntime
+        $script:RuntimeLastSave = Get-Date
+    }
+
     return [ordered]@{
         totale         = $totale
         consentite     = $script:LiveFeedConsentite
@@ -748,6 +789,10 @@ function Get-LiveFeedSummary {
         bloccate       = $script:LiveFeedBloccate
         pct_bloccate   = $pctBloccate
         dalle          = $script:LiveFeedSinceOrario
+        runtime_totale = $script:RuntimeConsentite + $script:RuntimeBloccate
+        runtime_consentite = $script:RuntimeConsentite
+        runtime_bloccate = $script:RuntimeBloccate
+        runtime_avvio = $script:RuntimeAvvio.ToString("o")
     }
 }
 
@@ -2783,6 +2828,11 @@ $HtmlPage = @'
   </div>
 </div>
 
+<div class="panel" id="cerberoRuntimePanel">
+  <h2>&#128737;&#65039; Cerbero - Sessione PC (dall'accensione)</h2>
+  <div id="cerberoRuntimeStats" class="stat-grid"></div>
+</div>
+
 <div class="panel">
   <h2>&#128200; Andamento Storico (dall'ultimo avvio, 1 campione/minuto)</h2>
   <div class="storico-grid">
@@ -3260,23 +3310,60 @@ function renderLiveLogFeed(d) {
   cont.scrollTop = cont.scrollHeight;
 }
 
+function parseCerberoDate(value) {
+  if (!value) return null;
+  let v = String(value).trim();
+  let d = new Date(v);
+  if (isNaN(d.getTime())) {
+    d = new Date(v.replace(' ', 'T'));
+  }
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function renderCerberoRuntime(d) {
+  const el = document.getElementById('cerberoRuntimeStats');
+  if (!el) return;
+  const s = d.live_feed_summary;
+  if (!s || s.runtime_totale === undefined) {
+    el.innerHTML = '<div class="muted">Sessione runtime non disponibile</div>';
+    return;
+  }
+  const dataAvvio = parseCerberoDate(s.runtime_avvio || s.avvio || s.runtimeAvvio);
+  const avvio = dataAvvio ? dataAvvio.toLocaleString('it-IT') : 'Sessione attiva';
+  const uptimeSec = dataAvvio ? Math.max(0, Math.floor((Date.now() - dataAvvio.getTime()) / 1000)) : 0;
+  const uptime = uptimeSec >= 86400 ? Math.floor(uptimeSec/86400) + 'g ' + Math.floor((uptimeSec%86400)/3600) + 'h' : Math.floor(uptimeSec/3600) + 'h ' + Math.floor((uptimeSec%3600)/60) + 'm';
+  const pct = s.runtime_totale > 0 ? ((s.runtime_bloccate / s.runtime_totale) * 100).toFixed(1) : '0.0';
+  el.innerHTML = `
+    <div class="stat"><div class="val">${fmt(s.runtime_totale)}</div><div class="lbl">Query sessione</div></div>
+    <div class="stat"><div class="val">${fmt(s.runtime_bloccate)}</div><div class="lbl">Bloccate</div></div>
+    <div class="stat"><div class="val">${fmt(s.runtime_consentite)}</div><div class="lbl">Consentite</div></div>
+    <div class="stat"><div class="val">${pct}%</div><div class="lbl">Block rate</div></div>
+    <div class="stat"><div class="val">${uptime}</div><div class="lbl">Uptime sessione</div></div>
+    <div class="stat"><div class="val muted" style="font-size:0.9em">${avvio}</div><div class="lbl">Avvio sessione</div></div>`;
+}
+
 function renderLiveLogSummary(d) {
   const el = document.getElementById('liveLogSummary');
   if (!el) return;
   const s = d.live_feed_summary;
-  if (!s || s.totale === 0) {
+  if (!s || s.runtime_totale === undefined || s.runtime_totale === 0) {
     el.innerHTML = 'In attesa di dati...';
     return;
   }
-  
-  const rangeTxt = s.dalle ? ` &middot; (dalle ${s.dalle})` : '';
-  const pctCons = s.pct_consentite.toLocaleString('it-IT');
-  const pctBloc = s.pct_bloccate.toLocaleString('it-IT');
 
-  // Formato: Totali: 100 - 80 consentite (80%) · 20 bloccate (20%) · (dalle 00:16:13)
-  el.innerHTML = `Totali: <b>${fmt(s.totale)}</b> - ` +
-    `<span style="color:var(--green-bright);">${fmt(s.consentite)} consentite (${pctCons}%)</span> &middot; ` +
-    `<span style="color:var(--red-bright);">${fmt(s.bloccate)} bloccate (${pctBloc}%)</span>` +
+  // FIX4: il riepilogo usa la sessione Cerbero dall'accensione PC.
+  // La lista eventi resta limitata agli ultimi 1000 eventi, ma i numeri sono persistenti.
+  const totale = s.runtime_totale;
+  const consentite = s.runtime_consentite;
+  const bloccate = s.runtime_bloccate;
+  const pctCons = ((consentite / totale) * 100).toFixed(1).replace('.', ',');
+  const pctBloc = ((bloccate / totale) * 100).toFixed(1).replace('.', ',');
+  const dataAvvioLive = parseCerberoDate(s.runtime_avvio || s.avvio || s.runtimeAvvio);
+  const rangeTxt = dataAvvioLive ? ` &middot; (dalle ${dataAvvioLive.toLocaleTimeString('it-IT')})` : '';
+
+  el.innerHTML = `Totali: <b>${fmt(totale)}</b> - ` +
+    `<span style="color:var(--green-bright);">${fmt(consentite)} consentite (${pctCons}%)</span> &middot; ` +
+    `<span style="color:var(--red-bright);">${fmt(bloccate)} bloccate (${pctBloc}%)</span>` +
     `<span class="muted">${rangeTxt}</span>`;
 }
 
@@ -4203,6 +4290,7 @@ async function refresh(forceVersions) {
     renderPeriodicTasks(d);
     renderLiveLogFeed(d);
     renderLiveLogSummary(d);
+    renderCerberoRuntime(d);
 
     const s = d.totale_sessione;
     const sessDiv = document.getElementById('statsSessione');
@@ -4338,6 +4426,51 @@ function Start-BackgroundCollector {
     Write-DashLog "Runspace di raccolta dati in background avviato (thread separato dal server HTTP)."
 }
 
+# === FIX5 HTTP LIFECYCLE SAFE ===
+function Close-HttpResponseSafe {
+    param(
+        [System.Net.HttpListenerResponse]$Response
+    )
+    try {
+        if ($null -ne $Response) {
+            if ($null -ne $Response.OutputStream) {
+                $Response.OutputStream.Close()
+            }
+            $Response.Close()
+        }
+    } catch {}
+}
+
+function Write-HttpResponseSafe {
+    param(
+        [System.Net.HttpListenerResponse]$Response,
+        [byte[]]$Buffer
+    )
+
+    if ($null -eq $Response -or $null -eq $Response.OutputStream) {
+        return
+    }
+
+    try {
+        $Response.KeepAlive = $false
+        $Response.ContentLength64 = $Buffer.Length
+        $Response.OutputStream.Write($Buffer, 0, $Buffer.Length)
+    }
+    catch [System.Net.HttpListenerException] {
+        # Client/browser disconnesso durante la risposta.
+        # Evento normale per refresh o riavvii della dashboard.
+    }
+    catch [System.ObjectDisposedException] {
+        # Response gia' chiusa durante restart listener.
+    }
+    catch {
+        Write-DashLog "Errore durante risposta HTTP: $($_.Exception.Message)"
+    }
+    finally {
+        Close-HttpResponseSafe $Response
+    }
+}
+
 # === SERVER HTTP LOCALE (LOOPBACK ONLY) ===
 function Start-DashboardServer {
 $listener = New-Object System.Net.HttpListener
@@ -4399,15 +4532,15 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/restart") {
                 Write-DashLog "Richiesta di riavvio ricevuta dall'interfaccia Web."
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes('{"status":"restarting"}')
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
-                $response.OutputStream.Close()
+                Write-HttpResponseSafe $response $buffer
+                Close-HttpResponseSafe $response
 
                 $targetScript = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
                 
@@ -4428,8 +4561,8 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
-                $response.OutputStream.Close()
+                Write-HttpResponseSafe $response $buffer
+                Close-HttpResponseSafe $response
 
                 $restartUnboundCmd = "try { Restart-Service -Name 'unbound' -Force -ErrorAction Stop } catch { " +
                                       "try { Stop-Service -Name 'unbound' -Force -ErrorAction SilentlyContinue; " +
@@ -4469,7 +4602,7 @@ try {
                 $response.Headers.Add("Cache-Control", "no-store")
                 if ($esito -eq "error") { $response.StatusCode = 500 }
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di aggiornamento forzato RPZ ricevuta dall'interfaccia Web."
 
@@ -4511,7 +4644,7 @@ try {
                 $response.Headers.Add("Cache-Control", "no-store")
                 if ($esito -eq "error") { $response.StatusCode = 500 }
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/update-dashboard" -and $request.HttpMethod -eq "POST") {
                 Write-DashLog "Richiesta di auto-aggiornamento della dashboard ricevuta dall'interfaccia Web."
 
@@ -4589,10 +4722,10 @@ try {
                 $response.Headers.Add("Cache-Control", "no-store")
                 if ($esito -eq "error") { $response.StatusCode = 500 }
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-HttpResponseSafe $response $buffer
 
                 if ($needRestart) {
-                    $response.OutputStream.Close()
+                    Close-HttpResponseSafe $response
 
                     $restartCmd = "Start-Sleep -Seconds 1; " +
                                   "Stop-Process -Id $PID -Force -ErrorAction SilentlyContinue; " +
@@ -4610,11 +4743,11 @@ try {
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
-                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                Write-HttpResponseSafe $response $buffer
             } else {
                 $response.StatusCode = 404
                 $notFound = [System.Text.Encoding]::UTF8.GetBytes("Not found")
-                $response.OutputStream.Write($notFound, 0, $notFound.Length)
+                Write-HttpResponseSafe $response $notFound
             }
         } catch {
             try {
@@ -4623,10 +4756,10 @@ try {
                 $response.StatusCode = 500
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.ContentLength64 = $errJson.Length
-                $response.OutputStream.Write($errJson, 0, $errJson.Length)
+                Write-HttpResponseSafe $response $errJson
             } catch {}
         } finally {
-            try { $response.OutputStream.Close() } catch {}
+            try { Close-HttpResponseSafe $response } catch {}
         }
     }
 } finally {
