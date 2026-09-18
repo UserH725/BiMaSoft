@@ -2575,7 +2575,7 @@ $HtmlPage = @'
 
     <div class="panel panel-versioni">
       <h2>&#128230; Versioni Componenti (Locale vs Cloud)</h2>
-      <div id="statsVersioni" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;"></div>
+      <div id="statsVersioni"></div>
     </div>
 
     <div class="winupdate-tasks-row">
