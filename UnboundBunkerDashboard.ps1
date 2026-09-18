@@ -535,7 +535,6 @@ function Get-BunkerVersions {
     }
 
     # Dashboard: numero di versione gia' presente nel tag <title> HTML del file stesso
-    # (es. "<title>...DASHBOARD LIVE Ver. 1081.0 - by Mauro Bigoni</title>"), tenuto
     # aggiornato a mano da Mauro ad ogni modifica pubblicata sul repo - stessa logica di
     # bat_local, letto dal file in esecuzione (cache indefinita: cambia solo dopo un
     # self-update, che riavvia il processo). Il match e' ancorato al tag <title> (non al
@@ -2006,7 +2005,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1081.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1085.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2510,7 +2509,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1081.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1085.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
