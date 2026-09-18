@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1051.0"
+set "LOCAL_VER=1085.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -860,8 +860,8 @@ if "!DASH_SIZE_OK!"=="1" (
     set "DVER_CHECK_CLOUD=%TEMP%\ub_dash_ver_check_cloud.txt"
     if exist "!DVER_CHECK_LOCAL!" del /f /q "!DVER_CHECK_LOCAL!" >nul 2>&1
     if exist "!DVER_CHECK_CLOUD!" del /f /q "!DVER_CHECK_CLOUD!" >nul 2>&1
-    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_LOCAL!', $matches[1]) } } catch {}" >nul 2>&1
-    powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_CLOUD!', $matches[1]) } } catch {}" >nul 2>&1
+    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_LOCAL!', $matches[1]) } } catch {}" >nul 2>&1
+    powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_CHECK_CLOUD!', $matches[1]) } } catch {}" >nul 2>&1
     set "DVER_CHECK_LOCAL_VAL="
     set "DVER_CHECK_CLOUD_VAL="
     if exist "!DVER_CHECK_LOCAL!" set /p DVER_CHECK_LOCAL_VAL=<"!DVER_CHECK_LOCAL!"
@@ -938,14 +938,16 @@ if "!DASH_SIZE_OK!"=="1" (
 )
 
 :: --- VERSIONE DASHBOARD: locale (estratta dal .ps1 gia' presente su !RAM_DRIVE!) e
-:: cloud (estratta al volo dal .ps1 pubblicato su GitHub), entrambe via regex su
-:: "Versione X.X" gia' presente nel <title>/<h1> della dashboard - nessun nuovo file
-:: di versione da mantenere su GitHub, embedded nel .ps1 stesso come richiesto.
+:: cloud (estratta al volo dal .ps1 pubblicato su GitHub), entrambe via regex ancorata
+:: al tag <title> ("<title>...Versione X.X") della dashboard - nessun nuovo file di
+:: versione da mantenere su GitHub, embedded nel .ps1 stesso come richiesto. L'ancoraggio
+:: al <title> evita di agganciare per errore un numero di versione scritto altrove nel
+:: file (es. in un commento), come successo in passato.
 set "DASH_LOCAL_VER=N/A"
 if "!DASH_SIZE_OK!"=="1" if exist "!DASH_PS1!" (
     set "DVER_TMP=%TEMP%\ub_dash_local_ver.txt"
     if exist "!DVER_TMP!" del /f /q "!DVER_TMP!" >nul 2>&1
-    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP!', $matches[1]) } } catch {}" >nul 2>&1
+    powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1!' -Raw; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP!', $matches[1]) } } catch {}" >nul 2>&1
     if exist "!DVER_TMP!" (
         set /p DASH_LOCAL_VER=<"!DVER_TMP!"
         del /f /q "!DVER_TMP!" >nul 2>&1
@@ -956,7 +958,7 @@ if "!DASH_LOCAL_VER!"=="" set "DASH_LOCAL_VER=N/A"
 set "DASH_CLOUD_VER=N/A"
 set "DVER_TMP2=%TEMP%\ub_dash_cloud_ver.txt"
 if exist "!DVER_TMP2!" del /f /q "!DVER_TMP2!" >nul 2>&1
-powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP2!', $matches[1]) } } catch {}" >nul 2>&1
+powershell -NoProfile -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP2!', $matches[1]) } } catch {}" >nul 2>&1
 if exist "!DVER_TMP2!" (
     set /p DASH_CLOUD_VER=<"!DVER_TMP2!"
     del /f /q "!DVER_TMP2!" >nul 2>&1
@@ -3224,7 +3226,7 @@ if "!DASH_LOCAL_VER!"=="" (
     if exist "!DASH_PS1_REP!" (
         set "DVER_TMP_REP2=%TEMP%\ub_dash_local_ver_rep.txt"
         if exist "!DVER_TMP_REP2!" del /f /q "!DVER_TMP_REP2!" >nul 2>&1
-        powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1_REP!' -Raw; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP_REP2!', $matches[1]) } } catch {}" >nul 2>&1
+        powershell -NoProfile -Command "try { $c = Get-Content -LiteralPath '!DASH_PS1_REP!' -Raw; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('!DVER_TMP_REP2!', $matches[1]) } } catch {}" >nul 2>&1
         if exist "!DVER_TMP_REP2!" (
             set /p DASH_LOCAL_VER=<"!DVER_TMP_REP2!"
             del /f /q "!DVER_TMP_REP2!" >nul 2>&1
@@ -3234,7 +3236,7 @@ if "!DASH_LOCAL_VER!"=="" (
 )
 if "!DASH_CLOUD_VER!"=="" set "DASH_CLOUD_VER=N/A"
 if "!DASH_CLOUD_VER!"=="N/A" (
-    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match 'Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('%VER_TMP_REP%', $matches[1]) } } catch {}" >nul 2>&1
+    powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $c = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1' -UseBasicParsing -TimeoutSec 5).Content; if ($c -match '<title>.*Versione\s+([0-9\.]+)') { [System.IO.File]::WriteAllText('%VER_TMP_REP%', $matches[1]) } } catch {}" >nul 2>&1
     if exist "!VER_TMP_REP!" ( set /p DASH_CLOUD_VER=<"!VER_TMP_REP!" & del /f /q "!VER_TMP_REP!" >nul 2>&1 )
 )
 
