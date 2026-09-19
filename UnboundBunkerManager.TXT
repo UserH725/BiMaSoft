@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1085.2"
+set "LOCAL_VER=1085.1"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -928,10 +928,10 @@ if "!DASH_SIZE_OK!"=="1" (
 
 :: [DASHBOARD LIVE] Avvio automatico se il file e' presente e valido (dopo l'eventuale download sopra)
 if "!DASH_SIZE_OK!"=="1" (
-    :: Termina eventuali istanze precedenti prima di avviarne una nuova: evita piu' processi
-    :: in competizione sulla porta 8954 quando questo blocco gira ogni 2 ore oltre che ad ogni boot.
+    rem Termina eventuali istanze precedenti prima di avviarne una nuova - evita piu' processi
+    rem in competizione sulla porta 8954 quando questo blocco gira ogni 2 ore oltre che ad ogni boot.
     powershell -NoProfile -Command "try { $procs=Get-CimInstance Win32_Process -Filter 'Name=''powershell.exe''' -ErrorAction SilentlyContinue; foreach ($p in $procs) { if ($p.CommandLine -like '*UnboundBunkerDashboard.ps1*') { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } } } catch {}" >nul 2>&1
-    start "" powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "!DASH_PS1!"
+    start "" /d "!UB_DIR!" powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "!DASH_PS1!"
     echo   [OK] Dashboard Live avviata in background su http://127.0.0.1:8954/
 ) else (
     echo   [!] Dashboard NON avviata: file mancante o non valido in "!DASH_PS1!".
