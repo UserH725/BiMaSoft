@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1085.0"
+set "LOCAL_VER=1085.1"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -3986,12 +3986,17 @@ if exist "!UB_CLOUD_CACHE!" (
             set "UB_DL_URL=%%B"
         )
         set "UB_CLOUD_FROM_CACHE=1"
+        if "!UB_DL_URL!"=="N/A" if not "!UB_CLOUD_VER!"=="!UB_LOCAL_VER!" (
+            set "UB_CLOUD_FROM_CACHE=0"
+            set "UB_CLOUD_VER="
+            set "UB_DL_URL="
+        )
     )
 )
 
 if "!UB_CLOUD_FROM_CACHE!"=="0" (
     if exist "%UB_OUT_TMP%" del /f /q "%UB_OUT_TMP%" >nul 2>&1
-    powershell -NoProfile -Command "$c='N/A'; $u='N/A'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = \"https://nlnetlabs.nl/downloads/unbound/unbound_setup_$c.exe\"; try { $head = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 8; if ($head.StatusCode -eq 200) { $u = $candidate } } catch {} } } catch { $errLine = '[' + (Get-Date) + '] ' + $_.Exception.Message; $errLine | Out-File -FilePath '!UB_CLOUD_ERR_LOG!' -Append -Encoding utf8 }; ($c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
+    powershell -NoProfile -Command "$c='N/A'; $u='N/A'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $json = (Invoke-WebRequest -Uri 'https://api.github.com/repos/NLnetLabs/unbound/releases/latest' -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json; $v = $json.tag_name; if ($v -match 'release-(.*)') { $c = $matches[1] } else { $c = $v }; if ($c -ne 'N/A') { $candidate = 'https://nlnetlabs.nl/downloads/unbound/unbound_setup_' + $c + '.exe'; try { $r = Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing -TimeoutSec 15; if ($r.StatusCode -eq 200) { $u = $candidate } } catch { try { $r = Invoke-WebRequest -Uri $candidate -UseBasicParsing -Headers @{Range='bytes=0-0'} -TimeoutSec 15; if ($r.StatusCode -eq 200 -or $r.StatusCode -eq 206) { $u = $candidate } } catch { $e2 = '[' + (Get-Date) + '] Installer non raggiungibile ' + $candidate + ': ' + $_.Exception.Message; $e2 | Out-File -FilePath '!UB_CLOUD_ERR_LOG!' -Append -Encoding utf8 } } } } catch { $errLine = '[' + (Get-Date) + '] ' + $_.Exception.Message; $errLine | Out-File -FilePath '!UB_CLOUD_ERR_LOG!' -Append -Encoding utf8 }; ($c + '#' + $u) | Out-File -FilePath '%UB_OUT_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
     if exist "%UB_OUT_TMP%" (
         for /f "usebackq tokens=1,2 delims=#" %%A in ("%UB_OUT_TMP%") do (
             set "UB_CLOUD_VER=%%A"
@@ -4002,7 +4007,13 @@ if "!UB_CLOUD_FROM_CACHE!"=="0" (
     if "!UB_CLOUD_VER!"=="" set "UB_CLOUD_VER=N/A"
     if "!UB_DL_URL!"=="" set "UB_DL_URL=N/A"
     if not "!UB_CLOUD_VER!"=="N/A" (
-        echo !UB_CLOUD_VER!#!UB_DL_URL!> "!UB_CLOUD_CACHE!"
+        set "UB_CACHE_OK=1"
+        if "!UB_DL_URL!"=="N/A" if not "!UB_CLOUD_VER!"=="!UB_LOCAL_VER!" set "UB_CACHE_OK=0"
+        if "!UB_CACHE_OK!"=="1" (
+            echo !UB_CLOUD_VER!#!UB_DL_URL!> "!UB_CLOUD_CACHE!"
+        ) else (
+            if exist "!UB_CLOUD_CACHE!" del /f /q "!UB_CLOUD_CACHE!" >nul 2>&1
+        )
     )
 )
 
@@ -4039,7 +4050,7 @@ if "%~1"=="--refresh" (
 )
 
 :: === MODALITA' INTERATTIVA: offre download e installazione ===
-echo !ESC![1;33m    [!] AGGIORNAMENTO DISPONIBILE: v!UB_LOCAL_VER! -> v!UB_CLOUD_VER!!ESC![0m
+echo !ESC![1;33m    [!] AGGIORNAMENTO DISPONIBILE: v!UB_LOCAL_VER! -^> v!UB_CLOUD_VER!!ESC![0m
 echo.
 echo      L'installer verra' scaricato, verificato con SHA256 e
 echo      pronto per l'avvio con un tasto.
@@ -4048,8 +4059,8 @@ echo.
 if "!UB_DL_URL!"=="N/A" (
     echo !ESC![1;31m    [ERRORE] URL di download non trovato nella release GitHub.!ESC![0m
     echo      Scarica manualmente da:
-    echo      -> https://nlnetlabs.nl/projects/unbound/download/
-    echo      -> https://github.com/NLnetLabs/unbound/releases/latest
+    echo      -^> https://nlnetlabs.nl/projects/unbound/download/
+    echo      -^> https://github.com/NLnetLabs/unbound/releases/latest
     echo.
     call :LOGFAIL "CORE" "URL installer Unbound v!UB_CLOUD_VER! non trovato nella release"
     echo ==================================================================
