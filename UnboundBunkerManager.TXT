@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1085.2"
+set "LOCAL_VER=1085.3"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -3684,7 +3684,18 @@ set "LGW_FILE=%~1"
 set "LG_WARN="
 set "LG_AGE_DAYS="
 if not exist "%LGW_FILE%" exit /b 0
-for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "try { [math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%LGW_FILE%').LastWriteTime).TotalDays) } catch { '' }"`) do set "LG_AGE_DAYS=%%D"
+:: [FIX FALSO POSITIVO] Con "curl -z" un 304 Not Modified e' un SUCCESSO (server raggiunto,
+:: lista semplicemente invariata): CURL_TRY_NUM vale 1-3. Solo CURL_TRY_NUM=0 significa che
+:: tutti i tentativi sono falliti. Prima l'eta' del .lastgood (= giorni dall'ultima MODIFICA
+:: reale della lista, es. DROPv6 che cambia raramente) veniva scambiata per "Spamhaus
+:: irraggiungibile". Ora, se il server risponde, si registra il contatto in .lastok e non si avvisa.
+if not "!CURL_TRY_NUM!"=="0" (
+    type nul > "%LGW_FILE%.lastok"
+    exit /b 0
+)
+:: Download davvero fallito: eta' = giorni dall'ultimo contatto riuscito (il piu' recente tra
+:: .lastok e .lastgood), non dall'ultima modifica della lista.
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -Command "try { $t = (Get-Item -LiteralPath '%LGW_FILE%').LastWriteTime; if (Test-Path -LiteralPath '%LGW_FILE%.lastok') { $m = (Get-Item -LiteralPath '%LGW_FILE%.lastok').LastWriteTime; if ($m -gt $t) { $t = $m } }; [math]::Floor(((Get-Date) - $t).TotalDays) } catch { '' }"`) do set "LG_AGE_DAYS=%%D"
 if not defined LG_AGE_DAYS exit /b 0
 if "!LG_AGE_DAYS!"=="" exit /b 0
 if !LG_AGE_DAYS! GEQ %LASTGOOD_MAX_AGE_DAYS% (
