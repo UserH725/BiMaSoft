@@ -57,7 +57,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1085.1"
+set "LOCAL_VER=1085.2"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -4292,7 +4292,9 @@ if exist "!XML_PATH!" del /f /q "!XML_PATH!" >nul 2>&1
 if exist "!TASK_ERR_XML!" del /f /q "!TASK_ERR_XML!" >nul 2>&1
 
 :: Calcolo orario per il task
-set "TDATE=%date:~6,4%-%date:~3,2%-%date:~0,2%"
+set "TDATE="
+for /f "delims=" %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "TDATE=%%D"
+if not defined TDATE set "TDATE=2026-01-01"
 set "XML_START_BOUND=!TDATE!T!XML_START!"
 
 :: --- GENERAZIONE XML TRASPARENTE SENZA BASE64 ---
@@ -4370,11 +4372,11 @@ if exist "!TASK_ERR_XML!" type "!TASK_ERR_XML!"
 :: --- FALLBACK: vecchio metodo semplice ---
 set "XML_START_HHMM=!XML_START:~0,5!"
 if /i "!XML_MODE!"=="DAILY" (
-    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 ) else if /i "!XML_MODE!"=="REPEAT2H" (
-    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 ) else (
-    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! & exit 0\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 )
 if !errorlevel! NEQ 0 (
     echo   [!] Anche la creazione di riserva del task %~1 e' fallita.
