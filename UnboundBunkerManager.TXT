@@ -38,6 +38,7 @@ if "%~1"=="--scheduled" goto :FONT_OK
 if "%~1"=="--refresh" goto :FONT_OK
 if "%~1"=="--dailyreport" goto :FONT_OK
 if "%~1"=="--refreshabusech" goto :FONT_OK
+if "%~1"=="--fase" goto :FONT_OK
 set "FLAG_FILE=%TEMP%\unbound_relaunched.flag"
 if exist "%FLAG_FILE%" (
     del /f /q "%FLAG_FILE%" >nul 2>&1
@@ -57,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1085.3"
+set "LOCAL_VER=1100.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -132,6 +133,7 @@ set "THREATFOX_BAK3=%THREATFOX%.bak3"
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
+if "%~1"=="--fase" goto :FASE_SINGOLA
 
 
 :: --- BLOCCA CHIUSURA, MINIMIZZA, INGRANDISCI E DOPPIO CLICK SULLA BARRA DEL TITOLO ---
@@ -1029,6 +1031,8 @@ if exist "!DASH_RESTART_BAT!" (
 cls
 
 :: FASE 1 - Azione
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F1" goto :SKIP_F1
+:PH_ENTRY
 set "F1_ACT=[...in corso...] NET  >> Controllo se la rete funziona prima di fare qualsiasi modifica."
 call :UPDATE_UI 5
 set "NET_RETRY_COUNT=0"
@@ -1045,6 +1049,10 @@ if errorlevel 1 (
     )
     set "CONSOLE_COLOR=0C"
     set "F1_RES=[     WARN     ] NET  >> Internet non raggiungibile, nuovo tentativo tra 5 secondi... (Ctrl+C per annullare)"
+    if defined ONLY_PH if !NET_RETRY_COUNT! GEQ 3 (
+        set "F1_RES=[     WARN     ] NET  >> Internet non raggiungibile: controllo ripetuto 3 volte senza successo."
+        goto :FASE_SINGOLA_END
+    )
     call :UPDATE_UI 0
     timeout /t 5 /nobreak >nul
     goto :NET_RETRY
@@ -1054,9 +1062,11 @@ set "CONSOLE_COLOR=0A"
 set "F1_RES=[      OK      ] NET  >> Rete attiva, proseguimento delle operazioni di avvio procedura di sicurezza.       "
 call :LOGSTEP "NET" "Connettivita verificata"
 :: Garantisce resolver esterno per tutti i download successivi
-call :DNS_FALLBACK_ON
+if not defined ONLY_PH call :DNS_FALLBACK_ON
 
 :: FASE 2 - Azione
+:SKIP_F1
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F2" goto :SKIP_F2
 set "F2_ACT=[...in corso...] FS   >> Verifico la cartella di Unbound."
 call :UPDATE_UI 10
 if not exist "%UB_DIR%" (
@@ -1064,6 +1074,7 @@ if not exist "%UB_DIR%" (
     set "F2_RES=[ERRORE] FS   >> Cartella Unbound non trovata."
     call :UPDATE_UI 10
     call :LOGFAIL "FS" "Directory Unbound non trovata"
+    if defined ONLY_PH goto :FASE_SINGOLA_END
     pause
     exit /b
 )
@@ -1073,6 +1084,8 @@ set "F2_RES=[      OK      ] FS   >> Cartella Unbound verificata."
 call :LOGSTEP "FS" "Directory Unbound trovata"
 
 :: FASE 3 - Azione
+:SKIP_F2
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F3" goto :SKIP_F3
 set "F3_ACT=[...in corso...] REG  >> Imposto priorità alta a unbound.exe e disattivo i dump locali."
 call :UPDATE_UI 20
 set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
@@ -1086,6 +1099,8 @@ set "F3_RES=[      OK      ] REG  >> Priorità CPU impostata, dump locali disatt
 call :LOGSTEP "REG" "Priorita CPU, dump e auto-restart su crash (SCM) configurati"
 
 :: FASE 4 - Azione
+:SKIP_F3
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F4" goto :SKIP_F4
 set "F4_ACT=[...in corso...] REG  >> Policy DNS: Spengo Smart Name Res, multicast, DoH e forzo Punycode anti-omografo."
 call :UPDATE_UI 30
 reg add "HKLM\Software\Policies\Microsoft\Windows NT\DNSClient" /v "DisableSmartNameResolution" /t REG_DWORD /d 1 /f >nul 2>&1
@@ -1148,6 +1163,8 @@ set "F4_RES=[      OK      ] REG  >> Policy attive: i browser non bypassano Unbo
 call :LOGSTEP "REG" "Policy DoH, name resolution e anti-homograph IDN applicate"
 
 :: FASE 5 - Azione
+:SKIP_F4
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F5" goto :SKIP_F5
 set "F5_ACT=[...in corso...] SECU/NET >> Applico le mitigazioni di sicurezza e disattivo NetBIOS."
 call :UPDATE_UI 40
 powershell -Command "Set-ProcessMitigation -Name unbound.exe -Enable DEP,BottomUpASLR,HighEntropyASLR,CFG; Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object {$_.IPEnabled -eq $true} | ForEach-Object { $_.SetNetBIOSSetting(2) }" >nul 2>&1
@@ -1159,6 +1176,8 @@ set "F5_RES=[      OK      ] SECU/NET >> Mitigazioni, NetBIOS, DNS IPv6 e firewa
 call :LOGSTEP "SECU/NET" "Mitigazioni, NetBIOS, DNS IPv6 e firewall DNS configurati"
 
 :: FASE 6 - Azione
+:SKIP_F5
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F6" goto :SKIP_F6
 set "F6_ACT=[...in corso...] TIME >> Sincronizzo l'orologio di sistema (multi-server NTP) per evitare problemi con DNSSEC."
 call :UPDATE_UI 50
 sc config w32time start= auto >nul 2>&1
@@ -1188,6 +1207,8 @@ set "F6_RES=[      OK      ] TIME >> Orologio %NTP_STATO% - ora sistema: %NOW_TI
 call :LOGSTEP "TIME" "w32time %NTP_STATO% - ora: %NOW_TIME%"
 
 :: FASE 7 - Azione
+:SKIP_F6
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F7" goto :SKIP_F7
 set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
 if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
@@ -1220,6 +1241,8 @@ if exist "%THREATFOX%" copy /y "%THREATFOX%" "%THREATFOX_BAK%" >nul 2>&1
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
 
+:SKIP_F7
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F8" goto :SKIP_F8
 if "%SKIP_MAINTENANCE%"=="1" (
     set "F8_ACT=[     SKIP     ] CORE >> Aggiornamento giornaliero già eseguito. Solo riavvio rapido."
     set "F8_RES=[      OK      ] CORE >> Riavvio rapidamente il servizio Unbound per applicare lo stato corrente."
@@ -1248,6 +1271,8 @@ call :DNS_FALLBACK_ON
 :: -------------------------------------------------------
 :: F9 — named.cache
 :: -------------------------------------------------------
+:SKIP_F8
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F9" goto :SKIP_F9
 set "F9_ACT=[...in corso...] NET  >> Scarico file NAMED.CACHE da www.internic.net..."
 call :UPDATE_UI 80
 
@@ -1314,6 +1339,8 @@ call :LOGSTEP "NET" "!F9_RES!"
 :: -------------------------------------------------------
 :: F9B — root.zone
 :: -------------------------------------------------------
+:SKIP_F9
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F9B" goto :SKIP_F9B
 set "F9B_ACT=[...in corso...] NET  >> Scarico ROOT.ZONE da www.internic.net..."
 call :UPDATE_UI 82
 
@@ -1380,6 +1407,8 @@ call :LOGSTEP "NET" "!F9B_RES!"
 :: ================================================================
 :: F10 — HAGEZI PRO PLUS (SCARICA E IMPOSTA SEMPRE LA VERSIONE PRO)
 :: ================================================================
+:SKIP_F9B
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10" goto :SKIP_F10
 set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1440,6 +1469,8 @@ call :LOGSTEP "NET" "!F10_RES!"
 :: ================================================================
 :: F10B — HAGEZI TIF (Threat Intelligence Feeds)
 :: ================================================================
+:SKIP_F10
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10B" goto :SKIP_F10B
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1557,6 +1588,8 @@ call :LOGSTEP "NET" "!F10B_RES!"
 :: F10C — HAGEZI TIF-IPS (IP companion: blocca connessioni dirette
 :: a IP malware/phishing/C2 che bypassano del tutto il DNS)
 :: ================================================================
+:SKIP_F10B
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10C" goto :SKIP_F10C
 set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
 call :UPDATE_UI 88
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1615,6 +1648,8 @@ call :LOGSTEP "NET" "!F10C_RES!"
 :: ================================================================
 :: F10D — SPAMHAUS DROP (Hijacked Netblocks / Botnet C2 - IP based)
 :: ================================================================
+:SKIP_F10C
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10D" goto :SKIP_F10D
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
@@ -1686,6 +1721,8 @@ call :LOGSTEP "NET" "!F10D_RES!"
 :: ================================================================
 :: F10E — SPAMHAUS DROPv6 (Hijacked Netblocks / Botnet C2 - IPv6 based)
 :: ================================================================
+:SKIP_F10D
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10E" goto :SKIP_F10E
 set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
@@ -1761,6 +1798,8 @@ call :LOGSTEP "NET" "!F10E_RES!"
 :: F10F — HAGEZI DYNAMIC DNS (Protegge da abuso di servizi DDNS
 :: usati in campagne di phishing/C2 - complementa la lista TIF)
 :: ================================================================
+:SKIP_F10E
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10F" goto :SKIP_F10F
 set "F10F_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Dynamic DNS e la preparo come RPZ attiva."
 call :UPDATE_UI 89
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1821,6 +1860,8 @@ call :LOGSTEP "NET" "!F10F_RES!"
 :: F10G — HAGEZI BADWARE HOSTER (Protegge dall'uso malevolo di
 :: servizi di hosting spesso citati nei feed di threat intelligence)
 :: ================================================================
+:SKIP_F10F
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10G" goto :SKIP_F10G
 set "F10G_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Badware Hoster e la preparo come RPZ attiva."
 call :UPDATE_UI 89
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1881,6 +1922,8 @@ call :LOGSTEP "NET" "!F10G_RES!"
 :: F10H — HAGEZI MOST ABUSED TLDs (Protegge dai TLD a piu' alto
 :: tasso di abuso - forte protezione anti-typosquatting/scam)
 :: ================================================================
+:SKIP_F10G
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10H" goto :SKIP_F10H
 set "F10H_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Most Abused TLDs e la preparo come RPZ attiva."
 call :UPDATE_UI 90
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1942,6 +1985,8 @@ call :LOGSTEP "NET" "!F10H_RES!"
 :: Aggiornato ogni 5 minuti dalla fonte; niente mirror CDN alternativo
 :: per abuse.ch, quindi retry singola sorgente con backoff 3s/6s)
 :: ================================================================
+:SKIP_F10H
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10I" goto :SKIP_F10I
 set "F10I_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch URLhaus (malware attivo) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
 
@@ -1998,6 +2043,8 @@ call :LOGSTEP "NET" "!F10I_RES!"
 :: pubblico, non richiede Auth-Key - IOC scaduti >6 mesi vengono
 :: rimossi automaticamente dalla fonte per ridurre i falsi positivi)
 :: ================================================================
+:SKIP_F10I
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F10J" goto :SKIP_F10J
 set "F10J_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch ThreatFox (IOC botnet C2) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
 
@@ -2051,6 +2098,8 @@ call :LOGSTEP "NET" "!F10J_RES!"
 
 
 :: FASE 11 - Azione
+:SKIP_F10J
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F11" goto :SKIP_F11
 set "F11_ACT=[...in corso...] SECU >> Aggiorno il trust anchor DNSSEC con unbound-anchor."
 call :UPDATE_UI 90
 if exist "%UB_DIR%\unbound-anchor.exe" (
@@ -2062,6 +2111,8 @@ set "F11_RES=[      OK      ] SECU >> Trust anchor verificato e root.key aggiorn
 call :LOGSTEP "SECU" "Trust anchor aggiornato"
 
 :: FASE 12 - Azione
+:SKIP_F11
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F12" goto :SKIP_F12
 set "F12_ACT=[...in corso...] ACL  >> Blindo i file critici con permessi NTFS dedicati."
 call :UPDATE_UI 95
 icacls "%UB_DIR%\named.cache" /inheritance:r /grant:r SYSTEM:(F) /grant:r Administrators:(F) /grant:r unbound:(R) >nul 2>&1
@@ -2081,6 +2132,8 @@ set "F12_RES=[      OK      ] SECU >> Permessi applicati ai file di lavoro."
 call :LOGSTEP "ACL" "Permessi NTFS applicati"
 
 :: FASE 13 - Azione
+:SKIP_F12
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F13" goto :SKIP_F13
 set "F13_ACT=[...in corso...] CONF >> Controllo la sintassi del servizio e poi avvio Unbound."
 call :UPDATE_UI 98
 if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
@@ -2097,10 +2150,12 @@ if %errorLevel% neq 0 goto :START_ERROR
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
-echo %TODAY% > "%LAST_UPD_FILE%"
+if not defined ONLY_PH echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
 :: FASE 14 - Verifica DoT (test TCP porta 853 asincrono in parallelo e dinamico con Gestore - OTTIMIZZATO NEI TEMPI)
+:SKIP_F13
+if defined ONLY_PH if /i not "!ONLY_PH!"=="F14" goto :SKIP_F14
 set "F14_ACT=[...in corso...] DoT  >> Verifico raggiungibilita' porta 853 sugli upstream attivi nel conf..."
 call :UPDATE_UI 100
 
@@ -2204,8 +2259,49 @@ if defined DOT_DETAILS (
 echo   --------------------------------------------------------------------------------------------------
 echo.
 
+:SKIP_F14
 :: Salto diretto alla nuova finalizzazione rapida senza attese intermedie
 goto :FINALIZZAZIONE_RAPIDA
+
+:: ==================================================================
+:: ESECUZIONE DI UNA SOLA FASE (richiesta dai pulsanti della Dashboard)
+:: Uso: UnboundBunkerManager.BAT --fase <F1..F9,F9B,F10,F10B..F10J,F11..F14>
+:: Esegue SOLO la fase indicata, con lo stesso identico codice del boot
+:: (i blocchi delle altre fasi vengono saltati da una guardia iniziale) e
+:: aggiorna in R:\bunker_health.json soltanto la riga di quella fase.
+:: Differenze volute rispetto al boot completo:
+::  - nessun disegno della UI, nessun Telegram, nessuna chiusura/finalizzazione;
+::  - F1 non attiva il DNS di fallback (sarebbe un buco di protezione);
+::  - F13 non scrive il marcatore "manutenzione giornaliera gia' eseguita";
+::  - F1 rinuncia dopo 3 tentativi, F2/F13 non si fermano su pause.
+:: Il file R:\bunker_phase_<FASE>.run segnala alla Dashboard "in corso".
+:: ==================================================================
+:FASE_SINGOLA
+set "ONLY_PH="
+for %%C in (F1 F2 F3 F4 F5 F6 F7 F8 F9 F9B F10 F10B F10C F10D F10E F10F F10G F10H F10I F10J F11 F12 F13 F14) do if /i "%%C"=="%~2" set "ONLY_PH=%%C"
+if not defined ONLY_PH exit 2
+set "PH_MARK=R:\bunker_phase_!ONLY_PH!.run"
+echo %date% %time% > "!PH_MARK!" 2>nul
+title UNBOUND BUNKER - FASE SINGOLA !ONLY_PH!
+set "CONSOLE_COLOR=0A"
+set "CURL_CA=--ipv4 --location --max-time 60"
+set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
+set "ROOTKEY_BAK=%UB_DIR%\root.key.bak1"
+set "ROOTKEY_BAK2=%UB_DIR%\root.key.bak2"
+set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
+set "SKIP_MAINTENANCE=0"
+goto :PH_ENTRY
+
+:FASE_SINGOLA_END
+:: F8 isolata: Unbound resta fermo e il DNS sul fallback, quindi subito dopo parte in automatico F13
+:: (controllo config, DNS su 127.0.0.1, avvio Unbound). Il marcatore di F13 viene creato prima di
+:: chiudere quello di F8, cosi' la Dashboard non vede mai un buco fra le due fasi.
+if /i "!ONLY_PH!"=="F8" if defined F8_RES set "F8_RES=!F8_RES! [F13 parte in automatico subito dopo]"
+powershell -NoProfile -Command "$code=$env:ONLY_PH; $act=[Environment]::GetEnvironmentVariable($code+'_ACT'); $res=[Environment]::GetEnvironmentVariable($code+'_RES'); if ($act -or $res) { $ord=@('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F10I','F10J','F11','F12','F13','F14'); $jp='R:\bunker_health.json'; $map=@{}; try { if (Test-Path -LiteralPath $jp) { $old=Get-Content -LiteralPath $jp -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($f in @($old.fasi)) { if ($f.fase) { $map[[string]$f.fase]=$f } } } } catch {}; $map[$code]=[pscustomobject]@{ fase=$code; azione=$act; esito=$res }; $fasi=foreach ($c in $ord) { if ($map.ContainsKey($c)) { $map[$c] } }; $obj=[pscustomobject]@{ timestamp=(Get-Date).ToString('dd.MM.yyyy HH:mm:ss'); fasi=@($fasi) }; try { $tmp=$jp+'.tmp'; $obj | ConvertTo-Json -Depth 4 | Out-File -LiteralPath $tmp -Encoding utf8; Move-Item -LiteralPath $tmp -Destination $jp -Force } catch {} }" >nul 2>&1
+if /i "!ONLY_PH!"=="F8" echo %date% %time% > "R:\bunker_phase_F13.run" 2>nul
+if /i "!ONLY_PH!"=="F8" powershell -NoProfile -Command "Start-Process -FilePath cmd.exe -ArgumentList ('/c '+[char]34+[char]34+'!SELF_BAT!'+[char]34+' --fase F13'+[char]34) -WindowStyle Hidden" >nul 2>&1
+if exist "!PH_MARK!" del /f /q "!PH_MARK!" >nul 2>&1
+exit 0
 
 :: ============================================================================
 :: REFRESH BIORARIO: BAT, SERVICE.CONF, HaGeZi, named.cache, root.zone, riavvio, time sync
@@ -3287,6 +3383,8 @@ powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach
 :: [FIX] Ripristina il DNS su 127.0.0.1 anche in caso di errore di configurazione:
 :: DNS_FALLBACK_ON era attiva e questo percorso di emergenza non la disattivava.
 call :DNS_FALLBACK_OFF
+if defined ONLY_PH set "F13_RES=[    ERRORE    ] CONF >> service.conf non valido: ripristinati i backup e tentato riavvio di emergenza."
+if defined ONLY_PH goto :FASE_SINGOLA_END
 pause
 goto :FINALIZZAZIONE
 
@@ -3296,10 +3394,13 @@ echo.
 echo ------------------------------------------------------------------
 echo   [!] ERRORE: IL SERVIZIO WINDOWS UNBOUND NON PARTE!
 echo ------------------------------------------------------------------
+if defined ONLY_PH set "F13_RES=[    ERRORE    ] CONF >> Il servizio Windows Unbound non e' partito."
+if defined ONLY_PH goto :FASE_SINGOLA_END
 pause
 goto :FINALIZZAZIONE
 
 :FINALIZZAZIONE
+if defined ONLY_PH goto :FASE_SINGOLA_END
 :: Working set scalato dinamicamente sul profilo hardware rilevato in AUTO_TUNING_HARDWARE (fallback 800MB/2GB se non valorizzato)
 if "!MIN_WS!"=="" set "MIN_WS=838860800"
 if "!MAX_WS!"=="" set "MAX_WS=2147483648"
@@ -3374,6 +3475,7 @@ exit /b
 exit /b
 
 :UPDATE_UI
+if defined ONLY_PH exit /b
 set "P_VAL=%~1"
 set /a "BLOCKS=P_VAL * 131 / 100"
 set /a "EMPTY=131 - BLOCKS"
@@ -4187,6 +4289,7 @@ echo.
 exit /b
 
 :FINALIZZAZIONE_RAPIDA
+if defined ONLY_PH goto :FASE_SINGOLA_END
 :: --- INVIO TELEMETRIA TELEGRAM (con fallback DNS e log errori) ---
 call :SEND_TELEGRAM_TELEMETRY
 
