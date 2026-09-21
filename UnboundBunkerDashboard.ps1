@@ -2591,10 +2591,18 @@ $HtmlPage = @'
   tbody tr { transition: background 0.15s; }
   tbody tr:hover td { background: rgba(255,255,255,0.025); }
 
-  #tabellaRadar th, #tabellaRadar td,
+#tabellaRadar th, #tabellaRadar td,
   #tabellaRootRadar th, #tabellaRootRadar td {
-    padding: 6px 12px !important;
-    font-size: 0.82em !important;
+    padding: 5px 4px !important; /* Padding ridotto al minimo indispensabile */
+    font-size: 0.75em !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.2px !important;
+    /* RIMOSSO white-space: nowrap; così il testo si adatta fluidamente al box */
+  }
+  
+  /* Proteggiamo solo le colonne con IP e Latenza per non spezzare i numeri */
+  #tabellaRadar td:nth-child(3), #tabellaRadar td:nth-child(4),
+  #tabellaRootRadar td:nth-child(4), #tabellaRootRadar td:nth-child(5) {
     white-space: nowrap !important;
   }
 
@@ -2683,6 +2691,14 @@ $HtmlPage = @'
   #inputRicercaRcode { outline: none; transition: all 0.2s ease; }
   #inputRicercaRcode::placeholder { color: var(--text-secondary); }
   #inputRicercaRcode:focus { border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(79, 179, 255, 0.15); background: rgba(255,255,255,0.02); }
+
+  /* Compressa al minimo la colonna "Stato" per avvicinare i Provider/Root */
+  #tabellaRadar th:first-child, #tabellaRadar td:first-child,
+  #tabellaRootRadar th:first-child, #tabellaRootRadar td:first-child {
+    width: 1% !important; /* Si restringe esattamente alla larghezza del contenuto */
+    padding-right: 2px !important; /* Elimina il margine inutile verso destra */
+    text-align: center; /* Centra il pallino e il testo "Stato" */
+  }
 </style>
 </head>
 <body>
@@ -2896,72 +2912,88 @@ $HtmlPage = @'
 </div>
 
 <div class="grid-three-columns">
-  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column; flex: 0.85;">
-    <h2>&#128202; Statistiche Avanzate Traffico (In-Memory Breakdown)</h2>
-    <div style="display: flex; flex-direction: column; gap: 20px;">
+  <!-- 1. STATISTICHE (Ristretto a flex: 0.65 per cedere spazio) -->
+  <div class="panel" style="margin-bottom: 0; display: flex; flex-direction: column; flex: 0.65; min-width: 250px;">
+    
+    <!-- Titolo diviso su 2 righe con allineamento ottimizzato -->
+    <h2 style="align-items: flex-start;">
+      <span style="margin-top: 2px;">&#128202;</span>
+      <div style="line-height: 1.3;">
+        Statistiche Avanzate Traffico<br>
+        <span style="font-size: 0.75em; color: var(--dim); font-weight: normal; letter-spacing: 0; text-transform: none;">(In-Memory Breakdown)</span>
+      </div>
+    </h2>
+
+    <div style="display: flex; flex-direction: column; gap: 16px;">
       <div>
-        <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
-        <div class="stat-breakdown-grid" id="gridRcode"></div>
-        <div class="bar-bg" id="barRcode"></div>
-        <div class="legend-box">
-          &bull; <b style="color:var(--green-bright)">NOERROR</b>: Query lecite e risolte con successo<br>
-          &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Domini inesistenti o <b>bloccati da RPZ</b><br>
-          &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori di risoluzione / DNSSEC
+        <div style="font-size: 0.95em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Codici Risposta (RCODE)</div>
+        <div class="stat-breakdown-grid" id="gridRcode" style="grid-template-columns: repeat(3, 1fr); gap: 6px;"></div>
+        <div class="bar-bg" id="barRcode" style="height: 12px;"></div>
+        <div class="legend-box" style="font-size: 0.75em; line-height: 1.5; margin-top: 8px;">
+          &bull; <b style="color:var(--green-bright)">NOERROR</b>: Lecite/risolte<br>
+          &bull; <b style="color:var(--red-bright)">NXDOMAIN</b>: Inesistenti/<b>bloccate</b><br>
+          &bull; <b style="color:var(--amber-bright)">SERVFAIL</b>: Errori/DNSSEC
         </div>
       </div>
       <div>
-        <div style="font-size: 1.05em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia Query (RR Type)</div>
-        <div class="stat-breakdown-grid" id="gridTypes"></div>
-        <div class="bar-bg" id="barTypes"></div>
-        <div class="legend-box">
-          &bull; <b style="color:var(--accent)">A (IPv4)</b>: Risoluzioni IPv4 standard<br>
-          &bull; <b style="color:var(--purple)">AAAA (IPv6)</b>: Risoluzioni IPv6<br>
-          &bull; <b style="color:#ffffff">HTTPS (Type 65)</b>: ECH, HTTP/3 e DoH nei browser
+        <div style="font-size: 0.95em; font-weight: bold; color: var(--accent); margin-bottom: 6px;">Tipologia (RR Type)</div>
+        <!-- TRUCCO: Griglia 2x2 invece di 4 in riga per recuperare un sacco di spazio orizzontale! -->
+        <div class="stat-breakdown-grid" id="gridTypes" style="grid-template-columns: repeat(2, 1fr); gap: 6px;"></div>
+        <div class="bar-bg" id="barTypes" style="height: 12px;"></div>
+        <div class="legend-box" style="font-size: 0.75em; line-height: 1.5; margin-top: 8px;">
+          &bull; <b style="color:var(--accent)">A (v4)</b> / <b style="color:var(--purple)">AAAA (v6)</b><br>
+          &bull; <b style="color:#ffffff">HTTPS</b>: ECH, DoH, HTTP/3
         </div>
       </div>
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom: 0; flex: 1.15;">
-    <h2>&#128257; Upstream Radar (DoT Porta 853 &amp; Latenza Live)</h2>
-    <div style="overflow-x:auto;">
+  <!-- 2. UPSTREAM RADAR -->
+  <div class="panel" style="margin-bottom: 0; flex: 1.3; min-width: 320px;">
+    <h2>&#128257; Upstream Radar (DoT 853 &amp; Latenza)</h2>
+    <div style="overflow: hidden;"> <!-- MODIFICATO QUI -->
       <table id="tabellaRadar">
         <thead>
           <tr>
-            <th>Status</th>
-            <th>Provider Resolver DoT</th>
-            <th>Indirizzo IP</th>
-            <th>Latenza TCP</th>
-            <th>Stato Porta 853</th>
+            <!-- Testi delle intestazioni snelliti -->
+            <th>Stato</th>
+            <th>Provider DoT</th>
+            <th>IP</th>
+            <th>Ms</th>
+            <th>Porta 853</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="5" class="muted">Verifica resolver DoT in corso...</td></tr>
+          <tr><td colspan="5" class="muted">Verifica in corso...</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 
-  <div class="panel" style="margin-bottom: 0; flex: 1.15;">
-    <h2>&#127757; Root Server Mondiali (Latenza ICMP Live)</h2>
-    <div style="overflow-x:auto;">
+  <!-- 3. ROOT RADAR -->
+  <div class="panel" style="margin-bottom: 0; flex: 1.3; min-width: 320px;">
+    <h2>&#127757; Root Server (Latenza ICMP)</h2>
+    <div style="overflow: hidden;"> <!-- MODIFICATO QUI -->
       <table id="tabellaRootRadar">
         <thead>
           <tr>
-            <th>Status</th>
+            <!-- Testi delle intestazioni snelliti -->
+            <th>Stato</th>
             <th>Root</th>
-            <th>Gestore / Organizzazione</th>
-            <th>Indirizzo IP (v4/v6)</th>
-            <th>Latenza ICMP</th>
+            <th>Gestore</th>
+            <th>IP (v4/v6)</th>
+            <th>Ms</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="5" class="muted">Misurazione ICMP Root Server in corso...</td></tr>
+          <tr><td colspan="5" class="muted">Misurazione in corso...</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 </div>
+
+
 
 <div class="panel" id="cerberoRuntimePanel">
   <h2>&#128737;&#65039; Cerbero - Sessione PC (dall'accensione)</h2>
