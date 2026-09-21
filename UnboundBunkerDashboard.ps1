@@ -1633,11 +1633,84 @@ function Get-RpzTaskLastRun {
     }
 }
 
-function Get-HealthSnapshot {
-    if ([System.IO.File]::Exists($HealthJson)) {
-        try { return (Get-Content -LiteralPath $HealthJson -Raw | ConvertFrom-Json) } catch { return $null }
+# === ESECUZIONE DI UNA SINGOLA FASE (pulsanti nella tabella "Stato di salute") ===
+# Il BAT (UnboundBunkerManager.BAT --fase <CODICE>) crea R:\bunker_phase_<CODICE>.run
+# all'avvio e lo cancella a fine fase, dopo aver aggiornato la riga della fase in
+# R:\bunker_health.json. La Dashboard legge questi marcatori per mostrare "in corso".
+$script:PhaseCodes = @('F1','F2','F3','F4','F5','F6','F7','F8','F9','F9B','F10','F10B','F10C','F10D','F10E','F10F','F10G','F10H','F10I','F10J','F11','F12','F13','F14')
+$script:PhaseRunDir = "R:\"
+$script:PhaseRunCache = @{}
+$script:PhaseRunCacheTime = [DateTime]::MinValue
+$script:HealthLastGood = $null
+
+# True se esiste un cmd.exe che sta eseguendo il Manager .BAT. Con -SoloFase cerca solo
+# le esecuzioni "--fase"; senza, qualunque esecuzione (avvio, refresh pianificati, ecc.).
+function Test-ManagerBatRunning {
+    param([switch]$SoloFase)
+    try {
+        $pattern = if ($SoloFase) { '*UnboundBunkerManager*--fase*' } else { '*UnboundBunkerManager*' }
+        $procs = @(Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction Stop |
+                   Where-Object { $_.CommandLine -and ($_.CommandLine -like $pattern) })
+        return ($procs.Count -gt 0)
+    } catch {
+        # nel dubbio (query CIM fallita) si assume "in esecuzione": meglio non cancellare
+        # un marcatore valido ne' lanciare due fasi insieme
+        return $true
     }
-    return $null
+}
+
+# Ritorna una hashtable @{ 'F3' = $true; ... } con le fasi attualmente in esecuzione.
+# Marcatori orfani (BAT morto o fermo da oltre 30 minuti) vengono ripuliti.
+function Get-PhaseRunMarkers {
+    if (((Get-Date) - $script:PhaseRunCacheTime).TotalSeconds -lt 1) { return $script:PhaseRunCache }
+    $running = @{}
+    try {
+        $files = @(Get-ChildItem -Path $script:PhaseRunDir -Filter 'bunker_phase_*.run' -File -ErrorAction SilentlyContinue)
+        if ($files.Count -gt 0) {
+            $batAlive = $null
+            foreach ($fi in $files) {
+                $code = ($fi.BaseName -replace '^bunker_phase_', '')
+                $age  = ((Get-Date) - $fi.LastWriteTime).TotalSeconds
+                $valid = $true
+                if ($age -gt 1800) {
+                    $valid = $false
+                } elseif ($age -gt 20) {
+                    if ($null -eq $batAlive) { $batAlive = Test-ManagerBatRunning -SoloFase }
+                    if (-not $batAlive) { $valid = $false }
+                }
+                if ($valid) {
+                    if ($script:PhaseCodes -contains $code) { $running[$code] = $true }
+                } else {
+                    try { Remove-Item -LiteralPath $fi.FullName -Force -ErrorAction SilentlyContinue } catch {}
+                }
+            }
+        }
+    } catch {}
+    $script:PhaseRunCache = $running
+    $script:PhaseRunCacheTime = Get-Date
+    return $running
+}
+
+function Get-HealthSnapshot {
+    $snap = $null
+    if ([System.IO.File]::Exists($HealthJson)) {
+        try {
+            $snap = (Get-Content -LiteralPath $HealthJson -Raw | ConvertFrom-Json)
+        } catch {
+            # il BAT sostituisce il file in modo atomico ma una lettura in collisione e'
+            # possibile: si riusa l'ultimo snapshot valido invece di svuotare la tabella
+            return $script:HealthLastGood
+        }
+    }
+    if ($snap -and $snap.fasi) {
+        $run = Get-PhaseRunMarkers
+        foreach ($f in @($snap.fasi)) {
+            $isRun = ($run.Count -gt 0) -and $run.ContainsKey([string]$f.fase)
+            $f | Add-Member -NotePropertyName in_corso -NotePropertyValue ([bool]$isRun) -Force
+        }
+    }
+    $script:HealthLastGood = $snap
+    return $snap
 }
 
 # === LOG FALLBACK DNS ===
@@ -2050,7 +2123,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1085.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.0 - by Mauro Bigoni</title>
 <style>
   :root {
     --bg:#0b0f14; --panel:#121820; --border:#1f2b38; --text:#d7e2ec; --dim:#7f93a6;
@@ -2503,6 +2576,16 @@ $HtmlPage = @'
   
   .esito-warn { color: var(--red-bright); font-weight: bold; }
   .esito-ok { color: var(--green-bright); }
+  .esito-running { color: #ffd600; font-weight: bold; animation: faseRunningPulse 1.2s ease-in-out infinite; }
+  @keyframes faseRunningPulse { 50% { opacity: 0.45; } }
+  .fase-btn-cell { width: 44px; text-align: center; padding-right: 4px !important; }
+  .btn-fase {
+    width: 30px; height: 24px; padding: 0; line-height: 1; font-size: 0.8em; cursor: pointer;
+    background: rgba(79, 179, 255, 0.15); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 5px; transition: all 0.15s ease;
+  }
+  .btn-fase:hover:not(:disabled) { background: rgba(79, 179, 255, 0.40); box-shadow: 0 0 8px rgba(79, 179, 255, 0.6); }
+  .btn-fase:disabled { opacity: 0.35; cursor: not-allowed; }
   .esito-attenzione { color: var(--amber-bright); font-weight: bold; }
   .esito-critica { color: var(--orange-bright); font-weight: bold; }
   .latency { color: var(--accent); font-weight: bold; }
@@ -2554,7 +2637,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1085.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2895,7 +2978,8 @@ $HtmlPage = @'
 
 <div class="panel">
   <h2>&#9877; Stato di salute del sistema (Log Fasi di Avvio)</h2>
-  <table id="tabellaSalute"><thead><tr><th>Fase</th><th>Azione</th><th>Esito</th></tr></thead><tbody></tbody></table>
+  <table id="tabellaSalute"><thead><tr><th class="fase-btn-cell">Esegui</th><th>Fase</th><th>Azione</th><th>Esito</th></tr></thead><tbody></tbody></table>
+  <div class="muted" style="font-size:0.78em; margin-top:8px;">&#9654; esegue solo quella fase, con la stessa logica dell'avvio del .BAT (una alla volta). Le liste RPZ aggiornate vengono caricate da Unbound al successivo riavvio del servizio.</div>
 </div>
 
 <div class="panel">
@@ -3546,6 +3630,88 @@ async function confirmRestartManager() {
     btn.innerHTML = '&#128295; Riavvia Manager .BAT';
   }
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
+}
+
+// === STATO DI SALUTE: pulsante per eseguire la singola fase ===
+// Conferma solo per le fasi che interrompono/riavviano la protezione DNS.
+const PHASE_CONFIRM = {
+  F8:  "Fase F8: ferma il servizio Unbound e imposta temporaneamente i DNS pubblici 1.1.1.1 / 9.9.9.9.\n\nSubito dopo parte in automatico la fase F13 (controllo di service.conf, DNS su 127.0.0.1, avvio di Unbound): in pratica e un riavvio del servizio.\n\nProcedere?",
+  F13: "Fase F13: controlla la sintassi di service.conf, ripristina i DNS su 127.0.0.1 e avvia il servizio Unbound.\n\nProcedere?"
+};
+const phaseLocal = {};        // codice -> { t, ts0, seen }: fasi lanciate da questa pagina, in attesa dell'esito
+let lastHealthTs = '';
+let lastStatusData = null;
+
+function renderSaluteFasi(d) {
+  const tbody = document.querySelector('#tabellaSalute tbody');
+  if (!tbody) return;
+  lastStatusData = d;
+  const det = (d.salute_sistema && d.salute_sistema.dettaglio) || {};
+  let fasi = det.fasi || [];
+  if (!Array.isArray(fasi)) { fasi = [fasi]; }
+  const ts = det.timestamp || '';
+  lastHealthTs = ts;
+
+  // Stato locale "in attesa": si chiude quando il server ha visto la fase partire e finire,
+  // oppure quando lo snapshot e' stato riscritto (fasi velocissime), oppure dopo 20s senza
+  // alcun segnale (avvio fallito in silenzio).
+  const now = Date.now();
+  Object.keys(phaseLocal).forEach(code => {
+    const p = phaseLocal[code];
+    const f = fasi.find(x => x.fase === code);
+    if (f && f.in_corso) { p.seen = true; }
+    else if (p.seen) { delete phaseLocal[code]; }
+    else if (ts && ts !== p.ts0) { delete phaseLocal[code]; }
+    else if (now - p.t > 20000) { delete phaseLocal[code]; }
+  });
+
+  const anyRunning = fasi.some(f => f.in_corso) || Object.keys(phaseLocal).length > 0;
+
+  // Il corpo tabella viene ricostruito solo se qualcosa e' cambiato: cosi' un click sul
+  // pulsante non va perso perche' il nodo e' stato sostituito dal polling ogni 2 secondi.
+  const sig = JSON.stringify(fasi.map(f => [f.fase, f.azione, f.esito, !!f.in_corso, !!phaseLocal[f.fase]])) + '|' + anyRunning;
+  if (tbody.dataset.sig === sig) return;
+  tbody.dataset.sig = sig;
+
+  tbody.innerHTML = '';
+  if (fasi.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="muted">Nessun dato di salute ancora disponibile</td></tr>';
+    return;
+  }
+  fasi.forEach(f => {
+    const code = String(f.fase || '').replace(/[^A-Za-z0-9]/g, '');
+    const running = !!(f.in_corso || phaseLocal[code]);
+    const isWarn = /WARN|ERR|ERRORE|ALLARME|FALLITO/.test(f.esito || '');
+    const esitoHtml = running ? '<span class="esito-running">......esecuzione in corso......attendere......</span>' : (f.esito || '');
+    const tdClass = running ? '' : (isWarn ? 'esito-warn' : 'esito-ok');
+    const btn = code
+      ? '<button class="btn-fase" ' + (anyRunning ? 'disabled ' : '') + 'onclick="runPhase(\'' + code + '\')" title="Esegui solo la fase ' + code + '">&#9654;</button>'
+      : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="fase-btn-cell">${btn}</td><td>${code || '-'}</td><td>${f.azione || ''}</td><td class="${tdClass}">${esitoHtml}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function runPhase(code) {
+  code = String(code || '').replace(/[^A-Za-z0-9]/g, '');
+  if (!code) return;
+  if (PHASE_CONFIRM[code] && !confirm(PHASE_CONFIRM[code])) return;
+  const ts0 = lastHealthTs;
+  try {
+    const res = await fetch('/api/run-phase?fase=' + encodeURIComponent(code), {
+      method: 'POST', cache: 'no-store', headers: { 'X-Bunker-Fase': '1' }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'started') {
+      phaseLocal[code] = { t: Date.now(), ts0: ts0, seen: false };
+      if (lastStatusData) renderSaluteFasi(lastStatusData);
+    } else {
+      alert('Impossibile avviare la fase ' + code + ': ' + (data.error || ('errore HTTP ' + res.status)));
+    }
+  } catch (e) {
+    alert('Errore di rete durante la richiesta della fase ' + code + '.');
+  }
 }
 
 async function confirmForceRpzUpdate() {
@@ -4306,21 +4472,7 @@ async function refresh(forceVersions) {
       sessDiv.innerHTML = '<div class="muted">Nessun dato di sessione ancora disponibile</div>';
     }
 
-    const tbodySalute = document.querySelector('#tabellaSalute tbody');
-    tbodySalute.innerHTML = '';
-    let fasi = (d.salute_sistema && d.salute_sistema.dettaglio && d.salute_sistema.dettaglio.fasi) || [];
-    if (!Array.isArray(fasi)) { fasi = [fasi]; }
-
-    if (fasi.length === 0) {
-      tbodySalute.innerHTML = '<tr><td colspan="3" class="muted">Nessun dato di salute ancora disponibile</td></tr>';
-    } else {
-      fasi.forEach(f => {
-        const isWarn = /WARN|ERR|ERRORE|ALLARME|FALLITO/.test(f.esito || '');
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${f.fase || '-'}</td><td>${f.azione || ''}</td><td class="${isWarn ? 'esito-warn' : 'esito-ok'}">${f.esito || ''}</td>`;
-        tbodySalute.appendChild(tr);
-      });
-    }
+    renderSaluteFasi(d);
 
     const tbodyRcode = document.querySelector('#tabellaLiveRcode tbody');
     if (tbodyRcode) {
@@ -4601,6 +4753,70 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 if ($esito -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/run-phase" -and $request.HttpMethod -eq "POST") {
+                # Avvia UNA sola fase del Manager .BAT (UnboundBunkerManager.BAT --fase <CODICE>).
+                # Difese: header custom (impedisce POST cross-site da altre pagine web, che
+                # richiederebbero un preflight CORS mai concesso), controllo Host/Origin
+                # (anti DNS-rebinding), whitelist dei codici, una sola esecuzione alla volta.
+                $phaseStatus = 500
+                $phaseBody   = [ordered]@{ status = "error"; error = "errore interno" }
+                try {
+                    $faseReq = ([string]$request.QueryString["fase"]).ToUpperInvariant()
+                    $hdrOk   = ([string]$request.Headers["X-Bunker-Fase"] -eq "1")
+                    $hostOk  = (@("127.0.0.1:$Port", "localhost:$Port") -contains [string]$request.UserHostName)
+                    $origHdr = [string]$request.Headers["Origin"]
+                    $origOk  = ([string]::IsNullOrEmpty($origHdr) -or (@("http://127.0.0.1:$Port", "http://localhost:$Port") -contains $origHdr))
+
+                    if (-not ($hdrOk -and $hostOk -and $origOk)) {
+                        $phaseStatus = 403
+                        $phaseBody   = [ordered]@{ status = "error"; error = "Richiesta non autorizzata (origine non valida)." }
+                        Write-DashLog "Richiesta /api/run-phase rifiutata: header/host/origin non validi (Host=$($request.UserHostName) Origin=$origHdr)."
+                    } elseif ($script:PhaseCodes -notcontains $faseReq) {
+                        $phaseStatus = 400
+                        $phaseBody   = [ordered]@{ status = "error"; error = "Codice fase non valido." }
+                    } else {
+                        $batPath = Join-Path $UbDir "UnboundBunkerManager.BAT"
+                        $isAdmin = $false
+                        try { $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
+                        $script:PhaseRunCacheTime = [DateTime]::MinValue
+                        $giaInCorso = Get-PhaseRunMarkers
+
+                        if (-not (Test-Path -LiteralPath $batPath)) {
+                            $phaseBody = [ordered]@{ status = "error"; error = "UnboundBunkerManager.BAT non trovato in $UbDir." }
+                        } elseif (-not $isAdmin) {
+                            $phaseBody = [ordered]@{ status = "error"; error = "La Dashboard non e' in esecuzione come Amministratore: impossibile avviare la fase." }
+                        } elseif ($giaInCorso.Count -gt 0) {
+                            $phaseStatus = 409
+                            $phaseBody   = [ordered]@{ status = "error"; error = "Un'altra fase e' gia' in esecuzione: attendi che termini." }
+                        } elseif (Test-ManagerBatRunning) {
+                            $phaseStatus = 409
+                            $phaseBody   = [ordered]@{ status = "error"; error = "Il Manager .BAT e' in esecuzione (avvio o aggiornamento pianificato): riprova al termine." }
+                        } else {
+                            $markPath = Join-Path $script:PhaseRunDir ("bunker_phase_" + $faseReq + ".run")
+                            try {
+                                [System.IO.File]::WriteAllText($markPath, (Get-Date).ToString("o"))
+                                $script:PhaseRunCacheTime = [DateTime]::MinValue
+                                $cmdArgs = '/c ""' + $batPath + '" --fase ' + $faseReq + '"'
+                                Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -WorkingDirectory $UbDir -WindowStyle Hidden
+                                Write-DashLog "Avviata la singola fase $faseReq del Manager .BAT su richiesta dell'interfaccia Web."
+                                $phaseStatus = 200
+                                $phaseBody   = [ordered]@{ status = "started"; fase = $faseReq }
+                            } catch {
+                                try { Remove-Item -LiteralPath $markPath -Force -ErrorAction SilentlyContinue } catch {}
+                                $phaseBody = [ordered]@{ status = "error"; error = "Avvio della fase fallito: $($_.Exception.Message)" }
+                                Write-DashLog "Errore nell'avvio della fase $faseReq : $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                } catch {
+                    Write-DashLog "Errore in /api/run-phase: $($_.Exception.Message)"
+                }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($phaseBody | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.StatusCode = $phaseStatus
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/force-rpz-update" -and $request.HttpMethod -eq "POST") {
