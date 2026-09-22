@@ -3336,6 +3336,14 @@ if "!DASH_CLOUD_VER!"=="N/A" (
     if exist "!VER_TMP_REP!" ( set /p DASH_CLOUD_VER=<"!VER_TMP_REP!" & del /f /q "!VER_TMP_REP!" >nul 2>&1 )
 )
 
+:: [FORCE-UPDATE] Se la versione cloud e' diversa da quella locale, riscarica
+:: subito la Dashboard (con verifica SHA256, stessa logica dell'avvio) invece
+:: di aspettare il prossimo riavvio di Windows: cosi' anche i cicli biorario
+:: (--refresh) e il report giornaliero (--dailyreport) restano allineati al
+:: repo. Aggiorna anche DASH_LOCAL_VER cosi' il messaggio Telegram sotto
+:: riporta gia' la versione corretta.
+call :DASH_FORCE_UPDATE_REP
+
 :: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
 powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $dUrlhaus = Get-DomDet @('urlhaus'); $dThreatFox = Get-DomDet @('threatfox'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 *UNBOUND BUNKER CERBERO - REPORT BIORARIO*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '=============================================' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER!/Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER!/Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER!/Cloud v!SVC_VER!' + [char]10 + '• *Dashboard.:* Locale v!DASH_LOCAL_VER!/Cloud v!DASH_CLOUD_VER!' + [char]10 + '=============================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '=============================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus.........: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF..............: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS..........: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6)...: `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS...........: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster...: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs.: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '• 🦠 abuse.ch URLhaus........: `!BLK_URLHAUS!` blocchi' + $(if ($dUrlhaus) { [char]10 + $dUrlhaus } else { '' }) + [char]10 + '• 🕸️ abuse.ch ThreatFox......: `!BLK_THREATFOX!` blocchi' + $(if ($dThreatFox) { [char]10 + $dThreatFox } else { '' }) + [char]10 + '=============================================' + [char]10 + '!IPV4_LINE!' + [char]10 + '!IPV6_LINE!' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
 :: [FIX-TG] Conferma incondizionata che il blocco di invio e' stato
@@ -3362,6 +3370,77 @@ if exist "%RPZ_LOG%" (
 
 call :LOGSTEP "REPORT" "Report biorario inviato: !TOT_QUERIES! query, !BLK_TOT! blocchi RPZ totali"
 exit /b 0
+
+:: ==================================================================
+:: SUBROUTINE: FORZA AGGIORNAMENTO DASHBOARD SE VERSIONE CLOUD DIVERSA
+:: Chiamata da :DAILY_REPORT_ONLY (quindi sia dal ciclo biorario --refresh
+:: sia dal task --dailyreport): se DASH_CLOUD_VER e' diverso da
+:: DASH_LOCAL_VER, riscarica UnboundBunkerDashboard.ps1 su R:\ con verifica
+:: SHA256 (stessa logica gia' usata in fase di avvio) e riavvia il processo
+:: live, cosi' non si deve aspettare un riavvio di Windows per allinearsi
+:: al repo. Se R:\ non esiste (RAM disk non montato) o le versioni
+:: coincidono, esce subito senza toccare la rete.
+:: ==================================================================
+:DASH_FORCE_UPDATE_REP
+if "!DASH_CLOUD_VER!"=="N/A" exit /b
+if "!DASH_CLOUD_VER!"=="!DASH_LOCAL_VER!" exit /b
+if not exist "R:\" exit /b
+
+echo   [..] Dashboard: versione locale ^(!DASH_LOCAL_VER!^) diversa da quella sul repo ^(!DASH_CLOUD_VER!^): ri-download in corso...
+set "DASH_PS1_FORCE=R:\UnboundBunkerDashboard.ps1"
+set "DASH_MIN_SIZE_REP=5000"
+set "CLOUD_DASH_URL_REP=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.ps1"
+set "CLOUD_DASH_SHA_URL_REP=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/UnboundBunkerDashboard.sha256"
+set "DASH_TMP_REP=R:\UnboundBunkerDashboard.ps1.tmp"
+set "DASH_SHA_TMP_REP=R:\UnboundBunkerDashboard.sha256.tmp"
+if exist "!DASH_TMP_REP!" del /f /q "!DASH_TMP_REP!" >nul 2>&1
+if exist "!DASH_SHA_TMP_REP!" del /f /q "!DASH_SHA_TMP_REP!" >nul 2>&1
+
+set "DASH_DL_ERR_REP=R:\dashboard_download_error.log"
+if exist "!DASH_DL_ERR_REP!" del /f /q "!DASH_DL_ERR_REP!" >nul 2>&1
+powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_DASH_URL_REP!', '!DASH_TMP_REP!'); (New-Object System.Net.WebClient).DownloadFile('!CLOUD_DASH_SHA_URL_REP!', '!DASH_SHA_TMP_REP!') } catch { [System.IO.File]::WriteAllText('!DASH_DL_ERR_REP!', $_.Exception.ToString()); exit 1 }" >nul 2>&1
+
+set "DASH_UPDATE_OK=0"
+if exist "!DASH_TMP_REP!" if exist "!DASH_SHA_TMP_REP!" (
+    for /f "tokens=1" %%A in ('type "!DASH_SHA_TMP_REP!"') do set "EXPECTED_DASH_SHA_REP=%%A"
+    set "LOCAL_DASH_SHA_REP="
+    for /f "skip=1 delims=" %%A in ('certutil -hashfile "!DASH_TMP_REP!" SHA256 ^| findstr /v "CertUtil"') do (
+        set "LOCAL_DASH_SHA_REP=%%A"
+        set "LOCAL_DASH_SHA_REP=!LOCAL_DASH_SHA_REP: =!"
+    )
+    del /f /q "!DASH_SHA_TMP_REP!" >nul 2>&1
+
+    if /i "!LOCAL_DASH_SHA_REP!"=="!EXPECTED_DASH_SHA_REP!" (
+        for %%I in ("!DASH_TMP_REP!") do if %%~zI GTR !DASH_MIN_SIZE_REP! (
+            rem Termina l'istanza live in esecuzione prima di sovrascrivere il file, stessa
+            rem tecnica usata in fase di avvio, per evitare due processi in competizione.
+            powershell -NoProfile -Command "try { $procs=Get-CimInstance Win32_Process -Filter 'Name=''powershell.exe''' -ErrorAction SilentlyContinue; foreach ($p in $procs) { if ($p.CommandLine -like '*UnboundBunkerDashboard.ps1*') { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } } } catch {}" >nul 2>&1
+            move /y "!DASH_TMP_REP!" "!DASH_PS1_FORCE!" >nul 2>&1
+            if exist "!DASH_PS1_FORCE!" for %%A in ("!DASH_PS1_FORCE!") do if %%~zA GTR !DASH_MIN_SIZE_REP! set "DASH_UPDATE_OK=1"
+        ) else (
+            del /f /q "!DASH_TMP_REP!" >nul 2>&1
+        )
+    ) else (
+        echo   [!] Mismatch SHA256 sulla nuova UnboundBunkerDashboard.ps1: file scartato per sicurezza.
+        del /f /q "!DASH_TMP_REP!" >nul 2>&1
+    )
+) else (
+    if exist "!DASH_TMP_REP!" del /f /q "!DASH_TMP_REP!" >nul 2>&1
+    if exist "!DASH_SHA_TMP_REP!" del /f /q "!DASH_SHA_TMP_REP!" >nul 2>&1
+)
+
+if "!DASH_UPDATE_OK!"=="1" (
+    start "" /d "!UB_DIR!" powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "!DASH_PS1_FORCE!"
+    set "DASH_LOCAL_VER=!DASH_CLOUD_VER!"
+    echo   [OK] Dashboard aggiornata a v!DASH_LOCAL_VER! e riavviata in background.
+) else (
+    echo   [!] Ri-download della Dashboard fallito: resta in uso la versione precedente ^(v!DASH_LOCAL_VER!^).
+    if exist "!DASH_DL_ERR_REP!" (
+        echo   [DEBUG] Dettaglio errore:
+        type "!DASH_DL_ERR_REP!"
+    )
+)
+exit /b
 
 :CONFIG_ERROR
 color 0C
