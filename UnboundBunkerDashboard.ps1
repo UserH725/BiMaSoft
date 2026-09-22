@@ -2145,6 +2145,7 @@ $HtmlPage = @'
     --amber: #d35400; --amber-bright: #ffb300;
     --accent: #4fb3ff; --purple: #b388ff; 
     --orange-bright: #ff8c1a;
+    --teal: #0f8a80; --teal-bright: #2dd4bf;
     --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
     --font-mono: "Consolas", "Cascadia Mono", "Liberation Mono", monospace;
     --radius: 12px; --radius-sm: 8px;
@@ -2301,6 +2302,20 @@ $HtmlPage = @'
     background: linear-gradient(180deg, rgba(255,92,92,0.28) 0%, rgba(255,92,92,0.1) 100%);
     border-color: rgba(255,92,92,0.5);
     box-shadow: 0 6px 20px rgba(255,92,92,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+    color: #ffffff;
+  }
+
+  /* 🧩 TEAL (Aggiorna Componenti: Dashboard + Engine/BAT/service.conf via Manager) */
+  .btn-teal {
+    background: linear-gradient(180deg, rgba(45,212,191,0.18) 0%, rgba(45,212,191,0.05) 100%);
+    border: 1px solid rgba(45,212,191,0.25);
+    border-top-color: rgba(45,212,191,0.5);
+    color: var(--teal-bright);
+  }
+  .btn-teal:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(45,212,191,0.28) 0%, rgba(45,212,191,0.1) 100%);
+    border-color: rgba(45,212,191,0.5);
+    box-shadow: 0 6px 20px rgba(45,212,191,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
     color: #ffffff;
   }
 
@@ -2733,6 +2748,10 @@ $HtmlPage = @'
     &#11015;&#65039; Aggiorna Dashboard da GitHub
   </button>
   <span id="updateDashStatus" class="muted button-row-status"></span>
+  <button id="btnUpdateComponents" onclick="confirmUpdateComponents()" class="btn-action btn-teal" title="Aggiorna tutti i componenti del Bunker: Dashboard (GitHub, con verifica SHA256) poi Unbound Engine + BAT + service.conf (rilanciando UnboundBunkerManager.BAT)">
+    &#129513; Aggiorna Componenti
+  </button>
+  <span id="updateComponentsStatus" class="muted button-row-status"></span>
   <div id="bunkerGainContainer" style="margin-left: auto; display: flex; align-items: center;"></div>
 </div>
 
@@ -3886,6 +3905,133 @@ function waitForDashboardRestartAfterUpdate() {
   }, 1000);
 }
 
+// === AGGIORNA COMPONENTI (Dashboard + Engine/BAT/service.conf) ===
+// Passo 1: riusa /api/update-dashboard (stesso meccanismo del pulsante "Aggiorna
+// Dashboard da GitHub": download, verifica SHA256, backup, sostituzione, riavvio).
+// Passo 2: riusa /api/restart-manager per rilanciare UnboundBunkerManager.BAT, che
+// nella sua normale routine di avvio esegue il controllo/aggiornamento di Unbound
+// Engine, del BAT stesso e di service.conf. Nessun nuovo endpoint server-side:
+// entrambi i passi si appoggiano a meccanismi gia' collaudati.
+// Il passo 1 riavvia il processo Dashboard (perdendo lo stato JS in memoria), quindi
+// la prosecuzione al passo 2 viene segnalata attraverso un parametro nell'URL dopo
+// il ricaricamento della pagina (stesso pattern di ?dashboard_updated=1).
+function resetUpdateComponentsButton() {
+  const btn = document.getElementById('btnUpdateComponents');
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#129513; Aggiorna Componenti'; }
+}
+
+async function confirmUpdateComponents() {
+  if (!confirm("Aggiornare tutti i componenti del Bunker?\n\n1) Dashboard (da GitHub, con verifica SHA256 e riavvio automatico)\n2) Unbound Engine + UnboundBunkerManager.BAT + service.conf (rilanciando il Manager, che esegue da solo il controllo/aggiornamento di questi 3 file durante il suo avvio)\n\nIl passo 2 non ha un segnale affidabile di completamento: verifica lo stato/le versioni manualmente dopo qualche minuto.")) return;
+
+  const btn = document.getElementById('btnUpdateComponents');
+  const status = document.getElementById('updateComponentsStatus');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Aggiornamento in corso...'; }
+  if (status) status.textContent = '';
+
+  runUpdateComponentsStep1();
+}
+
+async function runUpdateComponentsStep1() {
+  setLiveStatus(false);
+  document.getElementById('subheader').textContent = 'Aggiornamento Componenti in corso... Passo 1 di 2: Dashboard';
+  showRestartOverlay('&#129513;', 'Aggiornamento Componenti - Passo 1 di 2', 'Download e verifica SHA256 della Dashboard da GitHub in corso...');
+  updateRestartProgress(8);
+
+  let esito = 'error';
+  let errMsg = 'errore sconosciuto';
+  try {
+    const res = await fetch('/api/update-dashboard', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    esito = data.status || 'error';
+    errMsg = data.error || errMsg;
+  } catch (e) {
+    errMsg = 'errore di rete durante la richiesta';
+  }
+
+  if (esito === 'updated') {
+    document.getElementById('restartOverlaySub').textContent = 'Dashboard aggiornata, riavvio in corso...';
+    sessionStorage.setItem('bunkerComponentsUpdateStep2', '1');
+    waitForComponentsStep1Restart();
+    return;
+  }
+
+  // Passo 1 fallito (es. hash non corrispondente, repo irraggiungibile): non blocca il
+  // passo 2, che riguarda file indipendenti (Engine/BAT/service.conf).
+  const status = document.getElementById('updateComponentsStatus');
+  if (status) status.textContent = 'Passo 1 (Dashboard) non riuscito: ' + errMsg + ' - si procede comunque con il Passo 2.';
+  document.getElementById('restartOverlaySub').textContent = 'Passo 1 (Dashboard) non riuscito: ' + errMsg + '. Si procede con il Passo 2...';
+  await new Promise(r => setTimeout(r, 2500));
+  runUpdateComponentsStep2();
+}
+
+function waitForComponentsStep1Restart() {
+  let attempts = 0;
+  const SOFT_LIMIT = 35;
+  const HARD_LIMIT = 90;
+  const checkInterval = setInterval(async () => {
+    attempts++;
+    updateRestartProgress(8 + (attempts / HARD_LIMIT) * 37);
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      if (res.ok) {
+        clearInterval(checkInterval);
+        updateRestartProgress(45);
+        location.href = location.pathname + '?components_update_step2=1';
+      }
+    } catch(e) {}
+
+    if (attempts === SOFT_LIMIT) {
+      document.getElementById('restartOverlaySub').textContent =
+        'Sta impiegando più del previsto (possibile scansione antivirus del processo appena avviato)... continuo ad attendere.';
+    }
+
+    if (attempts > HARD_LIMIT) {
+      clearInterval(checkInterval);
+      alert("Il riavvio della Dashboard dopo l'aggiornamento (Passo 1) non risulta completato dopo " + HARD_LIMIT + " secondi. Ricarica manualmente la pagina, poi usa \"Riavvia Manager .BAT\" per completare l'aggiornamento di Engine/BAT/service.conf.");
+      document.getElementById('restartOverlay').classList.remove('active');
+      sessionStorage.removeItem('bunkerComponentsUpdateStep2');
+      resetUpdateComponentsButton();
+    }
+  }, 1000);
+}
+
+async function runUpdateComponentsStep2() {
+  sessionStorage.removeItem('bunkerComponentsUpdateStep2');
+  document.getElementById('subheader').textContent = 'Aggiornamento Componenti in corso... Passo 2 di 2: Engine/BAT/service.conf';
+  showRestartOverlay('&#128295;', 'Aggiornamento Componenti - Passo 2 di 2', 'Avvio di UnboundBunkerManager.BAT per il controllo/aggiornamento di Unbound Engine, BAT e service.conf...');
+  updateRestartProgress(55);
+
+  const status = document.getElementById('updateComponentsStatus');
+  let esito = 'error';
+  let errMsg = 'errore sconosciuto';
+  try {
+    const res = await fetch('/api/restart-manager', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    esito = data.status || 'error';
+    errMsg = data.error || errMsg;
+  } catch (e) {
+    errMsg = 'errore di rete durante la richiesta';
+  }
+
+  updateRestartProgress(100);
+
+  if (esito === 'started') {
+    document.getElementById('restartOverlaySub').textContent = 'Manager avviato. Il controllo/aggiornamento di Engine, BAT e service.conf procede in background.';
+    if (status) status.textContent = 'Manager avviato alle ' + new Date().toLocaleTimeString('it-IT') + '. Verifica versioni/stato tra qualche minuto.';
+  } else {
+    document.getElementById('restartOverlaySub').textContent = 'Errore nell\'avvio del Manager: ' + errMsg;
+    if (status) status.textContent = 'Passo 2 (Manager) non riuscito: ' + errMsg;
+  }
+
+  setTimeout(() => {
+    hideRestartOverlay();
+    resetUpdateComponentsButton();
+    refresh(true);
+  }, 1500);
+
+  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
+}
+
 async function refresh(forceVersions) {
   if (isRefreshing) return;
   isRefreshing = true;
@@ -4617,6 +4763,17 @@ async function refresh(forceVersions) {
 if (new URLSearchParams(location.search).get('dashboard_updated') === '1') {
   history.replaceState(null, '', location.pathname);
   showUpdateToast();
+}
+
+// Prosecuzione del flusso "Aggiorna Componenti" dopo il riavvio della Dashboard
+// (Passo 1 completato): il parametro in URL sopravvive al reload del processo,
+// sessionStorage e' una controprova extra in caso di refresh manuale della pagina.
+if (new URLSearchParams(location.search).get('components_update_step2') === '1') {
+  history.replaceState(null, '', location.pathname);
+  sessionStorage.removeItem('bunkerComponentsUpdateStep2');
+  const btn = document.getElementById('btnUpdateComponents');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Aggiornamento in corso...'; }
+  runUpdateComponentsStep2();
 }
 
 refresh(true);
