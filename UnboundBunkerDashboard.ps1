@@ -2351,6 +2351,26 @@ $HtmlPage = @'
   }
   .restart-progress-pct { margin-top: 10px; font-size: 0.85em; color: var(--dim); letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
 
+  /* ---------- Banner esecuzione/attenzione (prima riga della dashboard) ---------- */
+  .status-banner {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; margin-bottom: 14px;
+    border-radius: 10px; font-family: var(--font-ui);
+    font-size: 0.95em; font-weight: 600; letter-spacing: 0.2px;
+    border: 1px solid transparent; transition: background 0.3s ease, border-color 0.3s ease;
+  }
+  .status-banner .sb-icon { font-size: 1.1em; line-height: 1; }
+  .status-banner .sb-label { font-weight: 800; letter-spacing: 0.5px; margin-right: 2px; }
+  .status-banner.sb-ok {
+    background: rgba(61,220,132,0.08); border-color: rgba(61,220,132,0.3); color: var(--green-bright);
+  }
+  .status-banner.sb-warn {
+    background: rgba(255,179,0,0.10); border-color: rgba(255,179,0,0.35); color: var(--amber-bright);
+  }
+  .status-banner.sb-error {
+    background: rgba(255,92,92,0.12); border-color: rgba(255,92,92,0.4); color: var(--red-bright);
+  }
+
   .update-toast {
     position: fixed; top: 20px; left: 50%;
     transform: translateX(-50%) translateY(-12px);
@@ -2717,6 +2737,11 @@ $HtmlPage = @'
 </style>
 </head>
 <body>
+
+<div class="status-banner sb-ok" id="statusBanner">
+  <span class="sb-icon" id="statusBannerIcon">&#9989;</span>
+  <span id="statusBannerText">ESECUZIONE REGOLARE</span>
+</div>
 
 <div class="header-container">
   <div>
@@ -3393,6 +3418,85 @@ function renderDnsFallbackLog(d) {
   `).join('');
 }
 
+// === BANNER DI STATO (prima riga della dashboard: ESECUZIONE REGOLARE / ATTENZIONE) ===
+// Valuta le anomalie note in ordine di gravita' e mostra un solo messaggio,
+// sintetico e operativo, su cosa va fatto. Nessuna anomalia rilevata => banner verde.
+function buildStatusBannerFinding(d) {
+  // 1) Fasi di avvio in ERRORE (massima priorita': il Bunker potrebbe non essere pienamente operativo)
+  const fasi = (d.salute_sistema && d.salute_sistema.dettaglio && d.salute_sistema.dettaglio.fasi) || [];
+  const faseErr = fasi.find(f => /ERR|ERRORE|FALLITO/i.test(f.esito || ''));
+  if (faseErr) {
+    return { level: 'error', text: `Fase "${faseErr.fase}" in errore (${faseErr.esito}) - eseguila manualmente dal pannello "Stato di salute del sistema"` };
+  }
+
+  // 2) Riavvio di Windows richiesto
+  if (d.windows_update && d.windows_update.riavvio_richiesto) {
+    return { level: 'warn', text: 'Riavvio di Windows richiesto per completare gli aggiornamenti - pianificare un riavvio del PC appena possibile' };
+  }
+
+  // 3) Connettivita' IPv4/IPv6 incompleta (LAN o WAN)
+  const ipc = d.connettivita_ip || {};
+  const ipProblemi = [];
+  if (ipc.ipv4_lan_ok === false) ipProblemi.push('IPv4 LAN');
+  if (ipc.ipv6_lan_ok === false) ipProblemi.push('IPv6 LAN');
+  if (ipc.ipv4_wan_ok === false) ipProblemi.push('IPv4 WAN');
+  if (ipc.ipv6_wan_ok === false) ipProblemi.push('IPv6 WAN');
+  if (ipProblemi.length > 0) {
+    return { level: 'warn', text: `Connettivita' incompleta: ${ipProblemi.join(', ')} non raggiungibile - verificare la rete` };
+  }
+
+  // 4) Versioni componenti non allineate al cloud (locale vs cloud, valori entrambi noti)
+  const v = d.versioni || {};
+  const coppie = [
+    ['Unbound Engine', v.unbound_local, v.unbound_cloud],
+    ['service.conf', v.conf_local, v.conf_cloud],
+    ['Manager .BAT', v.bat_local, v.bat_cloud],
+    ['Dashboard', v.dash_local, v.dash_cloud]
+  ];
+  const nonAllineati = coppie
+    .filter(([, loc, cld]) => loc && cld && loc !== 'N/D' && cld !== 'N/D' && loc !== cld)
+    .map(([nome]) => nome);
+  if (nonAllineati.length > 0) {
+    return { level: 'warn', text: `Componenti non allineati alla versione cloud: ${nonAllineati.join(', ')} - usare il pulsante "Aggiorna Componenti"` };
+  }
+
+  // 5) Fasi di avvio con esito WARN/ALLARME
+  const faseWarn = fasi.find(f => /WARN|ALLARME/i.test(f.esito || ''));
+  if (faseWarn) {
+    return { level: 'warn', text: `Fase "${faseWarn.fase}" in allarme (${faseWarn.esito}) - verificare dal pannello "Stato di salute del sistema"` };
+  }
+
+  // 6) Fallback generico: salute complessiva del sistema non al 100%
+  const score = (d.salute_sistema && typeof d.salute_sistema.score === 'number') ? d.salute_sistema.score : 100;
+  if (score < 100) {
+    return { level: 'warn', text: `Salute generale del Bunker al ${score}% (non ottimale) - verificare il pannello "Stato di salute del sistema"` };
+  }
+
+  return null; // tutto regolare
+}
+
+function renderStatusBanner(d) {
+  const el     = document.getElementById('statusBanner');
+  const icon   = document.getElementById('statusBannerIcon');
+  const txt    = document.getElementById('statusBannerText');
+  if (!el || !icon || !txt) return;
+
+  const finding = buildStatusBannerFinding(d);
+
+  el.classList.remove('sb-ok', 'sb-warn', 'sb-error');
+
+  if (!finding) {
+    el.classList.add('sb-ok');
+    icon.innerHTML = '&#9989;';
+    txt.textContent = 'ESECUZIONE REGOLARE';
+    return;
+  }
+
+  el.classList.add(finding.level === 'error' ? 'sb-error' : 'sb-warn');
+  icon.innerHTML = finding.level === 'error' ? '&#10060;' : '&#9888;';
+  txt.textContent = `ATTENZIONE: ${finding.text}`;
+}
+
 // === STATO WINDOWS UPDATE ===
 function renderWinUpdate(d) {
   const cont = document.getElementById('statsWinUpdate');
@@ -4047,6 +4151,8 @@ async function refresh(forceVersions) {
 
     lastDataTs = Date.now();
     setLiveStatus(true);
+
+    try { renderStatusBanner(d); } catch (e) { /* il banner non deve mai bloccare il resto del refresh */ }
 
     document.getElementById('subheader').textContent =
       'Host: ' + d.host + ' | Profilo RAM: ' + (d.hardware.profilo || 'N/D') +
