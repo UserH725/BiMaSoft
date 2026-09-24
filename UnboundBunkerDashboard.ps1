@@ -498,6 +498,104 @@ function Get-IpConnectivityStatus {
     }
 }
 
+# === TOGGLE DNS SCHEDA DI RETE (Automatico <-> Bunker locale 127.0.0.1/::1) ===
+$script:NicDnsCache       = $null
+$script:NicDnsCacheTime   = [DateTime]::MinValue
+$script:NicDnsCacheTtlSec = 15
+
+function Get-PrimaryNicIndex {
+    # Interfaccia "principale": Up, con gateway IPv4 di default, ordinata per metrica minore
+    # (stessa logica di scelta gia' usata implicitamente altrove nella dashboard per l'IP LAN).
+    try {
+        $cfg = Get-NetIPConfiguration -ErrorAction Stop |
+            Where-Object { $_.NetAdapter -and $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway } |
+            Sort-Object -Property @{ Expression = { $_.NetIPv4Interface.InterfaceMetric }; Ascending = $true } |
+            Select-Object -First 1
+        if ($cfg) { return $cfg.InterfaceIndex }
+    } catch {}
+    return $null
+}
+
+function Get-NicDnsStatus {
+    param([switch]$Force)
+
+    if (-not $Force -and $script:NicDnsCache -and (((Get-Date) - $script:NicDnsCacheTime).TotalSeconds -lt $script:NicDnsCacheTtlSec)) {
+        return $script:NicDnsCache
+    }
+
+    $result = [ordered]@{
+        disponibile = $false
+        ifIndex     = $null
+        interfaccia = $null
+        modalita    = "sconosciuto"   # "automatico" | "manuale" | "sconosciuto"
+        serverV4    = @()
+        serverV6    = @()
+        errore      = $null
+    }
+
+    try {
+        $ifIndex = Get-PrimaryNicIndex
+        if (-not $ifIndex) { throw "Nessuna interfaccia di rete attiva con gateway di default trovata." }
+
+        $adapter = Get-NetAdapter -InterfaceIndex $ifIndex -ErrorAction Stop
+        $result.ifIndex     = $ifIndex
+        $result.interfaccia = $adapter.Name
+        $result.disponibile = $true
+
+        $result.serverV4 = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses)
+        $result.serverV6 = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue).ServerAddresses)
+
+        # La presenza di un DNS assegnato via DHCP non implica configurazione manuale: il modo
+        # affidabile e indipendente dalla lingua di Windows per distinguere automatico/manuale
+        # e' leggere direttamente la chiave NameServer nel registro dell'interfaccia (vuota =
+        # automatico/DHCP, valorizzata = impostazione statica) - stessa cosa che verifica la UI
+        # di Windows "Ottieni DNS automaticamente" vs "Usa i seguenti indirizzi server DNS".
+        $ifGuid = $adapter.InterfaceGuid
+        $regV4  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$ifGuid"
+        $regV6  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$ifGuid"
+        $staticV4 = $null; $staticV6 = $null
+        if (Test-Path -LiteralPath $regV4) { $staticV4 = (Get-ItemProperty -LiteralPath $regV4 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
+        if (Test-Path -LiteralPath $regV6) { $staticV6 = (Get-ItemProperty -LiteralPath $regV6 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
+
+        $isManual = (-not [string]::IsNullOrWhiteSpace($staticV4)) -or (-not [string]::IsNullOrWhiteSpace($staticV6))
+        $result.modalita = if ($isManual) { "manuale" } else { "automatico" }
+    } catch {
+        $result.errore = $_.Exception.Message
+    }
+
+    $script:NicDnsCache     = $result
+    $script:NicDnsCacheTime = Get-Date
+    return $result
+}
+
+function Invoke-NicDnsToggle {
+    $status = Get-NicDnsStatus -Force
+    if (-not $status.disponibile) {
+        return [ordered]@{ status = "error"; error = $(if ($status.errore) { $status.errore } else { "Interfaccia di rete non trovata." }) }
+    }
+
+    try {
+        if ($status.modalita -eq "manuale") {
+            Set-DnsClientServerAddress -InterfaceIndex $status.ifIndex -ResetServerAddresses -ErrorAction Stop
+            Write-DashLog "DNS interfaccia '$($status.interfaccia)' riportato su Automatico (DHCP) da richiesta Web."
+        } else {
+            Set-DnsClientServerAddress -InterfaceIndex $status.ifIndex -ServerAddresses @("127.0.0.1", "::1") -ErrorAction Stop
+            Write-DashLog "DNS interfaccia '$($status.interfaccia)' impostato manualmente su 127.0.0.1 / ::1 (Bunker locale) da richiesta Web."
+        }
+        Start-Sleep -Milliseconds 300
+        $nuovoStato = Get-NicDnsStatus -Force
+        return [ordered]@{
+            status      = "ok"
+            interfaccia = $status.interfaccia
+            precedente  = $status.modalita
+            attuale     = $nuovoStato.modalita
+        }
+    } catch {
+        Write-DashLog "Errore durante il toggle DNS sull'interfaccia '$($status.interfaccia)': $($_.Exception.Message)"
+        return [ordered]@{ status = "error"; error = $_.Exception.Message }
+    }
+}
+
 # === CACHE VERSIONI CLOUD E LOCALE ===
 $script:CloudVersionsCache       = $null
 $script:CloudVersionsCacheTime   = [DateTime]::MinValue
@@ -2123,7 +2221,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.1 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -2146,6 +2244,7 @@ $HtmlPage = @'
     --accent: #4fb3ff; --purple: #b388ff; 
     --orange-bright: #ff8c1a;
     --teal: #0f8a80; --teal-bright: #2dd4bf;
+    --cyan: #0e7490; --cyan-bright: #22d3ee;
     --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
     --font-mono: "Consolas", "Cascadia Mono", "Liberation Mono", monospace;
     --radius: 12px; --radius-sm: 8px;
@@ -2316,6 +2415,20 @@ $HtmlPage = @'
     background: linear-gradient(180deg, rgba(45,212,191,0.28) 0%, rgba(45,212,191,0.1) 100%);
     border-color: rgba(45,212,191,0.5);
     box-shadow: 0 6px 20px rgba(45,212,191,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+    color: #ffffff;
+  }
+
+  /* 🔀 CYAN (Toggle DNS scheda di rete) */
+  .btn-cyan {
+    background: linear-gradient(180deg, rgba(34,211,238,0.18) 0%, rgba(34,211,238,0.05) 100%);
+    border: 1px solid rgba(34,211,238,0.25);
+    border-top-color: rgba(34,211,238,0.5);
+    color: var(--cyan-bright);
+  }
+  .btn-cyan:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(34,211,238,0.28) 0%, rgba(34,211,238,0.1) 100%);
+    border-color: rgba(34,211,238,0.5);
+    box-shadow: 0 6px 20px rgba(34,211,238,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
     color: #ffffff;
   }
 
@@ -2745,7 +2858,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.1 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -2777,6 +2890,10 @@ $HtmlPage = @'
     &#129513; Aggiorna Componenti
   </button>
   <span id="updateComponentsStatus" class="muted button-row-status"></span>
+  <button id="btnToggleDns" onclick="confirmToggleDns()" class="btn-action btn-cyan" style="white-space: normal; line-height: 1.3; flex-basis: 260px;" title="Rileva il DNS della scheda di rete principale e lo commuta: se manuale lo riporta su Automatico (DHCP), se automatico lo imposta su 127.0.0.1 / ::1 (Bunker locale)">
+    &#128257; <span id="dnsToggleLabel">DNS: rilevamento...</span>
+  </button>
+  <span id="dnsToggleStatus" class="muted button-row-status"></span>
   <div id="bunkerGainContainer" style="margin-left: auto; display: flex; align-items: center;"></div>
 </div>
 
@@ -3947,6 +4064,69 @@ async function confirmForceRpzUpdate() {
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
+async function refreshDnsToggleStatus() {
+  const label = document.getElementById('dnsToggleLabel');
+  const btn = document.getElementById('btnToggleDns');
+  if (!label || !btn || btn.disabled) return;
+  try {
+    const res = await fetch('/api/dns-status', { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (data.disponibile) {
+      window.__dnsToggleState = data;
+      if (data.modalita === 'manuale') {
+        label.textContent = 'DNS attuale: Bunker (127.0.0.1/::1) \u2014 Clic: passa ad Automatico';
+        btn.title = 'Interfaccia "' + data.interfaccia + '": DNS attualmente impostato manualmente su 127.0.0.1/::1 (Bunker). Clic per riportarlo su Automatico (DHCP).';
+      } else if (data.modalita === 'automatico') {
+        label.textContent = 'DNS attuale: Automatico (DHCP) \u2014 Clic: passa a Bunker (127.0.0.1/::1)';
+        btn.title = 'Interfaccia "' + data.interfaccia + '": DNS attualmente Automatico (DHCP). Clic per impostarlo su 127.0.0.1/::1 (Bunker).';
+      } else {
+        label.textContent = 'DNS attuale: sconosciuto';
+      }
+    } else {
+      window.__dnsToggleState = null;
+      label.textContent = 'DNS: N/D';
+      btn.title = data.errore ? data.errore : 'Interfaccia di rete non rilevata.';
+    }
+  } catch (e) {
+    label.textContent = 'N/D';
+  }
+}
+
+async function confirmToggleDns() {
+  const st = window.__dnsToggleState;
+  let msg;
+  if (st && st.modalita === 'manuale') {
+    msg = 'Interfaccia "' + st.interfaccia + '": il DNS e\' attualmente impostato manualmente su 127.0.0.1 / ::1 (Bunker).\n\nRiportarlo su Automatico (DHCP)?';
+  } else if (st && st.modalita === 'automatico') {
+    msg = 'Interfaccia "' + st.interfaccia + '": il DNS e\' attualmente Automatico (DHCP).\n\nImpostarlo manualmente su 127.0.0.1 (IPv4) e ::1 (IPv6), puntando al Bunker locale?';
+  } else {
+    msg = 'Commutare il DNS della scheda di rete principale tra Automatico e Bunker locale (127.0.0.1 / ::1)?';
+  }
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('btnToggleDns');
+  const label = document.getElementById('dnsToggleLabel');
+  const status = document.getElementById('dnsToggleStatus');
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = '...';
+
+  try {
+    const res = await fetch('/api/dns-toggle', { method: 'POST', cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status === 'ok') {
+      if (status) status.textContent = 'Interfaccia "' + data.interfaccia + '": DNS commutato da ' + data.precedente + ' a ' + data.attuale + ' alle ' + new Date().toLocaleTimeString('it-IT') + '.';
+    } else {
+      if (status) status.textContent = 'Errore nel toggle DNS: ' + (data.error || 'sconosciuto');
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Errore di rete durante la richiesta.';
+  }
+
+  if (btn) btn.disabled = false;
+  await refreshDnsToggleStatus();
+  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
+}
+
 async function confirmUpdateDashboard() {
   if (!confirm("Scaricare l'ultima versione della dashboard dal repository GitHub?\n\nSe l'hash SHA256 non corrisponde l'aggiornamento viene annullato automaticamente e la versione attuale resta invariata. Se invece va a buon fine, la dashboard si riavvia da sola (perderai la connessione per qualche secondo).")) return;
 
@@ -4887,6 +5067,9 @@ setInterval(refresh, 2000);
 setInterval(() => {
   if (Date.now() - lastDataTs > 8000) setLiveStatus(false);
 }, 1000);
+
+refreshDnsToggleStatus();
+setInterval(refreshDnsToggleStatus, 15000);
 </script>
 </body>
 </html>
@@ -5301,6 +5484,22 @@ try {
                     Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
                     break
                 }
+            } elseif ($request.Url.AbsolutePath -eq "/api/dns-status") {
+                $dnsStatus = Get-NicDnsStatus
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($dnsStatus | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/dns-toggle" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di toggle DNS scheda di rete ricevuta dall'interfaccia Web."
+                $toggleResult = Invoke-NicDnsToggle
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($toggleResult | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                if ($toggleResult.status -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
