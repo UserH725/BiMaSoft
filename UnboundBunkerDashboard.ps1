@@ -503,17 +503,33 @@ $script:NicDnsCache       = $null
 $script:NicDnsCacheTime   = [DateTime]::MinValue
 $script:NicDnsCacheTtlSec = 15
 
-function Get-PrimaryNicIndex {
-    # Interfaccia "principale": Up, con gateway IPv4 di default, ordinata per metrica minore
-    # (stessa logica di scelta gia' usata implicitamente altrove nella dashboard per l'IP LAN).
+function Get-ActiveNicIndexes {
+    # Tutte le interfacce di rete realmente attive (Up), non solo quella con il gateway di
+    # default: Get-NetAdapter senza -IncludeHidden esclude gia' da se' le pseudo-interfacce
+    # (es. Loopback Pseudo-Interface). Serve a coprire i casi con piu' schede contemporaneamente
+    # su (es. Ethernet + Wi-Fi, o un adattatore VPN/tunnel) cosi' il toggle DNS agisce su tutte.
     try {
-        $cfg = Get-NetIPConfiguration -ErrorAction Stop |
-            Where-Object { $_.NetAdapter -and $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway } |
-            Sort-Object -Property @{ Expression = { $_.NetIPv4Interface.InterfaceMetric }; Ascending = $true } |
-            Select-Object -First 1
-        if ($cfg) { return $cfg.InterfaceIndex }
-    } catch {}
-    return $null
+        return @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' } | Select-Object -ExpandProperty InterfaceIndex)
+    } catch {
+        return @()
+    }
+}
+
+function Test-NicDnsManuale {
+    param([Parameter(Mandatory)] $Adapter)
+
+    # La presenza di un DNS assegnato via DHCP non implica configurazione manuale: il modo
+    # affidabile e indipendente dalla lingua di Windows per distinguere automatico/manuale
+    # e' leggere direttamente la chiave NameServer nel registro dell'interfaccia (vuota =
+    # automatico/DHCP, valorizzata = impostazione statica) - stessa cosa che verifica la UI
+    # di Windows "Ottieni DNS automaticamente" vs "Usa i seguenti indirizzi server DNS".
+    $ifGuid = $Adapter.InterfaceGuid
+    $regV4  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$ifGuid"
+    $regV6  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$ifGuid"
+    $staticV4 = $null; $staticV6 = $null
+    if (Test-Path -LiteralPath $regV4) { $staticV4 = (Get-ItemProperty -LiteralPath $regV4 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
+    if (Test-Path -LiteralPath $regV6) { $staticV6 = (Get-ItemProperty -LiteralPath $regV6 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
+    return (-not [string]::IsNullOrWhiteSpace($staticV4)) -or (-not [string]::IsNullOrWhiteSpace($staticV6))
 }
 
 function Get-NicDnsStatus {
@@ -525,40 +541,52 @@ function Get-NicDnsStatus {
 
     $result = [ordered]@{
         disponibile = $false
-        ifIndex     = $null
-        interfaccia = $null
-        modalita    = "sconosciuto"   # "automatico" | "manuale" | "sconosciuto"
+        ifIndexes   = @()
+        interfacce  = @()
+        interfaccia = $null   # nomi uniti da virgola, per compatibilita' col frontend esistente
+        modalita    = "sconosciuto"   # "automatico" | "manuale" | "misto" | "sconosciuto"
+        dohAttivo   = $false  # true solo se 127.0.0.1 E ::1 hanno una registrazione DoH valida verso il template del Bunker
         serverV4    = @()
         serverV6    = @()
         errore      = $null
     }
 
     try {
-        $ifIndex = Get-PrimaryNicIndex
-        if (-not $ifIndex) { throw "Nessuna interfaccia di rete attiva con gateway di default trovata." }
+        $indexes = Get-ActiveNicIndexes
+        if (-not $indexes -or $indexes.Count -eq 0) { throw "Nessuna interfaccia di rete attiva trovata." }
 
-        $adapter = Get-NetAdapter -InterfaceIndex $ifIndex -ErrorAction Stop
-        $result.ifIndex     = $ifIndex
-        $result.interfaccia = $adapter.Name
+        $voci = @()
+        foreach ($ifIndex in $indexes) {
+            try {
+                $adapter = Get-NetAdapter -InterfaceIndex $ifIndex -ErrorAction Stop
+                $isManual = Test-NicDnsManuale -Adapter $adapter
+                $voci += [ordered]@{
+                    ifIndex     = $ifIndex
+                    interfaccia = $adapter.Name
+                    modalita    = if ($isManual) { "manuale" } else { "automatico" }
+                    serverV4    = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses)
+                    serverV6    = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue).ServerAddresses)
+                }
+            } catch {
+                Write-DashLog "Lettura stato DNS interfaccia indice $ifIndex fallita: $($_.Exception.Message)"
+            }
+        }
+        if ($voci.Count -eq 0) { throw "Nessuna interfaccia di rete leggibile trovata." }
+
         $result.disponibile = $true
+        $result.ifIndexes    = @($voci | ForEach-Object { $_.ifIndex })
+        $result.interfacce   = @($voci)
+        $result.interfaccia  = ($voci | ForEach-Object { $_.interfaccia }) -join ", "
+        $result.serverV4     = @($voci | ForEach-Object { $_.serverV4 } | Select-Object -Unique)
+        $result.serverV6     = @($voci | ForEach-Object { $_.serverV6 } | Select-Object -Unique)
 
-        $result.serverV4 = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses)
-        $result.serverV6 = @((Get-DnsClientServerAddress -InterfaceIndex $ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue).ServerAddresses)
+        $manualiCount    = @($voci | Where-Object { $_.modalita -eq "manuale" }).Count
+        $automaticiCount = @($voci | Where-Object { $_.modalita -eq "automatico" }).Count
+        if ($manualiCount -eq $voci.Count) { $result.modalita = "manuale" }
+        elseif ($automaticiCount -eq $voci.Count) { $result.modalita = "automatico" }
+        else { $result.modalita = "misto" }
 
-        # La presenza di un DNS assegnato via DHCP non implica configurazione manuale: il modo
-        # affidabile e indipendente dalla lingua di Windows per distinguere automatico/manuale
-        # e' leggere direttamente la chiave NameServer nel registro dell'interfaccia (vuota =
-        # automatico/DHCP, valorizzata = impostazione statica) - stessa cosa che verifica la UI
-        # di Windows "Ottieni DNS automaticamente" vs "Usa i seguenti indirizzi server DNS".
-        $ifGuid = $adapter.InterfaceGuid
-        $regV4  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$ifGuid"
-        $regV6  = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$ifGuid"
-        $staticV4 = $null; $staticV6 = $null
-        if (Test-Path -LiteralPath $regV4) { $staticV4 = (Get-ItemProperty -LiteralPath $regV4 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
-        if (Test-Path -LiteralPath $regV6) { $staticV6 = (Get-ItemProperty -LiteralPath $regV6 -Name NameServer -ErrorAction SilentlyContinue).NameServer }
-
-        $isManual = (-not [string]::IsNullOrWhiteSpace($staticV4)) -or (-not [string]::IsNullOrWhiteSpace($staticV6))
-        $result.modalita = if ($isManual) { "manuale" } else { "automatico" }
+        $result.dohAttivo = Test-BunkerDohAttivo
     } catch {
         $result.errore = $_.Exception.Message
     }
@@ -568,32 +596,119 @@ function Get-NicDnsStatus {
     return $result
 }
 
+$script:BunkerDohTemplate = "https://localhost:8443/dns-query"
+
+function Test-BunkerDohAttivo {
+    # true solo se ENTRAMBI 127.0.0.1 e ::1 hanno una registrazione DoH valida (stesso template
+    # del Bunker) - usato per mostrare sul pulsante se il DNS crittografato e' davvero attivo,
+    # non solo "presunto" perche' siamo in modalita' manuale.
+    if (-not (Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue)) { return $false }
+    try {
+        $voci = @(Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue | Where-Object {
+            $_.ServerAddress -in @("127.0.0.1", "::1") -and $_.DohTemplate -eq $script:BunkerDohTemplate
+        })
+        return ($voci.Count -ge 2)
+    } catch {
+        return $false
+    }
+}
+
+function Set-BunkerDohRegistration {
+    # Registra 127.0.0.1 e ::1 come server DoH (DNS-over-HTTPS) verso il template del Bunker,
+    # cosi' Windows non interroga mai il resolver locale in chiaro (UDP/53) ma solo via HTTPS
+    # crittografato su https://localhost:8443/dns-query. Richiede Windows 11 22H2+ (cmdlet
+    # Add-DnsClientDohServerAddress); su sistemi privi del cmdlet resta un fallback silenzioso
+    # in chiaro, segnalato nel log.
+    #
+    # IMPORTANTE: Add-DnsClientDohServerAddress crea una NUOVA voce DoH; Set-DnsClientDohServerAddress
+    # invece MODIFICA una voce gia' esistente e fallisce (senza errore visibile all'utente, solo
+    # nel log) se l'indirizzo non e' ancora registrato. Alla primissima attivazione 127.0.0.1/::1
+    # non hanno mai una voce DoH pregressa, quindi va usato Add-; se una voce esiste gia' (da un
+    # toggle precedente) si usa Set- per aggiornarla senza errori di duplicato.
+    if (-not (Get-Command Add-DnsClientDohServerAddress -ErrorAction SilentlyContinue)) {
+        Write-DashLog "Add-DnsClientDohServerAddress non disponibile su questo sistema: DNS verso 127.0.0.1/::1 restera' in chiaro (fallback)."
+        return
+    }
+    foreach ($addr in @("127.0.0.1", "::1")) {
+        try {
+            $esistente = Get-DnsClientDohServerAddress -ServerAddress $addr -ErrorAction SilentlyContinue
+            if ($esistente) {
+                Set-DnsClientDohServerAddress -ServerAddress $addr -DohTemplate $script:BunkerDohTemplate -AutoUpgrade $True -AllowFallbackToUdp $False -ErrorAction Stop
+            } else {
+                Add-DnsClientDohServerAddress -ServerAddress $addr -DohTemplate $script:BunkerDohTemplate -AutoUpgrade $True -AllowFallbackToUdp $False -ErrorAction Stop
+            }
+        } catch {
+            Write-DashLog "Impossibile registrare DoH per $addr verso $($script:BunkerDohTemplate): $($_.Exception.Message)"
+        }
+    }
+    $verifica = @(Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue | Where-Object { $_.ServerAddress -in @("127.0.0.1", "::1") -and $_.DohTemplate -eq $script:BunkerDohTemplate })
+    if ($verifica.Count -gt 0) {
+        Write-DashLog "DNS crittografato (DoH) abilitato su 127.0.0.1/::1 verso $script:BunkerDohTemplate (fallback a UDP in chiaro disattivato)."
+    } else {
+        Write-DashLog "ATTENZIONE: registrazione DoH su 127.0.0.1/::1 non confermata dopo il tentativo (Get-DnsClientDohServerAddress non la vede)."
+    }
+}
+
+function Remove-BunkerDohRegistration {
+    # Rimuove la registrazione DoH su 127.0.0.1/::1 quando si torna ad Automatico (DHCP), per
+    # non lasciare template crittografati stale associati a indirizzi non piu' in uso come DNS.
+    if (-not (Get-Command Remove-DnsClientDohServerAddress -ErrorAction SilentlyContinue)) { return }
+    foreach ($addr in @("127.0.0.1", "::1")) {
+        try { Remove-DnsClientDohServerAddress -ServerAddress $addr -ErrorAction SilentlyContinue } catch {}
+    }
+}
+
 function Invoke-NicDnsToggle {
     $status = Get-NicDnsStatus -Force
     if (-not $status.disponibile) {
         return [ordered]@{ status = "error"; error = $(if ($status.errore) { $status.errore } else { "Interfaccia di rete non trovata." }) }
     }
 
-    try {
-        if ($status.modalita -eq "manuale") {
-            Set-DnsClientServerAddress -InterfaceIndex $status.ifIndex -ResetServerAddresses -ErrorAction Stop
-            Write-DashLog "DNS interfaccia '$($status.interfaccia)' riportato su Automatico (DHCP) da richiesta Web."
-        } else {
-            Set-DnsClientServerAddress -InterfaceIndex $status.ifIndex -ServerAddresses @("127.0.0.1", "::1") -ErrorAction Stop
-            Write-DashLog "DNS interfaccia '$($status.interfaccia)' impostato manualmente su 127.0.0.1 / ::1 (Bunker locale) da richiesta Web."
+    # Se anche una sola interfaccia non e' ancora sul Bunker (stato "automatico" o "misto"),
+    # il clic porta TUTTE le interfacce attive su 127.0.0.1/::1 (DoH); solo se sono gia' tutte
+    # manuali (Bunker) il clic le riporta TUTTE ad Automatico (DHCP). Cosi' non resta mai
+    # un'interfaccia indietro rispetto alle altre.
+    $vaSuBunker = ($status.modalita -ne "manuale")
+
+    $erroriPerInterfaccia = @()
+    $riuscitiPerInterfaccia = @()
+    foreach ($voce in $status.interfacce) {
+        try {
+            if ($vaSuBunker) {
+                Set-DnsClientServerAddress -InterfaceIndex $voce.ifIndex -ServerAddresses @("127.0.0.1", "::1") -ErrorAction Stop
+            } else {
+                Set-DnsClientServerAddress -InterfaceIndex $voce.ifIndex -ResetServerAddresses -ErrorAction Stop
+            }
+            $riuscitiPerInterfaccia += $voce.interfaccia
+        } catch {
+            $erroriPerInterfaccia += "$($voce.interfaccia): $($_.Exception.Message)"
+            Write-DashLog "Errore durante il toggle DNS sull'interfaccia '$($voce.interfaccia)': $($_.Exception.Message)"
         }
-        Start-Sleep -Milliseconds 300
-        $nuovoStato = Get-NicDnsStatus -Force
-        return [ordered]@{
-            status      = "ok"
-            interfaccia = $status.interfaccia
-            precedente  = $status.modalita
-            attuale     = $nuovoStato.modalita
-        }
-    } catch {
-        Write-DashLog "Errore durante il toggle DNS sull'interfaccia '$($status.interfaccia)': $($_.Exception.Message)"
-        return [ordered]@{ status = "error"; error = $_.Exception.Message }
     }
+
+    if ($riuscitiPerInterfaccia.Count -eq 0) {
+        return [ordered]@{ status = "error"; error = ($erroriPerInterfaccia -join " | ") }
+    }
+
+    if ($vaSuBunker) {
+        Set-BunkerDohRegistration
+        Write-DashLog "DNS impostato manualmente su 127.0.0.1 / ::1 (Bunker locale, DoH $script:BunkerDohTemplate) su $($riuscitiPerInterfaccia.Count) interfaccia/e ($($riuscitiPerInterfaccia -join ', ')) da richiesta Web."
+    } else {
+        Remove-BunkerDohRegistration
+        Write-DashLog "DNS riportato su Automatico (DHCP) su $($riuscitiPerInterfaccia.Count) interfaccia/e ($($riuscitiPerInterfaccia -join ', ')) da richiesta Web."
+    }
+
+    Start-Sleep -Milliseconds 300
+    $nuovoStato = Get-NicDnsStatus -Force
+    $esito = [ordered]@{
+        status      = if ($erroriPerInterfaccia.Count -eq 0) { "ok" } else { "parziale" }
+        interfaccia = ($riuscitiPerInterfaccia -join ", ")
+        precedente  = $status.modalita
+        attuale     = $nuovoStato.modalita
+        dohAttivo   = $nuovoStato.dohAttivo
+    }
+    if ($erroriPerInterfaccia.Count -gt 0) { $esito["error"] = ($erroriPerInterfaccia -join " | ") }
+    return $esito
 }
 
 # === CACHE VERSIONI CLOUD E LOCALE ===
@@ -4074,11 +4189,17 @@ async function refreshDnsToggleStatus() {
     if (data.disponibile) {
       window.__dnsToggleState = data;
       if (data.modalita === 'manuale') {
-        label.textContent = 'DNS attuale: Bunker (127.0.0.1/::1) \u2014 Clic: passa ad Automatico';
-        btn.title = 'Interfaccia "' + data.interfaccia + '": DNS attualmente impostato manualmente su 127.0.0.1/::1 (Bunker). Clic per riportarlo su Automatico (DHCP).';
+        const dohTag = data.dohAttivo ? ' \ud83d\udd12 DoH' : ' \u26a0\ufe0f DoH non attivo';
+        label.textContent = 'DNS attuale: Bunker (127.0.0.1/::1)' + dohTag + ' \u2014 Clic: passa ad Automatico';
+        btn.title = 'Interfacce "' + data.interfaccia + '": DNS attualmente manuale su 127.0.0.1/::1 (Bunker). ' +
+          (data.dohAttivo ? 'Crittografato via DoH su https://localhost:8443/dns-query.' : 'ATTENZIONE: DoH non risulta attivo, il DNS potrebbe viaggiare in chiaro su UDP/53.') +
+          ' Clic per riportarlo su Automatico (DHCP).';
       } else if (data.modalita === 'automatico') {
         label.textContent = 'DNS attuale: Automatico (DHCP) \u2014 Clic: passa a Bunker (127.0.0.1/::1)';
-        btn.title = 'Interfaccia "' + data.interfaccia + '": DNS attualmente Automatico (DHCP). Clic per impostarlo su 127.0.0.1/::1 (Bunker).';
+        btn.title = 'Interfacce "' + data.interfaccia + '": DNS attualmente Automatico (DHCP) su tutte. Clic per impostarlo su 127.0.0.1/::1 (Bunker) con DoH.';
+      } else if (data.modalita === 'misto') {
+        label.textContent = 'DNS attuale: MISTO \u26a0\ufe0f \u2014 Clic: allinea tutte a Bunker';
+        btn.title = 'Interfacce "' + data.interfaccia + '": alcune sono su Bunker (127.0.0.1/::1) e altre su Automatico. Clic per portarle TUTTE su Bunker.';
       } else {
         label.textContent = 'DNS attuale: sconosciuto';
       }
@@ -4096,11 +4217,13 @@ async function confirmToggleDns() {
   const st = window.__dnsToggleState;
   let msg;
   if (st && st.modalita === 'manuale') {
-    msg = 'Interfaccia "' + st.interfaccia + '": il DNS e\' attualmente impostato manualmente su 127.0.0.1 / ::1 (Bunker).\n\nRiportarlo su Automatico (DHCP)?';
+    msg = 'Interfacce "' + st.interfaccia + '": il DNS e\' attualmente impostato manualmente su 127.0.0.1 / ::1 (Bunker) su tutte.\n\nRiportarlo su Automatico (DHCP) su tutte?';
   } else if (st && st.modalita === 'automatico') {
-    msg = 'Interfaccia "' + st.interfaccia + '": il DNS e\' attualmente Automatico (DHCP).\n\nImpostarlo manualmente su 127.0.0.1 (IPv4) e ::1 (IPv6), puntando al Bunker locale?';
+    msg = 'Interfacce "' + st.interfaccia + '": il DNS e\' attualmente Automatico (DHCP) su tutte.\n\nImpostarlo manualmente su 127.0.0.1 (IPv4) e ::1 (IPv6), puntando al Bunker locale, su tutte?';
+  } else if (st && st.modalita === 'misto') {
+    msg = 'Interfacce "' + st.interfaccia + '": alcune sono gia\' su Bunker (127.0.0.1/::1) e altre su Automatico.\n\nPortarle TUTTE su Bunker locale (127.0.0.1 / ::1)?';
   } else {
-    msg = 'Commutare il DNS della scheda di rete principale tra Automatico e Bunker locale (127.0.0.1 / ::1)?';
+    msg = 'Commutare il DNS di tutte le schede di rete attive tra Automatico e Bunker locale (127.0.0.1 / ::1)?';
   }
   if (!confirm(msg)) return;
 
@@ -4114,7 +4237,12 @@ async function confirmToggleDns() {
     const res = await fetch('/api/dns-toggle', { method: 'POST', cache: 'no-store' });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.status === 'ok') {
-      if (status) status.textContent = 'Interfaccia "' + data.interfaccia + '": DNS commutato da ' + data.precedente + ' a ' + data.attuale + ' alle ' + new Date().toLocaleTimeString('it-IT') + '.';
+      if (status) {
+        const dohInfo = data.attuale === 'manuale' ? (data.dohAttivo ? ' DoH attivo \ud83d\udd12.' : ' ATTENZIONE: DoH non attivo, DNS in chiaro!') : '';
+        status.textContent = 'Interfacce "' + data.interfaccia + '": DNS commutato da ' + data.precedente + ' a ' + data.attuale + '.' + dohInfo + ' (' + new Date().toLocaleTimeString('it-IT') + ')';
+      }
+    } else if (res.ok && data.status === 'parziale') {
+      if (status) status.textContent = 'DNS commutato solo su alcune interfacce ("' + data.interfaccia + '"); errori: ' + (data.error || 'sconosciuto');
     } else {
       if (status) status.textContent = 'Errore nel toggle DNS: ' + (data.error || 'sconosciuto');
     }
