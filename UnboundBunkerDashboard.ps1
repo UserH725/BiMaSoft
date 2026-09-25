@@ -2336,7 +2336,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.1 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1101.0 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -2973,7 +2973,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1100.1 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1101.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3005,10 +3005,6 @@ $HtmlPage = @'
     &#129513; Aggiorna Componenti
   </button>
   <span id="updateComponentsStatus" class="muted button-row-status"></span>
-  <button id="btnToggleDns" onclick="confirmToggleDns()" class="btn-action btn-cyan" style="white-space: normal; line-height: 1.3; flex-basis: 260px;" title="Rileva il DNS della scheda di rete principale e lo commuta: se manuale lo riporta su Automatico (DHCP), se automatico lo imposta su 127.0.0.1 / ::1 (Bunker locale)">
-    &#128257; <span id="dnsToggleLabel">DNS: rilevamento...</span>
-  </button>
-  <span id="dnsToggleStatus" class="muted button-row-status"></span>
   <div id="bunkerGainContainer" style="margin-left: auto; display: flex; align-items: center;"></div>
 </div>
 
@@ -4179,82 +4175,6 @@ async function confirmForceRpzUpdate() {
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
-async function refreshDnsToggleStatus() {
-  const label = document.getElementById('dnsToggleLabel');
-  const btn = document.getElementById('btnToggleDns');
-  if (!label || !btn || btn.disabled) return;
-  try {
-    const res = await fetch('/api/dns-status', { cache: 'no-store' });
-    const data = await res.json().catch(() => ({}));
-    if (data.disponibile) {
-      window.__dnsToggleState = data;
-      if (data.modalita === 'manuale') {
-        const dohTag = data.dohAttivo ? ' \ud83d\udd12 DoH' : ' \u26a0\ufe0f DoH non attivo';
-        label.textContent = 'DNS attuale: Bunker (127.0.0.1/::1)' + dohTag + ' \u2014 Clic: passa ad Automatico';
-        btn.title = 'Interfacce "' + data.interfaccia + '": DNS attualmente manuale su 127.0.0.1/::1 (Bunker). ' +
-          (data.dohAttivo ? 'Crittografato via DoH su https://localhost:8443/dns-query.' : 'ATTENZIONE: DoH non risulta attivo, il DNS potrebbe viaggiare in chiaro su UDP/53.') +
-          ' Clic per riportarlo su Automatico (DHCP).';
-      } else if (data.modalita === 'automatico') {
-        label.textContent = 'DNS attuale: Automatico (DHCP) \u2014 Clic: passa a Bunker (127.0.0.1/::1)';
-        btn.title = 'Interfacce "' + data.interfaccia + '": DNS attualmente Automatico (DHCP) su tutte. Clic per impostarlo su 127.0.0.1/::1 (Bunker) con DoH.';
-      } else if (data.modalita === 'misto') {
-        label.textContent = 'DNS attuale: MISTO \u26a0\ufe0f \u2014 Clic: allinea tutte a Bunker';
-        btn.title = 'Interfacce "' + data.interfaccia + '": alcune sono su Bunker (127.0.0.1/::1) e altre su Automatico. Clic per portarle TUTTE su Bunker.';
-      } else {
-        label.textContent = 'DNS attuale: sconosciuto';
-      }
-    } else {
-      window.__dnsToggleState = null;
-      label.textContent = 'DNS: N/D';
-      btn.title = data.errore ? data.errore : 'Interfaccia di rete non rilevata.';
-    }
-  } catch (e) {
-    label.textContent = 'N/D';
-  }
-}
-
-async function confirmToggleDns() {
-  const st = window.__dnsToggleState;
-  let msg;
-  if (st && st.modalita === 'manuale') {
-    msg = 'Interfacce "' + st.interfaccia + '": il DNS e\' attualmente impostato manualmente su 127.0.0.1 / ::1 (Bunker) su tutte.\n\nRiportarlo su Automatico (DHCP) su tutte?';
-  } else if (st && st.modalita === 'automatico') {
-    msg = 'Interfacce "' + st.interfaccia + '": il DNS e\' attualmente Automatico (DHCP) su tutte.\n\nImpostarlo manualmente su 127.0.0.1 (IPv4) e ::1 (IPv6), puntando al Bunker locale, su tutte?';
-  } else if (st && st.modalita === 'misto') {
-    msg = 'Interfacce "' + st.interfaccia + '": alcune sono gia\' su Bunker (127.0.0.1/::1) e altre su Automatico.\n\nPortarle TUTTE su Bunker locale (127.0.0.1 / ::1)?';
-  } else {
-    msg = 'Commutare il DNS di tutte le schede di rete attive tra Automatico e Bunker locale (127.0.0.1 / ::1)?';
-  }
-  if (!confirm(msg)) return;
-
-  const btn = document.getElementById('btnToggleDns');
-  const label = document.getElementById('dnsToggleLabel');
-  const status = document.getElementById('dnsToggleStatus');
-  if (btn) btn.disabled = true;
-  if (label) label.textContent = '...';
-
-  try {
-    const res = await fetch('/api/dns-toggle', { method: 'POST', cache: 'no-store' });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.status === 'ok') {
-      if (status) {
-        const dohInfo = data.attuale === 'manuale' ? (data.dohAttivo ? ' DoH attivo \ud83d\udd12.' : ' ATTENZIONE: DoH non attivo, DNS in chiaro!') : '';
-        status.textContent = 'Interfacce "' + data.interfaccia + '": DNS commutato da ' + data.precedente + ' a ' + data.attuale + '.' + dohInfo + ' (' + new Date().toLocaleTimeString('it-IT') + ')';
-      }
-    } else if (res.ok && data.status === 'parziale') {
-      if (status) status.textContent = 'DNS commutato solo su alcune interfacce ("' + data.interfaccia + '"); errori: ' + (data.error || 'sconosciuto');
-    } else {
-      if (status) status.textContent = 'Errore nel toggle DNS: ' + (data.error || 'sconosciuto');
-    }
-  } catch (e) {
-    if (status) status.textContent = 'Errore di rete durante la richiesta.';
-  }
-
-  if (btn) btn.disabled = false;
-  await refreshDnsToggleStatus();
-  setTimeout(() => { if (status) status.textContent = ''; }, 30000);
-}
-
 async function confirmUpdateDashboard() {
   if (!confirm("Scaricare l'ultima versione della dashboard dal repository GitHub?\n\nSe l'hash SHA256 non corrisponde l'aggiornamento viene annullato automaticamente e la versione attuale resta invariata. Se invece va a buon fine, la dashboard si riavvia da sola (perderai la connessione per qualche secondo).")) return;
 
@@ -5195,9 +5115,6 @@ setInterval(refresh, 2000);
 setInterval(() => {
   if (Date.now() - lastDataTs > 8000) setLiveStatus(false);
 }, 1000);
-
-refreshDnsToggleStatus();
-setInterval(refreshDnsToggleStatus, 15000);
 </script>
 </body>
 </html>
