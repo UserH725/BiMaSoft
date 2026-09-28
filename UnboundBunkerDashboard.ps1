@@ -2123,7 +2123,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1101.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.0 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -2760,7 +2760,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1101.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -5356,6 +5356,8 @@ function Start-TrayIcon {
 
     # Passiamo l'URL della dashboard al Runspace
     $trayRunspace.SessionStateProxy.SetVariable('Prefix', $Prefix)
+    $trayRunspace.SessionStateProxy.SetVariable('PidFile', $PidFile)
+    $trayRunspace.SessionStateProxy.SetVariable('LogFile', $LogFile)
     
     $trayPowerShell = [powershell]::Create()
     $trayPowerShell.Runspace = $trayRunspace
@@ -5413,10 +5415,33 @@ function Start-TrayIcon {
             [System.Windows.Forms.Application]::ExitThread()
         })
         
+        # Chiude davvero la Dashboard (processo intero: server HTTP + raccolta dati + icona).
+        # Il servizio Unbound NON viene toccato: la protezione DNS resta attiva.
+        $MenuItemClose = New-Object System.Windows.Forms.MenuItem("Chiudi Dashboard")
+        $MenuItemClose.add_Click({
+            $owner = New-Object System.Windows.Forms.Form
+            $owner.TopMost = $true
+            try {
+                $ans = [System.Windows.Forms.MessageBox]::Show(
+                    $owner,
+                    "Chiudere la Dashboard?`n`nLa pagina web e la raccolta dati si fermeranno.`nIl servizio Unbound e la protezione DNS restano attivi.",
+                    "UNBOUND BUNKER",
+                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                    [System.Windows.Forms.MessageBoxIcon]::Question)
+            } finally { $owner.Dispose() }
+            if ($ans -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+            try { "[$((Get-Date).ToString('dd.MM.yyyy HH:mm:ss'))] Chiusura Dashboard richiesta dal menu della tray icon." | Out-File -LiteralPath $LogFile -Append -Encoding utf8 } catch {}
+            try { $TrayIcon.Visible = $false; $TrayIcon.Dispose() } catch {}
+            try { if (Test-Path -LiteralPath $PidFile) { Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue } } catch {}
+            [Environment]::Exit(0)
+        })
+
         $Menu.MenuItems.Add($MenuItemOpen)
         $Menu.MenuItems.Add("-")
         $Menu.MenuItems.Add($MenuItemRestart)
         $Menu.MenuItems.Add("-")
+        $Menu.MenuItems.Add($MenuItemClose)
         $Menu.MenuItems.Add($MenuItemExit)
         
         $TrayIcon.ContextMenu = $Menu
