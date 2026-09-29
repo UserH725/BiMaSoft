@@ -1934,6 +1934,101 @@ function Update-AnomalyTracking {
     return $script:AnomalyAlerts
 }
 
+# === STORICO PAGINA LIGHT (dall'accensione) ===
+# I due punteggi (Funzionamento Bunker, Miglioramento PC) sono calcolati dalla pagina Light e
+# inviati qui con POST /api/light-sample: la fonte dei valori e' quindi SEMPRE la stessa delle
+# lancette (nessuna formula duplicata lato server). Il buffer e' limitato a $LightHistMaxPts
+# punti: al raggiungimento del limite le coppie adiacenti vengono fuse (media) e l'intervallo
+# minimo tra due campioni raddoppia, cosi' lo storico copre TUTTA l'accensione con memoria
+# costante. Salvataggio su R:\light_history.json (RAM disk volatile: sopravvive al riavvio
+# della dashboard, si azzera allo spegnimento del PC). Unico scrittore: il thread HTTP.
+$script:LightHistFile       = "R:\light_history.json"
+$script:LightHistPts        = $null
+$script:LightHistJson       = $null
+$script:LightHistInterval   = 5
+$script:LightHistMaxPts     = 1500
+$script:LightHistStartMs    = 0.0
+$script:LightHistLastSample = [DateTime]::MinValue
+$script:LightHistLastSave   = [DateTime]::MinValue
+
+function Build-LightHistoryJson {
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('{"start":').Append($script:LightHistStartMs.ToString('0', $inv))
+    [void]$sb.Append(',"interval":').Append([string]$script:LightHistInterval).Append(',"p":[')
+    $n = $script:LightHistPts.Count
+    for ($i = 0; $i -lt $n; $i++) {
+        $pt = $script:LightHistPts[$i]
+        if ($i -gt 0) { [void]$sb.Append(',') }
+        [void]$sb.Append('[').Append($pt[0].ToString('0', $inv)).Append(',').Append($pt[1].ToString('0.####', $inv)).Append(',').Append($pt[2].ToString('0.####', $inv)).Append(']')
+    }
+    [void]$sb.Append(']}')
+    $script:LightHistJson = $sb.ToString()
+}
+
+function Initialize-LightHistory {
+    if ($null -ne $script:LightHistPts) { return }
+    $script:LightHistPts     = New-Object System.Collections.Generic.List[double[]]
+    $script:LightHistStartMs = [double]([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds()
+    try {
+        if ([System.IO.File]::Exists($script:LightHistFile)) {
+            $saved = [System.IO.File]::ReadAllText($script:LightHistFile) | ConvertFrom-Json
+            if ($saved -and $saved.p) {
+                foreach ($row in $saved.p) {
+                    [void]$script:LightHistPts.Add([double[]]@([double]$row[0], [double]$row[1], [double]$row[2]))
+                }
+                if ($saved.interval) { $script:LightHistInterval = [int]$saved.interval }
+                if ($saved.start)    { $script:LightHistStartMs  = [double]$saved.start }
+            }
+        }
+    } catch {
+        $script:LightHistPts.Clear()
+        $script:LightHistInterval = 5
+    }
+    Build-LightHistoryJson
+}
+
+function Get-LightHistoryJson {
+    Initialize-LightHistory
+    return $script:LightHistJson
+}
+
+function Add-LightHistoryPoint {
+    param([double]$Boost, [double]$Gain)
+    Initialize-LightHistory
+
+    $now = Get-Date
+    if (($now - $script:LightHistLastSample).TotalSeconds -lt $script:LightHistInterval) { return $false }
+    $script:LightHistLastSample = $now
+
+    $nowMs = [double]([DateTimeOffset]$now).ToUnixTimeMilliseconds()
+    [void]$script:LightHistPts.Add([double[]]@($nowMs, [math]::Round($Boost, 4), [math]::Round($Gain, 4)))
+
+    if ($script:LightHistPts.Count -ge $script:LightHistMaxPts) {
+        $merged = New-Object System.Collections.Generic.List[double[]]
+        $cnt = $script:LightHistPts.Count
+        for ($i = 0; $i + 1 -lt $cnt; $i += 2) {
+            $x = $script:LightHistPts[$i]; $y = $script:LightHistPts[$i + 1]
+            [void]$merged.Add([double[]]@((($x[0] + $y[0]) / 2), (($x[1] + $y[1]) / 2), (($x[2] + $y[2]) / 2)))
+        }
+        if (($cnt % 2) -eq 1) { [void]$merged.Add($script:LightHistPts[$cnt - 1]) }
+        $script:LightHistPts      = $merged
+        $script:LightHistInterval = $script:LightHistInterval * 2
+    }
+
+    Build-LightHistoryJson
+
+    if (($now - $script:LightHistLastSave).TotalSeconds -ge 60) {
+        $script:LightHistLastSave = $now
+        try {
+            $tmp = "$($script:LightHistFile).tmp"
+            [System.IO.File]::WriteAllText($tmp, $script:LightHistJson, (New-Object System.Text.UTF8Encoding($false)))
+            Move-Item -LiteralPath $tmp -Destination $script:LightHistFile -Force
+        } catch {}
+    }
+    return $true
+}
+
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
 
@@ -2181,6 +2276,24 @@ $HtmlPageLight = @'
   .value { font-family: var(--font-mono); font-weight: 700; }
   .detail { color: var(--dim); font-size: 0.82em; margin-top: 6px; min-height: 1.3em; font-family: var(--font-mono); }
   .stale { opacity: 0.45; filter: grayscale(0.7); transition: opacity 0.4s; }
+  /* ---------- Storico sotto le card ---------- */
+  .hist { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); text-align: left; }
+  .hist-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .hist-title { font-size: 0.72em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); font-weight: 700; }
+  .hist-range { font-size: 0.68em; color: var(--dim); font-family: var(--font-mono); }
+  .hist-plot { position: relative; }
+  .card .hist-plot svg { width: 100%; max-width: none; height: auto; margin: 0; display: block; touch-action: pan-y; cursor: crosshair; }
+  .hist-tip {
+    position: absolute; top: 4px; left: 0; pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    background: rgba(6,9,13,0.94); border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 5px 9px; font-size: 0.72em; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,0.5); z-index: 2;
+  }
+  .hist-tip .tt { color: var(--dim); font-family: var(--font-mono); font-size: 0.92em; }
+  .hist-tip .tv { font-family: var(--font-mono); font-weight: 700; margin-top: 1px; }
+  .hist-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  .hist-stat { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 6px 4px; text-align: center; }
+  .hist-stat span { display: block; font-size: 0.6em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
+  .hist-stat b { display: block; font-family: var(--font-mono); font-size: 0.78em; margin-top: 2px; font-variant-numeric: tabular-nums; }
   footer { color: var(--dim); font-size: 0.75em; text-align: center; margin-top: 22px; }
 </style>
 </head>
@@ -2202,11 +2315,31 @@ $HtmlPageLight = @'
       <h2>Funzionamento Bunker</h2>
       <svg id="g1" viewBox="0 0 300 190" role="img" aria-label="Funzionamento del bunker in percentuale"></svg>
       <div class="detail" id="d1">--</div>
+      <div class="hist" id="hist1">
+        <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr1">--</span></div>
+        <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del funzionamento del bunker"></svg><div class="hist-tip"></div></div>
+        <div class="hist-stats">
+          <div class="hist-stat"><span>Min</span><b id="h1min">--</b></div>
+          <div class="hist-stat"><span>Media</span><b id="h1avg">--</b></div>
+          <div class="hist-stat"><span>Max</span><b id="h1max">--</b></div>
+          <div class="hist-stat"><span>Ora</span><b id="h1now">--</b></div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <h2>Miglioramento Applicato al PC</h2>
       <svg id="g2" viewBox="0 0 300 190" role="img" aria-label="Indice di miglioramento applicato al PC"></svg>
       <div class="detail" id="d2">--</div>
+      <div class="hist" id="hist2">
+        <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr2">--</span></div>
+        <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del miglioramento applicato al PC"></svg><div class="hist-tip"></div></div>
+        <div class="hist-stats">
+          <div class="hist-stat"><span>Min</span><b id="h2min">--</b></div>
+          <div class="hist-stat"><span>Media</span><b id="h2avg">--</b></div>
+          <div class="hist-stat"><span>Max</span><b id="h2max">--</b></div>
+          <div class="hist-stat"><span>Ora</span><b id="h2now">--</b></div>
+        </div>
+      </div>
     </div>
   </div>
   <footer id="foot">Aggiornamento in tempo reale ogni 2 secondi</footer>
@@ -2382,6 +2515,7 @@ $HtmlPageLight = @'
         : 'Motore Unbound fermo';
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
+      if (window.__postLightSample) window.__postLightSample(boostShown, s.gainIdx);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
@@ -2389,6 +2523,161 @@ $HtmlPageLight = @'
       isRefreshing = false;
     }
   }
+
+  // ---- Storico dall'accensione: grafici sotto le card ----
+  var HW = 480, HH = 190, PL = 48, PR = 12, PT = 12, PB = 24;
+  var HC = [
+    { id: 'hist1', n: 1, idx: 1, color: '#4fb3ff', svg: null, box: null, geo: null },
+    { id: 'hist2', n: 2, idx: 2, color: '#b388ff', svg: null, box: null, geo: null }
+  ];
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(ms) { var d = new Date(ms); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+  function hhmmss(ms) { var d = new Date(ms); return p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()); }
+  function dmhm(ms) { var d = new Date(ms); return p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + ' ' + hhmm(ms); }
+  function fmtInterval(s) { return s >= 60 ? (s / 60).toFixed(s % 60 ? 1 : 0) + ' min' : s + ' s'; }
+
+  function drawHist(cfg, hist) {
+    var pts = hist.p, n = pts.length, svg = cfg.svg;
+    if (n < 2) {
+      svg.innerHTML = '<text x="' + (HW / 2) + '" y="' + (HH / 2) + '" text-anchor="middle" fill="#8497ab" font-size="12">Raccolta dati in corso&hellip;</text>';
+      cfg.geo = null;
+      document.getElementById('hr' + cfg.n).textContent = 'in attesa dei primi campioni';
+      return;
+    }
+    var vals = [], i, mn = Infinity, mx = -Infinity, sum = 0;
+    for (i = 0; i < n; i++) { var v = pts[i][cfg.idx]; vals.push(v); if (v < mn) mn = v; if (v > mx) mx = v; sum += v; }
+    var span = mx - mn, pad = Math.max(span * 0.18, 0.3);
+    var lo = Math.max(0, mn - pad), hi = Math.min(100, mx + pad);
+    if (hi - lo < 0.6) { var c = (hi + lo) / 2; lo = Math.max(0, c - 0.3); hi = Math.min(100, c + 0.3); }
+    var t0 = pts[0][0], t1 = pts[n - 1][0], tSpan = Math.max(1, t1 - t0);
+    var W = HW - PL - PR, H = HH - PT - PB;
+    function X(t) { return PL + ((t - t0) / tSpan) * W; }
+    function Y(v) { return PT + (1 - (v - lo) / (hi - lo)) * H; }
+
+    var dec = (hi - lo) < 1 ? 2 : ((hi - lo) < 10 ? 1 : 0);
+    var s = '<defs><linearGradient id="gr' + cfg.n + '" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0" stop-color="' + cfg.color + '" stop-opacity="0.38"/>' +
+            '<stop offset="1" stop-color="' + cfg.color + '" stop-opacity="0.02"/></linearGradient></defs>';
+
+    // griglia orizzontale + etichette asse Y
+    for (i = 0; i < 4; i++) {
+      var gv = lo + (hi - lo) * i / 3, gy = Y(gv).toFixed(1);
+      s += '<line x1="' + PL + '" y1="' + gy + '" x2="' + (HW - PR) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>';
+      s += '<text x="' + (PL - 6) + '" y="' + (Number(gy) + 3.5) + '" text-anchor="end" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + gv.toFixed(dec) + '</text>';
+    }
+    // soglie colore (50% / 75%) se visibili
+    [[50, COL.amber], [75, COL.green]].forEach(function (th) {
+      if (th[0] > lo && th[0] < hi) {
+        var ty = Y(th[0]).toFixed(1);
+        s += '<line x1="' + PL + '" y1="' + ty + '" x2="' + (HW - PR) + '" y2="' + ty + '" stroke="' + th[1] + '" stroke-width="1" stroke-dasharray="4 4" opacity="0.45"/>';
+        s += '<text x="' + (HW - PR - 3) + '" y="' + (Number(ty) - 3) + '" text-anchor="end" fill="' + th[1] + '" font-size="9" opacity="0.8">' + th[0] + '%</text>';
+      }
+    });
+    // asse X: 5 tick temporali
+    var longRange = tSpan > 20 * 3600 * 1000, shortRange = tSpan < 10 * 60 * 1000;
+    for (i = 0; i <= 4; i++) {
+      var tt = t0 + tSpan * i / 4, tx = X(tt).toFixed(1);
+      var anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
+      s += '<line x1="' + tx + '" y1="' + (PT + H) + '" x2="' + tx + '" y2="' + (PT + H + 4) + '" stroke="rgba(255,255,255,0.18)"/>';
+      s += '<text x="' + tx + '" y="' + (HH - 6) + '" text-anchor="' + anchor + '" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + (longRange ? dmhm(tt) : (shortRange ? hhmmss(tt) : hhmm(tt))) + '</text>';
+    }
+    // area + linea
+    var d = '', k;
+    for (i = 0; i < n; i++) { d += (i ? 'L' : 'M') + X(pts[i][0]).toFixed(1) + ' ' + Y(vals[i]).toFixed(1); }
+    var area = d + 'L' + X(t1).toFixed(1) + ' ' + (PT + H) + 'L' + X(t0).toFixed(1) + ' ' + (PT + H) + 'Z';
+    s += '<path d="' + area + '" fill="url(#gr' + cfg.n + ')"/>';
+    s += '<path d="' + d + '" fill="none" stroke="' + cfg.color + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+    // ultimo punto
+    var lx = X(t1).toFixed(1), ly = Y(vals[n - 1]).toFixed(1);
+    s += '<circle cx="' + lx + '" cy="' + ly + '" r="6" fill="' + cfg.color + '" opacity="0.18"/>';
+    s += '<circle cx="' + lx + '" cy="' + ly + '" r="3.2" fill="' + cfg.color + '" stroke="#0d1219" stroke-width="1.2"/>';
+    // crosshair (nascosto)
+    s += '<line class="hx-line" x1="0" y1="' + PT + '" x2="0" y2="' + (PT + H) + '" stroke="rgba(233,242,251,0.45)" stroke-width="1" visibility="hidden"/>';
+    s += '<circle class="hx-dot" cx="0" cy="0" r="4" fill="' + cfg.color + '" stroke="#e9f2fb" stroke-width="1.5" visibility="hidden"/>';
+    svg.innerHTML = s;
+
+    cfg.geo = { pts: pts, n: n, t0: t0, t1: t1, tSpan: tSpan, lo: lo, hi: hi, H: H, W: W };
+
+    var avg = sum / n, last = vals[n - 1];
+    document.getElementById('h' + cfg.n + 'min').textContent = fmtPct(mn);
+    document.getElementById('h' + cfg.n + 'avg').textContent = fmtPct(avg);
+    document.getElementById('h' + cfg.n + 'max').textContent = fmtPct(mx);
+    var nowEl = document.getElementById('h' + cfg.n + 'now');
+    nowEl.textContent = fmtPct(last);
+    nowEl.style.color = colorFor(last);
+    document.getElementById('hr' + cfg.n).textContent =
+      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 5);
+  }
+
+  function histHover(cfg, ev) {
+    var g = cfg.geo;
+    if (!g) return;
+    var r = cfg.svg.getBoundingClientRect();
+    if (!r.width) return;
+    var vx = (ev.clientX - r.left) / r.width * HW;
+    var f = Math.max(0, Math.min(1, (vx - PL) / g.W));
+    var tt = g.t0 + f * g.tSpan;
+    var a = 0, b = g.n - 1;
+    while (b - a > 1) { var m = (a + b) >> 1; if (g.pts[m][0] < tt) a = m; else b = m; }
+    var j = (Math.abs(g.pts[a][0] - tt) <= Math.abs(g.pts[b][0] - tt)) ? a : b;
+    var p = g.pts[j], val = p[cfg.idx];
+    var px = PL + ((p[0] - g.t0) / g.tSpan) * g.W;
+    var py = PT + (1 - (val - g.lo) / (g.hi - g.lo)) * g.H;
+    var ln = cfg.svg.querySelector('.hx-line'), dt = cfg.svg.querySelector('.hx-dot');
+    if (!ln || !dt) return;
+    ln.setAttribute('x1', px); ln.setAttribute('x2', px); ln.setAttribute('visibility', 'visible');
+    dt.setAttribute('cx', px); dt.setAttribute('cy', py); dt.setAttribute('visibility', 'visible');
+    var tip = cfg.box.querySelector('.hist-tip');
+    tip.innerHTML = '<div class="tt">' + hhmmss(p[0]) + '</div><div class="tv" style="color:' + colorFor(val) + '">' + fmtPct(val) + '</div>';
+    var pxCss = px / HW * r.width, tw = tip.offsetWidth || 110;
+    var left = pxCss + 12;
+    if (left + tw > r.width) left = pxCss - tw - 12;
+    tip.style.left = Math.max(0, left) + 'px';
+    tip.style.opacity = 1;
+  }
+  function histLeave(cfg) {
+    var ln = cfg.svg.querySelector('.hx-line'), dt = cfg.svg.querySelector('.hx-dot');
+    if (ln) ln.setAttribute('visibility', 'hidden');
+    if (dt) dt.setAttribute('visibility', 'hidden');
+    cfg.box.querySelector('.hist-tip').style.opacity = 0;
+  }
+  HC.forEach(function (cfg) {
+    cfg.box = document.getElementById(cfg.id);
+    cfg.svg = cfg.box.querySelector('svg');
+    cfg.svg.addEventListener('pointermove', function (ev) { histHover(cfg, ev); });
+    cfg.svg.addEventListener('pointerleave', function () { histLeave(cfg); });
+    drawHist(cfg, { p: [] });
+  });
+
+  var histBusy = false;
+  async function refreshHist() {
+    if (histBusy) return;
+    histBusy = true;
+    try {
+      var r = await fetch('/api/light-history', { cache: 'no-store' });
+      if (!r.ok) return;
+      var h = JSON.parse(await r.text());
+      if (!h || !Array.isArray(h.p)) return;
+      HC.forEach(function (cfg) { drawHist(cfg, h); });
+    } catch (e) { /* storico non disponibile: riprova al prossimo giro */ }
+    finally { histBusy = false; }
+  }
+  // Invio del campione alla dashboard: gli stessi valori mostrati dalle lancette (max 1 ogni 5 s)
+  var lastPost = 0;
+  function postSample(b, g) {
+    var now = Date.now();
+    if (now - lastPost < 5000) return;
+    lastPost = now;
+    fetch('/api/light-sample', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Bunker-Light': '1' },
+      body: JSON.stringify({ b: b, g: g })
+    }).then(refreshHist).catch(function () {});
+  }
+  window.__postLightSample = postSample;
+
+  refreshHist();
+  setInterval(refreshHist, 5000);
 
   refresh();
   setInterval(refresh, 2000);
@@ -5526,6 +5815,48 @@ try {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/light-history") {
+                $lh = Get-LightHistoryJson
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($lh)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/light-sample" -and $request.HttpMethod -eq "POST") {
+                # Riceve i due punteggi calcolati dalla pagina Light. Stesse difese di /api/run-phase:
+                # header custom (blocca POST cross-site), controllo Host/Origin (anti DNS-rebinding),
+                # valori numerici validati nell'intervallo 0..100.
+                $lsStatus = 400
+                $lsBody   = '{"ok":false}'
+                try {
+                    $hdrOk  = ([string]$request.Headers["X-Bunker-Light"] -eq "1")
+                    $hostOk = (@("127.0.0.1:$Port", "localhost:$Port") -contains [string]$request.UserHostName)
+                    $origHdr = [string]$request.Headers["Origin"]
+                    $origOk = ([string]::IsNullOrEmpty($origHdr) -or (@("http://127.0.0.1:$Port", "http://localhost:$Port") -contains $origHdr))
+                    if (-not ($hdrOk -and $hostOk -and $origOk)) {
+                        $lsStatus = 403
+                    } elseif ($request.ContentLength64 -gt 512) {
+                        $lsStatus = 413
+                    } else {
+                        $rdr = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                        $raw = $rdr.ReadToEnd(); $rdr.Close()
+                        $o = $raw | ConvertFrom-Json
+                        $bv = [double]$o.b; $gv = [double]$o.g
+                        if (-not ([double]::IsNaN($bv) -or [double]::IsNaN($gv) -or $bv -lt 0 -or $bv -gt 100 -or $gv -lt 0 -or $gv -gt 100)) {
+                            [void](Add-LightHistoryPoint -Boost $bv -Gain $gv)
+                            $lsStatus = 200
+                            $lsBody   = '{"ok":true}'
+                        }
+                    }
+                } catch {
+                    Write-DashLog "Errore in /api/light-sample: $($_.Exception.Message)"
+                }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($lsBody)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.StatusCode = $lsStatus
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/restart") {
