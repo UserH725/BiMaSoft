@@ -2298,41 +2298,50 @@ $HtmlPageLight = @'
     var cachePct = base.cache_efficienza_pct;
     if (typeof cachePct !== 'number' || isNaN(cachePct)) cachePct = 0;
 
-    var lat = latMs;
-    if (qTot === 0 && (!lat || lat <= 0) && radar.length > 0) {
+    // latMs = total.recursion.time.avg di Unbound: tempo medio delle SOLE query risolte
+    // in ricorsione (cache miss). Le risposte da cache (~0 ms) non sono incluse, quindi la
+    // latenza media percepita dall'utente e' recLat * (1 - cache%).
+    var recLat = latMs;
+    var latFromRadar = false;
+    if (qTot === 0 && (!recLat || recLat <= 0) && radar.length > 0) {
       var okR = radar.filter(function (r) { return r.ok; });
-      if (okR.length > 0) lat = Math.round(okR.reduce(function (a, r) { return a + r.ms; }, 0) / okR.length);
+      if (okR.length > 0) { recLat = Math.round(okR.reduce(function (a, r) { return a + r.ms; }, 0) / okR.length); latFromRadar = true; }
     }
-    if (!lat || lat < 0) lat = 0;
+    if (!recLat || recLat < 0) recLat = 0;
+    var cacheFrac = Math.max(0, Math.min(1, cachePct / 100));
+    var lat = latFromRadar ? recLat : Math.round(recLat * (1 - cacheFrac) * 10) / 10;
 
+    // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
+    var r1 = function (v) { return Math.round(v * 10) / 10; };
     var latScore = 100;
-    if (lat > 5 && lat <= 50) latScore = Math.round(100 - ((lat - 5) * 0.18));
-    else if (lat > 50 && lat <= 150) latScore = Math.round(92 - ((lat - 50) * 0.10));
-    else if (lat > 150 && lat <= 300) latScore = Math.round(82 - ((lat - 150) * 0.08));
-    else if (lat > 300) latScore = Math.max(15, Math.round(70 - ((lat - 300) * 0.10)));
+    if (lat > 5 && lat <= 50) latScore = r1(100 - ((lat - 5) * 0.18));
+    else if (lat > 50 && lat <= 150) latScore = r1(92 - ((lat - 50) * 0.10));
+    else if (lat > 150 && lat <= 300) latScore = r1(82 - ((lat - 150) * 0.08));
+    else if (lat > 300) latScore = Math.max(15, r1(70 - ((lat - 300) * 0.10)));
 
-    var upstreamScore = radar.length > 0 ? Math.round((upOk / radar.length) * 100) : 100;
+    var upstreamScore = radar.length > 0 ? r1((upOk / radar.length) * 100) : 100;
     var dnssecPct = 100;
-    var qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS / 5))));
+    var qpsHeadroom = Math.max(0, Math.min(100, r1(100 - (liveQPS / 5))));
     var health = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
-    var boost = Math.round(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
+    var boost = r1(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
 
     var prefetch = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
-    if (lat > maxLatSeen) maxLatSeen = lat;
-    var baseline = Math.max(120, maxLatSeen);
-    var msSaved = Math.max(0, Math.round(baseline - lat));
-    var latGain = Math.min(40, Math.round((msSaved / baseline) * 40));
+    // Baseline stabile = latenza che avrebbe ogni query SENZA cache (tutte in ricorsione),
+    // con minimo 120 ms. Non dipende piu' dal picco visto da quando la pagina e' aperta.
+    var baseline = Math.max(120, recLat);
+    var msSaved = Math.max(0, r1(baseline - lat));
+    var latGain = Math.min(40, r1((msSaved / baseline) * 40));
     var blkPct = base.blocchi_pct || 0;
-    var rpzGain = Math.min(20, Math.round(blkPct * 0.8));
+    var rpzGain = Math.min(20, r1(blkPct * 0.8));
     var ramGain = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
     var dotGain = (upOk > 0 ? 5 : 0) + (prefetch > 0 ? 5 : 2);
-    var gainPt = Math.round(latGain + rpzGain + ramGain + dotGain);
+    var gainPt = r1(latGain + rpzGain + ramGain + dotGain);
     if (gainPt < 25) gainPt = 25;
     if (gainPt > 80) gainPt = 80;
-    var gainIdx = Math.round((gainPt / 80) * 100);
+    var gainIdx = r1((gainPt / 80) * 100);
 
-    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, upOk: upOk, upTot: radar.length, msSaved: msSaved };
+    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved };
   }
 
   function setEngine(state, text) {
@@ -2359,13 +2368,13 @@ $HtmlPageLight = @'
 
       var s = compute(d);
       var boostShown = engineOn ? s.boost : 0;
-      setGauge(G[0], boostShown, boostShown + '%');
+      setGauge(G[0], boostShown, boostShown.toFixed(1) + '%');
       document.getElementById('d1').textContent = engineOn
-        ? 'Cache ' + s.cachePct + '% \u00b7 Latenza ' + s.lat + ' ms \u00b7 Upstream ' + s.upOk + '/' + s.upTot
+        ? 'Cache ' + s.cachePct + '% \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
         : 'Motore Unbound fermo';
 
-      setGauge(G[1], s.gainIdx, s.gainIdx + '%');
-      document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt + ' / 80 pt \u00b7 ' + s.msSaved + ' ms risparmiati sul baseline';
+      setGauge(G[1], s.gainIdx, s.gainIdx.toFixed(1) + '%');
+      document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
     } finally {
@@ -4540,27 +4549,35 @@ async function refresh(forceVersions) {
     let realCachePct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_efficienza_pct : 0;
     if (isNaN(realCachePct)) realCachePct = 0;
 
-    let effectiveLat = latMs;
-    if (qTot === 0 && (!effectiveLat || effectiveLat <= 0) && radarList.length > 0) {
+    // latMs = total.recursion.time.avg: media delle sole query in ricorsione (cache miss).
+    // La latenza media percepita include le risposte da cache (~0 ms): recLat * (1 - cache%).
+    let recLat = latMs || 0;
+    let latFromRadar = false;
+    if (qTot === 0 && (!recLat || recLat <= 0) && radarList.length > 0) {
       const okRadars = radarList.filter(r => r.ok);
       if (okRadars.length > 0) {
-        effectiveLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
+        recLat = Math.round(okRadars.reduce((acc, r) => acc + r.ms, 0) / okRadars.length);
+        latFromRadar = true;
       }
     }
-    if (effectiveLat < 0) effectiveLat = 0;
+    if (recLat < 0) recLat = 0;
+    const cacheFrac = Math.max(0, Math.min(1, (realCachePct || 0) / 100));
+    let effectiveLat = latFromRadar ? recLat : Math.round(recLat * (1 - cacheFrac) * 10) / 10;
 
+    // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
+    const r1 = v => Math.round(v * 10) / 10;
     let latScore = 100;
     if (effectiveLat > 5 && effectiveLat <= 50) {
-      latScore = Math.round(100 - ((effectiveLat - 5) * 0.18));
+      latScore = r1(100 - ((effectiveLat - 5) * 0.18));
     } else if (effectiveLat > 50 && effectiveLat <= 150) {
-      latScore = Math.round(92 - ((effectiveLat - 50) * 0.10));
+      latScore = r1(92 - ((effectiveLat - 50) * 0.10));
     } else if (effectiveLat > 150 && effectiveLat <= 300) {
-      latScore = Math.round(82 - ((effectiveLat - 150) * 0.08));
+      latScore = r1(82 - ((effectiveLat - 150) * 0.08));
     } else if (effectiveLat > 300) {
-      latScore = Math.max(15, Math.round(70 - ((effectiveLat - 300) * 0.10)));
+      latScore = Math.max(15, r1(70 - ((effectiveLat - 300) * 0.10)));
     }
 
-    let upstreamScore = radarList.length > 0 ? Math.round((upOk / radarList.length) * 100) : 100;
+    let upstreamScore = radarList.length > 0 ? r1((upOk / radarList.length) * 100) : 100;
 
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
     let dnssecPct = 100;
@@ -4570,10 +4587,10 @@ async function refresh(forceVersions) {
     const prefetchRatioPct = (qTot > 0) ? (prefetchVal / qTot) * 100 : 0;
     const prefetchScore = Math.max(0, Math.min(100, Math.round(100 - (prefetchRatioPct * PREFETCH_SENSITIVITY))));
 
-    let qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS / 5))));
+    let qpsHeadroom = Math.max(0, Math.min(100, r1(100 - (liveQPS / 5))));
     let healthScore = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
-    let boostScore = Math.round(
+    let boostScore = r1(
       (realCachePct * 0.30) + 
       (latScore * 0.25) + 
       (upstreamScore * 0.15) + 
@@ -4583,26 +4600,26 @@ async function refresh(forceVersions) {
     );
 
     const ispBaselineMs = 120;
-    if (effectiveLat > maxLatSeen) maxLatSeen = effectiveLat;
-    const effectiveBaselineMs = Math.max(ispBaselineMs, maxLatSeen);
+    // Baseline stabile = latenza senza cache (tutte le query in ricorsione), minimo 120 ms.
+    const effectiveBaselineMs = Math.max(ispBaselineMs, recLat);
 
     const displayLat = effectiveLat;
-    const msSaved = Math.max(0, Math.round(effectiveBaselineMs - displayLat));
+    const msSaved = Math.max(0, r1(effectiveBaselineMs - displayLat));
 
-    const latGainReal = Math.min(40, Math.round((msSaved / effectiveBaselineMs) * 40));
+    const latGainReal = Math.min(40, r1((msSaved / effectiveBaselineMs) * 40));
     const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
-    const rpzGainReal = Math.min(20, Math.round(blkPct * 0.8));
+    const rpzGainReal = Math.min(20, r1(blkPct * 0.8));
     const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
     const dotPrefetchGain = (upOk > 0 ? 5 : 0) + (prefetchVal > 0 ? 5 : 2);
 
-    let totalBunkerGain = Math.round(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
+    let totalBunkerGain = r1(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
     if (totalBunkerGain < 25) totalBunkerGain = 25;
     if (totalBunkerGain > 80) totalBunkerGain = 80;
 
-    document.getElementById('valGainLat').textContent = latGainReal + ' / 40 pt';
+    document.getElementById('valGainLat').textContent = latGainReal.toFixed(1) + ' / 40 pt';
     updateGradientBar('barGainLat', Math.round((latGainReal / 40) * 100));
 
-    document.getElementById('valGainRpz').textContent = rpzGainReal + ' / 20 pt';
+    document.getElementById('valGainRpz').textContent = rpzGainReal.toFixed(1) + ' / 20 pt';
     updateGradientBar('barGainRpz', Math.round((rpzGainReal / 20) * 100));
 
     document.getElementById('valGainRam').textContent = ramGainReal + ' / 10 pt';
@@ -4611,13 +4628,13 @@ async function refresh(forceVersions) {
     document.getElementById('valGainDot').textContent = dotPrefetchGain + ' / 10 pt';
     updateGradientBar('barGainDot', Math.round((dotPrefetchGain / 10) * 100));
 
-    document.getElementById('valRealCache').textContent = realCachePct + '%';
+    document.getElementById('valRealCache').textContent = Number(realCachePct).toFixed(1) + '%';
     updateGradientBar('barRealCache', realCachePct);
 
-    document.getElementById('valLatScore').textContent = latScore + '% (' + displayLat + ' ms)';
+    document.getElementById('valLatScore').textContent = latScore.toFixed(1) + '% (' + Number(displayLat).toFixed(1) + ' ms)';
     updateGradientBar('barLatScore', latScore);
 
-    document.getElementById('valUpstreamScore').textContent = upstreamScore + '% (' + upOk + '/' + radarList.length + ')';
+    document.getElementById('valUpstreamScore').textContent = upstreamScore.toFixed(1) + '% (' + upOk + '/' + radarList.length + ')';
     updateGradientBar('barUpstreamScore', upstreamScore);
 
     document.getElementById('valDnssecScore').innerHTML = '100% <span class="esito-ok">[SEC: ' + fmt(ds.secure) + ' | BOG: ' + fmt(ds.bogus) + ']</span>';
@@ -4626,7 +4643,7 @@ async function refresh(forceVersions) {
     document.getElementById('valPrefetchScore').innerHTML = prefetchVal > 0 ? '<span class="esito-ok">' + prefetchScore + '% (' + fmt(prefetchVal) + ' rinnovi, ' + prefetchRatioPct.toFixed(2) + '% delle query)</span>' : '<span class="esito-ok">100% (Cache gi&agrave; ottimale, prefetch non necessario)</span>';
     updateGradientBar('barPrefetchScore', prefetchScore);
 
-    document.getElementById('valQpsScore').textContent = qpsHeadroom + '% (Live: ' + liveQPS + ' | Max: ' + maxQPS.toFixed(1) + ' req/s)';
+    document.getElementById('valQpsScore').textContent = qpsHeadroom.toFixed(1) + '% (Live: ' + liveQPS + ' | Max: ' + maxQPS.toFixed(1) + ' req/s)';
     updateGradientBar('barQpsScore', qpsHeadroom);
 
     document.getElementById('valHealthScore').textContent = healthScore + '%';
@@ -4884,13 +4901,13 @@ async function refresh(forceVersions) {
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
     bCache.style.marginLeft = 'auto';
-    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore + '%\nUpstream DoT online (peso 15%): ' + upstreamScore + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
-    bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore + '%</b>';
+    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore.toFixed(1) + '%\nUpstream DoT online (peso 15%): ' + upstreamScore.toFixed(1) + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
+    bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore.toFixed(1) + '%</b>';
     badges.appendChild(bCache);
 
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
-    bGain.title = 'Guadagno latenza: ' + latGainReal + ' / 40 pt\nGuadagno blocchi RPZ: ' + rpzGainReal + ' / 20 pt\nGuadagno RAM disk: ' + ramGainReal + ' / 10 pt\nGuadagno DoT/Prefetch: ' + dotPrefetchGain + ' / 10 pt\nTotale (limitato 25-80%): ' + totalBunkerGain + '%';
+    bGain.title = 'Guadagno latenza: ' + latGainReal.toFixed(1) + ' / 40 pt\nGuadagno blocchi RPZ: ' + rpzGainReal.toFixed(1) + ' / 20 pt\nGuadagno RAM disk: ' + ramGainReal + ' / 10 pt\nGuadagno DoT/Prefetch: ' + dotPrefetchGain + ' / 10 pt\nTotale (limitato 25-80%): ' + totalBunkerGain.toFixed(1) + '%';
 
     let gainRatio = Math.min(1, Math.max(0, (totalBunkerGain - 25) / 55));
     let hueStart  = Math.round(38 + gainRatio * 92);
@@ -4900,7 +4917,7 @@ async function refresh(forceVersions) {
     bGain.style.borderColor = `hsl(${hueEnd}, 90%, 50%)`;
     bGain.style.boxShadow = `0 0 24px hsla(${hueEnd}, 90%, 50%, 0.6)`;
 
-    bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved + 'ms/req saved)</span>';
+    bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain.toFixed(1) + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved.toFixed(1) + 'ms/req saved)</span>';
 
     const gainContainer = document.getElementById('bunkerGainContainer');
     if (gainContainer) {
