@@ -2217,6 +2217,7 @@ $HtmlPageLight = @'
   var CX = 150, CY = 150, R = 108, NS = 'http://www.w3.org/2000/svg';
   var COL = { red: '#ff5c5c', amber: '#ffb300', green: '#3ddc84' };
 
+  function fmtPct(v) { return Number(v).toFixed(5).replace('.', ',') + '%'; }
   function colorFor(p) { return p >= 75 ? COL.green : (p >= 50 ? COL.amber : COL.red); }
   // 0% = sinistra (180 gradi), 100% = destra (0 gradi)
   function pt(p, r) {
@@ -2253,7 +2254,7 @@ $HtmlPageLight = @'
     var needle = el('g', {}, svg);
     el('polygon', { points: (CX - 4) + ',' + CY + ' ' + (CX + 4) + ',' + CY + ' ' + CX + ',' + (CY - R + 18), fill: '#e9f2fb' }, needle);
     el('circle', { cx: CX, cy: CY, r: 9, fill: '#111720', stroke: '#e9f2fb', 'stroke-width': 3 }, svg);
-    var val = el('text', { x: CX, y: CY + 32, 'text-anchor': 'middle', 'font-size': 30, 'font-weight': 700, fill: '#8497ab', 'font-family': 'Consolas, monospace' }, svg);
+    var val = el('text', { x: CX, y: CY + 32, 'text-anchor': 'middle', 'font-size': 28, 'font-weight': 700, fill: '#8497ab', 'font-family': 'Consolas, monospace' }, svg);
     val.textContent = '--';
     return { needle: needle, val: val, cur: 0, tgt: 0, raf: null };
   }
@@ -2297,6 +2298,8 @@ $HtmlPageLight = @'
 
     var cachePct = base.cache_efficienza_pct;
     if (typeof cachePct !== 'number' || isNaN(cachePct)) cachePct = 0;
+    // Precisione piena: il server arrotonda a 1 decimale, qui ricalcolo dai contatori grezzi
+    if (qTot > 0 && typeof base.cache_hits === 'number') cachePct = Math.max(0, Math.min(100, (base.cache_hits / qTot) * 100));
 
     // latMs = total.recursion.time.avg di Unbound: tempo medio delle SOLE query risolte
     // in ricorsione (cache miss). Le risposte da cache (~0 ms) non sono incluse, quindi la
@@ -2310,36 +2313,41 @@ $HtmlPageLight = @'
     if (!recLat || recLat < 0) recLat = 0;
     var cacheFrac = Math.max(0, Math.min(1, cachePct / 100));
     var lat = latFromRadar ? recLat : Math.round(recLat * (1 - cacheFrac) * 10) / 10;
+    var latRaw = latFromRadar ? recLat : recLat * (1 - cacheFrac);   // non arrotondata: serve ai punteggi
 
     // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
     var r1 = function (v) { return Math.round(v * 10) / 10; };
+    var r5 = function (v) { return Math.round(v * 100000) / 100000; };   // 5 decimali (diecimillesimi)
     var latScore = 100;
-    if (lat > 5 && lat <= 50) latScore = r1(100 - ((lat - 5) * 0.18));
-    else if (lat > 50 && lat <= 150) latScore = r1(92 - ((lat - 50) * 0.10));
-    else if (lat > 150 && lat <= 300) latScore = r1(82 - ((lat - 150) * 0.08));
-    else if (lat > 300) latScore = Math.max(15, r1(70 - ((lat - 300) * 0.10)));
+    if (latRaw > 5 && latRaw <= 50) latScore = r5(100 - ((latRaw - 5) * 0.18));
+    else if (latRaw > 50 && latRaw <= 150) latScore = r5(92 - ((latRaw - 50) * 0.10));
+    else if (latRaw > 150 && latRaw <= 300) latScore = r5(82 - ((latRaw - 150) * 0.08));
+    else if (latRaw > 300) latScore = Math.max(15, r5(70 - ((latRaw - 300) * 0.10)));
 
-    var upstreamScore = radar.length > 0 ? r1((upOk / radar.length) * 100) : 100;
+    var upstreamScore = radar.length > 0 ? r5((upOk / radar.length) * 100) : 100;
     var dnssecPct = 100;
-    var qpsHeadroom = Math.max(0, Math.min(100, r1(100 - (liveQPS / 5))));
+    var qpsHeadroom = Math.max(0, Math.min(100, r5(100 - (liveQPS / 5))));
     var health = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
-    var boost = r1(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
+    var boost = r5(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
 
     var prefetch = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
     // Baseline stabile = latenza che avrebbe ogni query SENZA cache (tutte in ricorsione),
     // con minimo 120 ms. Non dipende piu' dal picco visto da quando la pagina e' aperta.
     var baseline = Math.max(120, recLat);
-    var msSaved = Math.max(0, r1(baseline - lat));
-    var latGain = Math.min(40, r1((msSaved / baseline) * 40));
+    var msSavedRaw = Math.max(0, baseline - latRaw);
+    var msSaved = r1(msSavedRaw);
+    var latGain = Math.min(40, r5((msSavedRaw / baseline) * 40));
     var blkPct = base.blocchi_pct || 0;
-    var rpzGain = Math.min(20, r1(blkPct * 0.8));
+    var rep = d.dall_ultimo_report || {};
+    if (qTot > 0 && typeof rep.blocchi_totali === 'number') blkPct = Math.max(0, (rep.blocchi_totali / qTot) * 100);
+    var rpzGain = Math.min(20, r5(blkPct * 0.8));
     var ramGain = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
     var dotGain = (upOk > 0 ? 5 : 0) + (prefetch > 0 ? 5 : 2);
-    var gainPt = r1(latGain + rpzGain + ramGain + dotGain);
+    var gainPt = r5(latGain + rpzGain + ramGain + dotGain);
     if (gainPt < 25) gainPt = 25;
     if (gainPt > 80) gainPt = 80;
-    var gainIdx = r1((gainPt / 80) * 100);
+    var gainIdx = r5((gainPt / 80) * 100);
 
     return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved };
   }
@@ -2368,12 +2376,12 @@ $HtmlPageLight = @'
 
       var s = compute(d);
       var boostShown = engineOn ? s.boost : 0;
-      setGauge(G[0], boostShown, boostShown.toFixed(1) + '%');
+      setGauge(G[0], boostShown, fmtPct(boostShown));
       document.getElementById('d1').textContent = engineOn
-        ? 'Cache ' + s.cachePct + '% \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
+        ? 'Cache ' + fmtPct(s.cachePct) + ' \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
         : 'Motore Unbound fermo';
 
-      setGauge(G[1], s.gainIdx, s.gainIdx.toFixed(1) + '%');
+      setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
@@ -2403,7 +2411,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.5 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -3029,6 +3037,121 @@ $HtmlPage = @'
     padding-right: 2px !important; /* Elimina il margine inutile verso destra */
     text-align: center; /* Centra il pallino e il testo "Stato" */
   }
+
+  /* =====================================================================
+     LAYER "PRO v2" - card raffinate e movimento fluido.
+     Animazioni solo su transform/opacity (compositor), nessun repaint continuo.
+     Ultimo blocco del foglio di stile: sovrascrive le regole precedenti.
+     ===================================================================== */
+  :root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ring: rgba(255,255,255,0.075); }
+
+  /* Sfondo su layer fisso dedicato: niente repaint dello sfondo durante lo scroll */
+  body { background: var(--bg); background-attachment: scroll; }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(79,179,255,0.07), transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(179,136,255,0.05), transparent 60%);
+  }
+
+  /* Titolo statico (lo shimmer ridisegnava il testo a ogni frame) */
+  h1 { animation: none; background-size: 100% auto; background-position: 0 0; }
+
+  /* ---------- Pannelli ---------- */
+  .panel {
+    position: relative; border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 45%), var(--panel);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 12px 32px -14px rgba(0,0,0,0.75);
+    transition: border-color 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out);
+  }
+  .panel:hover { border-color: rgba(79,179,255,0.2); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 40px -16px rgba(0,0,0,0.8); }
+  .panel-versioni:hover { border-color: rgba(79,179,255,0.4) !important; }
+  .panel h2::before { width: 4px; height: 15px; background: linear-gradient(180deg, var(--accent), var(--purple)); box-shadow: 0 0 10px rgba(79,179,255,0.45); }
+
+  /* ---------- Card metriche ---------- */
+  .boost-item, .stat, .stat-card, .stat-ver, .periodic-task-chip {
+    background: linear-gradient(160deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.012) 65%);
+    border: 1px solid var(--ring);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 16px -9px rgba(0,0,0,0.7);
+    transition: transform 0.3s var(--ease-out), border-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
+  }
+  .boost-item { border-radius: 12px; padding: 13px 16px; }
+  .boost-item:hover, .stat:hover, .stat-card:hover {
+    transform: translateY(-2px); border-color: rgba(79,179,255,0.32);
+    background: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.018) 65%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 14px 26px -12px rgba(0,0,0,0.85), 0 0 0 1px rgba(79,179,255,0.06);
+  }
+  .stat-ver:hover, .periodic-task-chip:hover { border-color: rgba(79,179,255,0.35); }
+  .stat-card:hover { transform: translateY(-2px); }
+  .boost-item-header { letter-spacing: 0.06em; }
+  .boost-item-val, .stat .val, .stat-card .sc-val { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Barre di avanzamento ---------- */
+  .g-bar-bg { height: 8px; background: rgba(0,0,0,0.4); box-shadow: inset 0 1px 2px rgba(0,0,0,0.6); contain: layout paint; }
+  .g-bar-fill { position: relative; transition: width 0.9s var(--ease-out), background 0.6s ease, background-color 0.6s ease; }
+  .g-bar-fill::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0) 60%); pointer-events: none; }
+  .bar-fill { transition: width 0.6s var(--ease-out); }
+
+  /* ---------- Badge ---------- */
+  .badge { transition: transform 0.25s var(--ease-out), box-shadow 0.3s var(--ease-out); box-shadow: 0 4px 12px -6px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.05) inset; }
+  .badge:hover { transform: translateY(-1px); }
+  .gain-highlight { transition: transform 0.25s var(--ease-out), box-shadow 0.4s ease; }
+
+  /* ---------- Pulsanti: sfumatura e riflesso su opacity/transform ---------- */
+  .btn-amber { --c: 255,179,0; } .btn-blue { --c: 79,179,255; } .btn-purple { --c: 179,136,255; }
+  .btn-green { --c: 61,220,132; } .btn-red { --c: 255,92,92; } .btn-teal { --c: 45,212,191; } .btn-cyan { --c: 34,211,238; }
+  .btn-action {
+    position: relative; overflow: hidden; isolation: isolate; will-change: transform;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    background: linear-gradient(180deg, rgba(var(--c),0.16) 0%, rgba(var(--c),0.05) 100%);
+    border: 1px solid rgba(var(--c),0.28); border-top-color: rgba(var(--c),0.5);
+    color: rgb(var(--c));
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: transform 0.28s var(--ease-out), box-shadow 0.35s var(--ease-out), border-color 0.3s var(--ease-out), color 0.25s ease;
+  }
+  .btn-action::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgba(var(--c),0.16); opacity: 0; transition: opacity 0.3s var(--ease-out); }
+  .btn-action::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 55%; z-index: -1; opacity: 0; pointer-events: none;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.15), transparent); transform: translateX(-130%) skewX(-18deg); }
+  .btn-action:hover:not(:disabled) {
+    transform: translateY(-2px);
+    background: linear-gradient(180deg, rgba(var(--c),0.16) 0%, rgba(var(--c),0.05) 100%);
+    border-color: rgba(var(--c),0.55); color: #ffffff;
+    box-shadow: 0 10px 24px -8px rgba(var(--c),0.45), inset 0 1px 0 rgba(255,255,255,0.14);
+  }
+  .btn-action:hover:not(:disabled)::before { opacity: 1; }
+  .btn-action:hover:not(:disabled)::after { opacity: 1; animation: btnSheen 0.85s var(--ease-out) 1; }
+  .btn-action:active:not(:disabled) { transform: translateY(0) scale(0.985); transition-duration: 0.08s; box-shadow: 0 2px 8px -4px rgba(0,0,0,0.7); }
+  @keyframes btnSheen { from { transform: translateX(-130%) skewX(-18deg); } to { transform: translateX(300%) skewX(-18deg); } }
+  .btn-fase { transition: transform 0.2s var(--ease-out), background-color 0.2s ease, border-color 0.2s ease; }
+
+  /* ---------- Overlay riavvio: senza blur (costoso con la barra animata) ---------- */
+  .restart-overlay { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(6,9,13,0.94); }
+  .restart-overlay.active { animation: overlayIn 0.25s ease both; }
+  .restart-overlay.active .restart-overlay-box { animation: boxIn 0.4s var(--ease-out) both; }
+  @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes boxIn { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Tabelle ---------- */
+  .table-scroll th { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--panel-2); }
+  tbody tr { transition: background-color 0.2s ease; }
+
+  /* ---------- Prestazioni: niente lavoro fuori schermo ---------- */
+  .grid-three-columns ~ .panel { content-visibility: auto; contain-intrinsic-size: auto 340px; }
+  .live-log-feed { contain: layout paint style; overscroll-behavior: contain; }
+  .live-log-line { content-visibility: auto; contain-intrinsic-size: auto 26.5px; transition: background-color 0.2s ease; }
+
+  /* ---------- Ingresso morbido, una sola volta al caricamento ---------- */
+  @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .button-row, .live-indicator, .badges-panel, .live-log-left > *, .live-log-panel, .bunker-rpz-panel, .boost-item { animation: cardIn 0.55s var(--ease-out) backwards; }
+  .boost-item:nth-child(2) { animation-delay: 0.04s; } .boost-item:nth-child(3) { animation-delay: 0.08s; }
+  .boost-item:nth-child(4) { animation-delay: 0.12s; } .boost-item:nth-child(5) { animation-delay: 0.16s; }
+  .boost-item:nth-child(6) { animation-delay: 0.2s; }  .boost-item:nth-child(7) { animation-delay: 0.24s; }
+  .boost-item:nth-child(8) { animation-delay: 0.28s; } .boost-item:nth-child(9) { animation-delay: 0.32s; }
+  .boost-item:nth-child(10) { animation-delay: 0.36s; } .boost-item:nth-child(n+11) { animation-delay: 0.4s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
 </style>
 </head>
 <body>
@@ -3040,7 +3163,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.5 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -3432,6 +3555,61 @@ $HtmlPage = @'
 </div>
 
 <script>
+/* ===== PRO v2: rendering senza sprechi (solo ASCII) ===== */
+// 1) innerHTML: se il contenuto e' identico e il DOM non e' stato toccato da altro codice, non ricostruisce
+//    (niente scatti, niente perdita di hover/scroll/details aperti).
+(function () {
+  var desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  if (!desc || !desc.get || !desc.set) return;
+  Object.defineProperty(Element.prototype, 'innerHTML', {
+    configurable: true, enumerable: desc.enumerable,
+    get: function () { return desc.get.call(this); },
+    set: function (v) {
+      var s = (v === null || v === undefined) ? '' : String(v);
+      var c = this.__ih;
+      if (c && c.h === s && c.n === this.childNodes.length && c.f === this.firstChild && c.l === this.lastChild) return;
+      desc.set.call(this, v);
+      this.__ih = { h: s, n: this.childNodes.length, f: this.firstChild, l: this.lastChild };
+    }
+  });
+})();
+
+// 2) Sostituisce i figli di target con quelli di src solo se il markup e' cambiato
+function swapIfChanged(target, src) {
+  var sig = src.innerHTML;
+  if (target.__sw === sig) return;
+  target.__sw = sig;
+  target.replaceChildren.apply(target, Array.prototype.slice.call(src.childNodes));
+}
+
+// 3) Micro-animazione (Web Animations, compositor) quando cambia il valore di una card metrica
+(function () {
+  if (!window.MutationObserver || !Element.prototype.animate) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var last = new WeakMap();
+  var obs = new MutationObserver(function (recs) {
+    var seen = new Set();
+    recs.forEach(function (r) {
+      var n = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+      var el = n && n.closest ? n.closest('.boost-item-val') : null;
+      if (el) seen.add(el);
+    });
+    seen.forEach(function (el) {
+      var t = el.textContent;
+      var had = last.has(el);
+      if (last.get(el) === t) return;
+      last.set(el, t);
+      if (!had || reduce) return;
+      el.animate([{ opacity: 0.35, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+                 { duration: 450, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    });
+  });
+  document.querySelectorAll('.boost-item-val').forEach(function (el) {
+    last.set(el, el.textContent);
+    obs.observe(el, { childList: true, characterData: true, subtree: true });
+  });
+})();
+
 let prevQueries = 0;
 let prevTime = Date.now();
 let liveQPS = 0;
@@ -3863,6 +4041,7 @@ function renderLiveLogFeed(d) {
   if (!Array.isArray(feed)) { feed = [feed]; }
 
   if (feed.length === 0) {
+    cont.__sigLog = null;
     cont.innerHTML = '<div class="muted">In attesa di eventi...</div>';
     return;
   }
@@ -3870,6 +4049,10 @@ function renderLiveLogFeed(d) {
   // Prende gli ultimi 1000 elementi nell'ordine nativo (dal meno recente al piu recente)
   // Stesso cap del server (Select-Object -Last 1000 in Get-LiveRcodeFeed).
   const voci = feed.slice(-1000);
+  const sigLog = voci.length + '|' + JSON.stringify(voci[0]) + '|' + JSON.stringify(voci[voci.length - 1]) + '|' + ((d.live_feed_summary && d.live_feed_summary.totale) || 0);
+  if (cont.__sigLog === sigLog) return;
+  cont.__sigLog = sigLog;
+  const wasAtBottom = (cont.scrollHeight - cont.scrollTop - cont.clientHeight) < 48;
 
   // Numero progressivo calcolato a ritroso dal totalizzatore corrente (s.totale),
   // cosi' l'ultima riga in fondo corrisponde esattamente al totale mostrato sopra
@@ -3896,7 +4079,7 @@ function renderLiveLogFeed(d) {
 
   cont.innerHTML = `<div class="live-log-track">${righe}</div>`;
   // Mantiene lo scorrimento automatico focalizzato sul fondo (sull'ultimo evento registrato)
-  cont.scrollTop = cont.scrollHeight;
+  if (wasAtBottom) cont.scrollTop = cont.scrollHeight;
 }
 
 function parseCerberoDate(value) {
@@ -4849,8 +5032,8 @@ async function refresh(forceVersions) {
       <div>&#128274; Risoluzioni TCP: <b style="color:var(--purple);">${fmt(tcpQ)}</b> (${pctTcp}%)</div>
     `;
 
-    const badges = document.getElementById('badges');
-    badges.innerHTML = '';
+    const badgesLive = document.getElementById('badges');
+    const badges = document.createElement('div');
     
     const bEngine = document.createElement('span');
     bEngine.className = 'badge ' + (d.engine_attivo ? 'ok' : 'bad');
@@ -4904,6 +5087,7 @@ async function refresh(forceVersions) {
     bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore.toFixed(1) + '%\nUpstream DoT online (peso 15%): ' + upstreamScore.toFixed(1) + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore.toFixed(1) + '%</b>';
     badges.appendChild(bCache);
+    swapIfChanged(badgesLive, badges);
 
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
@@ -4921,8 +5105,9 @@ async function refresh(forceVersions) {
 
     const gainContainer = document.getElementById('bunkerGainContainer');
     if (gainContainer) {
-      gainContainer.innerHTML = '';
-      gainContainer.appendChild(bGain);
+      const gainTmp = document.createElement('div');
+      gainTmp.appendChild(bGain);
+      swapIfChanged(gainContainer, gainTmp);
     }
 
     const st = d.statistiche_live || {};
@@ -5118,11 +5303,16 @@ async function refresh(forceVersions) {
 
     const tbodyRcode = document.querySelector('#tabellaLiveRcode tbody');
     if (tbodyRcode) {
-      tbodyRcode.innerHTML = '';
       let feedRcode = d.live_rcode_feed || [];
       if (!Array.isArray(feedRcode)) { feedRcode = [feedRcode]; }
+      const sigRcode = feedRcode.length + '|' + JSON.stringify(feedRcode[0] || null) + '|' + JSON.stringify(feedRcode[feedRcode.length - 1] || null);
+      const rcodeChanged = (sigRcode !== window.__sigRcode) || tbodyRcode.rows.length === 0;
+      window.__sigRcode = sigRcode;
+      if (rcodeChanged) tbodyRcode.innerHTML = '';
 
-      if (feedRcode.length === 0) {
+      if (!rcodeChanged) {
+        /* feed invariato: nessuna ricostruzione del DOM */
+      } else if (feedRcode.length === 0) {
         tbodyRcode.innerHTML = '<tr><td colspan="5" class="muted">Nessun evento RCODE registrato di recente nel log</td></tr>';
       } else {
         const feedCronologico = feedRcode.slice().reverse();
@@ -5163,7 +5353,7 @@ async function refresh(forceVersions) {
           tbodyRcode.appendChild(tr);
         });
       }
-      filtraLiveRcode();
+      if (rcodeChanged) filtraLiveRcode();
     }
   } catch (e) {
     console.warn('Errore di connessione temporaneo:', e);
