@@ -2118,6 +2118,277 @@ function Get-BunkerStatusJson {
 
 # === INTERFACCIA WEB HTML5 / JS ===
 
+# === PAGINA LIGHT (rotta / ): 2 indicatori a lancette in tempo reale + pulsante verso la versione Pro (/pro) ===
+$HtmlPageLight = @'
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNBOUND BUNKER - Dashboard Light</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27%234fb3ff%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #06090d; --panel: #0d1219; --panel-2: #111720;
+    --border: rgba(255,255,255,0.07); --border-strong: rgba(255,255,255,0.12);
+    --text: #dbe5ee; --dim: #8497ab; --accent: #4fb3ff;
+    --green: #3ddc84; --amber: #ffb300; --red: #ff5c5c;
+    --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "Consolas", "Cascadia Mono", "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #0f1a27 0%, var(--bg) 60%);
+    color: var(--text); font-family: var(--font-ui); padding: 24px 20px 32px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+  h1 { margin: 0; font-size: 1.35em; color: var(--accent); letter-spacing: 0.02em; }
+  .sub { color: var(--dim); font-size: 0.82em; margin-top: 4px; }
+  .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+    font-size: 0.8em; font-weight: 700; letter-spacing: 0.04em; border: 1px solid var(--border-strong);
+    background: var(--panel-2);
+  }
+  .badge .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+  .badge.ok { color: var(--green); border-color: rgba(61,220,132,0.4); }
+  .badge.ok .dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.6s infinite; }
+  .badge.bad { color: var(--red); border-color: rgba(255,92,92,0.45); }
+  .badge.bad .dot { background: var(--red); }
+  .badge.wait { color: var(--dim); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .btn-pro {
+    display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 10px;
+    font-weight: 700; font-size: 0.88em; letter-spacing: 0.03em; text-decoration: none; color: #fff;
+    background: linear-gradient(135deg, rgba(79,179,255,0.28), rgba(179,136,255,0.28));
+    border: 1px solid rgba(79,179,255,0.55); box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .btn-pro:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(79,179,255,0.25); }
+  .btn-pro:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+  .card {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--border-strong); border-radius: 16px; padding: 20px 20px 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4); text-align: center;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 0.95em; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; }
+  .card svg { width: 100%; max-width: 380px; height: auto; display: block; margin: 0 auto; }
+  .value { font-family: var(--font-mono); font-weight: 700; }
+  .detail { color: var(--dim); font-size: 0.82em; margin-top: 6px; min-height: 1.3em; font-family: var(--font-mono); }
+  .stale { opacity: 0.45; filter: grayscale(0.7); transition: opacity 0.4s; }
+  footer { color: var(--dim); font-size: 0.75em; text-align: center; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>&#128737; UNBOUND BUNKER &middot; Dashboard Light</h1>
+      <div class="sub" id="sub">Connessione al Bunker in corso...</div>
+    </div>
+    <div class="top-actions">
+      <span class="badge wait" id="engBadge"><span class="dot"></span><span id="engText">IN ATTESA</span></span>
+      <a class="btn-pro" href="/pro" title="Apri la dashboard completa">&#128295; Versione Pro &rarr;</a>
+    </div>
+  </header>
+
+  <div class="gauges" id="gauges">
+    <div class="card">
+      <h2>Funzionamento Bunker</h2>
+      <svg id="g1" viewBox="0 0 300 190" role="img" aria-label="Funzionamento del bunker in percentuale"></svg>
+      <div class="detail" id="d1">--</div>
+    </div>
+    <div class="card">
+      <h2>Miglioramento Applicato al PC</h2>
+      <svg id="g2" viewBox="0 0 300 190" role="img" aria-label="Indice di miglioramento applicato al PC"></svg>
+      <div class="detail" id="d2">--</div>
+    </div>
+  </div>
+  <footer id="foot">Aggiornamento in tempo reale ogni 2 secondi</footer>
+</div>
+
+<script>
+(function () {
+  var CX = 150, CY = 150, R = 108, NS = 'http://www.w3.org/2000/svg';
+  var COL = { red: '#ff5c5c', amber: '#ffb300', green: '#3ddc84' };
+
+  function colorFor(p) { return p >= 75 ? COL.green : (p >= 50 ? COL.amber : COL.red); }
+  // 0% = sinistra (180 gradi), 100% = destra (0 gradi)
+  function pt(p, r) {
+    var a = Math.PI * (1 - p / 100);
+    return [CX + r * Math.cos(a), CY - r * Math.sin(a)];
+  }
+  function arc(p0, p1, r) {
+    var a = pt(p0, r), b = pt(p1, r);
+    return 'M' + a[0].toFixed(2) + ' ' + a[1].toFixed(2) + ' A' + r + ' ' + r + ' 0 0 1 ' + b[0].toFixed(2) + ' ' + b[1].toFixed(2);
+  }
+  function el(name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function buildGauge(svgId) {
+    var svg = document.getElementById(svgId);
+    el('path', { d: arc(0, 100, R), fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': 18, 'stroke-linecap': 'round' }, svg);
+    el('path', { d: arc(0.6, 49.4, R), fill: 'none', stroke: COL.red, 'stroke-width': 12, opacity: 0.85 }, svg);
+    el('path', { d: arc(50.6, 74.4, R), fill: 'none', stroke: COL.amber, 'stroke-width': 12, opacity: 0.85 }, svg);
+    el('path', { d: arc(75.6, 99.4, R), fill: 'none', stroke: COL.green, 'stroke-width': 12, opacity: 0.85 }, svg);
+    for (var t = 0; t <= 100; t += 10) {
+      var major = (t % 50 === 0);
+      var a = pt(t, R - 13), b = pt(t, R - (major ? 25 : 20));
+      el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: 'rgba(219,229,238,0.55)', 'stroke-width': major ? 2 : 1 }, svg);
+      if (major) {
+        var l = pt(t, R - 38);
+        var tx = el('text', { x: l[0], y: l[1] + 4, 'text-anchor': 'middle', fill: '#8497ab', 'font-size': 11 }, svg);
+        tx.textContent = t;
+      }
+    }
+    var needle = el('g', {}, svg);
+    el('polygon', { points: (CX - 4) + ',' + CY + ' ' + (CX + 4) + ',' + CY + ' ' + CX + ',' + (CY - R + 18), fill: '#e9f2fb' }, needle);
+    el('circle', { cx: CX, cy: CY, r: 9, fill: '#111720', stroke: '#e9f2fb', 'stroke-width': 3 }, svg);
+    var val = el('text', { x: CX, y: CY + 32, 'text-anchor': 'middle', 'font-size': 30, 'font-weight': 700, fill: '#8497ab', 'font-family': 'Consolas, monospace' }, svg);
+    val.textContent = '--';
+    return { needle: needle, val: val, cur: 0, tgt: 0, raf: null };
+  }
+
+  var G = [buildGauge('g1'), buildGauge('g2')];
+  function setNeedle(g, p) { g.needle.setAttribute('transform', 'rotate(' + (-90 + 1.8 * p).toFixed(2) + ' ' + CX + ' ' + CY + ')'); }
+  G.forEach(function (g) { setNeedle(g, 0); });
+
+  function setGauge(g, pct, text) {
+    pct = Math.max(0, Math.min(100, pct));
+    var col = colorFor(pct);
+    g.val.textContent = text;
+    g.val.setAttribute('fill', col);
+    var from = g.cur, to = pct, t0 = performance.now(), dur = 900;
+    if (g.raf) cancelAnimationFrame(g.raf);
+    (function step(now) {
+      var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      g.cur = from + (to - from) * e;
+      setNeedle(g, g.cur);
+      if (k < 1) g.raf = requestAnimationFrame(step);
+    })(t0);
+  }
+
+  // ---- Calcolo punteggi: stessa logica della dashboard Pro ----
+  var prevQueries = 0, prevTime = 0, maxLatSeen = 0, isRefreshing = false, lastDataTs = 0;
+
+  function compute(d) {
+    var base = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base : {};
+    var qTot = base.query_totali || 0;
+    var latMs = base.latenza_ms || 0;
+    var qpsAvg = base.qps_medio || 0;
+    var now = Date.now(), liveQPS;
+    if (prevQueries > 0 && now > prevTime) {
+      liveQPS = Math.max(0, qTot - prevQueries) / ((now - prevTime) / 1000);
+    } else { liveQPS = qpsAvg; }
+    prevQueries = qTot; prevTime = now;
+
+    var radar = d.upstream_radar || [];
+    if (!Array.isArray(radar)) radar = [radar];
+    var upOk = radar.filter(function (r) { return r.ok; }).length;
+
+    var cachePct = base.cache_efficienza_pct;
+    if (typeof cachePct !== 'number' || isNaN(cachePct)) cachePct = 0;
+
+    var lat = latMs;
+    if (qTot === 0 && (!lat || lat <= 0) && radar.length > 0) {
+      var okR = radar.filter(function (r) { return r.ok; });
+      if (okR.length > 0) lat = Math.round(okR.reduce(function (a, r) { return a + r.ms; }, 0) / okR.length);
+    }
+    if (!lat || lat < 0) lat = 0;
+
+    var latScore = 100;
+    if (lat > 5 && lat <= 50) latScore = Math.round(100 - ((lat - 5) * 0.18));
+    else if (lat > 50 && lat <= 150) latScore = Math.round(92 - ((lat - 50) * 0.10));
+    else if (lat > 150 && lat <= 300) latScore = Math.round(82 - ((lat - 150) * 0.08));
+    else if (lat > 300) latScore = Math.max(15, Math.round(70 - ((lat - 300) * 0.10)));
+
+    var upstreamScore = radar.length > 0 ? Math.round((upOk / radar.length) * 100) : 100;
+    var dnssecPct = 100;
+    var qpsHeadroom = Math.max(0, Math.min(100, Math.round(100 - (liveQPS / 5))));
+    var health = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
+
+    var boost = Math.round(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
+
+    var prefetch = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
+    if (lat > maxLatSeen) maxLatSeen = lat;
+    var baseline = Math.max(120, maxLatSeen);
+    var msSaved = Math.max(0, Math.round(baseline - lat));
+    var latGain = Math.min(40, Math.round((msSaved / baseline) * 40));
+    var blkPct = base.blocchi_pct || 0;
+    var rpzGain = Math.min(20, Math.round(blkPct * 0.8));
+    var ramGain = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
+    var dotGain = (upOk > 0 ? 5 : 0) + (prefetch > 0 ? 5 : 2);
+    var gainPt = Math.round(latGain + rpzGain + ramGain + dotGain);
+    if (gainPt < 25) gainPt = 25;
+    if (gainPt > 80) gainPt = 80;
+    var gainIdx = Math.round((gainPt / 80) * 100);
+
+    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, upOk: upOk, upTot: radar.length, msSaved: msSaved };
+  }
+
+  function setEngine(state, text) {
+    var b = document.getElementById('engBadge');
+    b.className = 'badge ' + state;
+    document.getElementById('engText').textContent = text;
+  }
+
+  async function refresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    try {
+      var res = await fetch('/api/status', { cache: 'no-store' });
+      if (!res.ok) return;
+      var txt = await res.text();
+      if (!txt || !txt.trim()) return;
+      var d = JSON.parse(txt);
+      lastDataTs = Date.now();
+      document.getElementById('gauges').classList.remove('stale');
+
+      var engineOn = !!d.engine_attivo;
+      setEngine(engineOn ? 'ok' : 'bad', engineOn ? 'UNBOUND ATTIVO' : 'UNBOUND FERMO');
+      document.getElementById('sub').textContent = 'Host: ' + (d.host || 'N/D') + ' | Aggiornato: ' + (d.generato_il || '--');
+
+      var s = compute(d);
+      var boostShown = engineOn ? s.boost : 0;
+      setGauge(G[0], boostShown, boostShown + '%');
+      document.getElementById('d1').textContent = engineOn
+        ? 'Cache ' + s.cachePct + '% \u00b7 Latenza ' + s.lat + ' ms \u00b7 Upstream ' + s.upOk + '/' + s.upTot
+        : 'Motore Unbound fermo';
+
+      setGauge(G[1], s.gainIdx, s.gainIdx + '%');
+      document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt + ' / 80 pt \u00b7 ' + s.msSaved + ' ms risparmiati sul baseline';
+    } catch (e) {
+      /* dati non disponibili: gestito dal controllo di inattivita' */
+    } finally {
+      isRefreshing = false;
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 2000);
+  setInterval(function () {
+    if (lastLive() > 8000) {
+      document.getElementById('gauges').classList.add('stale');
+      setEngine('wait', 'CONNESSIONE PERSA');
+    }
+  }, 1000);
+  function lastLive() { return lastDataTs ? Date.now() - lastDataTs : 0; }
+})();
+</script>
+</body>
+</html>
+'@
+
+# === PAGINA PRO (rotta /pro): dashboard completa ===
 $HtmlPage = @'
 <!DOCTYPE html>
 <html lang="it">
@@ -2770,6 +3041,9 @@ $HtmlPage = @'
 </div>
 
 <div class="button-row" id="buttonRow">
+  <a href="/" id="btnGoLight" class="btn-action btn-blue" style="text-decoration:none; color:inherit;" title="Torna alla versione Light con i due indicatori">
+    &#8592; Versione Light
+  </a>
   <button id="btnRestart" onclick="confirmRestart()" class="btn-action btn-amber" title="Riavvia la Dashboard ed esegui la verifica della porta">
     &#128260; Riavvia Dashboard
   </button>
@@ -5316,8 +5590,14 @@ try {
                     Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$restartCmd`"" -WindowStyle Hidden
                     break
                 }
-            } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
+            } elseif ($request.Url.AbsolutePath -eq "/pro" -or $request.Url.AbsolutePath -eq "/pro/") {
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
+                $response.ContentType = "text/html; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPageLight)
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
