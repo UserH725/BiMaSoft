@@ -2351,6 +2351,7 @@ $HtmlPageLight = @'
   var COL = { red: '#ff5c5c', amber: '#ffb300', green: '#3ddc84' };
 
   function fmtPct(v) { return Number(v).toFixed(5).replace('.', ',') + '%'; }
+  function fmtTitlePct(v) { return Number(v).toFixed(2).replace('.', ',') + '%'; }
   function colorFor(p) { return p >= 75 ? COL.green : (p >= 50 ? COL.amber : COL.red); }
   // 0% = sinistra (180 gradi), 100% = destra (0 gradi)
   function pt(p, r) {
@@ -2516,6 +2517,8 @@ $HtmlPageLight = @'
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
       if (window.__postLightSample) window.__postLightSample(boostShown, s.gainIdx);
+      // Percentuali nel titolo della scheda (2 decimali per leggibilita'): monitoraggio anche da altra tab
+      document.title = '\u{1F510} ' + fmtTitlePct(boostShown) + '  \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
