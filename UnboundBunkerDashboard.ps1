@@ -2217,6 +2217,102 @@ function Get-BunkerStatusJson {
     return $script:CachedStatusJson
 }
 
+# === MODALITA' LIGHT: RACCOLTA MINIMA ===
+# La pagina Light usa solo: motore attivo, RAM disk, statistiche Unbound, radar upstream,
+# punteggio salute. Tutto il resto (versioni, root radar ICMP, task pianificati, feed log,
+# anomalie, hardening, NTP, Windows Update, ...) serve solo alla Pro e viene raccolto
+# soltanto mentre la Pro e' aperta (e per $script:ProHoldSec secondi dopo l'ultima richiesta).
+$script:ProHoldSec        = 180
+$script:CachedLightJson   = $null
+$script:LastLightJsonTime = [DateTime]::MinValue
+
+function Set-ProActive {
+    # Chiamata dal server a ogni richiesta della Pro: se la Pro era inattiva da piu' di
+    # ProHoldSec inizia una nuova "sessione" (il JSON completo vecchio non va piu' servito).
+    $sync = $script:BunkerSyncHash
+    if (-not $sync) { return }
+    $now = Get-Date
+    if (($now - $sync.ProTs).TotalSeconds -gt $script:ProHoldSec) { $sync.ProSession = $now }
+    $sync.ProTs = $now
+}
+
+function Get-BunkerStatusLightJson {
+    if ($script:CachedLightJson -and ((Get-Date) - $script:LastLightJsonTime).TotalMilliseconds -lt 1500) {
+        return $script:CachedLightJson
+    }
+
+    $ramDisk  = Get-RamDiskGauge
+    $engineOn = Get-EngineStatus
+    $stats    = Get-LiveStats
+    $radar    = Get-UpstreamRadar
+    $salute   = Get-HealthSnapshot
+    # Mantiene aggiornata la finestra 24h (campiona al massimo 1 volta/minuto, costo minimo)
+    [void](Update-SessionHistory)
+
+    # Registro riavvii Unbound (stessa logica della versione completa, serve solo l'uptime)
+    if (-not $script:UnboundRestartLog) {
+        $script:UnboundRestartLog    = New-Object System.Collections.Generic.List[object]
+        $script:UnboundLastUptimeSec = $null
+    }
+    $curUptimeSec = $stats.base.uptime_secondi
+    if ($null -ne $script:UnboundLastUptimeSec -and $curUptimeSec -lt ($script:UnboundLastUptimeSec - 5)) {
+        [void]$script:UnboundRestartLog.Add([ordered]@{
+            orario                = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
+            uptime_precedente_sec = $script:UnboundLastUptimeSec
+        })
+        while ($script:UnboundRestartLog.Count -gt 20) { $script:UnboundRestartLog.RemoveAt(0) }
+    }
+    $script:UnboundLastUptimeSec = $curUptimeSec
+
+    # Blocchi: la Light usa gia' base.rpz_azioni (contatore Unbound); non serve rileggere il log RPZ
+    $rpzAzioni = 0
+    if ($stats.base.rpz_azioni) { $rpzAzioni = $stats.base.rpz_azioni }
+    $pctBlocchi = 0
+    if ($stats.base.query_totali -gt 0) {
+        $pctBlocchi = [math]::Round(($rpzAzioni / $stats.base.query_totali) * 100, 1)
+    }
+    $stats.base.blocchi_pct = $pctBlocchi
+
+    $saluteScore = 100
+    $anomalie = $false
+    if ($salute -and $salute.fasi) {
+        foreach ($f in $salute.fasi) {
+            if ($f.esito -match 'ERR|ERRORE|FALLITO') { $saluteScore -= 50; $anomalie = $true }
+            elseif ($f.esito -match 'WARN|ALLARME') { $saluteScore -= 20; $anomalie = $true }
+        }
+    }
+    if ($saluteScore -lt 0) { $saluteScore = 0 }
+
+    $obj = [ordered]@{
+        generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
+        host             = $env:COMPUTERNAME
+        modalita         = "light"
+        ram_disk         = $ramDisk
+        engine_attivo    = $engineOn
+        upstream_radar   = $radar
+        statistiche_live = $stats
+        dall_ultimo_report = [ordered]@{
+            query_totali         = $stats.base.query_totali
+            cache_hits           = $stats.base.cache_hits
+            cache_efficienza_pct = $stats.base.cache_efficienza_pct
+            uptime_secondi       = $stats.base.uptime_secondi
+            blocchi_totali       = $rpzAzioni
+            blocchi_pct          = $pctBlocchi
+        }
+        salute_sistema   = [ordered]@{ anomalie_rilevate = $anomalie; score = $saluteScore }
+    }
+
+    $script:CachedLightJson   = ($obj | ConvertTo-Json -Depth 8 -Compress)
+    $script:LastLightJsonTime = Get-Date
+
+    if ($script:BunkerSyncHash) {
+        $script:BunkerSyncHash.JsonLight = $script:CachedLightJson
+        $script:BunkerSyncHash.TsLight   = $script:LastLightJsonTime
+    }
+
+    return $script:CachedLightJson
+}
+
 # === INTERFACCIA WEB HTML5 / JS ===
 
 # === PAGINA LIGHT (rotta / ): 2 indicatori a lancette in tempo reale + pulsante verso la versione Pro (/pro) ===
@@ -2516,7 +2612,7 @@ $HtmlPageLight = @'
     if (isRefreshing) return;
     isRefreshing = true;
     try {
-      var res = await fetch('/api/status', { cache: 'no-store' });
+      var res = await fetch('/api/status?mode=light', { cache: 'no-store' });
       if (!res.ok) return;
       var txt = await res.text();
       if (!txt || !txt.trim()) return;
@@ -2732,7 +2828,7 @@ $HtmlPageLight = @'
     var iv = setInterval(async function () {
       tries++;
       try {
-        var r = await fetch('/api/status', { cache: 'no-store' });
+        var r = await fetch('/api/status?mode=light', { cache: 'no-store' });
         if (r.ok) {
           // ricarica solo dopo aver visto il vecchio processo cadere (o, in ogni caso, dopo 8 s)
           if (sawDown || tries > 8) { clearInterval(iv); location.reload(); return; }
@@ -5765,13 +5861,28 @@ setInterval(() => {
 function Start-BackgroundCollectorLoop {
     Write-DashLog "Ciclo di raccolta dati in background avviato (PID $PID)."
     while ($true) {
-        try { Get-BunkerStatusJson | Out-Null } catch { Write-DashLog "Errore nel ciclo di raccolta background: $($_.Exception.Message)" }
+        try {
+            # Raccolta COMPLETA solo se la pagina Pro e' stata richiesta di recente; altrimenti
+            # raccolta MINIMA (solo cio' che serve ai due indicatori della Light).
+            $proActive = $false
+            if ($script:BunkerSyncHash) {
+                $proActive = (((Get-Date) - $script:BunkerSyncHash.ProTs).TotalSeconds -lt $script:ProHoldSec)
+            }
+            if ($proActive) { Get-BunkerStatusJson | Out-Null }
+            else            { Get-BunkerStatusLightJson | Out-Null }
+        } catch { Write-DashLog "Errore nel ciclo di raccolta background: $($_.Exception.Message)" }
         Start-Sleep -Milliseconds 1500
     }
 }
 
 function Start-BackgroundCollector {
-    $script:BunkerSyncHash = [hashtable]::Synchronized(@{ Json = $null; Ts = [DateTime]::MinValue })
+    # Json/Ts = JSON completo (pagina Pro); JsonLight/TsLight = JSON ridotto (pagina Light);
+    # ProTs = ultima richiesta della pagina Pro; ProSession = inizio dell'ultima "sessione Pro".
+    $script:BunkerSyncHash = [hashtable]::Synchronized(@{
+        Json = $null; Ts = [DateTime]::MinValue
+        JsonLight = $null; TsLight = [DateTime]::MinValue
+        ProTs = [DateTime]::MinValue; ProSession = [DateTime]::MinValue
+    })
 
     $bgRunspace = [runspacefactory]::CreateRunspace()
     $bgRunspace.ApartmentState = "MTA"
@@ -5889,12 +6000,34 @@ try {
         try {
             if ($request.Url.AbsolutePath -eq "/api/status") {
                 $forceVersions = $request.Url.Query -match '(\?|&)force=1(&|$)'
-                if ($forceVersions) {
-                    $json = Get-BunkerStatusJson -ForceVersions
-                } elseif ($script:BunkerSyncHash -and $script:BunkerSyncHash.Json) {
-                    $json = $script:BunkerSyncHash.Json
+                $lightReq      = $request.Url.Query -match '(\?|&)mode=light(&|$)'
+                $sync          = $script:BunkerSyncHash
+                $json          = $null
+                if ($lightReq) {
+                    # LIGHT: JSON ridotto; se la Pro e' attiva e il JSON completo e' fresco va bene
+                    # anche quello (e' un soprainsieme). La Light NON attiva la raccolta completa.
+                    if ($sync) {
+                        if ($sync.JsonLight -and ((Get-Date) - $sync.TsLight).TotalSeconds -lt 10) { $json = $sync.JsonLight }
+                        elseif ($sync.Json -and ((Get-Date) - $sync.Ts).TotalSeconds -lt 10)       { $json = $sync.Json }
+                    }
+                    if (-not $json) { $json = Get-BunkerStatusLightJson }
                 } else {
-                    $json = Get-BunkerStatusJson
+                    # PRO: segnala che serve la raccolta completa
+                    Set-ProActive
+                    if ($forceVersions) {
+                        $json = Get-BunkerStatusJson -ForceVersions
+                    } else {
+                        if ($sync) {
+                            # Alla prima richiesta di una nuova sessione Pro attende che il collector
+                            # (passato in modalita' completa) abbia prodotto un JSON NUOVO.
+                            $waitUntil = (Get-Date).AddSeconds(15)
+                            while ((-not $sync.Json -or $sync.Ts -le $sync.ProSession) -and (Get-Date) -lt $waitUntil) {
+                                Start-Sleep -Milliseconds 250
+                            }
+                            if ($sync.Json -and $sync.Ts -gt $sync.ProSession) { $json = $sync.Json }
+                        }
+                        if (-not $json) { $json = Get-BunkerStatusJson }
+                    }
                 }
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
                 $response.ContentType = "application/json; charset=utf-8"
@@ -6213,6 +6346,7 @@ try {
                     break
                 }
             } elseif ($request.Url.AbsolutePath -eq "/pro" -or $request.Url.AbsolutePath -eq "/pro/") {
+                Set-ProActive
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
