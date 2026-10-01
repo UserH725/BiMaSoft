@@ -247,6 +247,46 @@ function Get-UnboundWorkingSet {
     return @{ ws_mb = 0; pid = "N/A"; sys_ram_mb = 0; pct_sys = 0 }
 }
 
+# === CARICO DEL PC (RAM + CPU) PER IL TITOLO DELLA SCHEDA PRO ===
+# Raccolto solo nel JSON completo (Pro): la Light non lo usa e non ne paga il costo.
+# CPU: contatore prestazioni aperto una sola volta (leggero) + media mobile degli ultimi 3 campioni
+# (circa 5 s) per evitare pallini che lampeggiano sui picchi brevi.
+# RAM: memoria fisica usata / totale dell'intero PC.
+$script:SysLoadCounter    = $null
+$script:SysLoadCpuSamples = New-Object System.Collections.Generic.List[double]
+$script:SysLoadLast       = $null
+$script:SysLoadLastTime   = [DateTime]::MinValue
+
+function Get-SystemLoad {
+    if ($script:SysLoadLast -and ((Get-Date) - $script:SysLoadLastTime).TotalMilliseconds -lt 1000) { return $script:SysLoadLast }
+    $ramPct = $null; $ramUsedMb = 0; $ramTotMb = 0; $cpuPct = $null
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        if ($os -and $os.TotalVisibleMemorySize -gt 0) {
+            $usedKb    = $os.TotalVisibleMemorySize - $os.FreePhysicalMemory
+            $ramTotMb  = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
+            $ramUsedMb = [math]::Round($usedKb / 1024, 0)
+            $ramPct    = [math]::Round(($usedKb / $os.TotalVisibleMemorySize) * 100, 0)
+        }
+    } catch {}
+    try {
+        if (-not $script:SysLoadCounter) {
+            $script:SysLoadCounter = New-Object System.Diagnostics.PerformanceCounter('Processor', '% Processor Time', '_Total')
+            [void]$script:SysLoadCounter.NextValue()   # il primo campione e' sempre 0: scartato
+        } else {
+            $v = [double]$script:SysLoadCounter.NextValue()
+            [void]$script:SysLoadCpuSamples.Add([math]::Min(100, [math]::Max(0, $v)))
+            while ($script:SysLoadCpuSamples.Count -gt 3) { $script:SysLoadCpuSamples.RemoveAt(0) }
+        }
+        if ($script:SysLoadCpuSamples.Count -gt 0) {
+            $cpuPct = [math]::Round(($script:SysLoadCpuSamples | Measure-Object -Average).Average, 0)
+        }
+    } catch { $script:SysLoadCounter = $null }
+    $script:SysLoadLast = @{ ram_pct = $ramPct; ram_used_mb = $ramUsedMb; ram_tot_mb = $ramTotMb; cpu_pct = $cpuPct }
+    $script:SysLoadLastTime = Get-Date
+    return $script:SysLoadLast
+}
+
 $script:TotalRpzRulesCache = $null
 $script:TotalRpzRulesCacheTime = [DateTime]::MinValue
 
@@ -2065,6 +2105,7 @@ function Get-BunkerStatusJson {
     $winUpdate   = Get-WindowsUpdateStatus
 
     $unboundRamData  = Get-UnboundWorkingSet
+    $sysLoad         = Get-SystemLoad
     $rpzRulesObj     = Get-TotalRpzRulesCount
     $hardeningStatus = Get-HardeningStatus
     $ntpStatus       = Get-NtpStatus
@@ -2176,6 +2217,7 @@ function Get-BunkerStatusJson {
         bunker_features  = [ordered]@{
             unbound_ram_mb      = $unboundRamData.ws_mb
             unbound_ram_data    = $unboundRamData
+            sys_load            = $sysLoad
             total_rpz_rules     = $rpzRulesObj.totale
             rpz_dettaglio       = $rpzRulesObj.dettaglio
             hardening_score     = $hardeningStatus.score
@@ -4073,6 +4115,21 @@ let isRefreshing = false;
 let lastDataTs = 0;
 let liveState = true;
 const baseTitle = document.title;
+let lastLoadTitle = null;
+
+// Pallino di carico per il titolo della scheda (logica invertita rispetto alla Light: piu' alto = peggio)
+// RAM: verde < 60, giallo 60-84, rosso >= 85 | CPU: verde < 50, giallo 50-79, rosso >= 80
+function loadDot(p, warn, crit) {
+  if (p === null || p === undefined || isNaN(p)) return '\u26AA';
+  return p >= crit ? '\u{1F534}' : (p >= warn ? '\u{1F7E1}' : '\u{1F7E2}');
+}
+function loadTxt(p) { return (p === null || p === undefined || isNaN(p)) ? '--%' : Math.round(p) + '%'; }
+function updateLoadTitle(sl) {
+  if (!sl) return;
+  lastLoadTitle = loadDot(sl.ram_pct, 60, 85) + ' \u{1F4B3} RAM ' + loadTxt(sl.ram_pct) + '  ' +
+                  loadDot(sl.cpu_pct, 50, 80) + ' \u2699\uFE0F CPU ' + loadTxt(sl.cpu_pct);
+  document.title = lastLoadTitle;
+}
 let audioCtx = null;
 
 function playOfflineBeep() {
@@ -4119,13 +4176,13 @@ function setLiveStatus(isLive) {
     badge.classList.remove('off'); badge.classList.add('on');
     label.textContent = 'DASHBOARD ATTIVA - Dati in tempo reale';
     track.classList.remove('offline');
-    document.title = '\u{1F7E2} ' + baseTitle;
+    document.title = lastLoadTitle || ('\u{1F7E2} ' + baseTitle);
   } else {
     dot.classList.remove('ok'); dot.classList.add('bad');
     badge.classList.remove('on'); badge.classList.add('off');
     label.textContent = 'DASHBOARD OFFLINE - Nessun dato da Unbound';
     track.classList.add('offline');
-    document.title = '\u{1F534} ' + baseTitle;
+    document.title = '\u{1F534} OFFLINE - UNBOUND BUNKER CERBERO';
     if (liveState) playOfflineBeep();
   }
   liveState = isLive;
@@ -5086,6 +5143,7 @@ async function refresh(forceVersions) {
 
     lastDataTs = Date.now();
     setLiveStatus(true);
+    try { updateLoadTitle(d.bunker_features && d.bunker_features.sys_load); } catch (e) { /* il titolo non deve mai bloccare il refresh */ }
 
     try { renderStatusBanner(d); } catch (e) { /* il banner non deve mai bloccare il resto del refresh */ }
 
