@@ -2227,7 +2227,7 @@ $HtmlPageLight = @'
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UNBOUND BUNKER - Dashboard Light</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 1.5 29 6v9.5c0 7.6-5.2 12.6-13 15C8.2 28.1 3 23.1 3 15.5V6z' fill='%231976d2' stroke='%23ffffff' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M9.5 16.2l4.6 4.6 8.4-9.6' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: dark;
