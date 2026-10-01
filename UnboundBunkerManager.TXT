@@ -146,6 +146,35 @@ powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle
 call :AUTO_TUNING_HARDWARE
 
 :: ==================================================================
+:: [FIX] ATTESA RETE ALL'AVVIO (saponetta/modem lenti a andare online)
+:: Prima di toccare RAM disk, versioni cloud, self-update BAT, service.conf
+:: e download della Dashboard, aspetta che Internet risponda, riprovando
+:: ogni 5 secondi. Cosi' i download iniziali non vengono piu' persi se il PC
+:: parte prima che la connessione sia pronta.
+:: Il controllo e' per IP (nessun DNS necessario) e cerca "TTL=" nella risposta
+:: (un ping con "host non raggiungibile" dal gateway NON conta come online).
+:: Dopo 3 ping falliti prova
+:: anche un test TCP sulla 443, perche' alcune reti filtrano l'ICMP.
+:: Resta valido anche il controllo di FASE 1 piu' sotto (passera' subito).
+:: ==================================================================
+set "BOOT_NET_TRY=0"
+:BOOT_NET_WAIT
+set /a BOOT_NET_TRY+=1 >nul
+ping -n 1 -w 2000 1.1.1.1 2>nul | find "TTL=" >nul
+if errorlevel 1 ping -n 1 -w 2000 8.8.8.8 2>nul | find "TTL=" >nul
+if not errorlevel 1 goto :BOOT_NET_OK
+if !BOOT_NET_TRY! GEQ 3 (
+    powershell -NoProfile -Command "exit [int](-not (Test-NetConnection -ComputerName 1.1.1.1 -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded)" >nul 2>&1
+    if not errorlevel 1 goto :BOOT_NET_OK
+)
+echo   [..] Internet non ancora raggiungibile ^(tentativo !BOOT_NET_TRY!^): nuovo controllo tra 5 secondi... ^(Ctrl+C per annullare^)
+timeout /t 5 /nobreak >nul
+goto :BOOT_NET_WAIT
+
+:BOOT_NET_OK
+echo   [OK] Rete attiva dopo !BOOT_NET_TRY! tentativo/i: proseguo con l'avvio.
+
+:: ==================================================================
 :: INIZIALIZZAZIONE RAM DISK (Zero Usura SSD per Log e Statistiche)
 :: ==================================================================
 set "RAM_DRIVE=R:"
