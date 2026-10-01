@@ -959,7 +959,7 @@ function Get-LiveStats {
                     if ($k -eq "num.query.type.HTTPS")       { $types.type_https= $v }
                     if ($k -eq "num.answer.secure")          { $dnssec.secure   = $v }
                     if ($k -eq "num.answer.bogus")           { $dnssec.bogus    = $v }
-                    if ($k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
+                    if ($k -eq "total.num.prefetch" -or $k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
                     if ($k -eq "mem.cache.rrset")            { $memCacheRrset = $v }
                     if ($k -eq "mem.cache.message")          { $memCacheMsg   = $v }
                     if ($k -eq "num.query.ratelimited")      { $rateLimitedDomain += $v }
@@ -2009,7 +2009,10 @@ function Add-LightHistoryPoint {
         $cnt = $script:LightHistPts.Count
         for ($i = 0; $i + 1 -lt $cnt; $i += 2) {
             $x = $script:LightHistPts[$i]; $y = $script:LightHistPts[$i + 1]
-            [void]$merged.Add([double[]]@((($x[0] + $y[0]) / 2), (($x[1] + $y[1]) / 2), (($x[2] + $y[2]) / 2)))
+            # campione fermo (boost = 0) non va mediato con uno reale: si tiene quello reale
+            if ($x[1] -le 0 -and $y[1] -gt 0) { [void]$merged.Add($y) }
+            elseif ($y[1] -le 0 -and $x[1] -gt 0) { [void]$merged.Add($x) }
+            else { [void]$merged.Add([double[]]@((($x[0] + $y[0]) / 2), (($x[1] + $y[1]) / 2), (($x[2] + $y[2]) / 2))) }
         }
         if (($cnt % 2) -eq 1) { [void]$merged.Add($script:LightHistPts[$cnt - 1]) }
         $script:LightHistPts      = $merged
@@ -2264,6 +2267,9 @@ $HtmlPageLight = @'
   }
   .btn-pro:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(79,179,255,0.25); }
   .btn-pro:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn-restart { cursor: pointer; font-family: inherit; background: rgba(255,179,0,0.14); border-color: rgba(255,179,0,0.55); }
+  .btn-restart:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,179,0,0.25); }
+  .btn-restart:disabled { opacity: 0.6; cursor: wait; transform: none; }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
   .card {
@@ -2306,6 +2312,7 @@ $HtmlPageLight = @'
     </div>
     <div class="top-actions">
       <span class="badge wait" id="engBadge"><span class="dot"></span><span id="engText">IN ATTESA</span></span>
+      <button type="button" class="btn-pro btn-restart" id="btnRestartLight" title="Riavvia la Dashboard (la pagina si ricarica da sola)">&#128260; Riavvia Dashboard</button>
       <a class="btn-pro" href="/pro" title="Apri la dashboard completa">&#128295; Versione Pro &rarr;</a>
     </div>
   </header>
@@ -2477,9 +2484,9 @@ $HtmlPageLight = @'
     if (qTot > 0 && typeof rep.blocchi_totali === 'number') blkPct = Math.max(0, (rep.blocchi_totali / qTot) * 100);
     var rpzGain = Math.min(20, r5(blkPct * 0.8));
     var ramGain = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
-    var dotGain = (upOk > 0 ? 5 : 0) + (prefetch > 0 ? 5 : 2);
+    // upstream proporzionale agli upstream online; prefetch a 0 non e' un difetto se la cache e' gia' efficace
+    var dotGain = (radar.length > 0 ? 5 * upOk / radar.length : 0) + ((prefetch > 0 || cachePct >= 50) ? 5 : 2);
     var gainPt = r5(latGain + rpzGain + ramGain + dotGain);
-    if (gainPt < 25) gainPt = 25;
     if (gainPt > 80) gainPt = 80;
     var gainIdx = r5((gainPt / 80) * 100);
 
@@ -2516,7 +2523,7 @@ $HtmlPageLight = @'
         : 'Motore Unbound fermo';
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
-      if (window.__postLightSample) window.__postLightSample(boostShown, s.gainIdx);
+      if (window.__postLightSample) window.__postLightSample(boostShown, engineOn ? s.gainIdx : 0);
       // Percentuali nel titolo della scheda (2 decimali per leggibilita'): monitoraggio anche da altra tab
       document.title = '\u{1F510} ' + fmtTitlePct(boostShown) + '  \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
@@ -2540,7 +2547,9 @@ $HtmlPageLight = @'
   function fmtInterval(s) { return s >= 60 ? (s / 60).toFixed(s % 60 ? 1 : 0) + ' min' : s + ' s'; }
 
   function drawHist(cfg, hist) {
-    var pts = hist.p, n = pts.length, svg = cfg.svg;
+    var allPts = hist.p, svg = cfg.svg;
+    var pts = allPts.filter(function (q) { return q[1] > 0; });   // esclude i campioni a Unbound fermo (0)
+    var n = pts.length, fermoN = allPts.length - n;
     if (n < 2) {
       svg.innerHTML = '<text x="' + (HW / 2) + '" y="' + (HH / 2) + '" text-anchor="middle" fill="#8497ab" font-size="12">Raccolta dati in corso&hellip;</text>';
       cfg.geo = null;
@@ -2585,9 +2594,21 @@ $HtmlPageLight = @'
       s += '<text x="' + tx + '" y="' + (HH - 6) + '" text-anchor="' + anchor + '" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + (longRange ? dmhm(tt) : (shortRange ? hhmmss(tt) : hhmm(tt))) + '</text>';
     }
     // area + linea
-    var d = '', k;
-    for (i = 0; i < n; i++) { d += (i ? 'L' : 'M') + X(pts[i][0]).toFixed(1) + ' ' + Y(vals[i]).toFixed(1); }
-    var area = d + 'L' + X(t1).toFixed(1) + ' ' + (PT + H) + 'L' + X(t0).toFixed(1) + ' ' + (PT + H) + 'Z';
+    // la linea si interrompe nei buchi (pagina chiusa / Unbound fermo): nessun dato inventato
+    var gapMs = Math.max(150000, (hist.interval || 5) * 3000);
+    function segArea(a, z) {
+      var q = 'M' + X(pts[a][0]).toFixed(1) + ' ' + (PT + H);
+      for (var m = a; m <= z; m++) q += 'L' + X(pts[m][0]).toFixed(1) + ' ' + Y(vals[m]).toFixed(1);
+      return q + 'L' + X(pts[z][0]).toFixed(1) + ' ' + (PT + H) + 'Z';
+    }
+    var d = '', ar = '', segS = 0, k;
+    for (i = 0; i < n; i++) {
+      var brk = (i === 0) || (pts[i][0] - pts[i - 1][0] > gapMs);
+      d += (brk ? 'M' : 'L') + X(pts[i][0]).toFixed(1) + ' ' + Y(vals[i]).toFixed(1);
+      if (brk && i > 0) { ar += segArea(segS, i - 1); segS = i; }
+    }
+    ar += segArea(segS, n - 1);
+    var area = ar;
     s += '<path d="' + area + '" fill="url(#gr' + cfg.n + ')"/>';
     s += '<path d="' + d + '" fill="none" stroke="' + cfg.color + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
     // ultimo punto
@@ -2609,7 +2630,8 @@ $HtmlPageLight = @'
     nowEl.textContent = fmtPct(last);
     nowEl.style.color = colorFor(last);
     document.getElementById('hr' + cfg.n).textContent =
-      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 5);
+      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 5) +
+      (fermoN > 0 ? ' \u00b7 Unbound fermo: ' + fermoN + ' campioni (' + (fermoN * 100 / allPts.length).toFixed(1).replace('.', ',') + '%)' : '');
   }
 
   function histHover(cfg, ev) {
@@ -2681,6 +2703,37 @@ $HtmlPageLight = @'
 
   refreshHist();
   setInterval(refreshHist, 5000);
+
+  // ---- Riavvia Dashboard: stessa rotta /api/restart della versione Pro ----
+  var restarting = false;
+  document.getElementById('btnRestartLight').addEventListener('click', async function () {
+    if (restarting) return;
+    if (!confirm('Sei sicuro di voler riavviare la Dashboard?\n\nLa pagina si ricarica da sola appena la Dashboard e\' di nuovo attiva.')) return;
+    restarting = true;
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '&#9203; Riavvio in corso...';
+    setEngine('wait', 'RIAVVIO IN CORSO');
+    try { await fetch('/api/restart', { method: 'POST', cache: 'no-store' }); } catch (e) {}
+    var tries = 0, sawDown = false;
+    var iv = setInterval(async function () {
+      tries++;
+      try {
+        var r = await fetch('/api/status', { cache: 'no-store' });
+        if (r.ok) {
+          // ricarica solo dopo aver visto il vecchio processo cadere (o, in ogni caso, dopo 8 s)
+          if (sawDown || tries > 8) { clearInterval(iv); location.reload(); return; }
+        } else { sawDown = true; }
+      } catch (e) { sawDown = true; }
+      if (tries > 90) {
+        clearInterval(iv);
+        restarting = false;
+        btn.disabled = false;
+        btn.innerHTML = '&#128260; Riavvia Dashboard';
+        alert('Il riavvio non e\' ancora completato dopo 90 secondi. Ricarica la pagina tra qualche secondo.');
+      }
+    }, 1000);
+  });
 
   refresh();
   setInterval(refresh, 2000);
@@ -5023,6 +5076,8 @@ async function refresh(forceVersions) {
 
     let realCachePct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.cache_efficienza_pct : 0;
     if (isNaN(realCachePct)) realCachePct = 0;
+    // precisione piena: ricalcolo dai contatori grezzi (il server arrotonda a 1 decimale), come la pagina Light
+    if (qTot > 0 && typeof cHits === 'number') realCachePct = Math.max(0, Math.min(100, (cHits / qTot) * 100));
 
     // latMs = total.recursion.time.avg: media delle sole query in ricorsione (cache miss).
     // La latenza media percepita include le risposte da cache (~0 ms): recLat * (1 - cache%).
@@ -5038,21 +5093,23 @@ async function refresh(forceVersions) {
     if (recLat < 0) recLat = 0;
     const cacheFrac = Math.max(0, Math.min(1, (realCachePct || 0) / 100));
     let effectiveLat = latFromRadar ? recLat : Math.round(recLat * (1 - cacheFrac) * 10) / 10;
+    const latRaw = latFromRadar ? recLat : recLat * (1 - cacheFrac);   // non arrotondata: serve ai punteggi
 
     // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
     const r1 = v => Math.round(v * 10) / 10;
+    const r5 = v => Math.round(v * 100000) / 100000;   // 5 decimali, come la pagina Light
     let latScore = 100;
-    if (effectiveLat > 5 && effectiveLat <= 50) {
-      latScore = r1(100 - ((effectiveLat - 5) * 0.18));
-    } else if (effectiveLat > 50 && effectiveLat <= 150) {
-      latScore = r1(92 - ((effectiveLat - 50) * 0.10));
-    } else if (effectiveLat > 150 && effectiveLat <= 300) {
-      latScore = r1(82 - ((effectiveLat - 150) * 0.08));
-    } else if (effectiveLat > 300) {
-      latScore = Math.max(15, r1(70 - ((effectiveLat - 300) * 0.10)));
+    if (latRaw > 5 && latRaw <= 50) {
+      latScore = r5(100 - ((latRaw - 5) * 0.18));
+    } else if (latRaw > 50 && latRaw <= 150) {
+      latScore = r5(92 - ((latRaw - 50) * 0.10));
+    } else if (latRaw > 150 && latRaw <= 300) {
+      latScore = r5(82 - ((latRaw - 150) * 0.08));
+    } else if (latRaw > 300) {
+      latScore = Math.max(15, r5(70 - ((latRaw - 300) * 0.10)));
     }
 
-    let upstreamScore = radarList.length > 0 ? r1((upOk / radarList.length) * 100) : 100;
+    let upstreamScore = radarList.length > 0 ? r5((upOk / radarList.length) * 100) : 100;
 
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
     let dnssecPct = 100;
@@ -5062,10 +5119,10 @@ async function refresh(forceVersions) {
     const prefetchRatioPct = (qTot > 0) ? (prefetchVal / qTot) * 100 : 0;
     const prefetchScore = Math.max(0, Math.min(100, Math.round(100 - (prefetchRatioPct * PREFETCH_SENSITIVITY))));
 
-    let qpsHeadroom = Math.max(0, Math.min(100, r1(100 - (liveQPS / 5))));
+    let qpsHeadroom = Math.max(0, Math.min(100, r5(100 - (liveQPS / 5))));
     let healthScore = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
-    let boostScore = r1(
+    let boostScore = r5(
       (realCachePct * 0.30) + 
       (latScore * 0.25) + 
       (upstreamScore * 0.15) + 
@@ -5079,17 +5136,18 @@ async function refresh(forceVersions) {
     const effectiveBaselineMs = Math.max(ispBaselineMs, recLat);
 
     const displayLat = effectiveLat;
-    const msSaved = Math.max(0, r1(effectiveBaselineMs - displayLat));
+    const msSaved = Math.max(0, r5(effectiveBaselineMs - (latFromRadar ? displayLat : latRaw)));
 
-    const latGainReal = Math.min(40, r1((msSaved / effectiveBaselineMs) * 40));
-    const blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
-    const rpzGainReal = Math.min(20, r1(blkPct * 0.8));
+    const latGainReal = Math.min(40, r5((msSaved / effectiveBaselineMs) * 40));
+    let blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
+    { const repU = d.dall_ultimo_report || {}; if (qTot > 0 && typeof repU.blocchi_totali === 'number') blkPct = Math.max(0, (repU.blocchi_totali / qTot) * 100); }
+    const rpzGainReal = Math.min(20, r5(blkPct * 0.8));
     const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
-    const dotPrefetchGain = (upOk > 0 ? 5 : 0) + (prefetchVal > 0 ? 5 : 2);
+    const dotPrefetchGain = (radarList.length > 0 ? 5 * upOk / radarList.length : 0) + ((prefetchVal > 0 || realCachePct >= 50) ? 5 : 2);
 
-    let totalBunkerGain = r1(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
-    if (totalBunkerGain < 25) totalBunkerGain = 25;
+    let totalBunkerGain = r5(latGainReal + rpzGainReal + ramGainReal + dotPrefetchGain);
     if (totalBunkerGain > 80) totalBunkerGain = 80;
+    const gainIdx = r5((totalBunkerGain / 80) * 100);   // stesso indice % mostrato dalla pagina Light
 
     document.getElementById('valGainLat').textContent = latGainReal.toFixed(1) + ' / 40 pt';
     updateGradientBar('barGainLat', Math.round((latGainReal / 40) * 100));
@@ -5383,9 +5441,9 @@ async function refresh(forceVersions) {
 
     const bGain = document.createElement('span');
     bGain.className = 'badge gain-highlight';
-    bGain.title = 'Guadagno latenza: ' + latGainReal.toFixed(1) + ' / 40 pt\nGuadagno blocchi RPZ: ' + rpzGainReal.toFixed(1) + ' / 20 pt\nGuadagno RAM disk: ' + ramGainReal + ' / 10 pt\nGuadagno DoT/Prefetch: ' + dotPrefetchGain + ' / 10 pt\nTotale (limitato 25-80%): ' + totalBunkerGain.toFixed(1) + '%';
+    bGain.title = 'Guadagno latenza: ' + latGainReal.toFixed(1) + ' / 40 pt\nGuadagno blocchi RPZ: ' + rpzGainReal.toFixed(1) + ' / 20 pt\nGuadagno RAM disk: ' + ramGainReal + ' / 10 pt\nGuadagno DoT/Prefetch: ' + dotPrefetchGain + ' / 10 pt\nTotale: ' + totalBunkerGain.toFixed(1) + ' / 80 pt = ' + gainIdx.toFixed(1) + '%';
 
-    let gainRatio = Math.min(1, Math.max(0, (totalBunkerGain - 25) / 55));
+    let gainRatio = Math.min(1, Math.max(0, gainIdx / 100));
     let hueStart  = Math.round(38 + gainRatio * 92);
     let hueEnd    = Math.round(58 + gainRatio * 80);
 
@@ -5393,7 +5451,7 @@ async function refresh(forceVersions) {
     bGain.style.borderColor = `hsl(${hueEnd}, 90%, 50%)`;
     bGain.style.boxShadow = `0 0 24px hsla(${hueEnd}, 90%, 50%, 0.6)`;
 
-    bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + totalBunkerGain.toFixed(1) + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved.toFixed(1) + 'ms/req saved)</span>';
+    bGain.innerHTML = '&#9889; BUNKER GAIN: <b style="color:hsl(' + hueEnd + ', 95%, 58%); font-size:1.32em;">+' + gainIdx.toFixed(1) + '%</b> <span style="font-size:0.88em; opacity:0.95; margin-left:6px;">(~' + msSaved.toFixed(1) + 'ms/req saved)</span>';
 
     const gainContainer = document.getElementById('bunkerGainContainer');
     if (gainContainer) {
