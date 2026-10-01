@@ -934,6 +934,7 @@ function Get-LiveStats {
     $types  = [ordered]@{ type_a = 0; type_aaaa = 0; type_https = 0; type_altro = 0 }
     $dnssec = [ordered]@{ secure = 0; bogus = 0 }
     $prefetch = 0
+    $rpzAct = 0
     $recMs = 0
     $memCacheRrset = 0
     $memCacheMsg   = 0
@@ -960,6 +961,7 @@ function Get-LiveStats {
                     if ($k -eq "num.answer.secure")          { $dnssec.secure   = $v }
                     if ($k -eq "num.answer.bogus")           { $dnssec.bogus    = $v }
                     if ($k -eq "total.num.prefetch" -or $k -eq "num.prefetch" -or $k -eq "num.query.prefetch") { $prefetch = $v }
+                    if ($k -like "num.rpz.action.*")         { $rpzAct += $v }
                     if ($k -eq "mem.cache.rrset")            { $memCacheRrset = $v }
                     if ($k -eq "mem.cache.message")          { $memCacheMsg   = $v }
                     if ($k -eq "num.query.ratelimited")      { $rateLimitedDomain += $v }
@@ -970,6 +972,7 @@ function Get-LiveStats {
                 }
             }
             $base.cache_mem_bytes = $memCacheRrset + $memCacheMsg
+            $base.rpz_azioni = $rpzAct   # risposte date dalle RPZ: Unbound le conta come cache hit
             $base.ratelimited_queries = $rateLimitedDomain + $rateLimitedIp
             $base.udp_queries = [math]::Max(0, $base.query_totali - $base.tcp_queries)
             $types.type_altro = [math]::Max(0, $base.query_totali - ($types.type_a + $types.type_aaaa + $types.type_https))
@@ -2224,7 +2227,7 @@ $HtmlPageLight = @'
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UNBOUND BUNKER - Dashboard Light</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2713%27 fill=%27%234fb3ff%27/%3E%3C/svg%3E">
+<link rel="icon" href="data:,">
 <style>
   :root {
     color-scheme: dark;
@@ -2360,6 +2363,8 @@ $HtmlPageLight = @'
   function fmtPct(v) { return Number(v).toFixed(5).replace('.', ',') + '%'; }
   function fmtTitlePct(v) { return Number(v).toFixed(2).replace('.', ',') + '%'; }
   function colorFor(p) { return p >= 75 ? COL.green : (p >= 50 ? COL.amber : COL.red); }
+  // pallino colorato per il titolo della scheda: stesse soglie delle lancette (verde >= 75, giallo >= 50, rosso < 50)
+  function dotFor(p) { return p >= 75 ? '\u{1F7E2}' : (p >= 50 ? '\u{1F7E1}' : '\u{1F534}'); }
   // 0% = sinistra (180 gradi), 100% = destra (0 gradi)
   function pt(p, r) {
     var a = Math.PI * (1 - p / 100);
@@ -2441,6 +2446,15 @@ $HtmlPageLight = @'
     if (typeof cachePct !== 'number' || isNaN(cachePct)) cachePct = 0;
     // Precisione piena: il server arrotonda a 1 decimale, qui ricalcolo dai contatori grezzi
     if (qTot > 0 && typeof base.cache_hits === 'number') cachePct = Math.max(0, Math.min(100, (base.cache_hits / qTot) * 100));
+    // Unbound conta come cache hit anche le risposte date dalle RPZ (blocchi): non sono cache.
+    // Cache reale = hit al netto dei blocchi, sulle sole query risolvibili (stessa finestra dei contatori).
+    var repE = d.dall_ultimo_report || {};
+    var blockedN = (typeof base.rpz_azioni === 'number' && base.rpz_azioni > 0) ? base.rpz_azioni : ((typeof repE.blocchi_totali === 'number') ? repE.blocchi_totali : 0);
+    if (qTot > 0 && typeof base.cache_hits === 'number') {
+      blockedN = Math.max(0, Math.min(qTot, blockedN));
+      var resolvN = qTot - blockedN;
+      cachePct = resolvN > 0 ? Math.max(0, Math.min(100, (Math.max(0, base.cache_hits - blockedN) / resolvN) * 100)) : 0;
+    }
 
     // latMs = total.recursion.time.avg di Unbound: tempo medio delle SOLE query risolte
     // in ricorsione (cache miss). Le risposte da cache (~0 ms) non sono incluse, quindi la
@@ -2480,8 +2494,7 @@ $HtmlPageLight = @'
     var msSaved = r1(msSavedRaw);
     var latGain = Math.min(40, r5((msSavedRaw / baseline) * 40));
     var blkPct = base.blocchi_pct || 0;
-    var rep = d.dall_ultimo_report || {};
-    if (qTot > 0 && typeof rep.blocchi_totali === 'number') blkPct = Math.max(0, (rep.blocchi_totali / qTot) * 100);
+    if (qTot > 0) blkPct = Math.max(0, (blockedN / qTot) * 100);
     var rpzGain = Math.min(20, r5(blkPct * 0.8));
     var ramGain = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
     // upstream proporzionale agli upstream online; prefetch a 0 non e' un difetto se la cache e' gia' efficace
@@ -2490,7 +2503,7 @@ $HtmlPageLight = @'
     if (gainPt > 80) gainPt = 80;
     var gainIdx = r5((gainPt / 80) * 100);
 
-    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved };
+    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved, blkPct: blkPct };
   }
 
   function setEngine(state, text) {
@@ -2519,13 +2532,13 @@ $HtmlPageLight = @'
       var boostShown = engineOn ? s.boost : 0;
       setGauge(G[0], boostShown, fmtPct(boostShown));
       document.getElementById('d1').textContent = engineOn
-        ? 'Cache ' + fmtPct(s.cachePct) + ' \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
+        ? 'Cache ' + fmtPct(s.cachePct) + ' (esclusi i blocchi) \u00b7 Bloccate ' + s.blkPct.toFixed(1).replace('.', ',') + '% \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
         : 'Motore Unbound fermo';
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
       if (window.__postLightSample) window.__postLightSample(boostShown, engineOn ? s.gainIdx : 0);
       // Percentuali nel titolo della scheda (2 decimali per leggibilita'): monitoraggio anche da altra tab
-      document.title = '\u{1F510} ' + fmtTitlePct(boostShown) + '  \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
+      document.title = dotFor(boostShown) + ' \u{1F510} ' + fmtTitlePct(boostShown) + '  ' + dotFor(s.gainIdx) + ' \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
@@ -5078,6 +5091,15 @@ async function refresh(forceVersions) {
     if (isNaN(realCachePct)) realCachePct = 0;
     // precisione piena: ricalcolo dai contatori grezzi (il server arrotonda a 1 decimale), come la pagina Light
     if (qTot > 0 && typeof cHits === 'number') realCachePct = Math.max(0, Math.min(100, (cHits / qTot) * 100));
+    // Unbound conta come cache hit anche le risposte date dalle RPZ (blocchi): cache reale = hit al netto dei blocchi
+    const baseP = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base : {};
+    const repP = d.dall_ultimo_report || {};
+    let blockedN = (typeof baseP.rpz_azioni === 'number' && baseP.rpz_azioni > 0) ? baseP.rpz_azioni : ((typeof repP.blocchi_totali === 'number') ? repP.blocchi_totali : 0);
+    if (qTot > 0 && typeof cHits === 'number') {
+      blockedN = Math.max(0, Math.min(qTot, blockedN));
+      const resolvN = qTot - blockedN;
+      realCachePct = resolvN > 0 ? Math.max(0, Math.min(100, (Math.max(0, cHits - blockedN) / resolvN) * 100)) : 0;
+    }
 
     // latMs = total.recursion.time.avg: media delle sole query in ricorsione (cache miss).
     // La latenza media percepita include le risposte da cache (~0 ms): recLat * (1 - cache%).
@@ -5140,7 +5162,7 @@ async function refresh(forceVersions) {
 
     const latGainReal = Math.min(40, r5((msSaved / effectiveBaselineMs) * 40));
     let blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
-    { const repU = d.dall_ultimo_report || {}; if (qTot > 0 && typeof repU.blocchi_totali === 'number') blkPct = Math.max(0, (repU.blocchi_totali / qTot) * 100); }
+    if (qTot > 0) blkPct = Math.max(0, (blockedN / qTot) * 100);
     const rpzGainReal = Math.min(20, r5(blkPct * 0.8));
     const ramGainReal = (d.ram_disk && d.ram_disk.attivo) ? 10 : 2;
     const dotPrefetchGain = (radarList.length > 0 ? 5 * upOk / radarList.length : 0) + ((prefetchVal > 0 || realCachePct >= 50) ? 5 : 2);
@@ -5345,7 +5367,7 @@ async function refresh(forceVersions) {
       <div>&#9201;&#65039; Uptime Assoluto: <b style="color:var(--accent);">${uptimeStr}</b> <span class="muted">(${fmt(uptimeSec)} sec)</span></div>
     `;
 
-    const cacheEffPct = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_efficienza_pct || 0) : 0;
+    const cacheEffPct = Number(realCachePct.toFixed(1));   // cache reale: al netto delle risposte RPZ
     document.getElementById('valCacheEff').textContent = cacheEffPct + '%';
     updateGradientBar('barCacheEff', cacheEffPct);
     const totalHits = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.cache_hits || 0) : 0;
@@ -5354,6 +5376,7 @@ async function refresh(forceVersions) {
       <div>&#127919; Cache Hits: <b style="color:var(--green-bright);">${fmt(totalHits)}</b></div>
       <div>&#127760; Recursive Misses: <b style="color:var(--amber-bright);">${fmt(totalMisses)}</b></div>
       <div>&#128202; Query Servite: <b style="color:var(--accent);">${fmt(qTot)}</b></div>
+      <div>&#128737;&#65039; Risposte RPZ (escluse dalla cache): <b style="color:var(--red-bright);">${fmt(blockedN)}</b></div>
     `;
 
     const unwantedQ = (d.statistiche_live && d.statistiche_live.base) ? (d.statistiche_live.base.unwanted_queries || 0) : 0;
