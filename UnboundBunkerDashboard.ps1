@@ -3521,7 +3521,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.5 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.6 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
