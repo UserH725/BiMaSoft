@@ -2075,6 +2075,23 @@ function Add-LightHistoryPoint {
     return $true
 }
 
+function Reset-LightHistory {
+    # Azzeramento completo dello storico della pagina Light: stato identico a quello della prima
+    # accensione (buffer vuoto, intervallo base 5 s, nuovo orario di partenza, file su R:\ eliminato).
+    # Unico scrittore: il thread HTTP (stesso di Add-LightHistoryPoint), quindi nessuna corsa.
+    $script:LightHistPts        = New-Object System.Collections.Generic.List[double[]]
+    $script:LightHistInterval   = 5
+    $script:LightHistStartMs    = [double]([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds()
+    $script:LightHistLastSample = [DateTime]::MinValue
+    $script:LightHistLastSave   = [DateTime]::MinValue
+    try {
+        foreach ($lhf in @($script:LightHistFile, "$($script:LightHistFile).tmp")) {
+            if ([System.IO.File]::Exists($lhf)) { [System.IO.File]::Delete($lhf) }
+        }
+    } catch {}
+    Build-LightHistoryJson
+}
+
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
 
@@ -2411,6 +2428,9 @@ $HtmlPageLight = @'
   .btn-restart { cursor: pointer; font-family: inherit; background: rgba(255,179,0,0.14); border-color: rgba(255,179,0,0.55); }
   .btn-restart:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,179,0,0.25); }
   .btn-restart:disabled { opacity: 0.6; cursor: wait; transform: none; }
+  .btn-reset { cursor: pointer; font-family: inherit; background: rgba(255,92,92,0.12); border-color: rgba(255,92,92,0.5); }
+  .btn-reset:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,92,92,0.25); }
+  .btn-reset:disabled { opacity: 0.6; cursor: wait; transform: none; }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
   .card {
@@ -2475,11 +2495,12 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
       <span class="badge wait" id="engBadge"><span class="dot"></span><span id="engText">IN ATTESA</span></span>
+      <button type="button" class="btn-pro btn-reset" id="btnResetLight" title="Svuota lo storico dei due indicatori e riparte da zero, come alla prima accensione">&#128465;&#65039; Azzera storico</button>
       <button type="button" class="btn-pro btn-restart" id="btnRestartLight" title="Riavvia la Dashboard (la pagina si ricarica da sola)">&#128260; Riavvia Dashboard</button>
       <a class="btn-pro" href="/pro" title="Apri la dashboard completa">&#128295; Versione Pro &rarr;</a>
     </div>
@@ -2809,7 +2830,15 @@ $HtmlPageLight = @'
     else if (latRaw > 300) latScore = Math.max(15, r5(70 - ((latRaw - 300) * 0.10)));
 
     var upstreamScore = radar.length > 0 ? r5((upOk / radar.length) * 100) : 100;
-    var dnssecPct = 100;
+    // DNSSEC misurato dai contatori Unbound (nessun traffico extra): la validazione e' provata funzionante
+    // se c'e' almeno una risposta validata (secure) o respinta perche' non valida (bogus: il validatore
+    // sta proteggendo). Senza nessuna delle due dopo 100+ query risolvibili = validazione non attiva (rosso).
+    // Con poche query ancora 'in attesa' (nessuna penalita'): dopo un riavvio i contatori ripartono da 0.
+    var dsx = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : {};
+    var dsSec = Number(dsx.secure) || 0, dsBog = Number(dsx.bogus) || 0;
+    var resolvQ = Math.max(0, qTot - Math.max(0, Math.min(qTot, blockedN)));
+    var dnssecState = (dsSec + dsBog > 0) ? 'ok' : (resolvQ >= 100 ? 'fail' : 'wait');
+    var dnssecPct = dnssecState === 'fail' ? 0 : 100;
     var qpsHeadroom = Math.max(0, Math.min(100, r5(100 - (liveQPS / 5))));
     var health = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
@@ -2838,7 +2867,7 @@ $HtmlPageLight = @'
       mkComp('Cache', f2(cachePct) + '% (esclusi i blocchi)', cachePct * 0.30, 30),
       mkComp('Latenza', f1(lat) + ' ms percepita', latScore * 0.25, 25),
       mkComp('Upstream online', upOk + ' su ' + nUp, upstreamScore * 0.15, 15),
-      mkComp('DNSSEC', 'valore fisso, non misurato', dnssecPct * 0.15, 15, 'na'),
+      mkComp('DNSSEC', dnssecState === 'ok' ? (dsSec + ' validate' + (dsBog > 0 ? ' \u00b7 ' + dsBog + ' respinte' : '')) : (dnssecState === 'fail' ? 'nessuna risposta validata su ' + resolvQ + ' query' : 'in attesa di risposte validate'), dnssecPct * 0.15, 15, dnssecState === 'wait' ? 'wait' : ''),
       mkComp('Salute sistema', f1(health) + ' su 100', health * 0.10, 10),
       mkComp('Margine QPS', f1(liveQPS) + ' query/s', qpsHeadroom * 0.05, 5, 'traffic')
     ];
@@ -2872,14 +2901,14 @@ $HtmlPageLight = @'
       html = '<div class="chead"><span>Componenti del punteggio</span><span>punti / max \u00b7 persi</span></div>';
       list.forEach(function (c, i) {
         var lost = Math.max(0, c.max - c.got);
-        var cls = 'crow' + (c.kind === 'na' ? ' na' : '') + (c.kind === 'traffic' ? ' soft' : '') + (i === top ? ' prio' : '');
+        var cls = 'crow' + ((c.kind === 'na' || c.kind === 'wait') ? ' na' : '') + (c.kind === 'traffic' ? ' soft' : '') + (i === top ? ' prio' : '');
         var tip = c.kind === 'traffic' ? 'Dipende dal traffico: un valore basso non indica un problema da correggere'
-                : (c.kind === 'na' ? 'Nel calcolo vale sempre il massimo: non viene misurato' : (i === top ? 'La voce che fa perdere pi\u00f9 punti a questa lancetta' : ''));
+                : (c.kind === 'wait' ? 'Dopo un riavvio di Unbound i contatori ripartono da zero: nessuna penalit\u00e0 finch\u00e9 non ci sono abbastanza query' : (c.kind === 'na' ? 'Nel calcolo vale sempre il massimo: non viene misurato' : (i === top ? 'La voce che fa perdere pi\u00f9 punti a questa lancetta' : '')));
         var tag = c.kind === 'traffic' ? '<span class="ctag">dipende dal traffico</span>' : (i === top ? '<span class="ctag">priorit\u00e0</span>' : '');
         html += '<div class="' + cls + '" style="--c:' + lvlColor(c.pct) + '"' + (tip ? ' title="' + tip + '"' : '') + '>' +
                 '<span class="cdot"></span>' +
                 '<span class="cmain"><span class="cname">' + c.name + tag + '</span><span class="cval">' + c.val + '</span></span>' +
-                '<span class="cpts">' + f1(c.got) + ' / ' + f1(c.max) + '<em>' + (c.kind === 'na' ? 'fisso' : (lost >= 0.05 ? '\u2212' + f1(lost) : '0')) + '</em></span></div>';
+                '<span class="cpts">' + f1(c.got) + ' / ' + f1(c.max) + '<em>' + (c.kind === 'na' ? 'fisso' : (c.kind === 'wait' ? 'in attesa' : (lost >= 0.05 ? '\u2212' + f1(lost) : '0'))) + '</em></span></div>';
       });
     }
     if (compLast[id] !== html) { compLast[id] = html; host.innerHTML = html; }
@@ -3074,15 +3103,17 @@ $HtmlPageLight = @'
     drawHist(cfg, { p: [] });
   });
 
-  var histBusy = false;
+  var histBusy = false, histGen = 0;
   async function refreshHist() {
     if (histBusy) return;
     histBusy = true;
+    var gen = histGen;
     try {
       var r = await fetch('/api/light-history', { cache: 'no-store' });
       if (!r.ok) return;
       var h = JSON.parse(await r.text());
       if (!h || !Array.isArray(h.p)) return;
+      if (gen !== histGen) return;   // azzeramento avvenuto mentre la richiesta era in volo: dati vecchi, si scartano
       HC.forEach(function (cfg) { drawHist(cfg, h); });
     } catch (e) { /* storico non disponibile: riprova al prossimo giro */ }
     finally { histBusy = false; }
@@ -3135,6 +3166,52 @@ $HtmlPageLight = @'
     }, 1000);
   });
 
+  // ---- Azzera storico: svuota lo storico dei 2 indicatori e riparte da zero, come alla prima accensione ----
+  // Server: buffer campioni, intervallo, orario di partenza e file su R:\ (POST /api/light-reset).
+  // Pagina: grafici, min/media/max/ora, strisce e frecce di tendenza, riferimento dei QPS live.
+  // Le lancette non si toccano: continuano a mostrare il valore reale.
+  function resetTrail(g) {
+    if (g.trail) { while (g.trail.firstChild) g.trail.removeChild(g.trail.firstChild); }
+    g.trailItems = [];
+    g.lastV = null;
+    g.arr.textContent = '\u2013';
+    g.arr.setAttribute('fill', '#8497ab');
+    g.arrTip.textContent = '';
+  }
+  function resetHistView(cfg) {
+    histLeave(cfg);
+    drawHist(cfg, { p: [] });
+    ['min', 'avg', 'max', 'now'].forEach(function (k) {
+      var e = document.getElementById('h' + cfg.n + k);
+      e.textContent = '--';
+      e.style.color = '';
+    });
+  }
+  var resetting = false;
+  document.getElementById('btnResetLight').addEventListener('click', async function () {
+    if (resetting) return;
+    if (!confirm('Vuoi svuotare lo storico dei due indicatori e ripartire da zero?\n\nSi azzerano grafici, minimo/media/massimo, frecce di tendenza e campioni raccolti. Le lancette continuano a mostrare i valori reali.')) return;
+    resetting = true;
+    var btn = this, label = btn.innerHTML;
+    btn.disabled = true;
+    try {
+      var rr = await fetch('/api/light-reset', { method: 'POST', cache: 'no-store', headers: { 'X-Bunker-Light': '1' } });
+      if (!rr.ok) throw new Error('HTTP ' + rr.status);
+      histGen++;                       // scarta eventuali risposte di storico ancora in volo
+      HC.forEach(resetHistView);
+      G.forEach(resetTrail);
+      prevQueries = 0; prevTime = 0;   // la prima lettura riparte senza riferimento precedente (QPS)
+      lastSnap = ''; lastPost = 0;     // la prossima istantanea viene rielaborata e il primo campione parte subito
+      btn.innerHTML = '&#9989; Storico azzerato';
+      setTimeout(function () { btn.innerHTML = label; }, 1800);
+    } catch (e) {
+      alert('Impossibile azzerare lo storico: ' + e.message);
+    } finally {
+      resetting = false;
+      btn.disabled = false;
+    }
+  });
+
   refresh();
   setInterval(refresh, 1000);
   setInterval(function () {
@@ -3156,7 +3233,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -3934,7 +4011,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -5697,7 +5774,11 @@ async function refresh(forceVersions) {
     let upstreamScore = radarList.length > 0 ? r5((upOk / radarList.length) * 100) : 100;
 
     const ds = (d.statistiche_live && d.statistiche_live.dnssec) ? d.statistiche_live.dnssec : { secure: 0, bogus: 0 };
-    let dnssecPct = 100;
+    // Stessa logica della pagina Light: validazione provata da secure/bogus; rosso solo se assente dopo 100+ query risolvibili
+    const dsSecP = Number(ds.secure) || 0, dsBogP = Number(ds.bogus) || 0;
+    const resolvQP = Math.max(0, qTot - Math.max(0, Math.min(qTot, blockedN)));
+    const dnssecStateP = (dsSecP + dsBogP > 0) ? 'ok' : (resolvQP >= 100 ? 'fail' : 'wait');
+    let dnssecPct = dnssecStateP === 'fail' ? 0 : 100;
 
     const prefetchVal = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
     const PREFETCH_SENSITIVITY = 10;
@@ -5755,7 +5836,7 @@ async function refresh(forceVersions) {
     document.getElementById('valUpstreamScore').textContent = upstreamScore.toFixed(1) + '% (' + upOk + '/' + radarList.length + ')';
     updateGradientBar('barUpstreamScore', upstreamScore);
 
-    document.getElementById('valDnssecScore').innerHTML = '100% <span class="esito-ok">[SEC: ' + fmt(ds.secure) + ' | BOG: ' + fmt(ds.bogus) + ']</span>';
+    document.getElementById('valDnssecScore').innerHTML = dnssecPct + '% <span class="' + (dnssecStateP === 'fail' ? 'esito-warn' : 'esito-ok') + '">[SEC: ' + fmt(ds.secure) + ' | BOG: ' + fmt(ds.bogus) + (dnssecStateP === 'wait' ? ' | in attesa' : '') + ']</span>';
     updateGradientBar('barDnssecScore', dnssecPct);
 
     document.getElementById('valPrefetchScore').innerHTML = prefetchVal > 0 ? '<span class="esito-ok">' + prefetchScore + '% (' + fmt(prefetchVal) + ' rinnovi, ' + prefetchRatioPct.toFixed(2) + '% delle query)</span>' : '<span class="esito-ok">100% (Cache gi&agrave; ottimale, prefetch non necessario)</span>';
@@ -6531,6 +6612,32 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.StatusCode = $lsStatus
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/light-reset" -and $request.HttpMethod -eq "POST") {
+                # Azzera lo storico dei due indicatori della pagina Light. Stesse difese di
+                # /api/light-sample: header custom (blocca POST cross-site) e controllo Host/Origin.
+                $lrStatus = 403
+                $lrBody   = '{"ok":false}'
+                try {
+                    $hdrOk  = ([string]$request.Headers["X-Bunker-Light"] -eq "1")
+                    $hostOk = (@("127.0.0.1:$Port", "localhost:$Port") -contains [string]$request.UserHostName)
+                    $origHdr = [string]$request.Headers["Origin"]
+                    $origOk = ([string]::IsNullOrEmpty($origHdr) -or (@("http://127.0.0.1:$Port", "http://localhost:$Port") -contains $origHdr))
+                    if ($hdrOk -and $hostOk -and $origOk) {
+                        Reset-LightHistory
+                        Write-DashLog "Storico pagina Light azzerato dall'utente."
+                        $lrStatus = 200
+                        $lrBody   = '{"ok":true}'
+                    }
+                } catch {
+                    $lrStatus = 500
+                    Write-DashLog "Errore in /api/light-reset: $($_.Exception.Message)"
+                }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($lrBody)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.StatusCode = $lrStatus
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/restart") {
