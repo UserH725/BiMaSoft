@@ -2284,6 +2284,10 @@ function Get-BunkerStatusJson {
 $script:ProHoldSec        = 180
 $script:CachedLightJson   = $null
 $script:LastLightJsonTime = [DateTime]::MinValue
+$script:LightRamData      = $null
+$script:LightRamTime      = [DateTime]::MinValue
+$script:LightHealthData   = $null
+$script:LightHealthTime   = [DateTime]::MinValue
 
 function Set-ProActive {
     # Chiamata dal server a ogni richiesta della Pro: se la Pro era inattiva da piu' di
@@ -2296,15 +2300,32 @@ function Set-ProActive {
 }
 
 function Get-BunkerStatusLightJson {
-    if ($script:CachedLightJson -and ((Get-Date) - $script:LastLightJsonTime).TotalMilliseconds -lt 1500) {
+    # Cache interna 800 ms (non 1500): il ciclo del collector Light e' di 1 s, con 1500 ms ogni seconda
+    # chiamata restituirebbe l'istantanea vecchia e i dati si rinnoverebbero solo ogni 2 s.
+    if ($script:CachedLightJson -and ((Get-Date) - $script:LastLightJsonTime).TotalMilliseconds -lt 800) {
         return $script:CachedLightJson
     }
 
-    $ramDisk  = Get-RamDiskGauge
+    # Con un ciclo da 1 s le letture che cambiano di rado NON vanno rifatte ad ogni giro: RAM disk (query CIM)
+    # ogni 5 s, snapshot di salute (lettura+parsing JSON) ogni 3 s. Restano a ogni giro solo stato del
+    # servizio e unbound-control stats, cioe' cio' che muove davvero le lancette.
+    $nowC = Get-Date
+    if (-not $script:LightRamData -or ($nowC - $script:LightRamTime).TotalSeconds -ge 5) {
+        $script:LightRamData = Get-RamDiskGauge
+        $script:LightRamTime = $nowC
+    }
+    if (($nowC - $script:LightHealthTime).TotalSeconds -ge 3) {
+        $script:LightHealthData = Get-HealthSnapshot
+        $script:LightHealthTime = $nowC
+    }
+    $ramDisk  = $script:LightRamData
     $engineOn = Get-EngineStatus
     $stats    = Get-LiveStats
+    # Istante di campionamento dei contatori (ms epoch): la pagina Light lo usa per calcolare i QPS sul
+    # tempo REALE tra due letture (e non sull'orario di arrivo), cosi' il jitter di rete/polling non li falsa
+    $tsMs     = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $radar    = Get-UpstreamRadar
-    $salute   = Get-HealthSnapshot
+    $salute   = $script:LightHealthData
     # Mantiene aggiornata la finestra 24h (campiona al massimo 1 volta/minuto, costo minimo)
     [void](Update-SessionHistory)
 
@@ -2344,6 +2365,7 @@ function Get-BunkerStatusLightJson {
 
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
+        ts_ms            = $tsMs
         host             = $env:COMPUTERNAME
         modalita         = "light"
         ram_disk         = $ramDisk
@@ -2550,7 +2572,7 @@ $HtmlPageLight = @'
       </div>
     </div>
   </div>
-  <footer id="foot">Aggiornamento in tempo reale ogni 2 secondi</footer>
+  <footer id="foot">Aggiornamento in tempo reale ogni secondo</footer>
 </div>
 
 <script>
@@ -2782,7 +2804,7 @@ $HtmlPageLight = @'
     var qTot = base.query_totali || 0;
     var latMs = base.latenza_ms || 0;
     var qpsAvg = base.qps_medio || 0;
-    var now = Date.now(), liveQPS;
+    var now = d.ts_ms ? Number(d.ts_ms) : Date.now(), liveQPS;   // tempo di campionamento del server: QPS esatti anche col polling irregolare
     if (prevQueries > 0 && now > prevTime) {
       liveQPS = Math.max(0, qTot - prevQueries) / ((now - prevTime) / 1000);
     } else { liveQPS = qpsAvg; }
@@ -2933,7 +2955,7 @@ $HtmlPageLight = @'
       document.getElementById('gauges').classList.remove('stale');
       // Con il polling a 1 s la stessa istantanea del server arriva piu' volte: la si elabora una
       // sola volta (altrimenti i QPS risulterebbero a dente di sega: 0, picco, 0, picco...)
-      var snap = d.generato_il || '';
+      var snap = d.ts_ms || d.generato_il || '';   // ts_ms (ms) distingue istantanee nello stesso secondo; il JSON della Pro non lo ha
       if (snap && snap === lastSnap) return;
       lastSnap = snap;
 
@@ -3213,7 +3235,7 @@ $HtmlPageLight = @'
   });
 
   refresh();
-  setInterval(refresh, 1000);
+  setInterval(refresh, 500);   // il server produce 1 istantanea/s: polling a 500 ms per non perderne nessuna e ridurre il ritardo
   setInterval(function () {
     if (lastLive() > 8000) {
       document.getElementById('gauges').classList.add('stale');
@@ -6399,6 +6421,8 @@ setInterval(() => {
 function Start-BackgroundCollectorLoop {
     Write-DashLog "Ciclo di raccolta dati in background avviato (PID $PID)."
     while ($true) {
+        $sleepMs = 1500
+        $cycleSw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
             # Raccolta COMPLETA solo se la pagina Pro e' stata richiesta di recente; altrimenti
             # raccolta MINIMA (solo cio' che serve ai due indicatori della Light).
@@ -6407,9 +6431,13 @@ function Start-BackgroundCollectorLoop {
                 $proActive = (((Get-Date) - $script:BunkerSyncHash.ProTs).TotalSeconds -lt $script:ProHoldSec)
             }
             if ($proActive) { Get-BunkerStatusJson | Out-Null }
-            else            { Get-BunkerStatusLightJson | Out-Null }
+            else {
+                Get-BunkerStatusLightJson | Out-Null
+                # Light: un'istantanea nuova ogni 1 s (periodo netto, non 1 s di pausa DOPO la raccolta)
+                $sleepMs = [int][math]::Max(50, 1000 - $cycleSw.ElapsedMilliseconds)
+            }
         } catch { Write-DashLog "Errore nel ciclo di raccolta background: $($_.Exception.Message)" }
-        Start-Sleep -Milliseconds 1500
+        Start-Sleep -Milliseconds $sleepMs
     }
 }
 
