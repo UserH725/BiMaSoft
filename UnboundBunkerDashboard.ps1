@@ -2382,7 +2382,7 @@ $HtmlPageLight = @'
     background: radial-gradient(1200px 600px at 50% -10%, #0f1a27 0%, var(--bg) 60%);
     color: var(--text); font-family: var(--font-ui); padding: 24px 20px 32px;
   }
-  .wrap { max-width: 980px; margin: 0 auto; }
+  .wrap { max-width: 1360px; margin: 0 auto; }
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
   h1 { margin: 0; font-size: 1.35em; color: var(--accent); letter-spacing: 0.02em; }
   .sub { color: var(--dim); font-size: 0.82em; margin-top: 4px; }
@@ -2427,6 +2427,29 @@ $HtmlPageLight = @'
   @media (prefers-reduced-motion: reduce) { .trail .ti { transition: none; } }
   .detail { color: var(--dim); font-size: 0.82em; margin-top: 6px; min-height: 1.3em; font-family: var(--font-mono); }
   .stale { opacity: 0.45; filter: grayscale(0.7); transition: opacity 0.4s; }
+  /* ---------- Componenti del punteggio (accanto alla lancetta su card larga, sotto su card stretta) ---------- */
+  .card { container-type: inline-size; }
+  .upper { display: block; }
+  .gcol { min-width: 0; }
+  .comps { margin-top: 12px; text-align: left; }
+  .chead { display: flex; justify-content: space-between; gap: 8px; font-size: 0.72em; color: var(--dim); padding: 0 2px 5px; }
+  .crow { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 2px; border-top: 1px solid var(--border); }
+  .cdot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: 0 0 7px var(--c); }
+  .crow.soft .cdot { opacity: 0.55; box-shadow: none; }
+  .crow.na .cdot { background: transparent; border: 1.5px solid var(--dim); box-shadow: none; }
+  .cmain { display: flex; flex-direction: column; min-width: 0; }
+  .cname { font-size: 0.86em; color: var(--text); }
+  .crow.prio .cname { font-weight: 700; }
+  .ctag { margin-left: 6px; font-size: 0.8em; font-style: italic; color: var(--dim); font-weight: 400; }
+  .crow.prio .ctag { color: var(--c); font-style: normal; font-weight: 700; }
+  .cval { font-size: 0.74em; color: var(--dim); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cpts { font-family: var(--font-mono); font-size: 0.78em; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cpts em { display: block; font-style: normal; font-size: 0.9em; color: var(--dim); }
+  .crow.prio .cpts em { color: var(--c); font-weight: 700; }
+  @container (min-width: 600px) {
+    .upper { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; align-items: start; }
+    .comps { margin-top: 0; }
+  }
   /* ---------- Storico sotto le card ---------- */
   .hist { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); text-align: left; }
   .hist-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
@@ -2465,9 +2488,14 @@ $HtmlPageLight = @'
   <div class="gauges" id="gauges">
     <div class="card">
       <h2>Funzionamento Bunker</h2>
+      <div class="upper">
+      <div class="gcol">
       <svg id="g1" viewBox="0 0 300 190" role="img" aria-label="Funzionamento del bunker in percentuale"></svg>
       <svg class="trail" id="t1" viewBox="0 0 300 26" role="img" aria-label="Ultime variazioni: a destra la piu' recente"></svg>
       <div class="detail" id="d1">--</div>
+      </div>
+      <div class="comps" id="c1"></div>
+      </div>
       <div class="hist" id="hist1">
         <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr1">--</span></div>
         <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del funzionamento del bunker"></svg><div class="hist-tip"></div></div>
@@ -2481,9 +2509,14 @@ $HtmlPageLight = @'
     </div>
     <div class="card">
       <h2>Miglioramento Applicato al PC</h2>
+      <div class="upper">
+      <div class="gcol">
       <svg id="g2" viewBox="0 0 300 190" role="img" aria-label="Indice di miglioramento applicato al PC"></svg>
       <svg class="trail" id="t2" viewBox="0 0 300 26" role="img" aria-label="Ultime variazioni: a destra la piu' recente"></svg>
       <div class="detail" id="d2">--</div>
+      </div>
+      <div class="comps" id="c2"></div>
+      </div>
       <div class="hist" id="hist2">
         <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr2">--</span></div>
         <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del miglioramento applicato al PC"></svg><div class="hist-tip"></div></div>
@@ -2799,7 +2832,57 @@ $HtmlPageLight = @'
     if (gainPt > 80) gainPt = 80;
     var gainIdx = r5((gainPt / 80) * 100);
 
-    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved, blkPct: blkPct };
+    // ---- Componenti dei due punteggi, tutte nell'unita' della lancetta (punti percentuali): la somma dei "got" = valore della lancetta ----
+    var nUp = radar.length, ramOn = !!(d.ram_disk && d.ram_disk.attivo), k80 = 100 / 80;
+    var comps1 = [
+      mkComp('Cache', f2(cachePct) + '% (esclusi i blocchi)', cachePct * 0.30, 30),
+      mkComp('Latenza', f1(lat) + ' ms percepita', latScore * 0.25, 25),
+      mkComp('Upstream online', upOk + ' su ' + nUp, upstreamScore * 0.15, 15),
+      mkComp('DNSSEC', 'valore fisso, non misurato', dnssecPct * 0.15, 15, 'na'),
+      mkComp('Salute sistema', f1(health) + ' su 100', health * 0.10, 10),
+      mkComp('Margine QPS', f1(liveQPS) + ' query/s', qpsHeadroom * 0.05, 5, 'traffic')
+    ];
+    var comps2 = [
+      mkComp('Latenza risparmiata', f1(msSaved) + ' ms sul baseline', latGain * k80, 40 * k80),
+      mkComp('Blocchi RPZ', f1(blkPct) + '% delle query', rpzGain * k80, 20 * k80, 'traffic'),
+      mkComp('RAM disk', ramOn ? 'attivo' : 'non attivo', ramGain * k80, 10 * k80),
+      mkComp('Upstream e prefetch', upOk + ' su ' + nUp + ' upstream', dotGain * k80, 10 * k80)
+    ];
+
+    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved, blkPct: blkPct, comps1: comps1, comps2: comps2 };
+  }
+
+  // ---- Componenti del punteggio: colore in base a quanto la singola voce raggiunge del proprio massimo ----
+  function f1(v) { return (Math.round(Number(v) * 10) / 10).toFixed(1).replace('.', ','); }
+  function f2(v) { return Number(v).toFixed(2).replace('.', ','); }
+  function lvlColor(p) { return p >= 80 ? '#3ddc84' : (p >= 55 ? '#f2d34b' : (p >= 30 ? '#ff8a2a' : '#ff5c5c')); }
+  function mkComp(name, val, got, max, kind) {
+    return { name: name, val: val, got: got, max: max, pct: max > 0 ? Math.max(0, Math.min(100, got / max * 100)) : 0, kind: kind || '' };
+  }
+  var compLast = {};
+  function renderComps(id, list, engineOn) {
+    var host = document.getElementById(id), html = '';
+    if (!host) return;
+    if (!engineOn) {
+      html = '<div class="chead"><span>Componenti del punteggio</span></div><div class="cval" style="padding:6px 2px">Motore Unbound fermo: punteggio non calcolabile</div>';
+    } else {
+      // voce da migliorare per prima = quella che fa perdere piu' punti alla lancetta (escluse non misurate e dipendenti dal traffico)
+      var top = -1, topLost = 1;
+      list.forEach(function (c, i) { if (!c.kind && (c.max - c.got) > topLost) { topLost = c.max - c.got; top = i; } });
+      html = '<div class="chead"><span>Componenti del punteggio</span><span>punti / max \u00b7 persi</span></div>';
+      list.forEach(function (c, i) {
+        var lost = Math.max(0, c.max - c.got);
+        var cls = 'crow' + (c.kind === 'na' ? ' na' : '') + (c.kind === 'traffic' ? ' soft' : '') + (i === top ? ' prio' : '');
+        var tip = c.kind === 'traffic' ? 'Dipende dal traffico: un valore basso non indica un problema da correggere'
+                : (c.kind === 'na' ? 'Nel calcolo vale sempre il massimo: non viene misurato' : (i === top ? 'La voce che fa perdere pi\u00f9 punti a questa lancetta' : ''));
+        var tag = c.kind === 'traffic' ? '<span class="ctag">dipende dal traffico</span>' : (i === top ? '<span class="ctag">priorit\u00e0</span>' : '');
+        html += '<div class="' + cls + '" style="--c:' + lvlColor(c.pct) + '"' + (tip ? ' title="' + tip + '"' : '') + '>' +
+                '<span class="cdot"></span>' +
+                '<span class="cmain"><span class="cname">' + c.name + tag + '</span><span class="cval">' + c.val + '</span></span>' +
+                '<span class="cpts">' + f1(c.got) + ' / ' + f1(c.max) + '<em>' + (c.kind === 'na' ? 'fisso' : (lost >= 0.05 ? '\u2212' + f1(lost) : '0')) + '</em></span></div>';
+      });
+    }
+    if (compLast[id] !== html) { compLast[id] = html; host.innerHTML = html; }
   }
 
   function setEngine(state, text) {
@@ -2833,7 +2916,7 @@ $HtmlPageLight = @'
       var boostShown = engineOn ? s.boost : 0;
       setGauge(G[0], boostShown, fmtPct(boostShown));
       document.getElementById('d1').textContent = engineOn
-        ? 'Cache ' + fmtPct(s.cachePct) + ' (esclusi i blocchi) \u00b7 Bloccate ' + s.blkPct.toFixed(1).replace('.', ',') + '% \u00b7 Latenza ' + s.lat + ' ms (ricorsiva ' + s.recLat + ') \u00b7 Upstream ' + s.upOk + '/' + s.upTot
+        ? 'Latenza percepita ' + s.lat + ' ms (in ricorsione ' + s.recLat + ' ms)'
         : 'Motore Unbound fermo';
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
@@ -2842,6 +2925,8 @@ $HtmlPageLight = @'
       document.title = dotFor(boostShown) + ' \u{1F510} ' + fmtTitlePct(boostShown) + '  ' + dotFor(s.gainIdx) + ' \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
       updateFavicon(boostShown, engineOn ? s.gainIdx : 0);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
+      renderComps('c1', s.comps1, engineOn);
+      renderComps('c2', s.comps2, engineOn);
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
     } finally {
