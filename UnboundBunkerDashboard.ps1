@@ -2421,6 +2421,10 @@ $HtmlPageLight = @'
   .card h2 { margin: 0 0 4px; font-size: 0.95em; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; }
   .card svg { width: 100%; max-width: 380px; height: auto; display: block; margin: 0 auto; }
   .value { font-family: var(--font-mono); font-weight: 700; }
+  /* Striscia delle ultime variazioni (a destra la piu' recente): scorre verso sinistra */
+  .card svg.trail { max-width: 380px; margin: -4px auto 6px; overflow: visible; }
+  .trail .ti { transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.5s ease; }
+  @media (prefers-reduced-motion: reduce) { .trail .ti { transition: none; } }
   .detail { color: var(--dim); font-size: 0.82em; margin-top: 6px; min-height: 1.3em; font-family: var(--font-mono); }
   .stale { opacity: 0.45; filter: grayscale(0.7); transition: opacity 0.4s; }
   /* ---------- Storico sotto le card ---------- */
@@ -2462,6 +2466,7 @@ $HtmlPageLight = @'
     <div class="card">
       <h2>Funzionamento Bunker</h2>
       <svg id="g1" viewBox="0 0 300 190" role="img" aria-label="Funzionamento del bunker in percentuale"></svg>
+      <svg class="trail" id="t1" viewBox="0 0 300 26" role="img" aria-label="Ultime variazioni: a destra la piu' recente"></svg>
       <div class="detail" id="d1">--</div>
       <div class="hist" id="hist1">
         <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr1">--</span></div>
@@ -2477,6 +2482,7 @@ $HtmlPageLight = @'
     <div class="card">
       <h2>Miglioramento Applicato al PC</h2>
       <svg id="g2" viewBox="0 0 300 190" role="img" aria-label="Indice di miglioramento applicato al PC"></svg>
+      <svg class="trail" id="t2" viewBox="0 0 300 26" role="img" aria-label="Ultime variazioni: a destra la piu' recente"></svg>
       <div class="detail" id="d2">--</div>
       <div class="hist" id="hist2">
         <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr2">--</span></div>
@@ -2597,7 +2603,9 @@ $HtmlPageLight = @'
     var arr = el('text', { x: CX + 92, y: CY + 31, 'text-anchor': 'middle', 'font-size': 22, 'font-weight': 700, fill: '#8497ab' }, svg);
     arr.textContent = '\u2013';
     var arrTip = el('title', {}, arr);
-    return { needle: needle, clipPath: clipPath, tip: tip, tipGlow: tipGlow, val: val, arr: arr, arrTip: arrTip, lastV: null, cur: 0, tgt: 0, vel: 0, run: false, col: '', txt: '' };
+    var tsvg = document.getElementById('t' + svgId.slice(1));
+    var trail = tsvg ? el('g', {}, tsvg) : null;
+    return { trail: trail, trailItems: [], needle: needle, clipPath: clipPath, tip: tip, tipGlow: tipGlow, val: val, arr: arr, arrTip: arrTip, lastV: null, cur: 0, tgt: 0, vel: 0, run: false, col: '', txt: '' };
   }
 
   var G = [buildGauge('g1'), buildGauge('g2')];
@@ -2654,6 +2662,43 @@ $HtmlPageLight = @'
   // lancette piu' alto = meglio). Si confronta il valore REALE (non la posizione animata). Il riferimento
   // avanza solo quando la variazione supera ARROW_EPS: il rumore sui 5 decimali non fa lampeggiare la
   // freccia e una deriva lenta viene comunque rilevata. Tra due variazioni la freccia resta quella dell'ultima.
+  // Striscia storica delle variazioni: una freccetta per ogni variazione significativa (stessa soglia della
+  // freccia accanto al numero). A destra la piu' recente; a ogni nuova variazione la fila scivola a sinistra,
+  // le piu' vecchie diventano piu' piccole e sfumate, la piu' recente e' leggermente luminosa.
+  var TRAIL_N = 18, TRAIL_SP = 14, TRAIL_Y = 13;
+  function trailPlace(it, g) {
+    var N = TRAIL_N, slot = it.slot, out = slot < 0;
+    var f = out ? 0 : slot / (N - 1);
+    var sc = out ? 0.3 : 0.5 + 0.5 * f;
+    var x = CX - (N - 1) * TRAIL_SP / 2 + slot * TRAIL_SP;
+    it.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + TRAIL_Y + 'px) scale(' + sc.toFixed(3) + ')';
+    it.el.style.opacity = out ? 0 : (0.16 + 0.84 * Math.pow(f, 1.2)).toFixed(3);
+    it.el.style.filter = (slot === N - 1) ? 'drop-shadow(0 0 3px ' + it.col + ')' : 'none';
+  }
+  function pushTrail(g, up, diff) {
+    if (!g.trail) return;
+    var col = up ? COL.green : COL.red;
+    var items = g.trailItems;
+    items.forEach(function (it) { it.slot--; });
+    var e = el('g', { 'class': 'ti' }, g.trail);
+    el('path', { d: up ? 'M0 -5 L5.5 4 L-5.5 4 Z' : 'M0 5 L5.5 -4 L-5.5 -4 Z', fill: col, stroke: col, 'stroke-width': 1.6, 'stroke-linejoin': 'round' }, e);
+    var tt = el('title', {}, e);
+    tt.textContent = hhmmss(Date.now()) + '  ' + (up ? '+' : '-') + Math.abs(diff).toFixed(5).replace('.', ',') + ' punti';
+    var it = { el: e, slot: TRAIL_N - 1, col: col };
+    // posizione di partenza (piccola e trasparente, a destra) senza transizione, poi si anima verso quella finale
+    e.style.transition = 'none';
+    e.style.opacity = 0;
+    e.style.transform = 'translate(' + (CX - (TRAIL_N - 1) * TRAIL_SP / 2 + TRAIL_N * TRAIL_SP).toFixed(1) + 'px,' + TRAIL_Y + 'px) scale(0.2)';
+    void e.getBoundingClientRect();
+    e.style.transition = '';
+    items.push(it);
+    items.forEach(function (x) { trailPlace(x, g); });
+    var gone = items.filter(function (x) { return x.slot < 0; });
+    if (gone.length) {
+      g.trailItems = items.filter(function (x) { return x.slot >= 0; });
+      setTimeout(function () { gone.forEach(function (x) { if (x.el.parentNode) x.el.parentNode.removeChild(x.el); }); }, 700);
+    }
+  }
   var ARROW_EPS = 0.001;   // punti percentuali: da tarare sul rumore reale dei dati
   function setTrend(g, v) {
     if (g.lastV === null) { g.lastV = v; return; }
@@ -2662,6 +2707,7 @@ $HtmlPageLight = @'
     var up = diff > 0;
     g.arr.textContent = up ? '\u25B2' : '\u25BC';
     g.arr.setAttribute('fill', up ? COL.green : COL.red);
+    pushTrail(g, up, diff);
     g.arrTip.textContent = (up ? '+' : '-') + Math.abs(diff).toFixed(5).replace('.', ',') + ' punti rispetto al valore precedente';
     g.lastV = v;
   }
