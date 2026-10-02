@@ -2500,9 +2500,43 @@ $HtmlPageLight = @'
 
   function fmtPct(v) { return Number(v).toFixed(5).replace('.', ',') + '%'; }
   function fmtTitlePct(v) { return Number(v).toFixed(2).replace('.', ',') + '%'; }
-  function colorFor(p) { return p >= 75 ? COL.green : (p >= 50 ? COL.amber : COL.red); }
-  // pallino colorato per il titolo della scheda: stesse soglie delle lancette (verde >= 75, giallo >= 50, rosso < 50)
-  function dotFor(p) { return p >= 75 ? '\u{1F7E2}' : (p >= 50 ? '\u{1F7E1}' : '\u{1F534}'); }
+  // Scala colore CONTINUA (rosso -> arancio -> ambra -> verde): la stessa sfumatura alimenta arco,
+  // numero, indicatore di punta, pallini del titolo e icona della scheda, cosi' i colori coincidono sempre.
+  var STOPS = [[0, [255, 77, 77]], [30, [255, 122, 47]], [55, [255, 179, 0]], [80, [155, 224, 74]], [100, [61, 220, 132]]];
+  function hex2(n) { n = Math.round(n); return (n < 16 ? '0' : '') + n.toString(16); }
+  function colorFor(p) {
+    p = Math.max(0, Math.min(100, Number(p) || 0));
+    for (var i = 1; i < STOPS.length; i++) {
+      if (p <= STOPS[i][0]) {
+        var a = STOPS[i - 1], b = STOPS[i], t = (p - a[0]) / (b[0] - a[0]);
+        t = t * t * (3 - 2 * t);   // raccordo morbido tra un colore e il successivo
+        return '#' + hex2(a[1][0] + (b[1][0] - a[1][0]) * t) + hex2(a[1][1] + (b[1][1] - a[1][1]) * t) + hex2(a[1][2] + (b[1][2] - a[1][2]) * t);
+      }
+    }
+    return '#3ddc84';
+  }
+  // pallino colorato per il titolo della scheda: 4 livelli allineati ai colori dell'arco (verde, giallo, arancio, rosso)
+  function dotFor(p) { return p >= 80 ? '\u{1F7E2}' : (p >= 55 ? '\u{1F7E1}' : (p >= 30 ? '\u{1F7E0}' : '\u{1F534}')); }
+  // Icona della scheda: disco diviso a meta', sinistra = 1a lancetta, destra = 2a, ognuna col colore esatto della sfumatura
+  var favKey = '';
+  function updateFavicon(a, b) {
+    try {
+      var ca = colorFor(a), cb = colorFor(b), key = ca + cb;
+      if (key === favKey) return;
+      favKey = key;
+      var cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
+      var x = cv.getContext('2d'); if (!x) return;
+      x.beginPath(); x.arc(32, 32, 28, Math.PI / 2, Math.PI * 1.5); x.closePath(); x.fillStyle = ca; x.fill();
+      x.beginPath(); x.arc(32, 32, 28, -Math.PI / 2, Math.PI / 2); x.closePath(); x.fillStyle = cb; x.fill();
+      x.lineWidth = 3; x.strokeStyle = '#0d1219';
+      x.beginPath(); x.moveTo(32, 5); x.lineTo(32, 59); x.stroke();
+      x.lineWidth = 4; x.beginPath(); x.arc(32, 32, 28, 0, Math.PI * 2); x.stroke();
+      var old = document.querySelector('link[rel~="icon"]');
+      var l = document.createElement('link'); l.rel = 'icon'; l.type = 'image/png'; l.href = cv.toDataURL('image/png');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      document.head.appendChild(l);
+    } catch (e) { /* icona dinamica non disponibile: resta quella precedente */ }
+  }
   // 0% = sinistra (180 gradi), 100% = destra (0 gradi)
   function pt(p, r) {
     var a = Math.PI * (1 - p / 100);
@@ -2522,9 +2556,28 @@ $HtmlPageLight = @'
   function buildGauge(svgId) {
     var svg = document.getElementById(svgId);
     el('path', { d: arc(0, 100, R), fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': 18, 'stroke-linecap': 'round' }, svg);
-    el('path', { d: arc(0.6, 49.4, R), fill: 'none', stroke: COL.red, 'stroke-width': 12, opacity: 0.85 }, svg);
-    el('path', { d: arc(50.6, 74.4, R), fill: 'none', stroke: COL.amber, 'stroke-width': 12, opacity: 0.85 }, svg);
-    el('path', { d: arc(75.6, 99.4, R), fill: 'none', stroke: COL.green, 'stroke-width': 12, opacity: 0.85 }, svg);
+    // Arco sfumato continuo: 120 tratti contigui (con minima sovrapposizione, niente fessure), ognuno del colore
+    // esatto del suo punto. Lo stesso arco e' disegnato due volte: attenuato (scala completa) e acceso, ritagliato
+    // da un settore che arriva fino al valore corrente, cosi' si vede quanto e' "pieno" lo strumento.
+    var defs = el('defs', {}, svg);
+    var clip = el('clipPath', { id: svgId + '-clip' }, defs);
+    var clipPath = el('path', { d: 'M0 0' }, clip);
+    var glow = el('filter', { id: svgId + '-glow', x: '-150%', y: '-150%', width: '400%', height: '400%' }, defs);
+    el('feGaussianBlur', { stdDeviation: 3.5 }, glow);
+    var dim = el('g', { opacity: 0.2 }, svg);
+    var lit = el('g', { 'clip-path': 'url(#' + svgId + '-clip)' }, svg);
+    var SEG = 120, STEP = 100 / SEG;
+    [dim, lit].forEach(function (grp) {
+      for (var i = 0; i < SEG; i++) {
+        var q0 = i * STEP, q1 = Math.min(100, (i + 1) * STEP + 0.35);
+        el('path', { d: arc(q0, q1, R), fill: 'none', stroke: colorFor(q0 + STEP / 2), 'stroke-width': 12 }, grp);
+      }
+      var e0 = pt(0, R), e1 = pt(100, R);
+      el('circle', { cx: e0[0].toFixed(2), cy: e0[1].toFixed(2), r: 6, fill: colorFor(0) }, grp);
+      el('circle', { cx: e1[0].toFixed(2), cy: e1[1].toFixed(2), r: 6, fill: colorFor(100) }, grp);
+    });
+    var tipGlow = el('circle', { cx: pt(0, R)[0], cy: pt(0, R)[1], r: 9, fill: colorFor(0), opacity: 0.85, filter: 'url(#' + svgId + '-glow)' }, svg);
+    var tip = el('circle', { cx: pt(0, R)[0], cy: pt(0, R)[1], r: 5.5, fill: colorFor(0), stroke: '#e9f2fb', 'stroke-width': 2 }, svg);
     for (var t = 0; t <= 100; t += 10) {
       var major = (t % 50 === 0);
       var a = pt(t, R - 13), b = pt(t, R - (major ? 25 : 20));
@@ -2544,11 +2597,21 @@ $HtmlPageLight = @'
     var arr = el('text', { x: CX + 92, y: CY + 31, 'text-anchor': 'middle', 'font-size': 22, 'font-weight': 700, fill: '#8497ab' }, svg);
     arr.textContent = '\u2013';
     var arrTip = el('title', {}, arr);
-    return { needle: needle, val: val, arr: arr, arrTip: arrTip, lastV: null, cur: 0, tgt: 0, vel: 0, run: false, col: '', txt: '' };
+    return { needle: needle, clipPath: clipPath, tip: tip, tipGlow: tipGlow, val: val, arr: arr, arrTip: arrTip, lastV: null, cur: 0, tgt: 0, vel: 0, run: false, col: '', txt: '' };
   }
 
   var G = [buildGauge('g1'), buildGauge('g2')];
-  function setNeedle(g, p) { g.needle.setAttribute('transform', 'rotate(' + (-90 + 1.8 * p).toFixed(2) + ' ' + CX + ' ' + CY + ')'); }
+  function setNeedle(g, p) {
+    g.needle.setAttribute('transform', 'rotate(' + (-90 + 1.8 * p).toFixed(2) + ' ' + CX + ' ' + CY + ')');
+    // settore di ritaglio dell'arco acceso: dal punto 0 al valore corrente
+    var rr = R + 16, s0 = pt(0, rr), s1 = pt(Math.min(p, 99.999), rr);
+    g.clipPath.setAttribute('d', p <= 0.0001 ? 'M0 0' :
+      'M' + CX + ' ' + CY + ' L' + s0[0].toFixed(2) + ' ' + s0[1].toFixed(2) + ' A' + rr + ' ' + rr + ' 0 ' + (p > 50 ? 1 : 0) + ' 1 ' + s1[0].toFixed(2) + ' ' + s1[1].toFixed(2) + ' Z');
+    // indicatore luminoso sulla punta dell'arco, nel colore esatto del valore
+    var tp = pt(p, R), c = colorFor(p);
+    g.tip.setAttribute('cx', tp[0].toFixed(2)); g.tip.setAttribute('cy', tp[1].toFixed(2)); g.tip.setAttribute('fill', c);
+    g.tipGlow.setAttribute('cx', tp[0].toFixed(2)); g.tipGlow.setAttribute('cy', tp[1].toFixed(2)); g.tipGlow.setAttribute('fill', c);
+  }
   G.forEach(function (g) { setNeedle(g, 0); });
 
   // Lancette fluide (v1105.7): la lancetta INSEGUE il valore reale con una molla critica e la
@@ -2731,6 +2794,7 @@ $HtmlPageLight = @'
       if (window.__postLightSample) window.__postLightSample(boostShown, engineOn ? s.gainIdx : 0);
       // Percentuali nel titolo della scheda (2 decimali per leggibilita'): monitoraggio anche da altra tab
       document.title = dotFor(boostShown) + ' \u{1F510} ' + fmtTitlePct(boostShown) + '  ' + dotFor(s.gainIdx) + ' \u{1F5A5}\uFE0F ' + fmtTitlePct(s.gainIdx);
+      updateFavicon(boostShown, engineOn ? s.gainIdx : 0);
       document.getElementById('d2').textContent = 'Guadagno ' + s.gainPt.toFixed(1) + ' / 80 pt \u00b7 ' + s.msSaved.toFixed(1) + ' ms risparmiati sul baseline';
     } catch (e) {
       /* dati non disponibili: gestito dal controllo di inattivita' */
