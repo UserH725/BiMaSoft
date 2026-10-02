@@ -2448,7 +2448,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER &middot; Dashboard Light</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -2540,30 +2540,79 @@ $HtmlPageLight = @'
     el('circle', { cx: CX, cy: CY, r: 9, fill: '#111720', stroke: '#e9f2fb', 'stroke-width': 3 }, svg);
     var val = el('text', { x: CX, y: CY + 32, 'text-anchor': 'middle', 'font-size': 28, 'font-weight': 700, fill: '#8497ab', 'font-family': 'Consolas, monospace' }, svg);
     val.textContent = '--';
-    return { needle: needle, val: val, cur: 0, tgt: 0, raf: null };
+    // Freccia di tendenza (a destra del valore): grigia '-' finche' non c'e' una variazione significativa
+    var arr = el('text', { x: CX + 92, y: CY + 31, 'text-anchor': 'middle', 'font-size': 22, 'font-weight': 700, fill: '#8497ab' }, svg);
+    arr.textContent = '\u2013';
+    var arrTip = el('title', {}, arr);
+    return { needle: needle, val: val, arr: arr, arrTip: arrTip, lastV: null, cur: 0, tgt: 0, vel: 0, run: false, col: '', txt: '' };
   }
 
   var G = [buildGauge('g1'), buildGauge('g2')];
   function setNeedle(g, p) { g.needle.setAttribute('transform', 'rotate(' + (-90 + 1.8 * p).toFixed(2) + ' ' + CX + ' ' + CY + ')'); }
   G.forEach(function (g) { setNeedle(g, 0); });
 
-  function setGauge(g, pct, text) {
-    pct = Math.max(0, Math.min(100, pct));
-    var col = colorFor(pct);
-    g.val.textContent = text;
-    g.val.setAttribute('fill', col);
-    var from = g.cur, to = pct, t0 = performance.now(), dur = 900;
-    if (g.raf) cancelAnimationFrame(g.raf);
-    (function step(now) {
-      var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-      g.cur = from + (to - from) * e;
+  // Lancette fluide (v1105.7): la lancetta INSEGUE il valore reale con una molla critica e la
+  // velocita' si conserva quando arriva un nuovo campione, quindi niente stop-and-go tra un
+  // aggiornamento e l'altro. Il valore reale resta sempre il target: nessun dato inventato,
+  // nessun overshoot oltre 0..100. A lancetta ferma il ciclo si spegne (zero CPU a riposo).
+  var FOLLOW_W = 9;   // rad/s: piu' alto = piu' reattiva (9 = circa 94% del salto in 0,5 s)
+  var rafId = 0, lastFrame = 0;
+
+  function frame(now) {
+    rafId = 0;
+    var dt = lastFrame ? Math.min(0.25, Math.max(0.001, (now - lastFrame) / 1000)) : 0.016;
+    lastFrame = now;
+    var busy = false;
+    for (var i = 0; i < G.length; i++) {
+      var g = G[i];
+      if (!g.run) continue;
+      var dlt = g.cur - g.tgt;
+      var tmp = (g.vel + FOLLOW_W * dlt) * dt;
+      var ex = Math.exp(-FOLLOW_W * dt);
+      g.cur = g.tgt + (dlt + tmp) * ex;
+      g.vel = (g.vel - FOLLOW_W * tmp) * ex;
+      if (Math.abs(g.cur - g.tgt) < 0.000005 && Math.abs(g.vel) < 0.0005) {
+        // arrivata: aggancio esatto al valore reale e stop
+        g.cur = g.tgt; g.vel = 0; g.run = false;
+        g.val.textContent = g.txt;
+      } else {
+        g.cur = Math.max(0, Math.min(100, g.cur));
+        g.val.textContent = fmtPct(g.cur);
+        busy = true;
+      }
       setNeedle(g, g.cur);
-      if (k < 1) g.raf = requestAnimationFrame(step);
-    })(t0);
+      var c = colorFor(g.cur);
+      if (c !== g.col) { g.col = c; g.val.setAttribute('fill', c); }
+    }
+    if (busy) rafId = requestAnimationFrame(frame); else lastFrame = 0;
+  }
+
+  // Tendenza rispetto al valore precedente: ▲ verde = migliorato, ▼ rossa = peggiorato (per entrambe le
+  // lancette piu' alto = meglio). Si confronta il valore REALE (non la posizione animata). Il riferimento
+  // avanza solo quando la variazione supera ARROW_EPS: il rumore sui 5 decimali non fa lampeggiare la
+  // freccia e una deriva lenta viene comunque rilevata. Tra due variazioni la freccia resta quella dell'ultima.
+  var ARROW_EPS = 0.001;   // punti percentuali: da tarare sul rumore reale dei dati
+  function setTrend(g, v) {
+    if (g.lastV === null) { g.lastV = v; return; }
+    var diff = v - g.lastV;
+    if (Math.abs(diff) < ARROW_EPS) return;
+    var up = diff > 0;
+    g.arr.textContent = up ? '\u25B2' : '\u25BC';
+    g.arr.setAttribute('fill', up ? COL.green : COL.red);
+    g.arrTip.textContent = (up ? '+' : '-') + Math.abs(diff).toFixed(5).replace('.', ',') + ' punti rispetto al valore precedente';
+    g.lastV = v;
+  }
+
+  function setGauge(g, pct, text) {
+    g.tgt = Math.max(0, Math.min(100, pct));
+    setTrend(g, g.tgt);
+    g.txt = text;
+    g.run = true;
+    if (!rafId) rafId = requestAnimationFrame(frame);
   }
 
   // ---- Calcolo punteggi: stessa logica della dashboard Pro ----
-  var prevQueries = 0, prevTime = 0, maxLatSeen = 0, isRefreshing = false, lastDataTs = 0;
+  var prevQueries = 0, prevTime = 0, maxLatSeen = 0, isRefreshing = false, lastDataTs = 0, lastSnap = '';
 
   function compute(d) {
     var base = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base : {};
@@ -2661,6 +2710,11 @@ $HtmlPageLight = @'
       var d = JSON.parse(txt);
       lastDataTs = Date.now();
       document.getElementById('gauges').classList.remove('stale');
+      // Con il polling a 1 s la stessa istantanea del server arriva piu' volte: la si elabora una
+      // sola volta (altrimenti i QPS risulterebbero a dente di sega: 0, picco, 0, picco...)
+      var snap = d.generato_il || '';
+      if (snap && snap === lastSnap) return;
+      lastSnap = snap;
 
       var engineOn = !!d.engine_attivo;
       setEngine(engineOn ? 'ok' : 'bad', engineOn ? 'UNBOUND ATTIVO' : 'UNBOUND FERMO');
@@ -2887,7 +2941,7 @@ $HtmlPageLight = @'
   });
 
   refresh();
-  setInterval(refresh, 2000);
+  setInterval(refresh, 1000);
   setInterval(function () {
     if (lastLive() > 8000) {
       document.getElementById('gauges').classList.add('stale');
@@ -2907,7 +2961,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.6 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -3659,7 +3713,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.6 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.7 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
