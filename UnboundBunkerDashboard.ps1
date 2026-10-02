@@ -3897,6 +3897,32 @@ $HtmlPage = @'
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   }
+  /* ---------- Archi indicatore: stessa scala colori, valore, freccia di tendenza e storico della pagina Light ---------- */
+  .g-arc { --p: 0; --tc: #8497ab; position: relative; width: 116px; height: 82px; margin: 4px auto 0; }
+  .ga-clip { position: absolute; left: 0; top: 0; width: 116px; height: 58px; overflow: hidden; }
+  .ga-dim, .ga-lit { position: absolute; left: 0; top: 0; width: 116px; height: 116px; border-radius: 50%; background: var(--arc-grad, #3ddc84); }
+  .ga-dim { opacity: 0.2; -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - 10px), #000 calc(100% - 9.5px)); mask: radial-gradient(circle closest-side, transparent calc(100% - 10px), #000 calc(100% - 9.5px)); }
+  .ga-lit {
+    -webkit-mask-image: radial-gradient(circle closest-side, transparent calc(100% - 10px), #000 calc(100% - 9.5px)), conic-gradient(from -90deg, #000 calc(var(--p) * 1.8deg), transparent 0); -webkit-mask-composite: source-in;
+    mask-image: radial-gradient(circle closest-side, transparent calc(100% - 10px), #000 calc(100% - 9.5px)), conic-gradient(from -90deg, #000 calc(var(--p) * 1.8deg), transparent 0); mask-composite: intersect;
+  }
+  .ga-c { position: absolute; top: 53px; width: 10px; height: 10px; border-radius: 50%; clip-path: inset(5px 0 0 0); }
+  .ga-dl, .ga-ll { left: 0; background: #ff4d4d; }
+  .ga-dr, .ga-lr { left: 106px; background: #3ddc84; }
+  .ga-dl, .ga-dr { opacity: 0.2; }
+  .ga-ll, .ga-lr { opacity: 0; }
+  .g-arc.on-l .ga-ll, .g-arc.on-r .ga-lr { opacity: 1; }
+  .ga-tip { position: absolute; left: 58px; top: 58px; width: 0; height: 0; transform: rotate(calc(-90deg + var(--p) * 1.8deg)); }
+  .ga-tip::before {
+    content: ''; position: absolute; left: -6px; top: -59px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+    background: var(--tc); border: 2px solid #e9f2fb; box-shadow: 0 0 9px var(--tc);
+  }
+  .ga-val { position: absolute; left: 0; top: 33px; width: 116px; text-align: center; font-family: var(--font-mono); font-size: 17px; font-weight: 700; line-height: 1; color: #8497ab; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ga-arr { position: absolute; left: 100%; top: 32px; margin-left: 8px; font-size: 15px; font-weight: 700; line-height: 1; color: #8497ab; cursor: default; }
+  .ga-trail { position: absolute; left: 58px; top: 72px; width: 0; height: 0; }
+  .ga-ti { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; transition: transform 0.5s cubic-bezier(0.22, 0.8, 0.3, 1), opacity 0.5s ease; }
+  .ga-ti svg { display: block; width: 12px; height: 12px; overflow: visible; }
+  @media (prefers-reduced-motion: reduce) { .ga-ti { transition: none; } }
 </style>
 </head>
 <body>
@@ -4474,21 +4500,155 @@ function rankColor(index, total) {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
-function updateGradientBar(id, pct) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const p = Math.min(100, Math.max(0, pct || 0));
-  el.style.width = p + '%';
-
-  if (p <= 25) {
-    el.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
-  } else if (p <= 60) {
-    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 100%)';
-  } else if (p <= 85) {
-    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 40%, #196f3d 100%)';
-  } else {
-    el.style.background = 'linear-gradient(90deg, #c0392b 0%, #d35400 35%, #196f3d 70%, #145a32 100%)';
+// === ARCHI INDICATORE: stessa scala colori, stesso valore, stessa freccia di tendenza e stesso storico della pagina Light ===
+// Ogni barra "g-bar-fill" viene trasformata in un arco a semicerchio: arco intero attenuato + parte accesa fino al
+// valore + pallino di punta + percentuale al centro (nel colore esatto del punto) + freccia ▲/▼ + striscia delle ultime
+// variazioni. Disegno in CSS (sfumatura conica); il movimento usa la stessa molla critica della Light, in un unico
+// ciclo condiviso a ~30 fps che si spegne quando tutti gli archi sono fermi (zero CPU a riposo).
+const ARC_STOPS = [[0, [255, 77, 77]], [30, [255, 122, 47]], [55, [255, 179, 0]], [80, [155, 224, 74]], [100, [61, 220, 132]]];
+const ARC_EPS = 0.05;          // punti percentuali: variazione minima per far comparire una freccia (1 decimale mostrato)
+const ARC_TN = 14, ARC_TSP = 10;   // storico: numero di freccette e distanza tra l'una e l'altra
+const ARC_FOLLOW_W = 9;        // rad/s: stessa reattivita' della Light
+const ARC_REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function arcHex2(n) { n = Math.round(n); return (n < 16 ? '0' : '') + n.toString(16); }
+function arcNum(v, d) { return Number(v).toFixed(d).replace('.', ','); }
+function arcColor(p) {
+  p = Math.max(0, Math.min(100, Number(p) || 0));
+  for (let i = 1; i < ARC_STOPS.length; i++) {
+    if (p <= ARC_STOPS[i][0]) {
+      const a = ARC_STOPS[i - 1], b = ARC_STOPS[i];
+      let t = (p - a[0]) / (b[0] - a[0]);
+      t = t * t * (3 - 2 * t);   // raccordo morbido tra un colore e il successivo
+      return '#' + arcHex2(a[1][0] + (b[1][0] - a[1][0]) * t) + arcHex2(a[1][1] + (b[1][1] - a[1][1]) * t) + arcHex2(a[1][2] + (b[1][2] - a[1][2]) * t);
+    }
   }
+  return '#3ddc84';
+}
+let arcStyleReady = false;
+function arcInitStyle() {
+  if (arcStyleReady) return;
+  arcStyleReady = true;
+  const st = [];
+  for (let i = 0; i <= 40; i++) { const q = i * 2.5; st.push(arcColor(q) + ' ' + (q * 1.8).toFixed(2) + 'deg'); }
+  document.documentElement.style.setProperty('--arc-grad', 'conic-gradient(from -90deg, ' + st.join(', ') + ')');
+}
+
+// ---- Storico delle variazioni: a destra la piu' recente, a ogni nuova variazione la fila scivola a sinistra ----
+function arcTrailPlace(it) {
+  const N = ARC_TN, slot = it.slot, out = slot < 0, f = out ? 0 : slot / (N - 1);
+  const sc = out ? 0.3 : 0.5 + 0.5 * f;
+  const x = -(N - 1) * ARC_TSP / 2 + slot * ARC_TSP;
+  it.el.style.transform = 'translate(' + x.toFixed(1) + 'px,0) scale(' + sc.toFixed(3) + ')';
+  it.el.style.opacity = out ? 0 : (0.16 + 0.84 * Math.pow(f, 1.2)).toFixed(3);
+  it.el.style.filter = (slot === N - 1) ? 'drop-shadow(0 0 3px ' + it.col + ')' : 'none';
+}
+function arcPushTrail(a, up, diff, col) {
+  const items = a.items;
+  items.forEach(it => { it.slot--; });
+  const e = document.createElement('span');
+  e.className = 'ga-ti';
+  e.innerHTML = '<svg viewBox="-6 -6 12 12"><path d="' + (up ? 'M0 -5 L5.5 4 L-5.5 4 Z' : 'M0 5 L5.5 -4 L-5.5 -4 Z') +
+    '" fill="' + col + '" stroke="' + col + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+  e.title = new Date().toLocaleTimeString('it-IT') + '  ' + (up ? '+' : '-') + arcNum(Math.abs(diff), 2) + ' punti';
+  const it = { el: e, slot: ARC_TN - 1, col: col };
+  // posizione di partenza (piccola e trasparente, a destra) senza transizione, poi si anima verso quella finale
+  e.style.transition = 'none';
+  e.style.opacity = 0;
+  e.style.transform = 'translate(' + (-(ARC_TN - 1) * ARC_TSP / 2 + ARC_TN * ARC_TSP).toFixed(1) + 'px,0) scale(0.2)';
+  a.trail.appendChild(e);
+  void e.getBoundingClientRect();
+  e.style.transition = '';
+  items.push(it);
+  items.forEach(arcTrailPlace);
+  const gone = items.filter(x => x.slot < 0);
+  if (gone.length) {
+    a.items = items.filter(x => x.slot >= 0);
+    setTimeout(() => { gone.forEach(x => { if (x.el.parentNode) x.el.parentNode.removeChild(x.el); }); }, 700);
+  }
+}
+// Tendenza rispetto al valore reale precedente (non alla posizione animata): ▲ verde = salito, ▼ rossa = sceso.
+// La prima misura non genera frecce; tra due variazioni la freccia resta quella dell'ultima.
+function arcTrend(a, v) {
+  if (a.lastV === null) { a.lastV = v; return; }
+  const diff = v - a.lastV;
+  if (Math.abs(diff) < ARC_EPS) return;
+  const up = diff > 0, col = up ? '#3ddc84' : '#ff5c5c';
+  a.arr.textContent = up ? '\u25B2' : '\u25BC';
+  a.arr.style.color = col;
+  a.arr.title = (up ? '+' : '-') + arcNum(Math.abs(diff), 2) + ' punti rispetto al valore precedente';
+  arcPushTrail(a, up, diff, col);
+  a.lastV = v;
+}
+
+// ---- Disegno e animazione ----
+function arcDraw(host) {
+  const a = host._a, p = a.cur, c = arcColor(p);
+  host.style.setProperty('--p', p.toFixed(2));
+  host.style.setProperty('--tc', c);
+  a.val.textContent = arcNum(p, 1) + '%';
+  if (c !== a.col) { a.col = c; a.val.style.color = c; }
+  host.classList.toggle('on-l', p > 0.2);
+  host.classList.toggle('on-r', p >= 99.8);
+}
+const arcLive = new Set();
+let arcRaf = 0, arcLast = 0;
+function arcFrame(now) {
+  arcRaf = 0;
+  if (arcLast && now - arcLast < 28) { arcRaf = requestAnimationFrame(arcFrame); return; }   // ~30 fps bastano per archi piccoli
+  const dt = arcLast ? Math.min(0.25, Math.max(0.001, (now - arcLast) / 1000)) : 0.033;
+  arcLast = now;
+  arcLive.forEach(host => {
+    const a = host._a, dlt = a.cur - a.tgt, tmp = (a.vel + ARC_FOLLOW_W * dlt) * dt, ex = Math.exp(-ARC_FOLLOW_W * dt);
+    a.cur = a.tgt + (dlt + tmp) * ex;
+    a.vel = (a.vel - ARC_FOLLOW_W * tmp) * ex;
+    if (Math.abs(a.cur - a.tgt) < 0.005 && Math.abs(a.vel) < 0.05) { a.cur = a.tgt; a.vel = 0; arcLive.delete(host); }
+    else a.cur = Math.max(0, Math.min(100, a.cur));
+    arcDraw(host);
+  });
+  if (arcLive.size) arcRaf = requestAnimationFrame(arcFrame); else arcLast = 0;
+}
+function arcSet(host, pct) {
+  const a = host._a;
+  if (!a) return;
+  let p = Number(pct);
+  if (!isFinite(p)) p = 0;
+  p = Math.max(0, Math.min(100, p));
+  arcTrend(a, p);
+  a.tgt = p;
+  host.setAttribute('aria-valuenow', String(Math.round(p)));
+  if (ARC_REDUCED) { a.cur = p; a.vel = 0; arcLive.delete(host); arcDraw(host); a.shown = true; return; }
+  if (a.cur !== a.tgt || !a.shown) {
+    a.shown = true;
+    arcLive.add(host);
+    if (!arcRaf) arcRaf = requestAnimationFrame(arcFrame);
+  }
+}
+// Converte (una sola volta) la vecchia barra in arco; l'id passa al contenitore, quindi getElementById continua a funzionare.
+function arcEnsure(el) {
+  if (!el) return null;
+  if (el.classList.contains('g-arc')) return el;
+  if (!el.classList.contains('g-bar-fill') || !el.parentNode) return null;
+  arcInitStyle();
+  const host = el.parentNode, id = el.id;
+  el.removeAttribute('id');
+  host.className = 'g-arc';
+  host.id = id;
+  host.setAttribute('role', 'meter');
+  host.setAttribute('aria-valuemin', '0');
+  host.setAttribute('aria-valuemax', '100');
+  host.innerHTML = '<div class="ga-clip"><b class="ga-dim"></b><b class="ga-lit"></b></div>' +
+    '<i class="ga-c ga-dl"></i><i class="ga-c ga-dr"></i><i class="ga-c ga-ll"></i><i class="ga-c ga-lr"></i><i class="ga-tip"></i>' +
+    '<span class="ga-val">--</span><span class="ga-arr">\u2013</span><span class="ga-trail"></span>';
+  host._a = { cur: 0, tgt: 0, vel: 0, lastV: null, col: '', shown: false, items: [],
+              val: host.querySelector('.ga-val'), arr: host.querySelector('.ga-arr'), trail: host.querySelector('.ga-trail') };
+  return host;
+}
+function arcInitAll() { document.querySelectorAll('.g-bar-fill[id]').forEach(arcEnsure); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arcInitAll); else arcInitAll();
+
+function updateGradientBar(id, pct) {
+  const host = arcEnsure(document.getElementById(id));
+  if (host) arcSet(host, pct);
 }
 
 // === GRAFICI STORICI (mini line-chart SVG, senza dipendenze esterne) ===
@@ -5630,17 +5790,7 @@ async function refresh(forceVersions) {
     }
 
     let rpzGlobalScore = (d.rpz_freshness && typeof d.rpz_freshness.score_globale === 'number') ? d.rpz_freshness.score_globale : 100;
-    const barRpzRulesEl = document.getElementById('barRpzRules');
-    if (barRpzRulesEl) {
-      barRpzRulesEl.style.width = (bf.total_rpz_rules > 0 ? 100 : 0) + '%';
-      if (bf.total_rpz_rules > 0 && rpzGlobalScore >= 90) {
-        barRpzRulesEl.style.background = 'linear-gradient(90deg, #196f3d 0%, #145a32 100%)';
-      } else if (bf.total_rpz_rules > 0 && rpzGlobalScore >= 60) {
-        barRpzRulesEl.style.background = 'linear-gradient(90deg, #d35400 0%, #f1c40f 100%)';
-      } else {
-        barRpzRulesEl.style.background = 'linear-gradient(90deg, #78281f 0%, #c0392b 100%)';
-      }
-    }
+    updateGradientBar('barRpzRules', bf.total_rpz_rules > 0 ? rpzGlobalScore : 0);
     let rpzDettaglio = bf.rpz_dettaglio || [];
     if (!Array.isArray(rpzDettaglio)) { rpzDettaglio = [rpzDettaglio]; }
 
