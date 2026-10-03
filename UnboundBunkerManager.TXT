@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1105.7"
+set "LOCAL_VER=1106.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -3064,6 +3064,7 @@ if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 
 
 if "!CHANGED!"=="1" (
+    call :CACHE_DUMP
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
@@ -3073,6 +3074,7 @@ if "!CHANGED!"=="1" (
     ping -n 3 127.0.0.1 >nul
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
     call :DNS_FALLBACK_OFF
+    call :CACHE_LOAD
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 ) else (
@@ -3187,6 +3189,7 @@ if not errorlevel 1 (
 if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
 
 if "!CHANGED!"=="1" (
+    call :CACHE_DUMP
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     :: DNS bootstrap attivo: Unbound e' fermo, garantisco risoluzione esterna temporanea
@@ -3196,6 +3199,7 @@ if "!CHANGED!"=="1" (
     ping -n 3 127.0.0.1 >nul
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound e' attivo
     call :DNS_FALLBACK_OFF
+    call :CACHE_LOAD
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH-ABUSECH" "Servizio riavviato dopo refresh abuse.ch"
 ) else (
@@ -4604,3 +4608,67 @@ if !errorlevel! NEQ 0 (
     echo   [!] Anche la creazione di riserva del task %~1 e' fallita.
 )
 exit /b 1
+
+:: ==================================================================
+:: SUBROUTINE: SALVATAGGIO CACHE DNS PRIMA DEL RIAVVIO DI UNBOUND
+:: Il dump va su R: (RAM disk volatile): sopravvive ai riavvii del
+:: servizio ma non a quelli di Windows. Ogni errore e' non bloccante.
+:: ==================================================================
+:CACHE_DUMP
+set "CC_EXE=!UB_DIR!\unbound-control.exe"
+if "!UB_DIR!"=="" set "CC_EXE=C:\Program Files\Unbound\unbound-control.exe"
+if not exist "!CC_EXE!" exit /b 0
+if not exist "R:\" exit /b 0
+sc query unbound | find "RUNNING" >nul 2>&1
+if errorlevel 1 exit /b 0
+"!CC_EXE!" dump_cache > "R:\unbound_cache.dump.tmp" 2>nul
+if not exist "R:\unbound_cache.dump.tmp" exit /b 0
+:: Un dump completo termina sempre con la riga EOF
+findstr /b /c:"EOF" "R:\unbound_cache.dump.tmp" >nul 2>&1
+if errorlevel 1 (
+    del /f /q "R:\unbound_cache.dump.tmp" >nul 2>&1
+    call :LOGSTEP "CACHE" "[     WARN     ] Dump cache incompleto, scartato"
+    exit /b 0
+)
+:: Tetto di sicurezza 80 MB: R: e' di 250 MB e ospita anche i log
+set "CC_SZ=0"
+for %%F in ("R:\unbound_cache.dump.tmp") do set "CC_SZ=%%~zF"
+if "!CC_SZ!"=="" set "CC_SZ=0"
+if !CC_SZ! GTR 83886080 (
+    del /f /q "R:\unbound_cache.dump.tmp" >nul 2>&1
+    call :LOGSTEP "CACHE" "[     WARN     ] Dump cache oltre 80 MB, scartato per non saturare R:"
+    exit /b 0
+)
+move /y "R:\unbound_cache.dump.tmp" "R:\unbound_cache.dump" >nul 2>&1
+call :LOGSTEP "CACHE" "Cache DNS salvata su R: prima del riavvio"
+exit /b 0
+
+:: ==================================================================
+:: SUBROUTINE: RIPRISTINO CACHE DNS DOPO IL RIAVVIO DI UNBOUND
+:: Attende che il canale di controllo risponda (le RPZ grandi possono
+:: richiedere tempo), poi carica il dump. Massimo circa 75 secondi.
+:: ==================================================================
+:CACHE_LOAD
+if not exist "R:\unbound_cache.dump" exit /b 0
+set "CC_EXE=!UB_DIR!\unbound-control.exe"
+if "!UB_DIR!"=="" set "CC_EXE=C:\Program Files\Unbound\unbound-control.exe"
+if not exist "!CC_EXE!" exit /b 0
+set "CC_TRY=0"
+:CACHE_LOAD_WAIT
+"!CC_EXE!" status >nul 2>&1
+if not errorlevel 1 goto :CACHE_LOAD_GO
+set /a CC_TRY+=1
+if !CC_TRY! GEQ 25 (
+    call :LOGSTEP "CACHE" "[     WARN     ] Cache DNS non ripristinata: unbound-control non raggiungibile"
+    exit /b 0
+)
+ping -n 4 127.0.0.1 >nul
+goto :CACHE_LOAD_WAIT
+:CACHE_LOAD_GO
+"!CC_EXE!" load_cache < "R:\unbound_cache.dump" >nul 2>&1
+if errorlevel 1 (
+    call :LOGSTEP "CACHE" "[     WARN     ] load_cache fallito, si riparte con cache vuota"
+) else (
+    call :LOGSTEP "CACHE" "Cache DNS ripristinata dopo il riavvio"
+)
+exit /b 0
