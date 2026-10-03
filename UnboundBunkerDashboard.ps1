@@ -2640,8 +2640,8 @@ $HtmlPageLight = @'
     }
     return '#3ddc84';
   }
-  // pallino colorato per il titolo della scheda: 4 livelli allineati ai colori dell'arco (verde, giallo, arancio, rosso)
-  function dotFor(p) { return p >= 80 ? '\u{1F7E2}' : (p >= 55 ? '\u{1F7E1}' : (p >= 30 ? '\u{1F7E0}' : '\u{1F534}')); }
+  // pallino colorato per il titolo della scheda: 4 livelli (verde da 66%, giallo da 55%, arancio da 30%, rosso sotto); soglie volutamente piu' larghe di quelle dell'arco
+  function dotFor(p) { return p >= 66 ? '\u{1F7E2}' : (p >= 55 ? '\u{1F7E1}' : (p >= 30 ? '\u{1F7E0}' : '\u{1F534}')); }
   // Icona della scheda: disco diviso a meta', sinistra = 1a lancetta, destra = 2a, ognuna col colore esatto della sfumatura
   var favKey = '';
   function updateFavicon(a, b) {
