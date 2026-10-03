@@ -1985,10 +1985,12 @@ function Update-AnomalyTracking {
 # minimo tra due campioni raddoppia, cosi' lo storico copre TUTTA l'accensione con memoria
 # costante. Salvataggio su R:\light_history.json (RAM disk volatile: sopravvive al riavvio
 # della dashboard, si azzera allo spegnimento del PC). Unico scrittore: il thread HTTP.
+# Passo base 1 s (v1106.1): la pagina Light fa scorrere il grafico in continuo tra un campione
+# e il successivo; con la fusione a coppie il passo diventa 1, 2, 4, 8... s (sempre potenza di 2).
 $script:LightHistFile       = "R:\light_history.json"
 $script:LightHistPts        = $null
 $script:LightHistJson       = $null
-$script:LightHistInterval   = 5
+$script:LightHistInterval   = 1
 $script:LightHistMaxPts     = 1500
 $script:LightHistStartMs    = 0.0
 $script:LightHistLastSample = [DateTime]::MinValue
@@ -2016,17 +2018,21 @@ function Initialize-LightHistory {
     try {
         if ([System.IO.File]::Exists($script:LightHistFile)) {
             $saved = [System.IO.File]::ReadAllText($script:LightHistFile) | ConvertFrom-Json
-            if ($saved -and $saved.p) {
+            # Con passo base 1 s gli intervalli validi sono potenze di 2 (1, 2, 4...). Un file salvato dal
+            # vecchio passo base 5 s (5, 10, 20...) non lo e': si scarta e lo storico riparte pulito.
+            $savedInt = 0
+            if ($saved -and $saved.interval) { $savedInt = [int]$saved.interval }
+            if ($saved -and $saved.p -and $savedInt -ge 1 -and (($savedInt -band ($savedInt - 1)) -eq 0)) {
                 foreach ($row in $saved.p) {
                     [void]$script:LightHistPts.Add([double[]]@([double]$row[0], [double]$row[1], [double]$row[2]))
                 }
-                if ($saved.interval) { $script:LightHistInterval = [int]$saved.interval }
+                $script:LightHistInterval = $savedInt
                 if ($saved.start)    { $script:LightHistStartMs  = [double]$saved.start }
             }
         }
     } catch {
         $script:LightHistPts.Clear()
-        $script:LightHistInterval = 5
+        $script:LightHistInterval = 1
     }
     Build-LightHistoryJson
 }
@@ -2041,7 +2047,8 @@ function Add-LightHistoryPoint {
     Initialize-LightHistory
 
     $now = Get-Date
-    if (($now - $script:LightHistLastSample).TotalSeconds -lt $script:LightHistInterval) { return $false }
+    # tolleranza 15%: i POST arrivano ogni ~1 s con un po' di jitter, senza margine ogni tanto se ne perderebbe uno
+    if (($now - $script:LightHistLastSample).TotalSeconds -lt ($script:LightHistInterval * 0.85)) { return $false }
     $script:LightHistLastSample = $now
 
     $nowMs = [double]([DateTimeOffset]$now).ToUnixTimeMilliseconds()
@@ -2077,10 +2084,10 @@ function Add-LightHistoryPoint {
 
 function Reset-LightHistory {
     # Azzeramento completo dello storico della pagina Light: stato identico a quello della prima
-    # accensione (buffer vuoto, intervallo base 5 s, nuovo orario di partenza, file su R:\ eliminato).
+    # accensione (buffer vuoto, intervallo base 1 s, nuovo orario di partenza, file su R:\ eliminato).
     # Unico scrittore: il thread HTTP (stesso di Add-LightHistoryPoint), quindi nessuna corsa.
     $script:LightHistPts        = New-Object System.Collections.Generic.List[double[]]
-    $script:LightHistInterval   = 5
+    $script:LightHistInterval   = 1
     $script:LightHistStartMs    = [double]([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds()
     $script:LightHistLastSample = [DateTime]::MinValue
     $script:LightHistLastSave   = [DateTime]::MinValue
@@ -2560,7 +2567,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3042,10 +3049,19 @@ $HtmlPageLight = @'
   }
 
   // ---- Storico dall'accensione: grafici sotto le card ----
+  // Scorrimento fluido (v1106.1). Un campione al secondo (server: intervallo base 1 s). Il grafico
+  // non si ridisegna piu' a scatti a ogni campione: il tracciato viene costruito UNA volta per
+  // campione (x in secondi dall'accensione) e la finestra scorre in continuo cambiando solo la scala
+  // orizzontale (attributo transform, ~30 fps). Il punto in testa segue la poligonale reale:
+  // l'orologio del grafico resta indietro di circa un campione, cosi' il punto sta sempre tra due
+  // campioni VERI e si muove per interpolazione lineare (la stessa retta che disegna la linea):
+  // nessun dato inventato, nessuna estrapolazione. Con il puntatore sopra il grafico il disegno si
+  // ferma (per poter leggere i valori) e riparte da solo all'uscita.
   var HW = 480, HH = 190, PL = 48, PR = 12, PT = 12, PB = 24;
+  var HPW = HW - PL - PR, HPH = HH - PT - PB;
   var HC = [
-    { id: 'hist1', n: 1, idx: 1, color: '#4fb3ff', svg: null, box: null, geo: null },
-    { id: 'hist2', n: 2, idx: 2, color: '#b388ff', svg: null, box: null, geo: null }
+    { id: 'hist1', n: 1, idx: 1, color: '#4fb3ff', svg: null, box: null, geo: null, g: null, data: null, last: null, y: null, easing: false, hover: false, dirty: false },
+    { id: 'hist2', n: 2, idx: 2, color: '#b388ff', svg: null, box: null, geo: null, g: null, data: null, last: null, y: null, easing: false, hover: false, dirty: false }
   ];
   function p2(n) { return (n < 10 ? '0' : '') + n; }
   function hhmm(ms) { var d = new Date(ms); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
@@ -3053,13 +3069,202 @@ $HtmlPageLight = @'
   function dmhm(ms) { var d = new Date(ms); return p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + ' ' + hhmm(ms); }
   function fmtInterval(s) { return s >= 60 ? (s / 60).toFixed(s % 60 ? 1 : 0) + ' min' : s + ' s'; }
 
+  // Orologio del grafico (condiviso dai due grafici: hanno gli stessi campioni). tR = istante dello
+  // storico mostrato in testa al grafico; avanza in tempo reale (performance.now, quindi indipendente
+  // dall'orologio del PC server) ma non supera mai l'ultimo campione ricevuto. Un piccolo controllo
+  // proporzionale ne regola la velocita' (0,5x..2x) per tenere sempre circa un campione di margine.
+  var hv = { ready: false, tR: 0, tLast: 0, I: 1000, perf: 0 };
+  var hRaf = 0, hLastPaint = 0;
+  function histAdvance(now) {
+    if (!hv.ready) return;
+    var dt = now - hv.perf;
+    hv.perf = now;
+    if (dt <= 0) return;
+    var L = Math.min(hv.I, 2000);
+    var rate = Math.max(0.5, Math.min(2, 1 + ((hv.tLast - hv.tR) - L) / (2 * L)));
+    hv.tR = Math.min(hv.tLast, hv.tR + dt * rate);
+  }
+  function histSync(h) {
+    var last = -1, i;
+    for (i = h.p.length - 1; i >= 0; i--) { if (h.p[i][1] > 0) { last = h.p[i][0]; break; } }
+    if (last < 0) { hv.ready = false; return; }
+    var now = performance.now();
+    var I = Math.max(1, h.interval || 1) * 1000, L = Math.min(I, 2000);
+    if (!hv.ready) { hv.tR = last - L; hv.ready = true; hv.perf = now; }
+    else histAdvance(now);
+    hv.tLast = last; hv.I = I;
+    if (hv.tR > last) hv.tR = last;                          // dopo una fusione dei campioni l'ultimo puo' arretrare
+    if (hv.tR < last - (2 * L + 1500)) hv.tR = last - (2 * L + 1500);   // troppo indietro (scheda in background): si riallinea
+    kickHist();
+  }
+  function kickHist() { if (!hRaf && hv.ready && !document.hidden) hRaf = requestAnimationFrame(histFrame); }
+  function histFrame() {
+    hRaf = 0;
+    if (!hv.ready || document.hidden) return;
+    var now = performance.now();
+    histAdvance(now);
+    var more = hv.tR < hv.tLast || HC.some(function (c) { return c.easing && !c.hover; });   // fermo quando tutto e' arrivato
+    var pdt = now - hLastPaint;
+    if (!more || pdt >= 30) {                                // ~30 fps bastano: lo spostamento per fotogramma e' minimo
+      hLastPaint = now;
+      HC.forEach(function (cfg) { paintHist(cfg, false, pdt); });
+    }
+    if (more) hRaf = requestAnimationFrame(histFrame);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) kickHist(); });
+
+  // Scheletro SVG creato una sola volta: sfondo/etichette Y (si rifanno a ogni campione), tick X
+  // (testo aggiornato in continuo), gruppo dati ritagliato (path in secondi, scalato con transform),
+  // punto in testa e mirino.
+  function buildHistSkeleton(cfg) {
+    var svg = cfg.svg, n = cfg.n, i, c = {};
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var defs = el('defs', {}, svg);
+    var lg = c.grad = el('linearGradient', { id: 'gr' + n, gradientUnits: 'userSpaceOnUse', x1: 0, y1: PT, x2: 0, y2: PT + HPH }, defs);
+    el('stop', { offset: 0, 'stop-color': cfg.color, 'stop-opacity': 0.38 }, lg);
+    el('stop', { offset: 1, 'stop-color': cfg.color, 'stop-opacity': 0.02 }, lg);
+    var cp = el('clipPath', { id: 'hclip' + n }, defs);
+    el('rect', { x: PL, y: PT - 4, width: HPW, height: HPH + 4 }, cp);
+    c.empty = el('text', { x: HW / 2, y: HH / 2, 'text-anchor': 'middle', fill: '#8497ab', 'font-size': 12 }, svg);
+    c.empty.textContent = 'Raccolta dati in corso\u2026';
+    c.stat = el('g', {}, svg);
+    c.xt = el('g', {}, svg);
+    c.xl = []; c.xs = [];
+    for (i = 0; i <= 4; i++) {
+      var tx = (PL + HPW * i / 4).toFixed(1);
+      el('line', { x1: tx, y1: PT + HPH, x2: tx, y2: PT + HPH + 4, stroke: 'rgba(255,255,255,0.18)' }, c.xt);
+      c.xl.push(el('text', { x: tx, y: HH - 6, 'text-anchor': i === 0 ? 'start' : (i === 4 ? 'end' : 'middle'), fill: '#8497ab', 'font-size': 10, 'font-family': 'Consolas, monospace' }, c.xt));
+      c.xs.push('');
+    }
+    c.clipG = el('g', { 'clip-path': 'url(#hclip' + n + ')' }, svg);
+    c.data = el('g', { transform: 'translate(' + PL + ' 0)' }, c.clipG);
+    c.area = el('path', { fill: 'url(#gr' + n + ')' }, c.data);
+    c.line = el('path', { fill: 'none', stroke: cfg.color, 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }, c.data);
+    c.halo = el('circle', { r: 6, fill: cfg.color, opacity: 0.18 }, svg);
+    c.dot = el('circle', { r: 3.2, fill: cfg.color, stroke: '#0d1219', 'stroke-width': 1.2 }, svg);
+    c.hxl = el('line', { y1: PT, y2: PT + HPH, stroke: 'rgba(233,242,251,0.45)', 'stroke-width': 1, visibility: 'hidden' }, svg);
+    c.hxd = el('circle', { r: 4, fill: cfg.color, stroke: '#e9f2fb', 'stroke-width': 1.5, visibility: 'hidden' }, svg);
+    cfg.g = c;
+  }
+  function showHist(cfg, on) {
+    var c = cfg.g, parts = [c.stat, c.xt, c.clipG, c.halo, c.dot], k;
+    for (k = 0; k < parts.length; k++) { if (on) parts[k].removeAttribute('display'); else parts[k].setAttribute('display', 'none'); }
+    if (on) c.empty.setAttribute('display', 'none'); else c.empty.removeAttribute('display');
+    if (!on) { c.hxl.setAttribute('visibility', 'hidden'); c.hxd.setAttribute('visibility', 'hidden'); }
+  }
+
+  // Griglia orizzontale, etichette asse Y e soglie colore (50% / 75%) per la scala mostrata (lo..hi).
+  function gridHtml(lo, hi) {
+    var s = '', i;
+    function Y(v) { return PT + (1 - (v - lo) / (hi - lo)) * HPH; }
+    var dec = (hi - lo) < 1 ? 2 : ((hi - lo) < 10 ? 1 : 0);
+    for (i = 0; i < 4; i++) {
+      var gv = lo + (hi - lo) * i / 3, gy = Y(gv).toFixed(1);
+      s += '<line x1="' + PL + '" y1="' + gy + '" x2="' + (HW - PR) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>';
+      s += '<text x="' + (PL - 6) + '" y="' + (Number(gy) + 3.5) + '" text-anchor="end" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + gv.toFixed(dec) + '</text>';
+    }
+    [[50, COL.amber], [75, COL.green]].forEach(function (th) {
+      if (th[0] > lo && th[0] < hi) {
+        var ty = Y(th[0]).toFixed(1);
+        s += '<line x1="' + PL + '" y1="' + ty + '" x2="' + (HW - PR) + '" y2="' + ty + '" stroke="' + th[1] + '" stroke-width="1" stroke-dasharray="4 4" opacity="0.45"/>';
+        s += '<text x="' + (HW - PR - 3) + '" y="' + (Number(ty) - 3) + '" text-anchor="end" fill="' + th[1] + '" font-size="9" opacity="0.8">' + th[0] + '%</text>';
+      }
+    });
+    return s;
+  }
+
+  // Parte "per campione": path di area e linea (x in secondi dall'inizio, y gia' in unita' viewBox sulla
+  // scala obiettivo lo..hi). La scala verticale MOSTRATA (cfg.y.dLo/dHi) parte da quella precedente e
+  // raggiunge l'obiettivo con una transizione dolce: un nuovo minimo/massimo non fa piu' scattare il grafico.
+  function buildHist(cfg) {
+    var D = cfg.data, g = cfg.g, i;
+    function Y(v) { return PT + (1 - (v - D.lo) / (D.hi - D.lo)) * HPH; }
+    if (!cfg.y) cfg.y = { dLo: D.lo, dHi: D.hi, bLo: D.lo, bHi: D.hi };
+    cfg.y.bLo = D.lo; cfg.y.bHi = D.hi; cfg.y.tLo = D.lo; cfg.y.tHi = D.hi;
+
+    // area + linea: la linea si interrompe nei buchi (pagina chiusa / Unbound fermo): nessun dato inventato
+    var pts = D.pts, vals = D.vals, n = D.n, t0 = D.t0, base = PT + HPH, far = base + 100000;
+    function XS(t) { return ((t - t0) / 1000).toFixed(3); }
+    function segArea(a, z) {
+      var q = 'M' + XS(pts[a][0]) + ' ' + far;     // base lontanissima: il ritaglio taglia al bordo inferiore, anche se la scala si sta muovendo
+      for (var m = a; m <= z; m++) q += 'L' + XS(pts[m][0]) + ' ' + Y(vals[m]).toFixed(1);
+      return q + 'L' + XS(pts[z][0]) + ' ' + far + 'Z';
+    }
+    var d = '', ar = '', segS = 0;
+    for (i = 0; i < n; i++) {
+      var brk = (i === 0) || (pts[i][0] - pts[i - 1][0] > D.gapMs);
+      d += (brk ? 'M' : 'L') + XS(pts[i][0]) + ' ' + Y(vals[i]).toFixed(1);
+      if (brk && i > 0) { ar += segArea(segS, i - 1); segS = i; }
+    }
+    ar += segArea(segS, n - 1);
+    g.area.setAttribute('d', ar);
+    g.line.setAttribute('d', d);
+    // sfumatura dell'area: dal punto piu' alto della linea fino al fondo del riquadro (come prima)
+    g.grad.setAttribute('y1', Y(D.mx).toFixed(1)); g.grad.setAttribute('y2', base);
+    // il tratto non scala con gli assi (vector-effect): spessore in pixel di schermo = 1,8 unita' viewBox
+    var rw = cfg.svg.getBoundingClientRect().width;
+    g.line.setAttribute('stroke-width', (1.8 * (rw ? rw / HW : 1)).toFixed(2));
+    paintHist(cfg, true, 0);
+  }
+
+  // Parte "per fotogramma": scala orizzontale/verticale (transform), punto in testa, griglia e tick X.
+  // Se nulla si e' mosso di almeno 0,05 px il DOM non viene toccato (storico lungo = quasi zero CPU).
+  function paintHist(cfg, force, dtMs) {
+    var D = cfg.data;
+    if (!D || cfg.hover || !hv.ready || !cfg.y) return;
+    var g = cfg.g, pts = D.pts, n = D.n, i, Yc = cfg.y, gridDirty = !!force;
+    // transizione dolce della scala verticale verso l'obiettivo (costante di tempo ~0,18 s)
+    if (Yc.dLo !== Yc.tLo || Yc.dHi !== Yc.tHi) {
+      var kk = dtMs > 0 ? 1 - Math.exp(-dtMs / 180) : 0;
+      Yc.dLo += (Yc.tLo - Yc.dLo) * kk; Yc.dHi += (Yc.tHi - Yc.dHi) * kk;
+      if (Math.abs(Yc.dLo - Yc.tLo) < 0.0005 && Math.abs(Yc.dHi - Yc.tHi) < 0.0005) { Yc.dLo = Yc.tLo; Yc.dHi = Yc.tHi; cfg.easing = false; }
+      else cfg.easing = true;
+      gridDirty = true;
+    } else { cfg.easing = false; }
+    var dLo = Yc.dLo, dHi = Yc.dHi, R = dHi - dLo;
+
+    var tR = Math.max(D.t0, Math.min(hv.tR, D.t1));
+    var spanMs = Math.max(1000, tR - D.t0);
+    // campione reale subito prima di tR e interpolazione lineare verso il successivo
+    var a = 0, b = n - 1;
+    while (b - a > 1) { var mm = (a + b) >> 1; if (pts[mm][0] <= tR) a = mm; else b = mm; }
+    if (pts[b][0] <= tR) a = b;
+    var yv = D.vals[a];
+    if (a < n - 1) {
+      var dtp = pts[a + 1][0] - pts[a][0];
+      if (dtp > 0 && dtp <= D.gapMs) yv += (D.vals[a + 1] - D.vals[a]) * (tR - pts[a][0]) / dtp;
+    }
+    var dx = HPW * (tR - D.t0) / spanMs;
+    var y = PT + (1 - (yv - dLo) / R) * HPH;
+    var L = cfg.last;
+    if (!force && !gridDirty && L && Math.abs(spanMs - L.span) * HPW / spanMs < 0.05 && Math.abs(y - L.y) < 0.05 && Math.abs(dx - L.dx) < 0.05) return;
+    cfg.last = { span: spanMs, y: y, dx: dx };
+
+    // trasformazione affine dei path (costruiti sulla scala obiettivo) verso la scala mostrata
+    var A = (Yc.bHi - Yc.bLo) / R;
+    var B = PT + HPH - HPH * (Yc.bLo - dLo) / R - A * HPH - A * PT;
+    g.data.setAttribute('transform', 'translate(' + PL + ' ' + B.toFixed(3) + ') scale(' + (HPW / (spanMs / 1000)).toPrecision(7) + ' ' + A.toPrecision(7) + ')');
+    if (gridDirty) g.stat.innerHTML = gridHtml(dLo, dHi);
+    var cx = (PL + dx).toFixed(2), cy = y.toFixed(2);
+    g.dot.setAttribute('cx', cx); g.dot.setAttribute('cy', cy);
+    g.halo.setAttribute('cx', cx); g.halo.setAttribute('cy', cy);
+    var longRange = spanMs > 20 * 3600 * 1000, shortRange = spanMs < 10 * 60 * 1000;
+    for (i = 0; i <= 4; i++) {
+      var tt = D.t0 + spanMs * i / 4;
+      var str = longRange ? dmhm(tt) : (shortRange ? hhmmss(tt) : hhmm(tt));
+      if (str !== g.xs[i]) { g.xs[i] = str; g.xl[i].textContent = str; }
+    }
+    cfg.geo = { pts: pts, m: a, t0: D.t0, tSpan: spanMs, lo: dLo, hi: dHi };
+  }
+
   function drawHist(cfg, hist) {
-    var allPts = hist.p, svg = cfg.svg;
+    var allPts = hist.p;
     var pts = allPts.filter(function (q) { return q[1] > 0; });   // esclude i campioni a Unbound fermo (0)
     var n = pts.length, fermoN = allPts.length - n;
     if (n < 2) {
-      svg.innerHTML = '<text x="' + (HW / 2) + '" y="' + (HH / 2) + '" text-anchor="middle" fill="#8497ab" font-size="12">Raccolta dati in corso&hellip;</text>';
-      cfg.geo = null;
+      cfg.data = null; cfg.geo = null; cfg.last = null; cfg.y = null; cfg.easing = false; cfg.dirty = false;
+      showHist(cfg, false);
+      hv.ready = false;
       document.getElementById('hr' + cfg.n).textContent = 'in attesa dei primi campioni';
       return;
     }
@@ -3068,68 +3273,11 @@ $HtmlPageLight = @'
     var span = mx - mn, pad = Math.max(span * 0.18, 0.3);
     var lo = Math.max(0, mn - pad), hi = Math.min(100, mx + pad);
     if (hi - lo < 0.6) { var c = (hi + lo) / 2; lo = Math.max(0, c - 0.3); hi = Math.min(100, c + 0.3); }
-    var t0 = pts[0][0], t1 = pts[n - 1][0], tSpan = Math.max(1, t1 - t0);
-    var W = HW - PL - PR, H = HH - PT - PB;
-    function X(t) { return PL + ((t - t0) / tSpan) * W; }
-    function Y(v) { return PT + (1 - (v - lo) / (hi - lo)) * H; }
+    var t0 = pts[0][0], t1 = pts[n - 1][0];
+    cfg.data = { pts: pts, vals: vals, n: n, t0: t0, t1: t1, lo: lo, hi: hi, mn: mn, mx: mx, gapMs: Math.max(150000, (hist.interval || 1) * 3000) };
+    showHist(cfg, true);
 
-    var dec = (hi - lo) < 1 ? 2 : ((hi - lo) < 10 ? 1 : 0);
-    var s = '<defs><linearGradient id="gr' + cfg.n + '" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0" stop-color="' + cfg.color + '" stop-opacity="0.38"/>' +
-            '<stop offset="1" stop-color="' + cfg.color + '" stop-opacity="0.02"/></linearGradient></defs>';
-
-    // griglia orizzontale + etichette asse Y
-    for (i = 0; i < 4; i++) {
-      var gv = lo + (hi - lo) * i / 3, gy = Y(gv).toFixed(1);
-      s += '<line x1="' + PL + '" y1="' + gy + '" x2="' + (HW - PR) + '" y2="' + gy + '" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>';
-      s += '<text x="' + (PL - 6) + '" y="' + (Number(gy) + 3.5) + '" text-anchor="end" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + gv.toFixed(dec) + '</text>';
-    }
-    // soglie colore (50% / 75%) se visibili
-    [[50, COL.amber], [75, COL.green]].forEach(function (th) {
-      if (th[0] > lo && th[0] < hi) {
-        var ty = Y(th[0]).toFixed(1);
-        s += '<line x1="' + PL + '" y1="' + ty + '" x2="' + (HW - PR) + '" y2="' + ty + '" stroke="' + th[1] + '" stroke-width="1" stroke-dasharray="4 4" opacity="0.45"/>';
-        s += '<text x="' + (HW - PR - 3) + '" y="' + (Number(ty) - 3) + '" text-anchor="end" fill="' + th[1] + '" font-size="9" opacity="0.8">' + th[0] + '%</text>';
-      }
-    });
-    // asse X: 5 tick temporali
-    var longRange = tSpan > 20 * 3600 * 1000, shortRange = tSpan < 10 * 60 * 1000;
-    for (i = 0; i <= 4; i++) {
-      var tt = t0 + tSpan * i / 4, tx = X(tt).toFixed(1);
-      var anchor = i === 0 ? 'start' : (i === 4 ? 'end' : 'middle');
-      s += '<line x1="' + tx + '" y1="' + (PT + H) + '" x2="' + tx + '" y2="' + (PT + H + 4) + '" stroke="rgba(255,255,255,0.18)"/>';
-      s += '<text x="' + tx + '" y="' + (HH - 6) + '" text-anchor="' + anchor + '" fill="#8497ab" font-size="10" font-family="Consolas, monospace">' + (longRange ? dmhm(tt) : (shortRange ? hhmmss(tt) : hhmm(tt))) + '</text>';
-    }
-    // area + linea
-    // la linea si interrompe nei buchi (pagina chiusa / Unbound fermo): nessun dato inventato
-    var gapMs = Math.max(150000, (hist.interval || 5) * 3000);
-    function segArea(a, z) {
-      var q = 'M' + X(pts[a][0]).toFixed(1) + ' ' + (PT + H);
-      for (var m = a; m <= z; m++) q += 'L' + X(pts[m][0]).toFixed(1) + ' ' + Y(vals[m]).toFixed(1);
-      return q + 'L' + X(pts[z][0]).toFixed(1) + ' ' + (PT + H) + 'Z';
-    }
-    var d = '', ar = '', segS = 0, k;
-    for (i = 0; i < n; i++) {
-      var brk = (i === 0) || (pts[i][0] - pts[i - 1][0] > gapMs);
-      d += (brk ? 'M' : 'L') + X(pts[i][0]).toFixed(1) + ' ' + Y(vals[i]).toFixed(1);
-      if (brk && i > 0) { ar += segArea(segS, i - 1); segS = i; }
-    }
-    ar += segArea(segS, n - 1);
-    var area = ar;
-    s += '<path d="' + area + '" fill="url(#gr' + cfg.n + ')"/>';
-    s += '<path d="' + d + '" fill="none" stroke="' + cfg.color + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
-    // ultimo punto
-    var lx = X(t1).toFixed(1), ly = Y(vals[n - 1]).toFixed(1);
-    s += '<circle cx="' + lx + '" cy="' + ly + '" r="6" fill="' + cfg.color + '" opacity="0.18"/>';
-    s += '<circle cx="' + lx + '" cy="' + ly + '" r="3.2" fill="' + cfg.color + '" stroke="#0d1219" stroke-width="1.2"/>';
-    // crosshair (nascosto)
-    s += '<line class="hx-line" x1="0" y1="' + PT + '" x2="0" y2="' + (PT + H) + '" stroke="rgba(233,242,251,0.45)" stroke-width="1" visibility="hidden"/>';
-    s += '<circle class="hx-dot" cx="0" cy="0" r="4" fill="' + cfg.color + '" stroke="#e9f2fb" stroke-width="1.5" visibility="hidden"/>';
-    svg.innerHTML = s;
-
-    cfg.geo = { pts: pts, n: n, t0: t0, t1: t1, tSpan: tSpan, lo: lo, hi: hi, H: H, W: W };
-
-    var avg = sum / n, last = vals[n - 1];
+    var avg = sum / n, last = vals[n - 1], longRange = (t1 - t0) > 20 * 3600 * 1000;
     document.getElementById('h' + cfg.n + 'min').textContent = fmtPct(mn);
     document.getElementById('h' + cfg.n + 'avg').textContent = fmtPct(avg);
     document.getElementById('h' + cfg.n + 'max').textContent = fmtPct(mx);
@@ -3137,8 +3285,11 @@ $HtmlPageLight = @'
     nowEl.textContent = fmtPct(last);
     nowEl.style.color = colorFor(last);
     document.getElementById('hr' + cfg.n).textContent =
-      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 5) +
+      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 1) +
       (fermoN > 0 ? ' \u00b7 Unbound fermo: ' + fermoN + ' campioni (' + (fermoN * 100 / allPts.length).toFixed(1).replace('.', ',') + '%)' : '');
+
+    if (cfg.hover) { cfg.dirty = true; return; }   // puntatore sul grafico: disegno fermo, si aggiorna all'uscita
+    buildHist(cfg);
   }
 
   function histHover(cfg, ev) {
@@ -3146,17 +3297,17 @@ $HtmlPageLight = @'
     if (!g) return;
     var r = cfg.svg.getBoundingClientRect();
     if (!r.width) return;
+    cfg.hover = true;
     var vx = (ev.clientX - r.left) / r.width * HW;
-    var f = Math.max(0, Math.min(1, (vx - PL) / g.W));
+    var f = Math.max(0, Math.min(1, (vx - PL) / HPW));
     var tt = g.t0 + f * g.tSpan;
-    var a = 0, b = g.n - 1;
+    var a = 0, b = g.m;
     while (b - a > 1) { var m = (a + b) >> 1; if (g.pts[m][0] < tt) a = m; else b = m; }
     var j = (Math.abs(g.pts[a][0] - tt) <= Math.abs(g.pts[b][0] - tt)) ? a : b;
     var p = g.pts[j], val = p[cfg.idx];
-    var px = PL + ((p[0] - g.t0) / g.tSpan) * g.W;
-    var py = PT + (1 - (val - g.lo) / (g.hi - g.lo)) * g.H;
-    var ln = cfg.svg.querySelector('.hx-line'), dt = cfg.svg.querySelector('.hx-dot');
-    if (!ln || !dt) return;
+    var px = PL + ((p[0] - g.t0) / g.tSpan) * HPW;
+    var py = PT + (1 - (val - g.lo) / (g.hi - g.lo)) * HPH;
+    var ln = cfg.g.hxl, dt = cfg.g.hxd;
     ln.setAttribute('x1', px); ln.setAttribute('x2', px); ln.setAttribute('visibility', 'visible');
     dt.setAttribute('cx', px); dt.setAttribute('cy', py); dt.setAttribute('visibility', 'visible');
     var tip = cfg.box.querySelector('.hist-tip');
@@ -3168,16 +3319,21 @@ $HtmlPageLight = @'
     tip.style.opacity = 1;
   }
   function histLeave(cfg) {
-    var ln = cfg.svg.querySelector('.hx-line'), dt = cfg.svg.querySelector('.hx-dot');
-    if (ln) ln.setAttribute('visibility', 'hidden');
-    if (dt) dt.setAttribute('visibility', 'hidden');
+    cfg.hover = false;
+    if (cfg.g) { cfg.g.hxl.setAttribute('visibility', 'hidden'); cfg.g.hxd.setAttribute('visibility', 'hidden'); }
     cfg.box.querySelector('.hist-tip').style.opacity = 0;
+    if (cfg.data) {
+      if (cfg.dirty) { cfg.dirty = false; buildHist(cfg); } else { paintHist(cfg, true, 0); }
+    }
+    kickHist();
   }
   HC.forEach(function (cfg) {
     cfg.box = document.getElementById(cfg.id);
     cfg.svg = cfg.box.querySelector('svg');
+    buildHistSkeleton(cfg);
     cfg.svg.addEventListener('pointermove', function (ev) { histHover(cfg, ev); });
     cfg.svg.addEventListener('pointerleave', function () { histLeave(cfg); });
+    cfg.svg.addEventListener('pointercancel', function () { histLeave(cfg); });
     drawHist(cfg, { p: [] });
   });
 
@@ -3192,15 +3348,18 @@ $HtmlPageLight = @'
       var h = JSON.parse(await r.text());
       if (!h || !Array.isArray(h.p)) return;
       if (gen !== histGen) return;   // azzeramento avvenuto mentre la richiesta era in volo: dati vecchi, si scartano
+      histSync(h);
       HC.forEach(function (cfg) { drawHist(cfg, h); });
     } catch (e) { /* storico non disponibile: riprova al prossimo giro */ }
     finally { histBusy = false; }
   }
-  // Invio del campione alla dashboard: gli stessi valori mostrati dalle lancette (max 1 ogni 5 s)
+  // Invio del campione alla dashboard: gli stessi valori mostrati dalle lancette (1 al secondo).
+  // Soglia 0,8 s e non 1 s: l'istantanea arriva ogni secondo con un po' di jitter del polling a 500 ms,
+  // con 1 s netto ogni tanto un campione verrebbe saltato.
   var lastPost = 0;
   function postSample(b, g) {
     var now = Date.now();
-    if (now - lastPost < 5000) return;
+    if (now - lastPost < 800) return;
     lastPost = now;
     fetch('/api/light-sample', {
       method: 'POST', cache: 'no-store',
@@ -3344,7 +3503,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -4122,7 +4281,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
