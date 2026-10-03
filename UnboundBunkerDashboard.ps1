@@ -2642,20 +2642,33 @@ $HtmlPageLight = @'
   }
   // pallino colorato per il titolo della scheda: 4 livelli (verde da 66%, giallo da 55%, arancio da 30%, rosso sotto); soglie volutamente piu' larghe di quelle dell'arco
   function dotFor(p) { return p >= 66 ? '\u{1F7E2}' : (p >= 55 ? '\u{1F7E1}' : (p >= 30 ? '\u{1F7E0}' : '\u{1F534}')); }
-  // Icona della scheda: disco diviso a meta', sinistra = 1a lancetta, destra = 2a, ognuna col colore esatto della sfumatura
+  // Icona della scheda: due barre affiancate (sinistra = 1a lancetta, destra = 2a). L'altezza segue il valore, il colore
+  // segue le soglie del titolo (verde da 66%) con verde scuro da 75% in su
+  function favColor(p) { return p >= 75 ? '#1e8e4e' : (p >= 66 ? '#3ddc84' : (p >= 55 ? '#f2d34b' : (p >= 30 ? '#ff8a2a' : '#ff5c5c'))); }
+  function favRect(x, px, py, w, h, r, fill) {
+    if (h <= 0) return;
+    r = Math.min(r, h / 2, w / 2);
+    x.beginPath(); x.moveTo(px + r, py); x.lineTo(px + w - r, py); x.arcTo(px + w, py, px + w, py + r, r);
+    x.lineTo(px + w, py + h - r); x.arcTo(px + w, py + h, px + w - r, py + h, r); x.lineTo(px + r, py + h);
+    x.arcTo(px, py + h, px, py + h - r, r); x.lineTo(px, py + r); x.arcTo(px, py, px + r, py, r); x.closePath();
+    x.fillStyle = fill; x.fill();
+  }
   var favKey = '';
   function updateFavicon(a, b) {
     try {
-      var ca = colorFor(a), cb = colorFor(b), key = ca + cb;
+      var pa = Math.max(0, Math.min(100, +a || 0)), pb = Math.max(0, Math.min(100, +b || 0));
+      var ca = favColor(pa), cb = favColor(pb);
+      var ha = pa > 0 ? Math.max(2, Math.round(pa / 100 * 44)) : 0, hb = pb > 0 ? Math.max(2, Math.round(pb / 100 * 44)) : 0;
+      var key = ca + ha + cb + hb;
       if (key === favKey) return;
       favKey = key;
       var cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
       var x = cv.getContext('2d'); if (!x) return;
-      x.beginPath(); x.arc(32, 32, 28, Math.PI / 2, Math.PI * 1.5); x.closePath(); x.fillStyle = ca; x.fill();
-      x.beginPath(); x.arc(32, 32, 28, -Math.PI / 2, Math.PI / 2); x.closePath(); x.fillStyle = cb; x.fill();
-      x.lineWidth = 3; x.strokeStyle = '#0d1219';
-      x.beginPath(); x.moveTo(32, 5); x.lineTo(32, 59); x.stroke();
-      x.lineWidth = 4; x.beginPath(); x.arc(32, 32, 28, 0, Math.PI * 2); x.stroke();
+      favRect(x, 4, 4, 56, 56, 10, '#0d1219');
+      favRect(x, 10, 10, 20, 44, 3, 'rgba(255,255,255,0.15)');
+      favRect(x, 34, 10, 20, 44, 3, 'rgba(255,255,255,0.15)');
+      favRect(x, 10, 54 - ha, 20, ha, 3, ca);
+      favRect(x, 34, 54 - hb, 20, hb, 3, cb);
       var old = document.querySelector('link[rel~="icon"]');
       var l = document.createElement('link'); l.rel = 'icon'; l.type = 'image/png'; l.href = cv.toDataURL('image/png');
       if (old && old.parentNode) old.parentNode.removeChild(old);
