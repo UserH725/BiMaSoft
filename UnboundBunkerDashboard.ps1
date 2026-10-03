@@ -2983,6 +2983,31 @@ $HtmlPageLight = @'
   // ---- Calcolo punteggi: stessa logica della dashboard Pro ----
   var prevQueries = 0, prevTime = 0, maxLatSeen = 0, isRefreshing = false, lastDataTs = 0, lastSnap = '';
 
+  // ---- Riferimenti realistici per il 100% (stessi valori e stessa logica della pagina Pro: tenerli allineati) ----
+  // Cache: nessun resolver arriva al 100% di hit (domini nuovi, TTL scaduti): BNK_CACHE_TARGET_PCT di hit = punteggio pieno.
+  // Latenza: il 100% e' relativo alla linea. RTT di riferimento = mediana, su finestra mobile, del tempo di connessione
+  // TCP verso gli upstream online misurato dall'Upstream Radar. Una risoluzione non costa meno di circa 2 RTT.
+  var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 2, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
+  var bnkRttHist = [];
+  function bnkMedian(a) {
+    var q = a.slice().sort(function (x, y) { return x - y; }), n = q.length;
+    return n ? (n % 2 ? q[(n - 1) / 2] : (q[n / 2 - 1] + q[n / 2]) / 2) : 0;
+  }
+  function bnkLineRtt(radar) {
+    var ms = radar.filter(function (r) { return r && r.ok && Number(r.ms) > 0 && Number(r.ms) < 400; }).map(function (r) { return Number(r.ms); });
+    if (ms.length) { bnkRttHist.push(bnkMedian(ms)); if (bnkRttHist.length > BNK_RTT_WINDOW) bnkRttHist.shift(); }
+    return bnkRttHist.length ? Math.max(BNK_RTT_MIN_MS, bnkMedian(bnkRttHist)) : BNK_RTT_FALLBACK_MS;
+  }
+  // Punteggio latenza = tempo medio di ricorsione / RTT: fino a 2x RTT 100%, 80% a 4x, 50% a 8x, minimo 15% a 16x (interpolazione lineare).
+  function bnkLatScore(recMs, rtt) {
+    var r = rtt > 0 ? recMs / rtt : 0, P = [[BNK_LAT_FULL_RATIO, 100], [4, 80], [8, 50], [16, 15]];
+    if (r <= P[0][0]) return 100;
+    for (var i = 1; i < P.length; i++) {
+      if (r <= P[i][0]) return Math.round((P[i - 1][1] + (P[i][1] - P[i - 1][1]) * (r - P[i - 1][0]) / (P[i][0] - P[i - 1][0])) * 100000) / 100000;
+    }
+    return P[P.length - 1][1];
+  }
+
   function compute(d) {
     var base = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base : {};
     var qTot = base.query_totali || 0;
@@ -3029,11 +3054,10 @@ $HtmlPageLight = @'
     // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
     var r1 = function (v) { return Math.round(v * 10) / 10; };
     var r5 = function (v) { return Math.round(v * 100000) / 100000; };   // 5 decimali (diecimillesimi)
-    var latScore = 100;
-    if (latRaw > 5 && latRaw <= 50) latScore = r5(100 - ((latRaw - 5) * 0.18));
-    else if (latRaw > 50 && latRaw <= 150) latScore = r5(92 - ((latRaw - 50) * 0.10));
-    else if (latRaw > 150 && latRaw <= 300) latScore = r5(82 - ((latRaw - 150) * 0.08));
-    else if (latRaw > 300) latScore = Math.max(15, r5(70 - ((latRaw - 300) * 0.10)));
+    // Latenza: relativa alla linea (RTT misurato dal radar); cache: relativa all'obiettivo realistico (BNK_CACHE_TARGET_PCT)
+    var refRtt = bnkLineRtt(radar);
+    var latScore = bnkLatScore(recLat, refRtt);
+    var cacheScore = Math.min(100, r5(cachePct / BNK_CACHE_TARGET_PCT * 100));
 
     var upstreamScore = radar.length > 0 ? r5((upOk / radar.length) * 100) : 100;
     // DNSSEC misurato dai contatori Unbound (nessun traffico extra): la validazione e' provata funzionante
@@ -3048,15 +3072,16 @@ $HtmlPageLight = @'
     var qpsHeadroom = Math.max(0, Math.min(100, r5(100 - (liveQPS / 5))));
     var health = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
-    var boost = r5(cachePct * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
+    var boost = r5(cacheScore * 0.30 + latScore * 0.25 + upstreamScore * 0.15 + dnssecPct * 0.15 + qpsHeadroom * 0.05 + health * 0.10);
 
     var prefetch = (d.statistiche_live && d.statistiche_live.prefetch) ? d.statistiche_live.prefetch : 0;
-    // Baseline stabile = latenza che avrebbe ogni query SENZA cache (tutte in ricorsione),
-    // con minimo 120 ms. Non dipende piu' dal picco visto da quando la pagina e' aperta.
-    var baseline = Math.max(120, recLat);
+    // Baseline = latenza che avrebbe ogni query SENZA cache (tutte in ricorsione), mai sotto cio' che la linea
+    // consente (BNK_LAT_FULL_RATIO x RTT). Punteggio pieno (40 pt) quando il risparmio raggiunge quello della
+    // cache obiettivo (BNK_CACHE_TARGET_PCT del baseline).
+    var baseline = Math.max(refRtt * BNK_LAT_FULL_RATIO, recLat);
     var msSavedRaw = Math.max(0, baseline - latRaw);
     var msSaved = r1(msSavedRaw);
-    var latGain = Math.min(40, r5((msSavedRaw / baseline) * 40));
+    var latGain = Math.min(40, r5((msSavedRaw / (baseline * BNK_CACHE_TARGET_PCT / 100)) * 40));
     var blkPct = base.blocchi_pct || 0;
     if (qTot > 0) blkPct = Math.max(0, (blockedN / qTot) * 100);
     var rpzGain = Math.min(20, r5(blkPct * 0.8));
@@ -3070,8 +3095,8 @@ $HtmlPageLight = @'
     // ---- Componenti dei due punteggi, tutte nell'unita' della lancetta (punti percentuali): la somma dei "got" = valore della lancetta ----
     var nUp = radar.length, ramOn = !!(d.ram_disk && d.ram_disk.attivo), k80 = 100 / 80;
     var comps1 = [
-      mkComp('Cache', f2(cachePct) + '% (esclusi i blocchi)', cachePct * 0.30, 30),
-      mkComp('Latenza', f1(lat) + ' ms percepita', latScore * 0.25, 25),
+      mkComp('Cache', f2(cachePct) + '% (esclusi i blocchi) \u00b7 obiettivo ' + BNK_CACHE_TARGET_PCT + '%', cacheScore * 0.30, 30),
+      mkComp('Latenza', f1(lat) + ' ms percepita \u00b7 linea ' + f1(refRtt) + ' ms', latScore * 0.25, 25),
       mkComp('Upstream online', upOk + ' su ' + nUp, upstreamScore * 0.15, 15),
       mkComp('DNSSEC', dnssecState === 'ok' ? (dsSec + ' validate' + (dsBog > 0 ? ' \u00b7 ' + dsBog + ' respinte' : '')) : (dnssecState === 'fail' ? 'nessuna risposta validata su ' + resolvQ + ' query' : 'in attesa di risposte validate'), dnssecPct * 0.15, 15, dnssecState === 'wait' ? 'wait' : ''),
       mkComp('Salute sistema', f1(health) + ' su 100', health * 0.10, 10),
@@ -3084,7 +3109,7 @@ $HtmlPageLight = @'
       mkComp('Upstream e prefetch', upOk + ' su ' + nUp + ' upstream', dotGain * k80, 10 * k80)
     ];
 
-    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, upOk: upOk, upTot: radar.length, msSaved: msSaved, blkPct: blkPct, comps1: comps1, comps2: comps2 };
+    return { boost: boost, gainPt: gainPt, gainIdx: gainIdx, cachePct: cachePct, lat: lat, recLat: recLat, refRtt: refRtt, upOk: upOk, upTot: radar.length, msSaved: msSaved, blkPct: blkPct, comps1: comps1, comps2: comps2 };
   }
 
   // ---- Componenti del punteggio: colore in base a quanto la singola voce raggiunge del proprio massimo ----
@@ -3151,7 +3176,7 @@ $HtmlPageLight = @'
       var boostShown = engineOn ? s.boost : 0;
       setGauge(G[0], boostShown, fmtPct(boostShown));
       document.getElementById('d1').textContent = engineOn
-        ? 'Latenza percepita ' + s.lat + ' ms (in ricorsione ' + s.recLat + ' ms)'
+        ? 'Latenza percepita ' + s.lat + ' ms (in ricorsione ' + s.recLat + ' ms) \u00b7 RTT linea ' + f1(s.refRtt) + ' ms'
         : 'Motore Unbound fermo';
 
       setGauge(G[1], s.gainIdx, fmtPct(s.gainIdx));
@@ -6050,6 +6075,31 @@ async function runUpdateComponentsStep2() {
   setTimeout(() => { if (status) status.textContent = ''; }, 30000);
 }
 
+// ---- Riferimenti realistici per il 100% (stessi valori e stessa logica della pagina Light: tenerli allineati) ----
+// Cache: nessun resolver arriva al 100% di hit (domini nuovi, TTL scaduti): BNK_CACHE_TARGET_PCT di hit = punteggio pieno.
+// Latenza: il 100% e' relativo alla linea. RTT di riferimento = mediana, su finestra mobile, del tempo di connessione
+// TCP verso gli upstream online misurato dall'Upstream Radar. Una risoluzione non costa meno di circa 2 RTT.
+var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 2, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
+var bnkRttHist = [];
+function bnkMedian(a) {
+  var q = a.slice().sort(function (x, y) { return x - y; }), n = q.length;
+  return n ? (n % 2 ? q[(n - 1) / 2] : (q[n / 2 - 1] + q[n / 2]) / 2) : 0;
+}
+function bnkLineRtt(radar) {
+  var ms = radar.filter(function (r) { return r && r.ok && Number(r.ms) > 0 && Number(r.ms) < 400; }).map(function (r) { return Number(r.ms); });
+  if (ms.length) { bnkRttHist.push(bnkMedian(ms)); if (bnkRttHist.length > BNK_RTT_WINDOW) bnkRttHist.shift(); }
+  return bnkRttHist.length ? Math.max(BNK_RTT_MIN_MS, bnkMedian(bnkRttHist)) : BNK_RTT_FALLBACK_MS;
+}
+// Punteggio latenza = tempo medio di ricorsione / RTT: fino a 2x RTT 100%, 80% a 4x, 50% a 8x, minimo 15% a 16x (interpolazione lineare).
+function bnkLatScore(recMs, rtt) {
+  var r = rtt > 0 ? recMs / rtt : 0, P = [[BNK_LAT_FULL_RATIO, 100], [4, 80], [8, 50], [16, 15]];
+  if (r <= P[0][0]) return 100;
+  for (var i = 1; i < P.length; i++) {
+    if (r <= P[i][0]) return Math.round((P[i - 1][1] + (P[i][1] - P[i - 1][1]) * (r - P[i - 1][0]) / (P[i][0] - P[i - 1][0])) * 100000) / 100000;
+  }
+  return P[P.length - 1][1];
+}
+
 async function refresh(forceVersions) {
   if (isRefreshing) return;
   isRefreshing = true;
@@ -6196,16 +6246,10 @@ async function refresh(forceVersions) {
     // Punteggi con 1 decimale (r1) per rendere visibili anche le oscillazioni minime.
     const r1 = v => Math.round(v * 10) / 10;
     const r5 = v => Math.round(v * 100000) / 100000;   // 5 decimali, come la pagina Light
-    let latScore = 100;
-    if (latRaw > 5 && latRaw <= 50) {
-      latScore = r5(100 - ((latRaw - 5) * 0.18));
-    } else if (latRaw > 50 && latRaw <= 150) {
-      latScore = r5(92 - ((latRaw - 50) * 0.10));
-    } else if (latRaw > 150 && latRaw <= 300) {
-      latScore = r5(82 - ((latRaw - 150) * 0.08));
-    } else if (latRaw > 300) {
-      latScore = Math.max(15, r5(70 - ((latRaw - 300) * 0.10)));
-    }
+    // Latenza: relativa alla linea (RTT misurato dal radar); cache: relativa all'obiettivo realistico (BNK_CACHE_TARGET_PCT)
+    const refRtt = bnkLineRtt(radarList);
+    const latScore = bnkLatScore(recLat, refRtt);
+    const cacheScoreP = Math.min(100, r5((realCachePct || 0) / BNK_CACHE_TARGET_PCT * 100));
 
     let upstreamScore = radarList.length > 0 ? r5((upOk / radarList.length) * 100) : 100;
 
@@ -6225,7 +6269,7 @@ async function refresh(forceVersions) {
     let healthScore = (d.salute_sistema && d.salute_sistema.score !== undefined) ? d.salute_sistema.score : 100;
 
     let boostScore = r5(
-      (realCachePct * 0.30) + 
+      (cacheScoreP * 0.30) + 
       (latScore * 0.25) + 
       (upstreamScore * 0.15) + 
       (dnssecPct * 0.15) + 
@@ -6233,14 +6277,13 @@ async function refresh(forceVersions) {
       (healthScore * 0.10)
     );
 
-    const ispBaselineMs = 120;
-    // Baseline stabile = latenza senza cache (tutte le query in ricorsione), minimo 120 ms.
-    const effectiveBaselineMs = Math.max(ispBaselineMs, recLat);
+    // Baseline = latenza senza cache (tutte le query in ricorsione), mai sotto cio' che la linea consente (BNK_LAT_FULL_RATIO x RTT).
+    const effectiveBaselineMs = Math.max(refRtt * BNK_LAT_FULL_RATIO, recLat);
 
     const displayLat = effectiveLat;
     const msSaved = Math.max(0, r5(effectiveBaselineMs - (latFromRadar ? displayLat : latRaw)));
 
-    const latGainReal = Math.min(40, r5((msSaved / effectiveBaselineMs) * 40));
+    const latGainReal = Math.min(40, r5((msSaved / (effectiveBaselineMs * BNK_CACHE_TARGET_PCT / 100)) * 40));
     let blkPct = (d.statistiche_live && d.statistiche_live.base) ? d.statistiche_live.base.blocchi_pct : 0;
     if (qTot > 0) blkPct = Math.max(0, (blockedN / qTot) * 100);
     const rpzGainReal = Math.min(20, r5(blkPct * 0.8));
@@ -6263,10 +6306,10 @@ async function refresh(forceVersions) {
     document.getElementById('valGainDot').textContent = dotPrefetchGain + ' / 10 pt';
     updateGradientBar('barGainDot', Math.round((dotPrefetchGain / 10) * 100));
 
-    document.getElementById('valRealCache').textContent = Number(realCachePct).toFixed(1) + '%';
-    updateGradientBar('barRealCache', realCachePct);
+    document.getElementById('valRealCache').textContent = Number(realCachePct).toFixed(1) + '% (obiettivo ' + BNK_CACHE_TARGET_PCT + '% = ' + cacheScoreP.toFixed(1) + '%)';
+    updateGradientBar('barRealCache', cacheScoreP);
 
-    document.getElementById('valLatScore').textContent = latScore.toFixed(1) + '% (' + Number(displayLat).toFixed(1) + ' ms)';
+    document.getElementById('valLatScore').textContent = latScore.toFixed(1) + '% (' + Number(displayLat).toFixed(1) + ' ms \u00b7 linea ' + refRtt.toFixed(1) + ' ms)';
     updateGradientBar('barLatScore', latScore);
 
     document.getElementById('valUpstreamScore').textContent = upstreamScore.toFixed(1) + '% (' + upOk + '/' + radarList.length + ')';
@@ -6527,7 +6570,7 @@ async function refresh(forceVersions) {
     const bCache = document.createElement('span');
     bCache.className = 'badge cache-highlight';
     bCache.style.marginLeft = 'auto';
-    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '%\nEfficienza latenza (peso 25%): ' + latScore.toFixed(1) + '%\nUpstream DoT online (peso 15%): ' + upstreamScore.toFixed(1) + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
+    bCache.title = 'Cache reale (peso 30%): ' + realCachePct + '% \u2192 punteggio ' + cacheScoreP.toFixed(1) + '% (obiettivo ' + BNK_CACHE_TARGET_PCT + '%)\nEfficienza latenza (peso 25%, RTT linea ' + refRtt.toFixed(1) + ' ms): ' + latScore.toFixed(1) + '%\nUpstream DoT online (peso 15%): ' + upstreamScore.toFixed(1) + '%\nIntegrità DNSSEC (peso 15%): ' + dnssecPct + '%\nRiserva capacità QPS (peso 5%): ' + qpsHeadroom + '%\nSalute sistema (peso 10%): ' + healthScore + '%';
     bCache.innerHTML = '&#128640; BUNKER BOOST SCORE: <b>' + boostScore.toFixed(1) + '%</b>';
     badges.appendChild(bCache);
     swapIfChanged(badgesLive, badges);
