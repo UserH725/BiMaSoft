@@ -2511,13 +2511,56 @@ $HtmlPageLight = @'
   .hist-stat span { display: block; font-size: 0.6em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
   .hist-stat b { display: block; font-family: var(--font-mono); font-size: 0.78em; margin-top: 2px; font-variant-numeric: tabular-nums; }
   footer { color: var(--dim); font-size: 0.75em; text-align: center; margin-top: 22px; }
+  /* ---------- Overlay riavvio Dashboard (stesso aspetto della versione Pro) ---------- */
+  .restart-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(6,9,13,0.94);
+    z-index: 9999; align-items: center; justify-content: center;
+  }
+  .restart-overlay.active { display: flex; animation: overlayIn 0.25s ease both; }
+  .restart-overlay.active .restart-overlay-box { animation: boxIn 0.4s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+  .restart-overlay-box {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--border-strong); border-radius: 14px;
+    padding: 30px 42px; min-width: 380px; max-width: 90vw; text-align: center;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.65);
+  }
+  .restart-overlay-icon { font-size: 2.4em; margin-bottom: 8px; }
+  .restart-overlay-title { font-family: var(--font-ui); font-size: 1.15em; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .restart-overlay-sub { font-family: var(--font-ui); font-size: 0.85em; color: var(--dim); margin-bottom: 20px; line-height: 1.5; }
+  .restart-progress-track {
+    width: 100%; height: 10px; background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
+  }
+  .restart-progress-fill {
+    height: 100%; width: 0%; border-radius: 999px; transition: width 0.4s ease;
+    background-image: repeating-linear-gradient(45deg, var(--accent) 0 12px, rgba(79,179,255,0.35) 12px 24px);
+    background-size: 34px 34px;
+    animation: restart-stripes 0.9s linear infinite;
+  }
+  @keyframes restart-stripes { from { background-position: 0 0; } to { background-position: 34px 0; } }
+  @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes boxIn { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+  .restart-progress-pct { margin-top: 10px; font-size: 0.85em; color: var(--dim); letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { .restart-progress-fill, .restart-overlay.active, .restart-overlay.active .restart-overlay-box { animation: none; } }
 </style>
 </head>
 <body>
+<div class="restart-overlay" id="restartOverlay">
+  <div class="restart-overlay-box">
+    <div class="restart-overlay-icon" id="restartOverlayIcon">&#9203;</div>
+    <div class="restart-overlay-title" id="restartOverlayTitle">Riavvio in corso...</div>
+    <div class="restart-overlay-sub" id="restartOverlaySub"></div>
+    <div class="restart-progress-track">
+      <div class="restart-progress-fill" id="restartProgressFill" style="width:0%;"></div>
+    </div>
+    <div class="restart-progress-pct" id="restartProgressPct">0%</div>
+  </div>
+</div>
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3158,6 +3201,26 @@ $HtmlPageLight = @'
   setInterval(refreshHist, 5000);
 
   // ---- Riavvia Dashboard: stessa rotta /api/restart della versione Pro ----
+  // Durante il riavvio compare in sovraimpressione la barra di avanzamento in percentuale,
+  // identica a quella della versione Pro (stima su tentativi / timeout massimo).
+  function showRestartOverlay(icon, title, sub) {
+    document.getElementById('restartOverlayIcon').innerHTML = icon;
+    document.getElementById('restartOverlayTitle').textContent = title;
+    document.getElementById('restartOverlaySub').textContent = sub;
+    updateRestartProgress(0);
+    document.getElementById('restartOverlay').classList.add('active');
+  }
+  function updateRestartProgress(pct) {
+    var p = Math.min(100, Math.max(0, pct));
+    var fill = document.getElementById('restartProgressFill');
+    var label = document.getElementById('restartProgressPct');
+    if (fill) fill.style.width = p + '%';
+    if (label) label.textContent = Math.round(p) + '%';
+  }
+  function hideRestartOverlay() {
+    document.getElementById('restartOverlay').classList.remove('active');
+  }
+
   var restarting = false;
   document.getElementById('btnRestartLight').addEventListener('click', async function () {
     if (restarting) return;
@@ -3168,22 +3231,35 @@ $HtmlPageLight = @'
     btn.innerHTML = '&#9203; Riavvio in corso...';
     setEngine('wait', 'RIAVVIO IN CORSO');
     try { await fetch('/api/restart', { method: 'POST', cache: 'no-store' }); } catch (e) {}
+    showRestartOverlay('&#128472;&#65039;', 'Riavvio della Dashboard in corso...', 'Rilascio e verifica della porta ' + location.port + ' in esecuzione...');
     var tries = 0, sawDown = false;
+    var SOFT_LIMIT = 35, HARD_LIMIT = 90;
     var iv = setInterval(async function () {
       tries++;
+      updateRestartProgress((tries / HARD_LIMIT) * 95);
       try {
         var r = await fetch('/api/status?mode=light', { cache: 'no-store' });
         if (r.ok) {
           // ricarica solo dopo aver visto il vecchio processo cadere (o, in ogni caso, dopo 8 s)
-          if (sawDown || tries > 8) { clearInterval(iv); location.reload(); return; }
+          if (sawDown || tries > 8) {
+            clearInterval(iv);
+            updateRestartProgress(100);
+            setTimeout(function () { location.reload(); }, 500);
+            return;
+          }
         } else { sawDown = true; }
       } catch (e) { sawDown = true; }
-      if (tries > 90) {
+      if (tries === SOFT_LIMIT) {
+        document.getElementById('restartOverlaySub').textContent =
+          'Sta impiegando pi\u00f9 del previsto (possibile scansione antivirus del processo appena avviato)... continuo ad attendere.';
+      }
+      if (tries > HARD_LIMIT) {
         clearInterval(iv);
         restarting = false;
+        hideRestartOverlay();
         btn.disabled = false;
         btn.innerHTML = '&#128260; Riavvia Dashboard';
-        alert('Il riavvio non e\' ancora completato dopo 90 secondi. Ricarica la pagina tra qualche secondo.');
+        alert('Il riavvio non e\' ancora completato dopo ' + HARD_LIMIT + ' secondi. Ricarica la pagina tra qualche secondo.');
       }
     }, 1000);
   });
@@ -3255,7 +3331,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -4033,7 +4109,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1105.9 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
