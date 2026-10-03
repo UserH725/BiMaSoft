@@ -1985,7 +1985,7 @@ function Update-AnomalyTracking {
 # minimo tra due campioni raddoppia, cosi' lo storico copre TUTTA l'accensione con memoria
 # costante. Salvataggio su R:\light_history.json (RAM disk volatile: sopravvive al riavvio
 # della dashboard, si azzera allo spegnimento del PC). Unico scrittore: il thread HTTP.
-# Passo base 1 s (v1106.1): la pagina Light fa scorrere il grafico in continuo tra un campione
+# Passo base 1 s (v1106.1; dalla v1106.2 il grafico usa il buffer recente, vedi sotto): la pagina Light fa scorrere il grafico in continuo tra un campione
 # e il successivo; con la fusione a coppie il passo diventa 1, 2, 4, 8... s (sempre potenza di 2).
 $script:LightHistFile       = "R:\light_history.json"
 $script:LightHistPts        = $null
@@ -2034,17 +2034,122 @@ function Initialize-LightHistory {
         $script:LightHistPts.Clear()
         $script:LightHistInterval = 1
     }
-    Build-LightHistoryJson
+    $script:LightHistJson = $null
 }
 
 function Get-LightHistoryJson {
     Initialize-LightHistory
+    # JSON dello storico completo costruito solo quando serve (la pagina Light usa la finestra recente)
+    if (-not $script:LightHistJson) { Build-LightHistoryJson }
     return $script:LightHistJson
+}
+
+# --- Finestra recente (v1106.2) ---
+# Buffer a parte con UN campione al secondo (mai fuso): e' quello che disegna il grafico scorrevole
+# della pagina Light (5 min / 10 min / 1 h). Lo storico completo sopra continua a esistere ma, fondendo
+# le coppie, il passo diventa 2 s, 4 s, 8 s...: non adatto a un grafico che deve scorrere in modo fluido.
+# Massimo $LightRecentMax campioni (~1 h): memoria costante. Salvataggio su R:\light_recent.json ogni 60 s.
+$script:LightRecentFile       = "R:\light_recent.json"
+$script:LightRecentPts        = $null
+$script:LightRecentMax        = 3700
+$script:LightRecentLastSample = [DateTime]::MinValue
+$script:LightRecentLastSave   = [DateTime]::MinValue
+$script:LightRecentCache      = @{}
+
+function Initialize-LightRecent {
+    if ($null -ne $script:LightRecentPts) { return }
+    $script:LightRecentPts = New-Object System.Collections.Generic.List[double[]]
+    try {
+        if ([System.IO.File]::Exists($script:LightRecentFile)) {
+            $saved = [System.IO.File]::ReadAllText($script:LightRecentFile) | ConvertFrom-Json
+            $cut = [double]([DateTimeOffset](Get-Date)).ToUnixTimeMilliseconds() - 3700000
+            if ($saved -and $saved.p) {
+                foreach ($row in $saved.p) {
+                    if ([double]$row[0] -ge $cut) {
+                        [void]$script:LightRecentPts.Add([double[]]@([double]$row[0], [double]$row[1], [double]$row[2]))
+                    }
+                }
+            }
+        }
+    } catch {
+        $script:LightRecentPts.Clear()
+    }
+}
+
+function ConvertTo-LightRecentJson {
+    param([int]$WinSec, [switch]$Full)
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $pts = $script:LightRecentPts
+    $n = $pts.Count
+    $lastMs = 0.0
+    if ($n -gt 0) { $lastMs = $pts[$n - 1][0] }
+    # si parte da un paio di secondi PRIMA dell'inizio finestra: la linea entra nel riquadro senza buco a sinistra
+    $from = $lastMs - ($WinSec * 1000.0) - 3000.0
+    if ($Full) { $from = 0.0 }
+    $i0 = $n
+    for ($i = $n - 1; $i -ge 0; $i--) { if ($pts[$i][0] -lt $from) { break }; $i0 = $i }
+    # sulla finestra da 1 h gli ultimi 5 minuti restano a 1 s e il resto a 1 ogni 5 s (campione = primo di
+    # ogni intervallo di 5 s: scelta legata al tempo, quindi stabile mentre la finestra scorre)
+    $decim = ((-not $Full) -and $WinSec -gt 600)
+    $recentCut = $lastMs - 300000.0
+    $lastBucket = -1.0
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('{"start":').Append($script:LightHistStartMs.ToString('0', $inv))
+    [void]$sb.Append(',"interval":1,"win":').Append([string]$WinSec).Append(',"p":[')
+    $first = $true
+    for ($i = $i0; $i -lt $n; $i++) {
+        $pt = $pts[$i]
+        if ($decim -and $pt[0] -lt $recentCut) {
+            $bk = [math]::Floor($pt[0] / 5000.0)
+            if ($bk -eq $lastBucket) { continue }
+            $lastBucket = $bk
+        }
+        if (-not $first) { [void]$sb.Append(',') }
+        $first = $false
+        [void]$sb.Append('[').Append($pt[0].ToString('0', $inv)).Append(',').Append($pt[1].ToString('0.###', $inv)).Append(',').Append($pt[2].ToString('0.###', $inv)).Append(']')
+    }
+    [void]$sb.Append(']}')
+    return $sb.ToString()
+}
+
+function Get-LightRecentJson {
+    param([int]$WinSec)
+    Initialize-LightRecent
+    if ($WinSec -ne 300 -and $WinSec -ne 600 -and $WinSec -ne 3600) { $WinSec = 600 }
+    $n = $script:LightRecentPts.Count
+    $lastMs = 0.0
+    if ($n -gt 0) { $lastMs = $script:LightRecentPts[$n - 1][0] }
+    $c = $script:LightRecentCache[$WinSec]
+    if ($c -and $c.last -eq $lastMs -and $c.n -eq $n) { return $c.json }
+    $json = ConvertTo-LightRecentJson -WinSec $WinSec
+    $script:LightRecentCache[$WinSec] = @{ last = $lastMs; n = $n; json = $json }
+    return $json
+}
+
+function Add-LightRecentPoint {
+    param([double]$Boost, [double]$Gain)
+    Initialize-LightRecent
+    $now = Get-Date
+    if (($now - $script:LightRecentLastSample).TotalSeconds -lt 0.85) { return }
+    $script:LightRecentLastSample = $now
+    $nowMs = [double]([DateTimeOffset]$now).ToUnixTimeMilliseconds()
+    [void]$script:LightRecentPts.Add([double[]]@($nowMs, [math]::Round($Boost, 3), [math]::Round($Gain, 3)))
+    $over = $script:LightRecentPts.Count - $script:LightRecentMax
+    if ($over -gt 0) { $script:LightRecentPts.RemoveRange(0, $over) }
+    if (($now - $script:LightRecentLastSave).TotalSeconds -ge 60) {
+        $script:LightRecentLastSave = $now
+        try {
+            $tmp = "$($script:LightRecentFile).tmp"
+            [System.IO.File]::WriteAllText($tmp, (ConvertTo-LightRecentJson -WinSec 3600 -Full), (New-Object System.Text.UTF8Encoding($false)))
+            Move-Item -LiteralPath $tmp -Destination $script:LightRecentFile -Force
+        } catch {}
+    }
 }
 
 function Add-LightHistoryPoint {
     param([double]$Boost, [double]$Gain)
     Initialize-LightHistory
+    Add-LightRecentPoint -Boost $Boost -Gain $Gain
 
     $now = Get-Date
     # tolleranza 15%: i POST arrivano ogni ~1 s con un po' di jitter, senza margine ogni tanto se ne perderebbe uno
@@ -2069,11 +2174,12 @@ function Add-LightHistoryPoint {
         $script:LightHistInterval = $script:LightHistInterval * 2
     }
 
-    Build-LightHistoryJson
+    $script:LightHistJson = $null
 
     if (($now - $script:LightHistLastSave).TotalSeconds -ge 60) {
         $script:LightHistLastSave = $now
         try {
+            Build-LightHistoryJson
             $tmp = "$($script:LightHistFile).tmp"
             [System.IO.File]::WriteAllText($tmp, $script:LightHistJson, (New-Object System.Text.UTF8Encoding($false)))
             Move-Item -LiteralPath $tmp -Destination $script:LightHistFile -Force
@@ -2097,6 +2203,16 @@ function Reset-LightHistory {
         }
     } catch {}
     Build-LightHistoryJson
+    # finestra recente (v1106.2)
+    $script:LightRecentPts        = New-Object System.Collections.Generic.List[double[]]
+    $script:LightRecentLastSample = [DateTime]::MinValue
+    $script:LightRecentLastSave   = [DateTime]::MinValue
+    $script:LightRecentCache      = @{}
+    try {
+        foreach ($lrf in @($script:LightRecentFile, "$($script:LightRecentFile).tmp")) {
+            if ([System.IO.File]::Exists($lrf)) { [System.IO.File]::Delete($lrf) }
+        }
+    } catch {}
 }
 
 function Get-BunkerStatusJson {
@@ -2503,6 +2619,11 @@ $HtmlPageLight = @'
   .hist { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); text-align: left; }
   .hist-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
   .hist-title { font-size: 0.72em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); font-weight: 700; }
+  .hist-win { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .hist-win button { background: transparent; color: var(--dim); border: 0; border-right: 1px solid var(--border); padding: 3px 10px; font-size: 0.68em; font-family: var(--font-mono); cursor: pointer; }
+  .hist-win button:last-child { border-right: 0; }
+  .hist-win button:hover { color: #e9f2fb; background: rgba(255,255,255,0.05); }
+  .hist-win button.on { color: #e9f2fb; background: rgba(79,179,255,0.20); font-weight: 700; }
   .hist-range { font-size: 0.68em; color: var(--dim); font-family: var(--font-mono); }
   .hist-plot { position: relative; }
   .card .hist-plot svg { width: 100%; max-width: none; height: auto; margin: 0; display: block; touch-action: pan-y; cursor: crosshair; }
@@ -2567,7 +2688,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -2590,7 +2711,7 @@ $HtmlPageLight = @'
       <div class="comps" id="c1"></div>
       </div>
       <div class="hist" id="hist1">
-        <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr1">--</span></div>
+        <div class="hist-head"><span class="hist-title">Storico recente</span><span class="hist-win" role="group" aria-label="Finestra temporale del grafico"><button type="button" data-w="300">5 min</button><button type="button" data-w="600">10 min</button><button type="button" data-w="3600">1 h</button></span><span class="hist-range" id="hr1">--</span></div>
         <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del funzionamento del bunker"></svg><div class="hist-tip"></div></div>
         <div class="hist-stats">
           <div class="hist-stat"><span>Min</span><b id="h1min">--</b></div>
@@ -2611,7 +2732,7 @@ $HtmlPageLight = @'
       <div class="comps" id="c2"></div>
       </div>
       <div class="hist" id="hist2">
-        <div class="hist-head"><span class="hist-title">Storico dall&rsquo;accensione</span><span class="hist-range" id="hr2">--</span></div>
+        <div class="hist-head"><span class="hist-title">Storico recente</span><span class="hist-win" role="group" aria-label="Finestra temporale del grafico"><button type="button" data-w="300">5 min</button><button type="button" data-w="600">10 min</button><button type="button" data-w="3600">1 h</button></span><span class="hist-range" id="hr2">--</span></div>
         <div class="hist-plot"><svg viewBox="0 0 480 190" role="img" aria-label="Storico del miglioramento applicato al PC"></svg><div class="hist-tip"></div></div>
         <div class="hist-stats">
           <div class="hist-stat"><span>Min</span><b id="h2min">--</b></div>
@@ -3048,7 +3169,9 @@ $HtmlPageLight = @'
     }
   }
 
-  // ---- Storico dall'accensione: grafici sotto le card ----
+  // ---- Storico recente: grafici sotto le card (finestra fissa 5 min / 10 min / 1 h) ----
+  // v1106.2: la finestra ha larghezza FISSA e scorre a velocita' costante (nessuna compressione col passare
+  // del tempo). I dati vengono dal buffer recente del server (1 campione al secondo, /api/light-history?win=).
   // Scorrimento fluido (v1106.1). Un campione al secondo (server: intervallo base 1 s). Il grafico
   // non si ridisegna piu' a scatti a ogni campione: il tracciato viene costruito UNA volta per
   // campione (x in secondi dall'accensione) e la finestra scorre in continuo cambiando solo la scala
@@ -3073,6 +3196,9 @@ $HtmlPageLight = @'
   // storico mostrato in testa al grafico; avanza in tempo reale (performance.now, quindi indipendente
   // dall'orologio del PC server) ma non supera mai l'ultimo campione ricevuto. Un piccolo controllo
   // proporzionale ne regola la velocita' (0,5x..2x) per tenere sempre circa un campione di margine.
+  var histWin = 600;   // secondi mostrati (predefinito 10 min)
+  try { var sw = parseInt(localStorage.getItem('bunkerHistWin'), 10); if (sw === 300 || sw === 600 || sw === 3600) histWin = sw; } catch (e) { }
+  var WIN_LABEL = { 300: '5 min', 600: '10 min', 3600: 'ultima ora' };
   var hv = { ready: false, tR: 0, tLast: 0, I: 1000, perf: 0 };
   var hRaf = 0, hLastPaint = 0;
   function histAdvance(now) {
@@ -3081,7 +3207,7 @@ $HtmlPageLight = @'
     hv.perf = now;
     if (dt <= 0) return;
     var L = Math.min(hv.I, 2000);
-    var rate = Math.max(0.5, Math.min(2, 1 + ((hv.tLast - hv.tR) - L) / (2 * L)));
+    var rate = Math.max(0.9, Math.min(1.1, 1 + ((hv.tLast - hv.tR) - L) / (8 * L)));   // velocita' quasi costante: solo +-10% per assorbire il jitter
     hv.tR = Math.min(hv.tLast, hv.tR + dt * rate);
   }
   function histSync(h) {
@@ -3128,13 +3254,14 @@ $HtmlPageLight = @'
     c.empty = el('text', { x: HW / 2, y: HH / 2, 'text-anchor': 'middle', fill: '#8497ab', 'font-size': 12 }, svg);
     c.empty.textContent = 'Raccolta dati in corso\u2026';
     c.stat = el('g', {}, svg);
-    c.xt = el('g', {}, svg);
-    c.xl = []; c.xs = [];
-    for (i = 0; i <= 4; i++) {
-      var tx = (PL + HPW * i / 4).toFixed(1);
-      el('line', { x1: tx, y1: PT + HPH, x2: tx, y2: PT + HPH + 4, stroke: 'rgba(255,255,255,0.18)' }, c.xt);
-      c.xl.push(el('text', { x: tx, y: HH - 6, 'text-anchor': i === 0 ? 'start' : (i === 4 ? 'end' : 'middle'), fill: '#8497ab', 'font-size': 10, 'font-family': 'Consolas, monospace' }, c.xt));
-      c.xs.push('');
+    // griglia verticale MOBILE: linee e orari a minuti tondi che scorrono verso sinistra insieme al grafico
+    // (la griglia in movimento rende visibile lo scorrimento anche con pochi pixel al secondo)
+    c.vg = el('g', {}, svg);
+    c.vl = []; c.vt = []; c.vs = []; c.vv = []; c.vk = '';
+    for (i = 0; i < 8; i++) {
+      c.vl.push(el('line', { y1: PT, y2: PT + HPH + 4, stroke: 'rgba(255,255,255,0.07)', 'stroke-width': 1 }, c.vg));
+      c.vt.push(el('text', { y: HH - 6, 'text-anchor': 'middle', fill: '#8497ab', 'font-size': 10, 'font-family': 'Consolas, monospace' }, c.vg));
+      c.vs.push(''); c.vv.push(true);
     }
     c.clipG = el('g', { 'clip-path': 'url(#hclip' + n + ')' }, svg);
     c.data = el('g', { transform: 'translate(' + PL + ' 0)' }, c.clipG);
@@ -3147,7 +3274,7 @@ $HtmlPageLight = @'
     cfg.g = c;
   }
   function showHist(cfg, on) {
-    var c = cfg.g, parts = [c.stat, c.xt, c.clipG, c.halo, c.dot], k;
+    var c = cfg.g, parts = [c.stat, c.vg, c.clipG, c.halo, c.dot], k;
     for (k = 0; k < parts.length; k++) { if (on) parts[k].removeAttribute('display'); else parts[k].setAttribute('display', 'none'); }
     if (on) c.empty.setAttribute('display', 'none'); else c.empty.removeAttribute('display');
     if (!on) { c.hxl.setAttribute('visibility', 'hidden'); c.hxd.setAttribute('visibility', 'hidden'); }
@@ -3207,8 +3334,9 @@ $HtmlPageLight = @'
     paintHist(cfg, true, 0);
   }
 
-  // Parte "per fotogramma": scala orizzontale/verticale (transform), punto in testa, griglia e tick X.
-  // Se nulla si e' mosso di almeno 0,05 px il DOM non viene toccato (storico lungo = quasi zero CPU).
+  // Parte "per fotogramma": scala orizzontale COSTANTE (finestra fissa), traslazione in base all'istante tR,
+  // punto in testa (sempre sul bordo destro), griglia e orari. Se nulla si e' mosso di almeno 0,05 px il DOM
+  // non viene toccato.
   function paintHist(cfg, force, dtMs) {
     var D = cfg.data;
     if (!D || cfg.hover || !hv.ready || !cfg.y) return;
@@ -3223,38 +3351,54 @@ $HtmlPageLight = @'
     } else { cfg.easing = false; }
     var dLo = Yc.dLo, dHi = Yc.dHi, R = dHi - dLo;
 
-    var tR = Math.max(D.t0, Math.min(hv.tR, D.t1));
-    var spanMs = Math.max(1000, tR - D.t0);
+    var W = D.win * 1000;
+    var tR = Math.min(hv.tR, D.t1);
+    var tL = tR - W;
     // campione reale subito prima di tR e interpolazione lineare verso il successivo
+    var tI = Math.max(tR, pts[0][0]);
     var a = 0, b = n - 1;
-    while (b - a > 1) { var mm = (a + b) >> 1; if (pts[mm][0] <= tR) a = mm; else b = mm; }
-    if (pts[b][0] <= tR) a = b;
+    while (b - a > 1) { var mm = (a + b) >> 1; if (pts[mm][0] <= tI) a = mm; else b = mm; }
+    if (pts[b][0] <= tI) a = b;
     var yv = D.vals[a];
     if (a < n - 1) {
       var dtp = pts[a + 1][0] - pts[a][0];
-      if (dtp > 0 && dtp <= D.gapMs) yv += (D.vals[a + 1] - D.vals[a]) * (tR - pts[a][0]) / dtp;
+      if (dtp > 0 && dtp <= D.gapMs) yv += (D.vals[a + 1] - D.vals[a]) * (tI - pts[a][0]) / dtp;
     }
-    var dx = HPW * (tR - D.t0) / spanMs;
     var y = PT + (1 - (yv - dLo) / R) * HPH;
     var L = cfg.last;
-    if (!force && !gridDirty && L && Math.abs(spanMs - L.span) * HPW / spanMs < 0.05 && Math.abs(y - L.y) < 0.05 && Math.abs(dx - L.dx) < 0.05) return;
-    cfg.last = { span: spanMs, y: y, dx: dx };
+    if (!force && !gridDirty && L && Math.abs(tR - L.tR) * HPW / W < 0.05 && Math.abs(y - L.y) < 0.05) return;
+    cfg.last = { tR: tR, y: y };
 
-    // trasformazione affine dei path (costruiti sulla scala obiettivo) verso la scala mostrata
+    // trasformazione affine dei path (x in secondi dall'inizio dei dati, y sulla scala obiettivo)
     var A = (Yc.bHi - Yc.bLo) / R;
     var B = PT + HPH - HPH * (Yc.bLo - dLo) / R - A * HPH - A * PT;
-    g.data.setAttribute('transform', 'translate(' + PL + ' ' + B.toFixed(3) + ') scale(' + (HPW / (spanMs / 1000)).toPrecision(7) + ' ' + A.toPrecision(7) + ')');
+    var sx = HPW * 1000 / W;                       // pixel (unita' viewBox) per secondo: COSTANTE
+    var tx = PL + HPW * (D.t0 - tL) / W;
+    g.data.setAttribute('transform', 'translate(' + tx.toFixed(3) + ' ' + B.toFixed(3) + ') scale(' + sx.toPrecision(7) + ' ' + A.toPrecision(7) + ')');
     if (gridDirty) g.stat.innerHTML = gridHtml(dLo, dHi);
-    var cx = (PL + dx).toFixed(2), cy = y.toFixed(2);
+    var cx = (PL + HPW).toFixed(2), cy = y.toFixed(2);
     g.dot.setAttribute('cx', cx); g.dot.setAttribute('cy', cy);
     g.halo.setAttribute('cx', cx); g.halo.setAttribute('cy', cy);
-    var longRange = spanMs > 20 * 3600 * 1000, shortRange = spanMs < 10 * 60 * 1000;
-    for (i = 0; i <= 4; i++) {
-      var tt = D.t0 + spanMs * i / 4;
-      var str = longRange ? dmhm(tt) : (shortRange ? hhmmss(tt) : hhmm(tt));
-      if (str !== g.xs[i]) { g.xs[i] = str; g.xl[i].textContent = str; }
+
+    // griglia verticale mobile a minuti tondi (ora locale): 5 min -> ogni 1 min, 10 min -> ogni 2 min, 1 h -> ogni 10 min
+    var stepS = D.win <= 300 ? 60 : (D.win <= 600 ? 120 : 600), S = stepS * 1000;
+    var off = new Date(tR).getTimezoneOffset() * 60000;
+    var m0 = Math.ceil((tL - off) / S) * S + off;
+    var gx = PL + HPW * (m0 - tL) / W, pitch = HPW * S / W;
+    if (g.vk !== String(D.win)) {
+      g.vk = String(D.win);
+      for (i = 0; i < 8; i++) { g.vl[i].setAttribute('x1', (i * pitch).toFixed(2)); g.vl[i].setAttribute('x2', (i * pitch).toFixed(2)); g.vt[i].setAttribute('x', (i * pitch).toFixed(2)); }
     }
-    cfg.geo = { pts: pts, m: a, t0: D.t0, tSpan: spanMs, lo: dLo, hi: dHi };
+    g.vg.setAttribute('transform', 'translate(' + gx.toFixed(2) + ' 0)');
+    for (i = 0; i < 8; i++) {
+      var tm = m0 + i * S, xm = gx + i * pitch, vis = (tm <= tR + 1 && xm <= PL + HPW + 0.5);
+      var lblOk = vis && xm >= PL + 8 && xm <= HW - 14;
+      var str = hhmm(tm);
+      if (str !== g.vs[i]) { g.vs[i] = str; g.vt[i].textContent = str; }
+      if (vis !== g.vv[i]) { g.vv[i] = vis; g.vl[i].setAttribute('visibility', vis ? 'visible' : 'hidden'); }
+      g.vt[i].setAttribute('visibility', lblOk ? 'visible' : 'hidden');
+    }
+    cfg.geo = { pts: pts, m: a, t0: tL, tSpan: W, lo: dLo, hi: dHi };
   }
 
   function drawHist(cfg, hist) {
@@ -3274,10 +3418,10 @@ $HtmlPageLight = @'
     var lo = Math.max(0, mn - pad), hi = Math.min(100, mx + pad);
     if (hi - lo < 0.6) { var c = (hi + lo) / 2; lo = Math.max(0, c - 0.3); hi = Math.min(100, c + 0.3); }
     var t0 = pts[0][0], t1 = pts[n - 1][0];
-    cfg.data = { pts: pts, vals: vals, n: n, t0: t0, t1: t1, lo: lo, hi: hi, mn: mn, mx: mx, gapMs: Math.max(150000, (hist.interval || 1) * 3000) };
+    cfg.data = { pts: pts, vals: vals, n: n, t0: t0, t1: t1, lo: lo, hi: hi, mn: mn, mx: mx, win: hist.win || histWin, gapMs: Math.max(150000, (hist.interval || 1) * 3000) };
     showHist(cfg, true);
 
-    var avg = sum / n, last = vals[n - 1], longRange = (t1 - t0) > 20 * 3600 * 1000;
+    var avg = sum / n, last = vals[n - 1];
     document.getElementById('h' + cfg.n + 'min').textContent = fmtPct(mn);
     document.getElementById('h' + cfg.n + 'avg').textContent = fmtPct(avg);
     document.getElementById('h' + cfg.n + 'max').textContent = fmtPct(mx);
@@ -3285,7 +3429,7 @@ $HtmlPageLight = @'
     nowEl.textContent = fmtPct(last);
     nowEl.style.color = colorFor(last);
     document.getElementById('hr' + cfg.n).textContent =
-      'dalle ' + (longRange ? dmhm(hist.start || t0) : hhmm(hist.start || t0)) + ' \u00b7 ' + n + ' campioni \u00b7 1 ogni ' + fmtInterval(hist.interval || 1) +
+      WIN_LABEL[cfg.data.win] + ' \u00b7 ' + n + ' campioni' +
       (fermoN > 0 ? ' \u00b7 Unbound fermo: ' + fermoN + ' campioni (' + (fermoN * 100 / allPts.length).toFixed(1).replace('.', ',') + '%)' : '');
 
     if (cfg.hover) { cfg.dirty = true; return; }   // puntatore sul grafico: disegno fermo, si aggiorna all'uscita
@@ -3305,6 +3449,7 @@ $HtmlPageLight = @'
     while (b - a > 1) { var m = (a + b) >> 1; if (g.pts[m][0] < tt) a = m; else b = m; }
     var j = (Math.abs(g.pts[a][0] - tt) <= Math.abs(g.pts[b][0] - tt)) ? a : b;
     var p = g.pts[j], val = p[cfg.idx];
+    if (p[0] < g.t0) return;     // punto fuori finestra (a sinistra del riquadro)
     var px = PL + ((p[0] - g.t0) / g.tSpan) * HPW;
     var py = PT + (1 - (val - g.lo) / (g.hi - g.lo)) * HPH;
     var ln = cfg.g.hxl, dt = cfg.g.hxd;
@@ -3341,18 +3486,39 @@ $HtmlPageLight = @'
   async function refreshHist() {
     if (histBusy) return;
     histBusy = true;
-    var gen = histGen;
+    var gen = histGen, wReq = histWin;
     try {
-      var r = await fetch('/api/light-history', { cache: 'no-store' });
+      var r = await fetch('/api/light-history?win=' + wReq, { cache: 'no-store' });
       if (!r.ok) return;
       var h = JSON.parse(await r.text());
       if (!h || !Array.isArray(h.p)) return;
       if (gen !== histGen) return;   // azzeramento avvenuto mentre la richiesta era in volo: dati vecchi, si scartano
+      if (wReq !== histWin) return;  // finestra cambiata mentre la richiesta era in volo: se ne rifa' una nuova
       histSync(h);
       HC.forEach(function (cfg) { drawHist(cfg, h); });
     } catch (e) { /* storico non disponibile: riprova al prossimo giro */ }
-    finally { histBusy = false; }
+    finally { histBusy = false; if (wReq !== histWin) refreshHist(); }
   }
+  // Selettore finestra 5 min / 10 min / 1 h (stesso valore per i due grafici)
+  function markWinButtons() {
+    var bs = document.querySelectorAll('.hist-win button'), q;
+    for (q = 0; q < bs.length; q++) { if (parseInt(bs[q].getAttribute('data-w'), 10) === histWin) bs[q].classList.add('on'); else bs[q].classList.remove('on'); }
+  }
+  (function () {
+    var bs = document.querySelectorAll('.hist-win button'), q;
+    for (q = 0; q < bs.length; q++) {
+      bs[q].addEventListener('click', function () {
+        var w = parseInt(this.getAttribute('data-w'), 10);
+        if (w === histWin) return;
+        histWin = w;
+        try { localStorage.setItem('bunkerHistWin', String(w)); } catch (e) { }
+        markWinButtons();
+        HC.forEach(function (c) { c.last = null; });
+        refreshHist();
+      });
+    }
+    markWinButtons();
+  })();
   // Invio del campione alla dashboard: gli stessi valori mostrati dalle lancette (1 al secondo).
   // Soglia 0,8 s e non 1 s: l'istantanea arriva ogni secondo con un po' di jitter del polling a 500 ms,
   // con 1 s netto ogni tanto un campione verrebbe saltato.
@@ -3503,7 +3669,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -4281,7 +4447,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.1 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -6849,7 +7015,9 @@ try {
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/light-history") {
-                $lh = Get-LightHistoryJson
+                $lhWin = 0
+                [void][int]::TryParse([string]$request.QueryString["win"], [ref]$lhWin)
+                if ($lhWin -gt 0) { $lh = Get-LightRecentJson -WinSec $lhWin } else { $lh = Get-LightHistoryJson }
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($lh)
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
