@@ -2666,6 +2666,9 @@ $HtmlPageLight = @'
     background-size: 34px 34px;
     animation: restart-stripes 0.9s linear infinite;
   }
+  /* Overlay automatico (connessione persa / riavvio dall'esterno): barra indeterminata, nessuna percentuale */
+  .restart-overlay.auto .restart-progress-fill { width: 100% !important; }
+  .restart-overlay.auto .restart-progress-pct { display: none; }
   @keyframes restart-stripes { from { background-position: 0 0; } to { background-position: 34px 0; } }
   @keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes boxIn { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
@@ -2986,8 +2989,8 @@ $HtmlPageLight = @'
   // ---- Riferimenti realistici per il 100% (stessi valori e stessa logica della pagina Pro: tenerli allineati) ----
   // Cache: nessun resolver arriva al 100% di hit (domini nuovi, TTL scaduti): BNK_CACHE_TARGET_PCT di hit = punteggio pieno.
   // Latenza: il 100% e' relativo alla linea. RTT di riferimento = mediana, su finestra mobile, del tempo di connessione
-  // TCP verso gli upstream online misurato dall'Upstream Radar. Una risoluzione non costa meno di circa 2 RTT.
-  var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 2, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
+  // TCP verso gli upstream online misurato dall'Upstream Radar. Con DoT una risoluzione non costa meno di circa 4 RTT (handshake TLS + query + risoluzione dell'upstream).
+  var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 4, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
   var bnkRttHist = [];
   function bnkMedian(a) {
     var q = a.slice().sort(function (x, y) { return x - y; }), n = q.length;
@@ -2998,9 +3001,9 @@ $HtmlPageLight = @'
     if (ms.length) { bnkRttHist.push(bnkMedian(ms)); if (bnkRttHist.length > BNK_RTT_WINDOW) bnkRttHist.shift(); }
     return bnkRttHist.length ? Math.max(BNK_RTT_MIN_MS, bnkMedian(bnkRttHist)) : BNK_RTT_FALLBACK_MS;
   }
-  // Punteggio latenza = tempo medio di ricorsione / RTT: fino a 2x RTT 100%, 80% a 4x, 50% a 8x, minimo 15% a 16x (interpolazione lineare).
+  // Punteggio latenza = tempo medio di ricorsione / RTT: fino a 4x RTT 100%, 80% a 8x, 50% a 16x, minimo 15% a 32x (interpolazione lineare; i multipli scalano con BNK_LAT_FULL_RATIO).
   function bnkLatScore(recMs, rtt) {
-    var r = rtt > 0 ? recMs / rtt : 0, P = [[BNK_LAT_FULL_RATIO, 100], [4, 80], [8, 50], [16, 15]];
+    var r = rtt > 0 ? recMs / rtt : 0, F = BNK_LAT_FULL_RATIO, P = [[F, 100], [2 * F, 80], [4 * F, 50], [8 * F, 15]];
     if (r <= P[0][0]) return 100;
     for (var i = 1; i < P.length; i++) {
       if (r <= P[i][0]) return Math.round((P[i - 1][1] + (P[i][1] - P[i - 1][1]) * (r - P[i - 1][0]) / (P[i][0] - P[i - 1][0])) * 100000) / 100000;
@@ -3161,6 +3164,11 @@ $HtmlPageLight = @'
       if (!txt || !txt.trim()) return;
       var d = JSON.parse(txt);
       lastDataTs = Date.now();
+      if (autoOverlay) {   // la Dashboard e' tornata: via il messaggio di riavvio
+        autoOverlay = false;
+        hideRestartOverlay();
+        document.getElementById('restartOverlay').classList.remove('auto');
+      }
       document.getElementById('gauges').classList.remove('stale');
       // Con il polling a 1 s la stessa istantanea del server arriva piu' volte: la si elabora una
       // sola volta (altrimenti i QPS risulterebbero a dente di sega: 0, picco, 0, picco...)
@@ -3585,6 +3593,7 @@ $HtmlPageLight = @'
   }
 
   var restarting = false;
+  var autoOverlay = false;   // overlay mostrato in automatico quando la connessione alla Dashboard cade (riavvio da fuori o da altra tab)
   document.getElementById('btnRestartLight').addEventListener('click', async function () {
     if (restarting) return;
     if (!confirm('Sei sicuro di voler riavviare la Dashboard?\n\nLa pagina si ricarica da sola appena la Dashboard e\' di nuovo attiva.')) return;
@@ -3679,6 +3688,11 @@ $HtmlPageLight = @'
     if (lastLive() > 8000) {
       document.getElementById('gauges').classList.add('stale');
       setEngine('wait', 'CONNESSIONE PERSA');
+      if (!restarting && !autoOverlay) {
+        autoOverlay = true;
+        document.getElementById('restartOverlay').classList.add('auto');
+        showRestartOverlay('&#128472;&#65039;', 'Riavvio dashboard in corso...', 'In attesa che la Dashboard torni attiva: la pagina riprende da sola.');
+      }
     }
   }, 1000);
   function lastLive() { return lastDataTs ? Date.now() - lastDataTs : 0; }
@@ -6078,8 +6092,8 @@ async function runUpdateComponentsStep2() {
 // ---- Riferimenti realistici per il 100% (stessi valori e stessa logica della pagina Light: tenerli allineati) ----
 // Cache: nessun resolver arriva al 100% di hit (domini nuovi, TTL scaduti): BNK_CACHE_TARGET_PCT di hit = punteggio pieno.
 // Latenza: il 100% e' relativo alla linea. RTT di riferimento = mediana, su finestra mobile, del tempo di connessione
-// TCP verso gli upstream online misurato dall'Upstream Radar. Una risoluzione non costa meno di circa 2 RTT.
-var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 2, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
+// TCP verso gli upstream online misurato dall'Upstream Radar. Con DoT una risoluzione non costa meno di circa 4 RTT (handshake TLS + query + risoluzione dell'upstream).
+var BNK_CACHE_TARGET_PCT = 80, BNK_LAT_FULL_RATIO = 4, BNK_RTT_FALLBACK_MS = 25, BNK_RTT_MIN_MS = 5, BNK_RTT_WINDOW = 120;
 var bnkRttHist = [];
 function bnkMedian(a) {
   var q = a.slice().sort(function (x, y) { return x - y; }), n = q.length;
@@ -6090,9 +6104,9 @@ function bnkLineRtt(radar) {
   if (ms.length) { bnkRttHist.push(bnkMedian(ms)); if (bnkRttHist.length > BNK_RTT_WINDOW) bnkRttHist.shift(); }
   return bnkRttHist.length ? Math.max(BNK_RTT_MIN_MS, bnkMedian(bnkRttHist)) : BNK_RTT_FALLBACK_MS;
 }
-// Punteggio latenza = tempo medio di ricorsione / RTT: fino a 2x RTT 100%, 80% a 4x, 50% a 8x, minimo 15% a 16x (interpolazione lineare).
+// Punteggio latenza = tempo medio di ricorsione / RTT: fino a 4x RTT 100%, 80% a 8x, 50% a 16x, minimo 15% a 32x (interpolazione lineare; i multipli scalano con BNK_LAT_FULL_RATIO).
 function bnkLatScore(recMs, rtt) {
-  var r = rtt > 0 ? recMs / rtt : 0, P = [[BNK_LAT_FULL_RATIO, 100], [4, 80], [8, 50], [16, 15]];
+  var r = rtt > 0 ? recMs / rtt : 0, F = BNK_LAT_FULL_RATIO, P = [[F, 100], [2 * F, 80], [4 * F, 50], [8 * F, 15]];
   if (r <= P[0][0]) return 100;
   for (var i = 1; i < P.length; i++) {
     if (r <= P[i][0]) return Math.round((P[i - 1][1] + (P[i][1] - P[i - 1][1]) * (r - P[i - 1][0]) / (P[i][0] - P[i - 1][0])) * 100000) / 100000;
