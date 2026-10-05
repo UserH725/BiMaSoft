@@ -3636,13 +3636,18 @@ $HtmlPageLight = @'
     if (ip) {
       nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
       nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+      // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
       var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-      nsSet('nsV4', l4.length ? nsEsc(l4[0]) : 'N/D');
-      nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (+' + (l4.length - 1) + ')' : '') : 'offline'));
+      nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
+      nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
       var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
-      if (ip.ipv6_wan_ok) { nsSet('nsV6', nsEsc(ip.ipv6_wan)); nsSet('nsV6S', '<span class="ns-dot ok"></span>pubblico'); }
-      else if (l6.length) { nsSet('nsV6', nsEsc(l6[0])); nsSet('nsV6S', '<span class="ns-dot ok"></span>solo locale'); }
-      else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+      var a6 = [];
+      if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
+      l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
+      if (a6.length) {
+        nsSet('nsV6', a6.map(nsEsc).join('<br>'));
+        nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
+      } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
     }
     var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
     rad = rad || [];
@@ -6771,13 +6776,18 @@ function nsUpdate(d) {
   if (ip) {
     nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
     nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+    // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
     var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-    nsSet('nsV4', l4.length ? nsEsc(l4[0]) : 'N/D');
-    nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (+' + (l4.length - 1) + ')' : '') : 'offline'));
+    nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
+    nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
     var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
-    if (ip.ipv6_wan_ok) { nsSet('nsV6', nsEsc(ip.ipv6_wan)); nsSet('nsV6S', '<span class="ns-dot ok"></span>pubblico'); }
-    else if (l6.length) { nsSet('nsV6', nsEsc(l6[0])); nsSet('nsV6S', '<span class="ns-dot ok"></span>solo locale'); }
-    else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+    var a6 = [];
+    if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
+    l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
+    if (a6.length) {
+      nsSet('nsV6', a6.map(nsEsc).join('<br>'));
+      nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
+    } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
   }
   var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
   rad = rad || [];
