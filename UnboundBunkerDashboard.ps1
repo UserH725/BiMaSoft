@@ -242,7 +242,7 @@ function Get-NetworkSpeed {
     return @{ down_mbps = 0; up_mbps = 0; ok = $false }
 }
 
-# === POTENZIALE LINEA (v1106.3: test di velocita' reale abbinato al task Unbound_Bunker_AbuseCh30m) ===
+# === POTENZIALE LINEA (v1106.5: test di velocita' reale abbinato al task Unbound_Bunker_AbuseCh30m) ===
 #
 # Il PC non conosce la capacita' della fibra: vede solo la scheda verso il router. Il "potenziale" e'
 # quindi MISURATO: a fine esecuzione del task AbuseCh30m (transizione In esecuzione -> Inattivo) la
@@ -331,7 +331,7 @@ function Start-LineSpeedTest {
                 $flows = 4
 
                 $runFlows = {
-                    param($argLine, $n)
+                    param($argLine, $n, $lenient)
                     $procs = @()
                     for ($i = 0; $i -lt $n; $i++) {
                         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -352,10 +352,18 @@ function Start-LineSpeedTest {
                         $spdTxt = ($txt.Trim() -split '\|')[0].Replace(',', '.')
                         $okParse = [double]::TryParse($spdTxt, [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)
                         $httpCode = ''; $parts = $txt.Trim() -split '\|'; if ($parts.Count -gt 1) { $httpCode = $parts[1].Trim() }
-                        if ($okParse -and $httpCode -match '^2\d\d$') { $sum += $v }
+                        $size = 0.0; if ($parts.Count -gt 2) { [void][double]::TryParse($parts[2].Trim().Replace(',', '.'), [System.Globalization.NumberStyles]::Float, $inv, [ref]$size) }
                         $ec = ''; try { $ec = [string]$pr.ExitCode } catch {}
+                        # Valido: risposta 2xx, oppure interruzione per tempo massimo (exit 28, codice HTTP 000) con dati
+                        # gia' trasferiti: un upload piu' lungo di --max-time non riceve mai la risposta dal server.
+                        $tt = 0.0; if ($parts.Count -gt 3) { [void][double]::TryParse($parts[3].Trim().Replace(',', '.'), [System.Globalization.NumberStyles]::Float, $inv, [ref]$tt) }
+                        $accept = ($httpCode -match '^2\d\d$')
+                        # Upload (modo "lenient"): conta anche se il server chiude/rifiuta a meta' o non risponde, purche'
+                        # siano passati almeno 1 MB in almeno 1 secondo (throughput reale misurato lato client).
+                        if (-not $accept -and $lenient -and $size -ge 1000000 -and $tt -ge 1.0) { $accept = $true }
+                        if ($okParse -and $accept) { $sum += $v }
                         $er = ''; try { $er = ([string]$errTask.Result).Trim() } catch {}
-                        & $lpW ('  flusso: out=[' + $txt.Trim() + '] exit=' + $ec + $(if ($er) { ' err=[' + $er + ']' } else { '' }))
+                        & $lpW ('  flusso: out=[' + $txt.Trim() + '] exit=' + $ec + ' valido=' + $accept + $(if ($er) { ' err=[' + $er + ']' } else { '' }))
                         $pr.Dispose()
                     }
                     return $sum
@@ -380,9 +388,20 @@ function Start-LineSpeedTest {
                 $buf = New-Object byte[] 26214400
                 (New-Object System.Random).NextBytes($buf)
                 [System.IO.File]::WriteAllBytes($tmpUp, $buf)
-                $argUp = '-s -L -A "Mozilla/5.0" -o NUL -w "%{speed_upload}|%{http_code}" --max-time ' + $Secs + ' --connect-timeout 5 -X POST -H "Content-Type: application/octet-stream" --data-binary "@' + $tmpUp + '" "https://speed.cloudflare.com/__up"'
-                & $lpW 'Upload...'
-                $ul = & $runFlows $argUp $flows
+                # Upload: prova piu' varianti (HTTP/2 poi HTTP/1.1 su Cloudflare, poi un secondo server) e si ferma
+                # alla prima che produce una velocita' > 0. Ogni tentativo e' registrato nel log.
+                $ulTries = @(
+                    @{ Url = 'https://speed.cloudflare.com/__up'; Extra = '' },
+                    @{ Url = 'https://speed.cloudflare.com/__up'; Extra = '--http1.1 ' },
+                    @{ Url = 'https://speedtest.tele2.net/upload.php'; Extra = '--http1.1 ' }
+                )
+                $ul = 0.0
+                foreach ($t in $ulTries) {
+                    $argUp = '-s -L -A "Mozilla/5.0" -o NUL ' + $t.Extra + '-w "%{speed_upload}|%{http_code}|%{size_upload}|%{time_total}" --max-time ' + $Secs + ' --connect-timeout 5 -X POST -H "Content-Type: application/octet-stream" --data-binary "@' + $tmpUp + '" "' + $t.Url + '"'
+                    & $lpW ('Upload verso ' + $t.Url + ' ' + $t.Extra.Trim())
+                    $ul = & $runFlows $argUp $flows $true
+                    if ($ul -gt 0) { break }
+                }
                 & $lpW ('Upload totale (byte/s): ' + $ul)
 
                 # Somma delle velocita' medie dei 4 flussi, in Mbps (bit/s / 1.000.000). Si salva solo
@@ -2960,8 +2979,21 @@ $HtmlPageLight = @'
   .ns-mh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 0.74em; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
   .ns-mh b { font-family: var(--font-mono); font-size: 1.7em; color: var(--text); letter-spacing: 0; }
   .ns-mh small { font-size: 0.9em; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
-  .ns-bar { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; height: 12px; }
-  .ns-bar i { border-radius: 2px; background: rgba(255,255,255,0.07); transition: background 0.25s; }
+  .ns-g { display: block; width: 100%; max-width: 250px; margin: 0 auto; }
+  .ns-g .gl { fill: var(--dim); font-size: 10px; }
+  .ns-g .gt { stroke: var(--dim); stroke-width: 1.2; }
+  .ns-g .gv { fill: var(--text); font-family: var(--font-mono); font-size: 22px; }
+  .ns-g .gu { fill: var(--dim); font-size: 11px; }
+  .ns-g .gnd { transform-origin: 100px 100px; transition: transform 0.6s ease; }
+  .ns-tr { font-size: 0.76em; text-align: center; margin: 2px 0 4px; min-height: 1.3em; }
+  .ns-trs { color: var(--dim); }
+  .ns-hc { display: block; width: 100%; max-width: 250px; margin: 2px auto 0; }
+  .ns-hc .gl { fill: var(--dim); font-size: 9px; }
+  .ns-hc .gr { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
+  .ns-hc .ar { fill: var(--accent); fill-opacity: 0.16; }
+  .ns-hc .ln { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+  .ns-hc .dt { fill: var(--accent); }
+  .ns-hc .pq { stroke: #ffb300; stroke-width: 1; stroke-dasharray: 4 3; }
   .ns-sc { display: flex; justify-content: space-between; font-size: 0.7em; color: var(--dim); margin-top: 3px; font-family: var(--font-mono); }
   .ns-info { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
   .ns-c { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; min-width: 0; }
@@ -3090,7 +3122,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.5 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3109,18 +3141,20 @@ $HtmlPageLight = @'
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
-      <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
-      <div class="ns-bar" id="nsDb"></div>
-      <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
+      <div class="ns-mh"><span>&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
+      <svg class="ns-g" viewBox="0 0 200 148" role="img" aria-label="Tachimetro download"><path d="M22.0 100.0A78 78 0 0 1 124.1 25.8" fill="none" stroke="#3ddc84" stroke-width="8"/><path d="M124.1 25.8A78 78 0 0 1 169.5 64.6" fill="none" stroke="#ffb300" stroke-width="8"/><path d="M169.5 64.6A78 78 0 0 1 178.0 100.0" fill="none" stroke="#ff5c5c" stroke-width="8"/><line class="gt" x1="36.0" y1="100.0" x2="28.0" y2="100.0"/><line class="gt" x1="35.3" y1="79.0" x2="31.5" y2="77.8"/><line class="gt" x1="45.0" y1="60.0" x2="41.8" y2="57.7"/><line class="gt" x1="60.0" y1="45.0" x2="57.7" y2="41.8"/><line class="gt" x1="79.0" y1="35.3" x2="77.8" y2="31.5"/><line class="gt" x1="100.0" y1="36.0" x2="100.0" y2="28.0"/><line class="gt" x1="121.0" y1="35.3" x2="122.2" y2="31.5"/><line class="gt" x1="140.0" y1="45.0" x2="142.3" y2="41.8"/><line class="gt" x1="155.0" y1="60.0" x2="158.2" y2="57.7"/><line class="gt" x1="164.7" y1="79.0" x2="168.5" y2="77.8"/><line class="gt" x1="164.0" y1="100.0" x2="172.0" y2="100.0"/><text class="gl" id="nsDl0" x="22" y="120" text-anchor="middle">0</text><text class="gl" id="nsDl5" x="178" y="120" text-anchor="middle">&nbsp;</text><line id="nsDp" stroke="#dbe5ee" stroke-width="2.5" x1="100" y1="100" x2="100" y2="100"/><g class="gnd" id="nsDn"><line x1="100" y1="100" x2="38" y2="100" stroke="#dbe5ee" stroke-width="3" stroke-linecap="round"/></g><circle cx="100" cy="100" r="6" style="fill:var(--text)"/><circle cx="100" cy="100" r="2.5" style="fill:var(--panel)"/><text class="gv" id="nsDv" x="100" y="132" text-anchor="middle">--</text><text class="gu" x="100" y="146" text-anchor="middle">Mbps</text></svg>
+      <div class="ns-tr" id="nsDt">&nbsp;</div>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
-      <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
-      <div class="ns-bar" id="nsUb"></div>
-      <div class="ns-sc"><span>0</span><span id="nsUpk">picco 0 Mbps</span><span id="nsUmx">10</span></div>
+      <div class="ns-mh"><span>&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
+      <svg class="ns-g" viewBox="0 0 200 148" role="img" aria-label="Tachimetro upload"><path d="M22.0 100.0A78 78 0 0 1 124.1 25.8" fill="none" stroke="#3ddc84" stroke-width="8"/><path d="M124.1 25.8A78 78 0 0 1 169.5 64.6" fill="none" stroke="#ffb300" stroke-width="8"/><path d="M169.5 64.6A78 78 0 0 1 178.0 100.0" fill="none" stroke="#ff5c5c" stroke-width="8"/><line class="gt" x1="36.0" y1="100.0" x2="28.0" y2="100.0"/><line class="gt" x1="35.3" y1="79.0" x2="31.5" y2="77.8"/><line class="gt" x1="45.0" y1="60.0" x2="41.8" y2="57.7"/><line class="gt" x1="60.0" y1="45.0" x2="57.7" y2="41.8"/><line class="gt" x1="79.0" y1="35.3" x2="77.8" y2="31.5"/><line class="gt" x1="100.0" y1="36.0" x2="100.0" y2="28.0"/><line class="gt" x1="121.0" y1="35.3" x2="122.2" y2="31.5"/><line class="gt" x1="140.0" y1="45.0" x2="142.3" y2="41.8"/><line class="gt" x1="155.0" y1="60.0" x2="158.2" y2="57.7"/><line class="gt" x1="164.7" y1="79.0" x2="168.5" y2="77.8"/><line class="gt" x1="164.0" y1="100.0" x2="172.0" y2="100.0"/><text class="gl" id="nsUl0" x="22" y="120" text-anchor="middle">0</text><text class="gl" id="nsUl5" x="178" y="120" text-anchor="middle">&nbsp;</text><line id="nsUp" stroke="#dbe5ee" stroke-width="2.5" x1="100" y1="100" x2="100" y2="100"/><g class="gnd" id="nsUn"><line x1="100" y1="100" x2="38" y2="100" stroke="#dbe5ee" stroke-width="3" stroke-linecap="round"/></g><circle cx="100" cy="100" r="6" style="fill:var(--text)"/><circle cx="100" cy="100" r="2.5" style="fill:var(--panel)"/><text class="gv" id="nsUv" x="100" y="132" text-anchor="middle">--</text><text class="gu" x="100" y="146" text-anchor="middle">Mbps</text></svg>
+      <div class="ns-tr" id="nsUt">&nbsp;</div>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
     </div>
   </div>
   <div class="ns-info">
@@ -3588,23 +3622,51 @@ $HtmlPageLight = @'
   function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
   function nsFmt(v) { return (Math.round(v * 10) / 10).toFixed(1).replace('.', ','); }
   function nsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function nsPaint(id, v, mx) {
-    var b = document.getElementById(id); if (!b) return;
-    if (!b.children.length) { for (var i = 0; i < NSN; i++) b.appendChild(document.createElement('i')); }
-    var on = Math.round(Math.min(v / mx, 1) * NSN);
-    for (var j = 0; j < NSN; j++) {
-      var f = j / NSN;
-      b.children[j].style.background = j < on ? (f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c')) : '';
-    }
-  }
   function nsSet(id, html) { var e = document.getElementById(id); if (e) e.innerHTML = html; }
-  function nsMeter(v, ring, ids, pk) {
-    ring.push(v); if (ring.length > 60) ring.shift();
-    var mx = nsNice(Math.max.apply(null, ring) * 1.15);
-    nsPaint(ids[0], v, mx);
-    document.getElementById(ids[1]).textContent = nsFmt(v);
-    document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
-    document.getElementById(ids[3]).textContent = mx;
+  function nsGauge(v, hist, X, pk, pot) {
+    var now = Date.now();
+    if (!hist.length || now - (hist._t || 0) >= 3000) { hist.push(v); hist._t = now; if (hist.length > 119) hist.shift(); }
+    var hmax = Math.max.apply(null, hist.concat([v]));
+    var mx = nsNice(Math.max(pot > 0 ? pot : hmax * 1.15, v));
+    var f = Math.min(v / mx, 1);
+    var c = f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c');
+    var el = document.getElementById('ns' + X + 'n'); if (el) el.style.transform = 'rotate(' + (f * 180).toFixed(1) + 'deg)';
+    el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = nsFmt(v); el.style.fill = c; }
+    el = document.getElementById('ns' + X + 'pk'); if (el) el.textContent = 'picco ' + Math.round(pk) + ' Mbps';
+    var a = (180 + Math.min(pk / mx, 1) * 180) * Math.PI / 180;
+    el = document.getElementById('ns' + X + 'p');
+    if (el) { el.setAttribute('x1', (100 + 66 * Math.cos(a)).toFixed(1)); el.setAttribute('y1', (100 + 66 * Math.sin(a)).toFixed(1)); el.setAttribute('x2', (100 + 86 * Math.cos(a)).toFixed(1)); el.setAttribute('y2', (100 + 86 * Math.sin(a)).toFixed(1)); }
+    el = document.getElementById('ns' + X + 'l5'); if (el) el.textContent = mx;
+    var prev = hist.slice(-6);
+    el = document.getElementById('ns' + X + 't');
+    if (el) {
+      if (prev.length < 3) { el.innerHTML = '&nbsp;'; }
+      else {
+        var avg = prev.reduce(function (x, y) { return x + y; }, 0) / prev.length;
+        var dl = avg > 0.05 ? (v - avg) / avg * 100 : 0;
+        var stable = Math.abs(dl) < 3 || Math.abs(v - avg) < 0.5;
+        el.innerHTML = '<span style="color:' + (stable ? 'var(--dim)' : (dl > 0 ? '#3ddc84' : '#ffb300')) + '">' + (stable ? '&#9644; stabile' : (dl > 0 ? '&#9650; +' : '&#9660; ') + Math.round(dl) + '%') + '</span> <span class="ns-trs">rispetto alla media recente</span>';
+      }
+    }
+    var pts = hist.concat([v]), n = pts.length, cm = nsNice(hmax * 1.15), step = 200 / 119, d = '', last = null, first = null;
+    for (var i = 0; i < n; i++) {
+      var x = 200 - (n - 1 - i) * step, y = 58 - Math.min(pts[i] / cm, 1) * 52;
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+      if (first === null) first = x; last = [x, y];
+    }
+    el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', d);
+    el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', d + 'L' + last[0].toFixed(1) + ' 58L' + first.toFixed(1) + ' 58Z');
+    el = document.getElementById('ns' + X + 'd'); if (el) { el.setAttribute('cx', last[0].toFixed(1)); el.setAttribute('cy', last[1].toFixed(1)); }
+    el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(pk / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
+    el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = 'scala ' + cm + ' Mbps';
+  }
+  function nsGaugeOff(X) {
+    var el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = 'N/D'; el.style.fill = 'var(--dim)'; }
+    el = document.getElementById('ns' + X + 'n'); if (el) el.style.transform = 'rotate(0deg)';
+    el = document.getElementById('ns' + X + 't'); if (el) el.innerHTML = '&nbsp;';
+    el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', '');
+    el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', '');
+    el = document.getElementById('ns' + X + 'd'); if (el) el.setAttribute('cx', '-10');
   }
   var nsLineHold = 0;
   async function forceLineTest() {
@@ -3654,12 +3716,11 @@ $HtmlPageLight = @'
     var n = d.net_speed;
     if (n && n.ok) {
       nsPkD = Math.max(nsPkD, n.down_mbps); nsPkU = Math.max(nsPkU, n.up_mbps);
-      nsMeter(n.down_mbps, nsRingD, ['nsDb', 'nsDv', 'nsDpk', 'nsDmx'], nsPkD);
-      nsMeter(n.up_mbps, nsRingU, ['nsUb', 'nsUv', 'nsUpk', 'nsUmx'], nsPkU);
+      nsGauge(n.down_mbps, nsRingD, 'D', nsPkD, (d.line_potential && d.line_potential.ok && d.line_potential.fonte === 'misura' && d.line_potential.down_mbps > 0) ? d.line_potential.down_mbps : 0);
+      nsGauge(n.up_mbps, nsRingU, 'U', nsPkU, (d.line_potential && d.line_potential.ok && d.line_potential.fonte === 'misura' && d.line_potential.up_mbps > 0) ? d.line_potential.up_mbps : 0);
     } else {
-      document.getElementById('nsDv').textContent = 'N/D';
-      document.getElementById('nsUv').textContent = 'N/D';
-      nsPaint('nsDb', 0, 10); nsPaint('nsUb', 0, 10);
+      nsGaugeOff('D');
+      nsGaugeOff('U');
     }
     var ip = d.connettivita_ip;
     if (ip) {
@@ -4251,7 +4312,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.5 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -4318,8 +4379,21 @@ $HtmlPage = @'
   .ns-mh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 0.74em; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
   .ns-mh b { font-family: var(--font-mono); font-size: 1.7em; color: var(--text); letter-spacing: 0; }
   .ns-mh small { font-size: 0.9em; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
-  .ns-bar { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; height: 12px; }
-  .ns-bar i { border-radius: 2px; background: rgba(255,255,255,0.07); transition: background 0.25s; }
+  .ns-g { display: block; width: 100%; max-width: 250px; margin: 0 auto; }
+  .ns-g .gl { fill: var(--dim); font-size: 10px; }
+  .ns-g .gt { stroke: var(--dim); stroke-width: 1.2; }
+  .ns-g .gv { fill: var(--text); font-family: var(--font-mono); font-size: 22px; }
+  .ns-g .gu { fill: var(--dim); font-size: 11px; }
+  .ns-g .gnd { transform-origin: 100px 100px; transition: transform 0.6s ease; }
+  .ns-tr { font-size: 0.76em; text-align: center; margin: 2px 0 4px; min-height: 1.3em; }
+  .ns-trs { color: var(--dim); }
+  .ns-hc { display: block; width: 100%; max-width: 250px; margin: 2px auto 0; }
+  .ns-hc .gl { fill: var(--dim); font-size: 9px; }
+  .ns-hc .gr { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
+  .ns-hc .ar { fill: var(--accent); fill-opacity: 0.16; }
+  .ns-hc .ln { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+  .ns-hc .dt { fill: var(--accent); }
+  .ns-hc .pq { stroke: #ffb300; stroke-width: 1; stroke-dasharray: 4 3; }
   .ns-sc { display: flex; justify-content: space-between; font-size: 0.7em; color: var(--dim); margin-top: 3px; font-family: var(--font-mono); }
   .ns-info { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
   .ns-c { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; min-width: 0; }
@@ -5062,7 +5136,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.5 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -5111,18 +5185,20 @@ $HtmlPage = @'
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
-      <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
-      <div class="ns-bar" id="nsDb"></div>
-      <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
+      <div class="ns-mh"><span>&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
+      <svg class="ns-g" viewBox="0 0 200 148" role="img" aria-label="Tachimetro download"><path d="M22.0 100.0A78 78 0 0 1 124.1 25.8" fill="none" stroke="#3ddc84" stroke-width="8"/><path d="M124.1 25.8A78 78 0 0 1 169.5 64.6" fill="none" stroke="#ffb300" stroke-width="8"/><path d="M169.5 64.6A78 78 0 0 1 178.0 100.0" fill="none" stroke="#ff5c5c" stroke-width="8"/><line class="gt" x1="36.0" y1="100.0" x2="28.0" y2="100.0"/><line class="gt" x1="35.3" y1="79.0" x2="31.5" y2="77.8"/><line class="gt" x1="45.0" y1="60.0" x2="41.8" y2="57.7"/><line class="gt" x1="60.0" y1="45.0" x2="57.7" y2="41.8"/><line class="gt" x1="79.0" y1="35.3" x2="77.8" y2="31.5"/><line class="gt" x1="100.0" y1="36.0" x2="100.0" y2="28.0"/><line class="gt" x1="121.0" y1="35.3" x2="122.2" y2="31.5"/><line class="gt" x1="140.0" y1="45.0" x2="142.3" y2="41.8"/><line class="gt" x1="155.0" y1="60.0" x2="158.2" y2="57.7"/><line class="gt" x1="164.7" y1="79.0" x2="168.5" y2="77.8"/><line class="gt" x1="164.0" y1="100.0" x2="172.0" y2="100.0"/><text class="gl" id="nsDl0" x="22" y="120" text-anchor="middle">0</text><text class="gl" id="nsDl5" x="178" y="120" text-anchor="middle">&nbsp;</text><line id="nsDp" stroke="#dbe5ee" stroke-width="2.5" x1="100" y1="100" x2="100" y2="100"/><g class="gnd" id="nsDn"><line x1="100" y1="100" x2="38" y2="100" stroke="#dbe5ee" stroke-width="3" stroke-linecap="round"/></g><circle cx="100" cy="100" r="6" style="fill:var(--text)"/><circle cx="100" cy="100" r="2.5" style="fill:var(--panel)"/><text class="gv" id="nsDv" x="100" y="132" text-anchor="middle">--</text><text class="gu" x="100" y="146" text-anchor="middle">Mbps</text></svg>
+      <div class="ns-tr" id="nsDt">&nbsp;</div>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
-      <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
-      <div class="ns-bar" id="nsUb"></div>
-      <div class="ns-sc"><span>0</span><span id="nsUpk">picco 0 Mbps</span><span id="nsUmx">10</span></div>
+      <div class="ns-mh"><span>&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
+      <svg class="ns-g" viewBox="0 0 200 148" role="img" aria-label="Tachimetro upload"><path d="M22.0 100.0A78 78 0 0 1 124.1 25.8" fill="none" stroke="#3ddc84" stroke-width="8"/><path d="M124.1 25.8A78 78 0 0 1 169.5 64.6" fill="none" stroke="#ffb300" stroke-width="8"/><path d="M169.5 64.6A78 78 0 0 1 178.0 100.0" fill="none" stroke="#ff5c5c" stroke-width="8"/><line class="gt" x1="36.0" y1="100.0" x2="28.0" y2="100.0"/><line class="gt" x1="35.3" y1="79.0" x2="31.5" y2="77.8"/><line class="gt" x1="45.0" y1="60.0" x2="41.8" y2="57.7"/><line class="gt" x1="60.0" y1="45.0" x2="57.7" y2="41.8"/><line class="gt" x1="79.0" y1="35.3" x2="77.8" y2="31.5"/><line class="gt" x1="100.0" y1="36.0" x2="100.0" y2="28.0"/><line class="gt" x1="121.0" y1="35.3" x2="122.2" y2="31.5"/><line class="gt" x1="140.0" y1="45.0" x2="142.3" y2="41.8"/><line class="gt" x1="155.0" y1="60.0" x2="158.2" y2="57.7"/><line class="gt" x1="164.7" y1="79.0" x2="168.5" y2="77.8"/><line class="gt" x1="164.0" y1="100.0" x2="172.0" y2="100.0"/><text class="gl" id="nsUl0" x="22" y="120" text-anchor="middle">0</text><text class="gl" id="nsUl5" x="178" y="120" text-anchor="middle">&nbsp;</text><line id="nsUp" stroke="#dbe5ee" stroke-width="2.5" x1="100" y1="100" x2="100" y2="100"/><g class="gnd" id="nsUn"><line x1="100" y1="100" x2="38" y2="100" stroke="#dbe5ee" stroke-width="3" stroke-linecap="round"/></g><circle cx="100" cy="100" r="6" style="fill:var(--text)"/><circle cx="100" cy="100" r="2.5" style="fill:var(--panel)"/><text class="gv" id="nsUv" x="100" y="132" text-anchor="middle">--</text><text class="gu" x="100" y="146" text-anchor="middle">Mbps</text></svg>
+      <div class="ns-tr" id="nsUt">&nbsp;</div>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
     </div>
   </div>
   <div class="ns-info">
@@ -6728,23 +6804,51 @@ var NSN = 40, nsPkD = 0, nsPkU = 0, nsRingD = [], nsRingU = [];
 function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
 function nsFmt(v) { return (Math.round(v * 10) / 10).toFixed(1).replace('.', ','); }
 function nsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-function nsPaint(id, v, mx) {
-  var b = document.getElementById(id); if (!b) return;
-  if (!b.children.length) { for (var i = 0; i < NSN; i++) b.appendChild(document.createElement('i')); }
-  var on = Math.round(Math.min(v / mx, 1) * NSN);
-  for (var j = 0; j < NSN; j++) {
-    var f = j / NSN;
-    b.children[j].style.background = j < on ? (f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c')) : '';
-  }
-}
 function nsSet(id, html) { var e = document.getElementById(id); if (e) e.innerHTML = html; }
-function nsMeter(v, ring, ids, pk) {
-  ring.push(v); if (ring.length > 60) ring.shift();
-  var mx = nsNice(Math.max.apply(null, ring) * 1.15);
-  nsPaint(ids[0], v, mx);
-  document.getElementById(ids[1]).textContent = nsFmt(v);
-  document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
-  document.getElementById(ids[3]).textContent = mx;
+function nsGauge(v, hist, X, pk, pot) {
+  var now = Date.now();
+  if (!hist.length || now - (hist._t || 0) >= 3000) { hist.push(v); hist._t = now; if (hist.length > 119) hist.shift(); }
+  var hmax = Math.max.apply(null, hist.concat([v]));
+  var mx = nsNice(Math.max(pot > 0 ? pot : hmax * 1.15, v));
+  var f = Math.min(v / mx, 1);
+  var c = f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c');
+  var el = document.getElementById('ns' + X + 'n'); if (el) el.style.transform = 'rotate(' + (f * 180).toFixed(1) + 'deg)';
+  el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = nsFmt(v); el.style.fill = c; }
+  el = document.getElementById('ns' + X + 'pk'); if (el) el.textContent = 'picco ' + Math.round(pk) + ' Mbps';
+  var a = (180 + Math.min(pk / mx, 1) * 180) * Math.PI / 180;
+  el = document.getElementById('ns' + X + 'p');
+  if (el) { el.setAttribute('x1', (100 + 66 * Math.cos(a)).toFixed(1)); el.setAttribute('y1', (100 + 66 * Math.sin(a)).toFixed(1)); el.setAttribute('x2', (100 + 86 * Math.cos(a)).toFixed(1)); el.setAttribute('y2', (100 + 86 * Math.sin(a)).toFixed(1)); }
+  el = document.getElementById('ns' + X + 'l5'); if (el) el.textContent = mx;
+  var prev = hist.slice(-6);
+  el = document.getElementById('ns' + X + 't');
+  if (el) {
+    if (prev.length < 3) { el.innerHTML = '&nbsp;'; }
+    else {
+      var avg = prev.reduce(function (x, y) { return x + y; }, 0) / prev.length;
+      var dl = avg > 0.05 ? (v - avg) / avg * 100 : 0;
+      var stable = Math.abs(dl) < 3 || Math.abs(v - avg) < 0.5;
+      el.innerHTML = '<span style="color:' + (stable ? 'var(--dim)' : (dl > 0 ? '#3ddc84' : '#ffb300')) + '">' + (stable ? '&#9644; stabile' : (dl > 0 ? '&#9650; +' : '&#9660; ') + Math.round(dl) + '%') + '</span> <span class="ns-trs">rispetto alla media recente</span>';
+    }
+  }
+  var pts = hist.concat([v]), n = pts.length, cm = nsNice(hmax * 1.15), step = 200 / 119, d = '', last = null, first = null;
+  for (var i = 0; i < n; i++) {
+    var x = 200 - (n - 1 - i) * step, y = 58 - Math.min(pts[i] / cm, 1) * 52;
+    d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    if (first === null) first = x; last = [x, y];
+  }
+  el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', d);
+  el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', d + 'L' + last[0].toFixed(1) + ' 58L' + first.toFixed(1) + ' 58Z');
+  el = document.getElementById('ns' + X + 'd'); if (el) { el.setAttribute('cx', last[0].toFixed(1)); el.setAttribute('cy', last[1].toFixed(1)); }
+  el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(pk / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
+  el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = 'scala ' + cm + ' Mbps';
+}
+function nsGaugeOff(X) {
+  var el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = 'N/D'; el.style.fill = 'var(--dim)'; }
+  el = document.getElementById('ns' + X + 'n'); if (el) el.style.transform = 'rotate(0deg)';
+  el = document.getElementById('ns' + X + 't'); if (el) el.innerHTML = '&nbsp;';
+  el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', '');
+  el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', '');
+  el = document.getElementById('ns' + X + 'd'); if (el) el.setAttribute('cx', '-10');
 }
 var nsLineHold = 0;
 async function forceLineTest() {
@@ -6794,12 +6898,11 @@ function nsUpdate(d) {
   var n = d.net_speed;
   if (n && n.ok) {
     nsPkD = Math.max(nsPkD, n.down_mbps); nsPkU = Math.max(nsPkU, n.up_mbps);
-    nsMeter(n.down_mbps, nsRingD, ['nsDb', 'nsDv', 'nsDpk', 'nsDmx'], nsPkD);
-    nsMeter(n.up_mbps, nsRingU, ['nsUb', 'nsUv', 'nsUpk', 'nsUmx'], nsPkU);
+    nsGauge(n.down_mbps, nsRingD, 'D', nsPkD, (d.line_potential && d.line_potential.ok && d.line_potential.fonte === 'misura' && d.line_potential.down_mbps > 0) ? d.line_potential.down_mbps : 0);
+    nsGauge(n.up_mbps, nsRingU, 'U', nsPkU, (d.line_potential && d.line_potential.ok && d.line_potential.fonte === 'misura' && d.line_potential.up_mbps > 0) ? d.line_potential.up_mbps : 0);
   } else {
-    document.getElementById('nsDv').textContent = 'N/D';
-    document.getElementById('nsUv').textContent = 'N/D';
-    nsPaint('nsDb', 0, 10); nsPaint('nsUb', 0, 10);
+    nsGaugeOff('D');
+    nsGaugeOff('U');
   }
   var ip = d.connettivita_ip;
   if (ip) {
