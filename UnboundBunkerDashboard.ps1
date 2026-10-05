@@ -248,15 +248,24 @@ function Get-NetworkSpeed {
 # quindi MISURATO: a fine esecuzione del task AbuseCh30m (transizione In esecuzione -> Inattivo) la
 # Dashboard lancia in un runspace separato un test con 4 flussi curl.exe paralleli verso Cloudflare
 # (prima il download, poi l'upload, mai insieme), ciascuno limitato a $script:LpTestSecs secondi.
-# Il test parte solo se l'ultima misura ha piu' di $script:LpMinAgeMin minuti: con AbuseCh30m ogni 30
-# minuti significa un test ogni 4 giri (circa 2 ore). Risultato in R:\line_potential.json (volatile
+# Il test parte ad ogni scoccare delle :00 e delle :30, DOPO le fasi previste per quell'orario: si segna
+# "in attesa" appena parte AbuseCh30m o Unbound_Bunker_2h e si misura quando nessuna delle due e' piu' in
+# esecuzione da $script:LpSettleSec secondi (copre le fasi consecutive). Parte solo se l'ultima misura ha
+# piu' di $script:LpMinAgeMin minuti; ogni PC aggiunge un piccolo scaglionamento (0-70 s, dal nome host)
+# per non misurare tutti insieme sulla stessa linea. Risultato in R:\line_potential.json (volatile
 # come il resto di R:). Un lock su file (R:\line_test.run, creazione esclusiva) impedisce che due
 # runspace della Dashboard (collector background + thread HTTP) lancino due test insieme.
 # Finche' non c'e' la prima misura si mostra, come ripiego, la velocita' di collegamento della scheda.
 $script:LpFile        = "R:\line_potential.json"
 $script:LpLockFile    = "R:\line_test.run"
 $script:LpTaskName    = 'Unbound_Bunker_AbuseCh30m'
-$script:LpMinAgeMin   = 105
+$script:LpMinAgeMin   = 25
+$script:LpTaskNames   = @('Unbound_Bunker_AbuseCh30m', 'Unbound_Bunker_2h')
+$script:LpSettleSec   = 15
+$script:LpPending     = $false
+$script:LpIdleSince   = $null
+$script:LpStagger     = 0
+try { $lpH = 0; foreach ($lpC in ([string]$env:COMPUTERNAME).ToCharArray()) { $lpH += [int]$lpC }; $script:LpStagger = ($lpH % 8) * 10 } catch {}
 $script:LpTestSecs    = 6
 $script:LpPrevRunning = $null
 $script:LpAsync       = $null
@@ -283,7 +292,7 @@ function Get-NicLinkMbps {
 
 function Start-LineSpeedTest {
     # Restituisce 'started' | 'busy' (test gia' in corso) | 'error'. DelaySec = pausa prima di misurare:
-    # 20 s dopo il task AbuseCh30m (Unbound sta ricaricando le RPZ), 0 per la misura forzata dal pulsante.
+    # pochi secondi dopo le fasi pianificate (Unbound sta ricaricando le RPZ), 0 per la misura forzata dal pulsante.
     param([int]$DelaySec = 20)
     $old = $script:LpAsync
     if ($old -and $old.Handle.IsCompleted) {
@@ -309,6 +318,7 @@ function Start-LineSpeedTest {
             $ProgressPreference = 'SilentlyContinue'
             $tmpUp = $null
             $lpLog = 'R:\line_test.log'
+            try { if ((Test-Path -LiteralPath $lpLog) -and ((Get-Item -LiteralPath $lpLog).Length -gt 102400)) { Remove-Item -LiteralPath $lpLog -Force } } catch {}
             $lpW = { param($m) try { ('[' + (Get-Date).ToString('dd.MM.yyyy HH:mm:ss') + '] ' + $m) | Out-File -LiteralPath $lpLog -Append -Encoding utf8 } catch {} }
             try {
                 & $lpW ('Avvio test linea (flussi=4, secondi=' + $Secs + ', ritardo=' + $Delay + ')')
@@ -424,19 +434,30 @@ function Get-LinePotential {
             $script:LpCacheTime = [DateTime]::MinValue
         }
 
-        # Rilevamento della fine del task AbuseCh30m (controllo al massimo ogni 3 s)
+        # Rilevamento della fine delle fasi pianificate (AbuseCh30m e 2h), controllo al massimo ogni 3 s.
+        # Appena una fase risulta in esecuzione si segna "in attesa"; quando nessuna e' piu' in esecuzione
+        # da almeno $script:LpSettleSec secondi parte il test (se l'ultima misura e' abbastanza vecchia).
         if (($now - $script:LpCheckTime).TotalSeconds -ge 3) {
             $script:LpCheckTime = $now
             $live    = Get-BunkerTasksLiveState
-            $running = [bool]($live.ContainsKey($script:LpTaskName) -and $live[$script:LpTaskName])
-            if ($script:LpPrevRunning -eq $true -and -not $running -and -not $script:LpAsync) {
-                $ageMin = 99999.0
-                if (Test-Path -LiteralPath $script:LpFile) {
-                    $ageMin = ($now - (Get-Item -LiteralPath $script:LpFile).LastWriteTime).TotalMinutes
+            $running = $false
+            foreach ($tn in $script:LpTaskNames) { if ($live.ContainsKey($tn) -and $live[$tn]) { $running = $true } }
+            if ($running) {
+                $script:LpPending   = $true
+                $script:LpIdleSince = $null
+            } elseif ($script:LpPending) {
+                if (-not $script:LpIdleSince) {
+                    $script:LpIdleSince = $now
+                } elseif ((($now - $script:LpIdleSince).TotalSeconds -ge $script:LpSettleSec) -and -not $script:LpAsync) {
+                    $script:LpPending   = $false
+                    $script:LpIdleSince = $null
+                    $ageMin = 99999.0
+                    if (Test-Path -LiteralPath $script:LpFile) {
+                        $ageMin = ($now - (Get-Item -LiteralPath $script:LpFile).LastWriteTime).TotalMinutes
+                    }
+                    if ($ageMin -ge $script:LpMinAgeMin) { [void](Start-LineSpeedTest -DelaySec (5 + $script:LpStagger)) }
                 }
-                if ($ageMin -ge $script:LpMinAgeMin) { [void](Start-LineSpeedTest) }
             }
-            $script:LpPrevRunning = $running
         }
 
         if ($script:LpCache -and ($now - $script:LpCacheTime).TotalSeconds -lt 5) { return $script:LpCache }
@@ -3076,7 +3097,7 @@ $HtmlPageLight = @'
 <div class="netstrip" id="netStrip">
   <div class="ns-meters">
     <div>
-      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
@@ -3085,7 +3106,7 @@ $HtmlPageLight = @'
       <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
     </div>
     <div>
-      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
@@ -5078,7 +5099,7 @@ $HtmlPage = @'
 <div class="netstrip" id="netStrip" style="margin-top:14px;">
   <div class="ns-meters">
     <div>
-      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
@@ -5087,7 +5108,7 @@ $HtmlPage = @'
       <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
     </div>
     <div>
-      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
         <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
