@@ -184,18 +184,243 @@ $script:RootServersList = @(
 
 # === RACCOLTA DATI BANDA E HARDWARE ===
 
+# Banda in tempo reale: differenza dei contatori byte delle schede fisiche attive tra due letture.
+# Niente WMI/CIM (leggero anche a 1 letture/s), somma di tutte le schede reali (Ethernet + Wi-Fi) ed
+# esclusione di quelle virtuali/VPN per non contare due volte lo stesso traffico. Valori in Mbps (1 Mbps = 1.000.000 bit/s).
+$script:NetSw     = [System.Diagnostics.Stopwatch]::StartNew()
+$script:NetPrev   = @{}
+$script:NetPrevMs = $null
+$script:NetLast   = @{ down_mbps = 0; up_mbps = 0; ok = $false }
+
 function Get-NetworkSpeed {
     try {
-        $nics = Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface -ErrorAction SilentlyContinue |
-                Where-Object { $_.BytesTotalPersec -ge 0 -and $_.Name -notmatch 'Loopback|vEthernet|Virtual|VPN|ISATAP|Teredo' } |
-                Select-Object -First 1
-        if ($nics) {
-            $downMbps = [math]::Round(($nics.BytesReceivedPersec * 8) / 1MB, 1)
-            $upMbps   = [math]::Round(($nics.BytesSentPersec * 8) / 1MB, 1)
-            return @{ down_mbps = $downMbps; up_mbps = $upMbps; ok = $true }
+        $nowMs = $script:NetSw.ElapsedMilliseconds
+        # Chiamate ravvicinate (< 0,4 s): restituisce l'ultimo valore, il calcolo su un intervallo troppo corto sarebbe rumore
+        if ($null -ne $script:NetPrevMs -and ($nowMs - $script:NetPrevMs) -lt 400) { return $script:NetLast }
+
+        $cur = @{}
+        foreach ($nic in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($nic.OperationalStatus.ToString() -ne 'Up') { continue }
+            $nt = $nic.NetworkInterfaceType.ToString()
+            if ($nt -eq 'Loopback' -or $nt -eq 'Tunnel') { continue }
+            if (($nic.Name + ' ' + $nic.Description) -match 'Virtual|vEthernet|VPN|Hyper-V|VMware|VirtualBox|Bluetooth|Pseudo|TAP-Windows|Wintun|WireGuard|Teredo|ISATAP|Loopback') { continue }
+            $st = $nic.GetIPStatistics()
+            $cur[$nic.Id] = @{ rx = [int64]$st.BytesReceived; tx = [int64]$st.BytesSent }
         }
+
+        if ($null -eq $script:NetPrevMs) {
+            $script:NetPrev   = $cur
+            $script:NetPrevMs = $nowMs
+            $script:NetLast   = @{ down_mbps = 0; up_mbps = 0; ok = ($cur.Count -gt 0) }
+            return $script:NetLast
+        }
+
+        $dtSec = ($nowMs - $script:NetPrevMs) / 1000.0
+        $rxD = [int64]0; $txD = [int64]0
+        foreach ($k in $cur.Keys) {
+            if ($script:NetPrev.ContainsKey($k)) {
+                $d1 = $cur[$k].rx - $script:NetPrev[$k].rx
+                $d2 = $cur[$k].tx - $script:NetPrev[$k].tx
+                if ($d1 -gt 0) { $rxD += $d1 }
+                if ($d2 -gt 0) { $txD += $d2 }
+            }
+        }
+        $script:NetPrev   = $cur
+        $script:NetPrevMs = $nowMs
+
+        if ($cur.Count -eq 0 -or $dtSec -le 0) {
+            $script:NetLast = @{ down_mbps = 0; up_mbps = 0; ok = $false }
+        } else {
+            $script:NetLast = @{
+                down_mbps = [math]::Round(($rxD * 8) / $dtSec / 1000000, 1)
+                up_mbps   = [math]::Round(($txD * 8) / $dtSec / 1000000, 1)
+                ok        = $true
+            }
+        }
+        return $script:NetLast
     } catch {}
     return @{ down_mbps = 0; up_mbps = 0; ok = $false }
+}
+
+# === POTENZIALE LINEA (v1106.3: test di velocita' reale abbinato al task Unbound_Bunker_AbuseCh30m) ===
+#
+# Il PC non conosce la capacita' della fibra: vede solo la scheda verso il router. Il "potenziale" e'
+# quindi MISURATO: a fine esecuzione del task AbuseCh30m (transizione In esecuzione -> Inattivo) la
+# Dashboard lancia in un runspace separato un test con 4 flussi curl.exe paralleli verso Cloudflare
+# (prima il download, poi l'upload, mai insieme), ciascuno limitato a $script:LpTestSecs secondi.
+# Il test parte solo se l'ultima misura ha piu' di $script:LpMinAgeMin minuti: con AbuseCh30m ogni 30
+# minuti significa un test ogni 4 giri (circa 2 ore). Risultato in R:\line_potential.json (volatile
+# come il resto di R:). Un lock su file (R:\line_test.run, creazione esclusiva) impedisce che due
+# runspace della Dashboard (collector background + thread HTTP) lancino due test insieme.
+# Finche' non c'e' la prima misura si mostra, come ripiego, la velocita' di collegamento della scheda.
+$script:LpFile        = "R:\line_potential.json"
+$script:LpLockFile    = "R:\line_test.run"
+$script:LpTaskName    = 'Unbound_Bunker_AbuseCh30m'
+$script:LpMinAgeMin   = 105
+$script:LpTestSecs    = 6
+$script:LpPrevRunning = $null
+$script:LpAsync       = $null
+$script:LpCache       = $null
+$script:LpCacheTime   = [DateTime]::MinValue
+$script:LpCheckTime   = [DateTime]::MinValue
+
+function Get-NicLinkMbps {
+    $best = 0.0
+    try {
+        foreach ($nic in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($nic.OperationalStatus.ToString() -ne 'Up') { continue }
+            $nt = $nic.NetworkInterfaceType.ToString()
+            if ($nt -eq 'Loopback' -or $nt -eq 'Tunnel') { continue }
+            if (($nic.Name + ' ' + $nic.Description) -match 'Virtual|vEthernet|VPN|Hyper-V|VMware|VirtualBox|Bluetooth|Pseudo|TAP-Windows|Wintun|WireGuard|Teredo|ISATAP|Loopback') { continue }
+            if ([double]$nic.Speed -le 0 -or [double]$nic.Speed -eq 4294967295) { continue }
+            $mb = [math]::Round([double]$nic.Speed / 1000000, 0)
+            if ($mb -gt $best) { $best = $mb }
+        }
+    } catch {}
+    return $best
+}
+
+function Start-LineSpeedTest {
+    # Lock esclusivo: CreateNew fallisce se il file esiste gia' (test in corso in un altro runspace)
+    try {
+        if (Test-Path -LiteralPath $script:LpLockFile) {
+            $lockAge = ((Get-Date) - (Get-Item -LiteralPath $script:LpLockFile).LastWriteTime).TotalSeconds
+            if ($lockAge -lt 180) { return }
+            Remove-Item -LiteralPath $script:LpLockFile -Force -ErrorAction SilentlyContinue
+        }
+        $fs = [System.IO.File]::Open($script:LpLockFile, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+        $fs.Close()
+    } catch { return }
+
+    try {
+        $ps = [powershell]::Create()
+        [void]$ps.AddScript({
+            param($OutFile, $LockFile, $Secs)
+            $ProgressPreference = 'SilentlyContinue'
+            $tmpUp = $null
+            try {
+                # Pausa iniziale: il task AbuseCh30m riavvia Unbound per ricaricare le RPZ e il DNS
+                # potrebbe non essere ancora pronto appena il task risulta terminato.
+                Start-Sleep -Seconds 20
+                $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+                if (-not (Test-Path -LiteralPath $curl)) { return }
+                $inv = [System.Globalization.CultureInfo]::InvariantCulture
+                $flows = 4
+
+                $runFlows = {
+                    param($argLine, $n)
+                    $procs = @()
+                    for ($i = 0; $i -lt $n; $i++) {
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName               = $curl
+                        $psi.Arguments              = $argLine
+                        $psi.UseShellExecute        = $false
+                        $psi.CreateNoWindow         = $true
+                        $psi.RedirectStandardOutput = $true
+                        $procs += [System.Diagnostics.Process]::Start($psi)
+                    }
+                    $sum = 0.0
+                    foreach ($pr in $procs) {
+                        $txt = $pr.StandardOutput.ReadToEnd()
+                        [void]$pr.WaitForExit(15000)
+                        $v = 0.0
+                        if ([double]::TryParse($txt.Trim(), [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $sum += $v }
+                        $pr.Dispose()
+                    }
+                    return $sum
+                }
+
+                $argDown = '-s -o NUL -w "%{speed_download}" --max-time ' + $Secs + ' --connect-timeout 5 "https://speed.cloudflare.com/__down?bytes=100000000"'
+                $dl = & $runFlows $argDown $flows
+
+                $tmpUp = Join-Path $env:TEMP 'ub_line_up.bin'
+                $buf = New-Object byte[] 26214400
+                (New-Object System.Random).NextBytes($buf)
+                [System.IO.File]::WriteAllBytes($tmpUp, $buf)
+                $argUp = '-s -o NUL -w "%{speed_upload}" --max-time ' + $Secs + ' --connect-timeout 5 -X POST -H "Content-Type: application/octet-stream" --data-binary "@' + $tmpUp + '" "https://speed.cloudflare.com/__up"'
+                $ul = & $runFlows $argUp $flows
+
+                # Somma delle velocita' medie dei 4 flussi, in Mbps (bit/s / 1.000.000). Si salva solo
+                # se entrambe le direzioni hanno prodotto un valore: altrimenti resta l'ultima misura.
+                if ($dl -gt 0 -and $ul -gt 0) {
+                    $o = [ordered]@{
+                        down_mbps = [math]::Round($dl * 8 / 1000000, 1)
+                        up_mbps   = [math]::Round($ul * 8 / 1000000, 1)
+                        ts        = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+                    }
+                    $tmpJson = $OutFile + '.tmp'
+                    [System.IO.File]::WriteAllText($tmpJson, ($o | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
+                    Move-Item -LiteralPath $tmpJson -Destination $OutFile -Force
+                }
+            } catch {
+            } finally {
+                if ($tmpUp) { Remove-Item -LiteralPath $tmpUp -Force -ErrorAction SilentlyContinue }
+                Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
+            }
+        }).AddArgument($script:LpFile).AddArgument($script:LpLockFile).AddArgument($script:LpTestSecs)
+        $script:LpAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke() }
+    } catch {
+        Remove-Item -LiteralPath $script:LpLockFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-LinePotential {
+    try {
+        $now = Get-Date
+
+        # Pulizia del runspace del test concluso
+        $a = $script:LpAsync
+        if ($a -and $a.Handle.IsCompleted) {
+            try { [void]$a.Ps.EndInvoke($a.Handle) } catch {}
+            try { $a.Ps.Dispose() } catch {}
+            $script:LpAsync     = $null
+            $script:LpCacheTime = [DateTime]::MinValue
+        }
+
+        # Rilevamento della fine del task AbuseCh30m (controllo al massimo ogni 3 s)
+        if (($now - $script:LpCheckTime).TotalSeconds -ge 3) {
+            $script:LpCheckTime = $now
+            $live    = Get-BunkerTasksLiveState
+            $running = [bool]($live.ContainsKey($script:LpTaskName) -and $live[$script:LpTaskName])
+            if ($script:LpPrevRunning -eq $true -and -not $running -and -not $script:LpAsync) {
+                $ageMin = 99999.0
+                if (Test-Path -LiteralPath $script:LpFile) {
+                    $ageMin = ($now - (Get-Item -LiteralPath $script:LpFile).LastWriteTime).TotalMinutes
+                }
+                if ($ageMin -ge $script:LpMinAgeMin) { Start-LineSpeedTest }
+            }
+            $script:LpPrevRunning = $running
+        }
+
+        if ($script:LpCache -and ($now - $script:LpCacheTime).TotalSeconds -lt 5) { return $script:LpCache }
+
+        $inCorso = [bool](Test-Path -LiteralPath $script:LpLockFile)
+        $res = $null
+        if (Test-Path -LiteralPath $script:LpFile) {
+            try {
+                $j = Get-Content -LiteralPath $script:LpFile -Raw -ErrorAction Stop | ConvertFrom-Json
+                if ([double]$j.down_mbps -gt 0 -and [double]$j.up_mbps -gt 0) {
+                    $quando = ([datetime]$j.ts).ToString('HH:mm')
+                    $testo  = 'misurato alle ' + $quando
+                    if ($inCorso) { $testo += ' · test in corso' }
+                    $res = @{ ok = $true; down_mbps = [double]$j.down_mbps; up_mbps = [double]$j.up_mbps; fonte = 'misura'; testo = $testo; in_corso = $inCorso }
+                }
+            } catch {}
+        }
+        if (-not $res) {
+            $nicMbps = Get-NicLinkMbps
+            if ($nicMbps -gt 0) {
+                $testo = if ($inCorso) { 'velocità scheda · primo test in corso' } else { 'velocità scheda · in attesa del primo test' }
+                $res = @{ ok = $true; down_mbps = $nicMbps; up_mbps = $nicMbps; fonte = 'scheda'; testo = $testo; in_corso = $inCorso }
+            } else {
+                $res = @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; in_corso = $inCorso }
+            }
+        }
+        $script:LpCache     = $res
+        $script:LpCacheTime = $now
+        return $res
+    } catch {}
+    return @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; in_corso = $false }
 }
 
 function Get-HardwareTier {
@@ -441,6 +666,9 @@ function Get-HyperlocalStatus {
 }
 
 # === CACHE PER IP WAN E GEOLOCALIZZAZIONE ===
+# Le richieste web verso i servizi di geolocalizzazione girano in un runspace separato (NON bloccante):
+# eseguite nel ciclo di raccolta (1 s nella Light) a linea assente lo avrebbero bloccato fino a 4 s ad ogni giro.
+# Aggiornamento ogni 60 s a linea ok, ogni 10 s finche' l'IP pubblico non e' disponibile.
 $script:WanCacheTime = [DateTime]::MinValue
 $script:WanCacheData = @{
     ipv4_wan    = "N/D"
@@ -450,32 +678,20 @@ $script:WanCacheData = @{
     ipv6_wan_ok = $false
     ipv6_loc    = ""
 }
+$script:WanAsync     = $null
+$script:WanFailCount = 0
+$script:LanCacheTime = [DateTime]::MinValue
+$script:LanCacheData = $null
 
-function Get-IpConnectivityStatus {
-    # IPv4 LAN: Raccoglie TUTTI gli indirizzi validi (esclude loopback e APIPA)
-    $ip4LanList = @()
-    try {
-        $ip4LanList = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
-            Sort-Object -Property InterfaceMetric |
-            Select-Object -ExpandProperty IPAddress
-    } catch {}
+function Start-WanRefreshAsync {
+    $ps = [powershell]::Create()
+    [void]$ps.AddScript({
+        $ProgressPreference = 'SilentlyContinue'
+        $ip4Wan = "N/D"; $loc4 = ""
+        $ip6Wan = "N/D"; $loc6 = ""
 
-    # IPv6 LAN: Raccoglie TUTTI gli indirizzi validi (esclude link-local e loopback)
-    $ip6LanList = @()
-    try {
-        $ip6LanList = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notmatch '^fe80:|^::1$' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.AddressState -eq 'Preferred' } |
-            Sort-Object -Property InterfaceMetric |
-            Select-Object -ExpandProperty IPAddress
-    } catch {}
-
-    if (((Get-Date) - $script:WanCacheTime).TotalSeconds -ge 30) {
-        $ip4Wan = "N/D"
-        $loc4   = ""
-        
         try {
-            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 1 -ErrorAction Stop
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 3 -ErrorAction Stop
             if ($r4.status -eq 'success') {
                 $ip4Wan = $r4.query
                 $city4  = if ($r4.city) { $r4.city } else { $r4.isp }
@@ -483,7 +699,7 @@ function Get-IpConnectivityStatus {
             }
         } catch {
             try {
-                $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 1 -ErrorAction Stop
+                $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 3 -ErrorAction Stop
                 if ($r4.ip) {
                     $ip4Wan = $r4.ip
                     $loc4   = @($r4.city, $r4.country) -join ', '
@@ -491,11 +707,8 @@ function Get-IpConnectivityStatus {
             } catch {}
         }
 
-        $ip6Wan = "N/D"
-        $loc6   = ""
-        
         try {
-            $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 1 -ErrorAction Stop
+            $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 3 -ErrorAction Stop
             if ($r6.ip -match ':') {
                 $ip6Wan = $r6.ip
                 $city6  = if ($r6.city) { $r6.city } else { $r6.org }
@@ -503,26 +716,91 @@ function Get-IpConnectivityStatus {
             }
         } catch {
             try {
-                $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 1 -UseBasicParsing).Content.Trim()
-                if ($raw6 -match ':') { 
-                    $ip6Wan = $raw6 
+                $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 3 -UseBasicParsing).Content.Trim()
+                if ($raw6 -match ':') {
+                    $ip6Wan = $raw6
                     $loc6   = "Cloudflare WARP"
                 }
             } catch {}
         }
 
-        if ($ip4Wan -ne "N/D" -or $ip6Wan -ne "N/D") {
-            $script:WanCacheData = @{
-                ipv4_wan    = $ip4Wan
-                ipv4_wan_ok = ($ip4Wan -ne "N/D")
-                ipv4_loc    = $loc4
-                ipv6_wan    = $ip6Wan
-                ipv6_wan_ok = ($ip6Wan -ne "N/D")
-                ipv6_loc    = $loc6
+        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; ip6 = $ip6Wan; loc6 = $loc6 }
+    })
+    $script:WanAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke(); Started = (Get-Date) }
+}
+
+function Update-WanCacheState {
+    $a = $script:WanAsync
+    if ($a) {
+        if ($a.Handle.IsCompleted) {
+            $res = $null
+            try { $res = @($a.Ps.EndInvoke($a.Handle))[0] } catch {}
+            try { $a.Ps.Dispose() } catch {}
+            $script:WanAsync = $null
+            if ($res -and ($res.ip4 -ne "N/D" -or $res.ip6 -ne "N/D")) {
+                $script:WanFailCount = 0
+                $script:WanCacheData = @{
+                    ipv4_wan    = $res.ip4
+                    ipv4_wan_ok = ($res.ip4 -ne "N/D")
+                    ipv4_loc    = $res.loc4
+                    ipv6_wan    = $res.ip6
+                    ipv6_wan_ok = ($res.ip6 -ne "N/D")
+                    ipv6_loc    = $res.loc6
+                }
+            } else {
+                # Un solo giro a vuoto puo' essere un timeout isolato: si tiene l'ultimo valore; al secondo consecutivo si passa a N/D
+                $script:WanFailCount++
+                if ($script:WanFailCount -ge 2) {
+                    $script:WanCacheData = @{
+                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""
+                        ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""
+                    }
+                }
             }
             $script:WanCacheTime = Get-Date
         }
+        elseif (((Get-Date) - $a.Started).TotalSeconds -gt 20) {
+            # Richiesta rimasta appesa: la si abbandona e si riprova al prossimo turno
+            try { [void]$a.Ps.BeginStop($null, $null) } catch {}
+            $script:WanAsync = $null
+            $script:WanCacheTime = Get-Date
+        }
+        return
     }
+    $everyS = if ($script:WanCacheData.ipv4_wan_ok -or $script:WanCacheData.ipv6_wan_ok) { 60 } else { 10 }
+    if (((Get-Date) - $script:WanCacheTime).TotalSeconds -ge $everyS) {
+        try { Start-WanRefreshAsync } catch { $script:WanCacheTime = Get-Date }
+    }
+}
+
+function Get-IpConnectivityStatus {
+    # Indirizzi locali riletti al massimo ogni 5 s (Get-NetIPAddress e' relativamente pesante e qui si chiama a ogni giro)
+    if (-not $script:LanCacheData -or ((Get-Date) - $script:LanCacheTime).TotalSeconds -ge 5) {
+        # IPv4 LAN: Raccoglie TUTTI gli indirizzi validi (esclude loopback e APIPA)
+        $ip4LanList = @()
+        try {
+            $ip4LanList = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
+                Sort-Object -Property InterfaceMetric |
+                Select-Object -ExpandProperty IPAddress
+        } catch {}
+
+        # IPv6 LAN: Raccoglie TUTTI gli indirizzi validi (esclude link-local e loopback)
+        $ip6LanList = @()
+        try {
+            $ip6LanList = Get-NetIPAddress -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPAddress -notmatch '^fe80:|^::1$' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.AddressState -eq 'Preferred' } |
+                Sort-Object -Property InterfaceMetric |
+                Select-Object -ExpandProperty IPAddress
+        } catch {}
+
+        $script:LanCacheData = @{ ip4 = @($ip4LanList); ip6 = @($ip6LanList) }
+        $script:LanCacheTime = Get-Date
+    }
+    $ip4LanList = @($script:LanCacheData.ip4)
+    $ip6LanList = @($script:LanCacheData.ip6)
+
+    try { Update-WanCacheState } catch {}
 
     return [ordered]@{
         ipv4_lan    = if ($ip4LanList.Count -gt 0) { $ip4LanList -join ", " } else { "N/D" }
@@ -2239,6 +2517,7 @@ function Get-BunkerStatusJson {
     $sessione    = Update-SessionHistory
     $salute      = Get-HealthSnapshot
     $netSpeed    = Get-NetworkSpeed
+    $linePot = Get-LinePotential
     $ipConn      = Get-IpConnectivityStatus
     $dnsFallback = Get-DnsFallbackLog
     $blocchiOrari = Get-BlocksHourlyDistribution
@@ -2340,6 +2619,7 @@ function Get-BunkerStatusJson {
         versioni         = $versioni
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
+        line_potential   = $linePot
         rpz_log_age_min  = $rpzAgeMinutes
         rpz_freshness    = $rpzFresh
         rpz_task_last_run = $rpzTaskRun
@@ -2449,6 +2729,10 @@ function Get-BunkerStatusLightJson {
     $tsMs     = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $radar    = Get-UpstreamRadar
     $salute   = $script:LightHealthData
+    # Riga di rete (banda + IP + DNS vincitore): letture leggere, la parte web dell'IP pubblico gira in un runspace separato
+    $netSpeed = Get-NetworkSpeed
+    $linePot = Get-LinePotential
+    $ipConn   = Get-IpConnectivityStatus
     # Mantiene aggiornata la finestra 24h (campiona al massimo 1 volta/minuto, costo minimo)
     [void](Update-SessionHistory)
 
@@ -2494,6 +2778,9 @@ function Get-BunkerStatusLightJson {
         ram_disk         = $ramDisk
         engine_attivo    = $engineOn
         upstream_radar   = $radar
+        net_speed        = $netSpeed
+        line_potential   = $linePot
+        connettivita_ip  = $ipConn
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -2576,6 +2863,39 @@ $HtmlPageLight = @'
   .btn-reset { cursor: pointer; font-family: inherit; background: rgba(255,92,92,0.12); border-color: rgba(255,92,92,0.5); }
   .btn-reset:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,92,92,0.25); }
   .btn-reset:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+  /* ---------- Riga di rete: banda, IP, DNS del vincitore del radar ---------- */
+  .netstrip { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%); border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px 16px; margin: 0 0 18px; text-align: left; font-family: var(--font-ui); transition: opacity 0.4s; }
+  .netstrip.stale { opacity: 0.45; filter: grayscale(0.7); }
+  .ns-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .ns-pot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; padding: 8px 12px; font-size: 0.8em; border-radius: 10px; border: 1px solid rgba(79,179,255,0.30); background: linear-gradient(90deg, rgba(79,179,255,0.14) 0%, rgba(79,179,255,0.03) 100%); box-shadow: inset 3px 0 0 var(--accent); }
+  .ns-pot.fb { border-color: var(--border-strong); background: rgba(255,255,255,0.03); box-shadow: inset 3px 0 0 var(--dim); }
+  .ns-pot-l { font-size: 0.82em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
+  .ns-pot.run .ns-pot-l::after { content: ' \25CF'; color: #ffd600; animation: nsPotPulse 1.2s ease-in-out infinite; }
+  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 3px; line-height: 1.35; }
+  .ns-pot-v { text-align: right; white-space: nowrap; }
+  .ns-pot-v b { font-family: var(--font-mono); font-size: 2.1em; line-height: 1; color: var(--accent); letter-spacing: 0; }
+  .ns-pot.fb .ns-pot-v b { color: var(--dim); }
+  .ns-pot-v small { font-size: 0.8em; color: var(--dim); margin-left: 3px; }
+  @keyframes nsPotPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .ns-mh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 0.74em; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .ns-mh b { font-family: var(--font-mono); font-size: 1.7em; color: var(--text); letter-spacing: 0; }
+  .ns-mh small { font-size: 0.9em; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .ns-bar { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; height: 12px; }
+  .ns-bar i { border-radius: 2px; background: rgba(255,255,255,0.07); transition: background 0.25s; }
+  .ns-sc { display: flex; justify-content: space-between; font-size: 0.7em; color: var(--dim); margin-top: 3px; font-family: var(--font-mono); }
+  .ns-info { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .ns-c { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; min-width: 0; }
+  .ns-c.win { border-color: rgba(61,220,132,0.45); }
+  .ns-c.bad { border-color: rgba(255,92,92,0.45); }
+  .ns-l { font-size: 0.68em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
+  .ns-v { font-family: var(--font-mono); font-size: 0.88em; font-weight: 700; color: var(--text); margin-top: 3px; word-break: break-all; line-height: 1.35; }
+  .ns-s { font-size: 0.72em; color: var(--dim); margin-top: 2px; }
+  .ns-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
+  .ns-dot.ok { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+  .ns-dot.bad { background: #ff5c5c; }
+  @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
   .card {
@@ -2691,7 +3011,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -2701,6 +3021,35 @@ $HtmlPageLight = @'
       <a class="btn-pro" href="/pro" title="Apri la dashboard completa">&#128295; Versione Pro &rarr;</a>
     </div>
   </header>
+
+<div class="netstrip" id="netStrip">
+  <div class="ns-meters">
+    <div>
+      <div class="ns-pot fb" id="nsPotDc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
+        <div><div class="ns-pot-l">&#128225; Potenziale &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
+      </div>
+      <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
+      <div class="ns-bar" id="nsDb"></div>
+      <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
+    </div>
+    <div>
+      <div class="ns-pot fb" id="nsPotUc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
+        <div><div class="ns-pot-l">&#128225; Potenziale &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
+      </div>
+      <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
+      <div class="ns-bar" id="nsUb"></div>
+      <div class="ns-sc"><span>0</span><span id="nsUpk">picco 0 Mbps</span><span id="nsUmx">10</span></div>
+    </div>
+  </div>
+  <div class="ns-info">
+    <div class="ns-c"><div class="ns-l">IP pubblico</div><div class="ns-v" id="nsPub">N/D</div><div class="ns-s" id="nsPubS">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IPv4</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IPv6</div><div class="ns-v" id="nsV6">N/D</div><div class="ns-s" id="nsV6S">&nbsp;</div></div>
+    <div class="ns-c" id="nsDnsC"><div class="ns-l">DNS in uso</div><div class="ns-v" id="nsDns">N/D</div><div class="ns-s" id="nsDnsS">&nbsp;</div></div>
+  </div>
+</div>
 
   <div class="gauges" id="gauges">
     <div class="card">
@@ -3154,6 +3503,87 @@ $HtmlPageLight = @'
     document.getElementById('engText').textContent = text;
   }
 
+  /* ---------- Riga di rete: banda (autoscala), IP, DNS del vincitore del radar ---------- */
+  var NSN = 40, nsPkD = 0, nsPkU = 0, nsRingD = [], nsRingU = [];
+  function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
+  function nsFmt(v) { return (Math.round(v * 10) / 10).toFixed(1).replace('.', ','); }
+  function nsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function nsPaint(id, v, mx) {
+    var b = document.getElementById(id); if (!b) return;
+    if (!b.children.length) { for (var i = 0; i < NSN; i++) b.appendChild(document.createElement('i')); }
+    var on = Math.round(Math.min(v / mx, 1) * NSN);
+    for (var j = 0; j < NSN; j++) {
+      var f = j / NSN;
+      b.children[j].style.background = j < on ? (f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c')) : '';
+    }
+  }
+  function nsSet(id, html) { var e = document.getElementById(id); if (e) e.innerHTML = html; }
+  function nsMeter(v, ring, ids, pk) {
+    ring.push(v); if (ring.length > 60) ring.shift();
+    var mx = nsNice(Math.max.apply(null, ring) * 1.15);
+    nsPaint(ids[0], v, mx);
+    document.getElementById(ids[1]).textContent = nsFmt(v);
+    document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
+    document.getElementById(ids[3]).textContent = mx;
+  }
+  function nsPotUpdate(d) {
+    var p = d.line_potential, n = d.net_speed;
+    var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
+    for (var i = 0; i < cfg.length; i++) {
+      var c = document.getElementById(cfg[i][0]), v = document.getElementById(cfg[i][1]), s = document.getElementById(cfg[i][2]);
+      if (!c || !v || !s) continue;
+      if (p && p.ok && p[cfg[i][3]] > 0) {
+        var pot = p[cfg[i][3]];
+        v.textContent = pot >= 100 ? String(Math.round(pot)) : nsFmt(pot);
+        var sub = nsEsc(p.testo);
+        if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
+        s.innerHTML = sub;
+        c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
+      } else {
+        v.textContent = 'N/D'; s.innerHTML = '&nbsp;'; c.className = 'ns-pot fb';
+      }
+    }
+  }
+  function nsUpdate(d) {
+    nsPotUpdate(d);
+    var n = d.net_speed;
+    if (n && n.ok) {
+      nsPkD = Math.max(nsPkD, n.down_mbps); nsPkU = Math.max(nsPkU, n.up_mbps);
+      nsMeter(n.down_mbps, nsRingD, ['nsDb', 'nsDv', 'nsDpk', 'nsDmx'], nsPkD);
+      nsMeter(n.up_mbps, nsRingU, ['nsUb', 'nsUv', 'nsUpk', 'nsUmx'], nsPkU);
+    } else {
+      document.getElementById('nsDv').textContent = 'N/D';
+      document.getElementById('nsUv').textContent = 'N/D';
+      nsPaint('nsDb', 0, 10); nsPaint('nsUb', 0, 10);
+    }
+    var ip = d.connettivita_ip;
+    if (ip) {
+      nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
+      nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+      var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
+      nsSet('nsV4', l4.length ? nsEsc(l4[0]) : 'N/D');
+      nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (+' + (l4.length - 1) + ')' : '') : 'offline'));
+      var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
+      if (ip.ipv6_wan_ok) { nsSet('nsV6', nsEsc(ip.ipv6_wan)); nsSet('nsV6S', '<span class="ns-dot ok"></span>pubblico'); }
+      else if (l6.length) { nsSet('nsV6', nsEsc(l6[0])); nsSet('nsV6S', '<span class="ns-dot ok"></span>solo locale'); }
+      else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+    }
+    var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
+    rad = rad || [];
+    var win = null, okN = 0;
+    rad.forEach(function (r) { if (r && r.ok) { okN++; if (!win || r.ms < win.ms) win = r; } });
+    var c = document.getElementById('nsDnsC');
+    if (win) {
+      c.className = 'ns-c win';
+      nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
+      nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
+    } else {
+      c.className = rad.length ? 'ns-c bad' : 'ns-c';
+      nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
+      nsSet('nsDnsS', rad.length ? '<span class="ns-dot bad"></span>radar 0/' + rad.length : '&nbsp;');
+    }
+  }
+
   async function refresh() {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -3170,11 +3600,13 @@ $HtmlPageLight = @'
         document.getElementById('restartOverlay').classList.remove('auto');
       }
       document.getElementById('gauges').classList.remove('stale');
+      document.getElementById('netStrip').classList.remove('stale');
       // Con il polling a 1 s la stessa istantanea del server arriva piu' volte: la si elabora una
       // sola volta (altrimenti i QPS risulterebbero a dente di sega: 0, picco, 0, picco...)
       var snap = d.ts_ms || d.generato_il || '';   // ts_ms (ms) distingue istantanee nello stesso secondo; il JSON della Pro non lo ha
       if (snap && snap === lastSnap) return;
       lastSnap = snap;
+      try { nsUpdate(d); } catch (e) { /* la riga di rete non deve mai bloccare le lancette */ }
 
       var engineOn = !!d.engine_attivo;
       setEngine(engineOn ? 'ok' : 'bad', engineOn ? 'UNBOUND ATTIVO' : 'UNBOUND FERMO');
@@ -3687,6 +4119,7 @@ $HtmlPageLight = @'
   setInterval(function () {
     if (lastLive() > 8000) {
       document.getElementById('gauges').classList.add('stale');
+      document.getElementById('netStrip').classList.add('stale');
       setEngine('wait', 'CONNESSIONE PERSA');
       if (!restarting && !autoOverlay) {
         autoOverlay = true;
@@ -3708,7 +4141,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -3757,6 +4190,39 @@ $HtmlPage = @'
     margin: 0; padding: 24px 28px 40px; min-height: 100vh;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
+
+  /* ---------- Riga di rete: banda, IP, DNS del vincitore del radar ---------- */
+  .netstrip { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%); border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px 16px; margin: 0 0 18px; text-align: left; font-family: var(--font-ui); transition: opacity 0.4s; }
+  .netstrip.stale { opacity: 0.45; filter: grayscale(0.7); }
+  .ns-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .ns-pot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; padding: 8px 12px; font-size: 0.8em; border-radius: 10px; border: 1px solid rgba(79,179,255,0.30); background: linear-gradient(90deg, rgba(79,179,255,0.14) 0%, rgba(79,179,255,0.03) 100%); box-shadow: inset 3px 0 0 var(--accent); }
+  .ns-pot.fb { border-color: var(--border-strong); background: rgba(255,255,255,0.03); box-shadow: inset 3px 0 0 var(--dim); }
+  .ns-pot-l { font-size: 0.82em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
+  .ns-pot.run .ns-pot-l::after { content: ' \25CF'; color: #ffd600; animation: nsPotPulse 1.2s ease-in-out infinite; }
+  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 3px; line-height: 1.35; }
+  .ns-pot-v { text-align: right; white-space: nowrap; }
+  .ns-pot-v b { font-family: var(--font-mono); font-size: 2.1em; line-height: 1; color: var(--accent); letter-spacing: 0; }
+  .ns-pot.fb .ns-pot-v b { color: var(--dim); }
+  .ns-pot-v small { font-size: 0.8em; color: var(--dim); margin-left: 3px; }
+  @keyframes nsPotPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .ns-mh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 0.74em; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .ns-mh b { font-family: var(--font-mono); font-size: 1.7em; color: var(--text); letter-spacing: 0; }
+  .ns-mh small { font-size: 0.9em; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .ns-bar { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; height: 12px; }
+  .ns-bar i { border-radius: 2px; background: rgba(255,255,255,0.07); transition: background 0.25s; }
+  .ns-sc { display: flex; justify-content: space-between; font-size: 0.7em; color: var(--dim); margin-top: 3px; font-family: var(--font-mono); }
+  .ns-info { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .ns-c { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; min-width: 0; }
+  .ns-c.win { border-color: rgba(61,220,132,0.45); }
+  .ns-c.bad { border-color: rgba(255,92,92,0.45); }
+  .ns-l { font-size: 0.68em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
+  .ns-v { font-family: var(--font-mono); font-size: 0.88em; font-weight: 700; color: var(--text); margin-top: 3px; word-break: break-all; line-height: 1.35; }
+  .ns-s { font-size: 0.72em; color: var(--dim); margin-top: 2px; }
+  .ns-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
+  .ns-dot.ok { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
+  .ns-dot.bad { background: #ff5c5c; }
+  @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } }
 
   /* ---------- Intestazione & Animazione Shimmer ---------- */
   .header-container {
@@ -4486,7 +4952,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.2 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.3 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -4522,6 +4988,35 @@ $HtmlPage = @'
   </button>
   <span id="updateComponentsStatus" class="muted button-row-status"></span>
   <div id="bunkerGainContainer" style="margin-left: auto; display: flex; align-items: center;"></div>
+</div>
+
+<div class="netstrip" id="netStrip" style="margin-top:14px;">
+  <div class="ns-meters">
+    <div>
+      <div class="ns-pot fb" id="nsPotDc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
+        <div><div class="ns-pot-l">&#128225; Potenziale &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
+      </div>
+      <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
+      <div class="ns-bar" id="nsDb"></div>
+      <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
+    </div>
+    <div>
+      <div class="ns-pot fb" id="nsPotUc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
+        <div><div class="ns-pot-l">&#128225; Potenziale &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
+      </div>
+      <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
+      <div class="ns-bar" id="nsUb"></div>
+      <div class="ns-sc"><span>0</span><span id="nsUpk">picco 0 Mbps</span><span id="nsUmx">10</span></div>
+    </div>
+  </div>
+  <div class="ns-info">
+    <div class="ns-c"><div class="ns-l">IP pubblico</div><div class="ns-v" id="nsPub">N/D</div><div class="ns-s" id="nsPubS">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IPv4</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IPv6</div><div class="ns-v" id="nsV6">N/D</div><div class="ns-s" id="nsV6S">&nbsp;</div></div>
+    <div class="ns-c" id="nsDnsC"><div class="ns-l">DNS in uso</div><div class="ns-v" id="nsDns">N/D</div><div class="ns-s" id="nsDnsS">&nbsp;</div></div>
+  </div>
 </div>
 
 <div class="update-toast" id="updateToast">&#9989; Aggiornamento dashboard avvenuto</div>
@@ -6114,6 +6609,87 @@ function bnkLatScore(recMs, rtt) {
   return P[P.length - 1][1];
 }
 
+/* ---------- Riga di rete: banda (autoscala), IP, DNS del vincitore del radar ---------- */
+var NSN = 40, nsPkD = 0, nsPkU = 0, nsRingD = [], nsRingU = [];
+function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
+function nsFmt(v) { return (Math.round(v * 10) / 10).toFixed(1).replace('.', ','); }
+function nsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function nsPaint(id, v, mx) {
+  var b = document.getElementById(id); if (!b) return;
+  if (!b.children.length) { for (var i = 0; i < NSN; i++) b.appendChild(document.createElement('i')); }
+  var on = Math.round(Math.min(v / mx, 1) * NSN);
+  for (var j = 0; j < NSN; j++) {
+    var f = j / NSN;
+    b.children[j].style.background = j < on ? (f < 0.6 ? '#3ddc84' : (f < 0.85 ? '#ffb300' : '#ff5c5c')) : '';
+  }
+}
+function nsSet(id, html) { var e = document.getElementById(id); if (e) e.innerHTML = html; }
+function nsMeter(v, ring, ids, pk) {
+  ring.push(v); if (ring.length > 60) ring.shift();
+  var mx = nsNice(Math.max.apply(null, ring) * 1.15);
+  nsPaint(ids[0], v, mx);
+  document.getElementById(ids[1]).textContent = nsFmt(v);
+  document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
+  document.getElementById(ids[3]).textContent = mx;
+}
+function nsPotUpdate(d) {
+  var p = d.line_potential, n = d.net_speed;
+  var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
+  for (var i = 0; i < cfg.length; i++) {
+    var c = document.getElementById(cfg[i][0]), v = document.getElementById(cfg[i][1]), s = document.getElementById(cfg[i][2]);
+    if (!c || !v || !s) continue;
+    if (p && p.ok && p[cfg[i][3]] > 0) {
+      var pot = p[cfg[i][3]];
+      v.textContent = pot >= 100 ? String(Math.round(pot)) : nsFmt(pot);
+      var sub = nsEsc(p.testo);
+      if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
+      s.innerHTML = sub;
+      c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
+    } else {
+      v.textContent = 'N/D'; s.innerHTML = '&nbsp;'; c.className = 'ns-pot fb';
+    }
+  }
+}
+function nsUpdate(d) {
+  nsPotUpdate(d);
+  var n = d.net_speed;
+  if (n && n.ok) {
+    nsPkD = Math.max(nsPkD, n.down_mbps); nsPkU = Math.max(nsPkU, n.up_mbps);
+    nsMeter(n.down_mbps, nsRingD, ['nsDb', 'nsDv', 'nsDpk', 'nsDmx'], nsPkD);
+    nsMeter(n.up_mbps, nsRingU, ['nsUb', 'nsUv', 'nsUpk', 'nsUmx'], nsPkU);
+  } else {
+    document.getElementById('nsDv').textContent = 'N/D';
+    document.getElementById('nsUv').textContent = 'N/D';
+    nsPaint('nsDb', 0, 10); nsPaint('nsUb', 0, 10);
+  }
+  var ip = d.connettivita_ip;
+  if (ip) {
+    nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
+    nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+    var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
+    nsSet('nsV4', l4.length ? nsEsc(l4[0]) : 'N/D');
+    nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (+' + (l4.length - 1) + ')' : '') : 'offline'));
+    var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
+    if (ip.ipv6_wan_ok) { nsSet('nsV6', nsEsc(ip.ipv6_wan)); nsSet('nsV6S', '<span class="ns-dot ok"></span>pubblico'); }
+    else if (l6.length) { nsSet('nsV6', nsEsc(l6[0])); nsSet('nsV6S', '<span class="ns-dot ok"></span>solo locale'); }
+    else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+  }
+  var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
+  rad = rad || [];
+  var win = null, okN = 0;
+  rad.forEach(function (r) { if (r && r.ok) { okN++; if (!win || r.ms < win.ms) win = r; } });
+  var c = document.getElementById('nsDnsC');
+  if (win) {
+    c.className = 'ns-c win';
+    nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
+    nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
+  } else {
+    c.className = rad.length ? 'ns-c bad' : 'ns-c';
+    nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
+    nsSet('nsDnsS', rad.length ? '<span class="ns-dot bad"></span>radar 0/' + rad.length : '&nbsp;');
+  }
+}
+
 async function refresh(forceVersions) {
   if (isRefreshing) return;
   isRefreshing = true;
@@ -6129,6 +6705,7 @@ async function refresh(forceVersions) {
 
     lastDataTs = Date.now();
     setLiveStatus(true);
+    try { nsUpdate(d); } catch (e) { /* la riga di rete non deve mai bloccare il refresh */ }
     try { updateLoadTitle(d.bunker_features && d.bunker_features.sys_load); } catch (e) { /* il titolo non deve mai bloccare il refresh */ }
 
     try { renderStatusBanner(d); } catch (e) { /* il banner non deve mai bloccare il resto del refresh */ }
