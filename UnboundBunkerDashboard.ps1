@@ -308,12 +308,15 @@ function Start-LineSpeedTest {
             param($OutFile, $LockFile, $Secs, $Delay)
             $ProgressPreference = 'SilentlyContinue'
             $tmpUp = $null
+            $lpLog = 'R:\line_test.log'
+            $lpW = { param($m) try { ('[' + (Get-Date).ToString('dd.MM.yyyy HH:mm:ss') + '] ' + $m) | Out-File -LiteralPath $lpLog -Append -Encoding utf8 } catch {} }
             try {
+                & $lpW ('Avvio test linea (flussi=4, secondi=' + $Secs + ', ritardo=' + $Delay + ')')
                 # Pausa iniziale: il task AbuseCh30m riavvia Unbound per ricaricare le RPZ e il DNS
                 # potrebbe non essere ancora pronto appena il task risulta terminato.
                 if ($Delay -gt 0) { Start-Sleep -Seconds $Delay }
                 $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
-                if (-not (Test-Path -LiteralPath $curl)) { return }
+                if (-not (Test-Path -LiteralPath $curl)) { & $lpW ('curl.exe non trovato in ' + $curl); return }
                 $inv = [System.Globalization.CultureInfo]::InvariantCulture
                 $flows = 4
 
@@ -327,42 +330,74 @@ function Start-LineSpeedTest {
                         $psi.UseShellExecute        = $false
                         $psi.CreateNoWindow         = $true
                         $psi.RedirectStandardOutput = $true
+                        $psi.RedirectStandardError  = $true
                         $procs += [System.Diagnostics.Process]::Start($psi)
                     }
                     $sum = 0.0
                     foreach ($pr in $procs) {
+                        $errTask = $pr.StandardError.ReadToEndAsync()
                         $txt = $pr.StandardOutput.ReadToEnd()
                         [void]$pr.WaitForExit(15000)
                         $v = 0.0
-                        if ([double]::TryParse($txt.Trim(), [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)) { $sum += $v }
+                        $spdTxt = ($txt.Trim() -split '\|')[0].Replace(',', '.')
+                        $okParse = [double]::TryParse($spdTxt, [System.Globalization.NumberStyles]::Float, $inv, [ref]$v)
+                        $httpCode = ''; $parts = $txt.Trim() -split '\|'; if ($parts.Count -gt 1) { $httpCode = $parts[1].Trim() }
+                        if ($okParse -and $httpCode -match '^2\d\d$') { $sum += $v }
+                        $ec = ''; try { $ec = [string]$pr.ExitCode } catch {}
+                        $er = ''; try { $er = ([string]$errTask.Result).Trim() } catch {}
+                        & $lpW ('  flusso: out=[' + $txt.Trim() + '] exit=' + $ec + $(if ($er) { ' err=[' + $er + ']' } else { '' }))
                         $pr.Dispose()
                     }
                     return $sum
                 }
 
-                $argDown = '-s -o NUL -w "%{speed_download}" --max-time ' + $Secs + ' --connect-timeout 5 "https://speed.cloudflare.com/__down?bytes=100000000"'
-                $dl = & $runFlows $argDown $flows
+                # Download: prova in ordine piu' sorgenti, si ferma alla prima che produce una velocita' > 0
+                $dlUrls = @(
+                    'https://speed.cloudflare.com/__down?bytes=100000000',
+                    'https://proof.ovh.net/files/100Mb.dat',
+                    'https://speedtest.tele2.net/100MB.zip'
+                )
+                $dl = 0.0
+                foreach ($u in $dlUrls) {
+                    $argDown = '-s -L -A "Mozilla/5.0" -o NUL -w "%{speed_download}|%{http_code}" --max-time ' + $Secs + ' --connect-timeout 5 "' + $u + '"'
+                    & $lpW ('Download da ' + $u)
+                    $dl = & $runFlows $argDown $flows
+                    if ($dl -gt 0) { break }
+                }
+                & $lpW ('Download totale (byte/s): ' + $dl)
 
                 $tmpUp = Join-Path $env:TEMP 'ub_line_up.bin'
                 $buf = New-Object byte[] 26214400
                 (New-Object System.Random).NextBytes($buf)
                 [System.IO.File]::WriteAllBytes($tmpUp, $buf)
-                $argUp = '-s -o NUL -w "%{speed_upload}" --max-time ' + $Secs + ' --connect-timeout 5 -X POST -H "Content-Type: application/octet-stream" --data-binary "@' + $tmpUp + '" "https://speed.cloudflare.com/__up"'
+                $argUp = '-s -L -A "Mozilla/5.0" -o NUL -w "%{speed_upload}|%{http_code}" --max-time ' + $Secs + ' --connect-timeout 5 -X POST -H "Content-Type: application/octet-stream" --data-binary "@' + $tmpUp + '" "https://speed.cloudflare.com/__up"'
+                & $lpW 'Upload...'
                 $ul = & $runFlows $argUp $flows
+                & $lpW ('Upload totale (byte/s): ' + $ul)
 
                 # Somma delle velocita' medie dei 4 flussi, in Mbps (bit/s / 1.000.000). Si salva solo
                 # se entrambe le direzioni hanno prodotto un valore: altrimenti resta l'ultima misura.
-                if ($dl -gt 0 -and $ul -gt 0) {
+                if ($dl -gt 0 -or $ul -gt 0) {
+                    $pd = 0.0; $pu = 0.0
+                    if (Test-Path -LiteralPath $OutFile) {
+                        try { $pj = Get-Content -LiteralPath $OutFile -Raw -ErrorAction Stop | ConvertFrom-Json; $pd = [double]$pj.down_mbps; $pu = [double]$pj.up_mbps } catch {}
+                    }
+                    $nd = if ($dl -gt 0) { [math]::Round($dl * 8 / 1000000, 1) } else { $pd }
+                    $nu = if ($ul -gt 0) { [math]::Round($ul * 8 / 1000000, 1) } else { $pu }
                     $o = [ordered]@{
-                        down_mbps = [math]::Round($dl * 8 / 1000000, 1)
-                        up_mbps   = [math]::Round($ul * 8 / 1000000, 1)
+                        down_mbps = $nd
+                        up_mbps   = $nu
                         ts        = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                     }
                     $tmpJson = $OutFile + '.tmp'
                     [System.IO.File]::WriteAllText($tmpJson, ($o | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
                     Move-Item -LiteralPath $tmpJson -Destination $OutFile -Force
+                    & $lpW ('Misura salvata: down=' + $nd + ' Mbps, up=' + $nu + ' Mbps')
+                } else {
+                    & $lpW 'Nessuna velocita valida misurata (download e upload a 0): misura NON salvata, resta il ripiego scheda.'
                 }
             } catch {
+                & $lpW ('ERRORE test linea: ' + $_.Exception.Message)
             } finally {
                 if ($tmpUp) { Remove-Item -LiteralPath $tmpUp -Force -ErrorAction SilentlyContinue }
                 Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
@@ -411,7 +446,7 @@ function Get-LinePotential {
         if (Test-Path -LiteralPath $script:LpFile) {
             try {
                 $j = Get-Content -LiteralPath $script:LpFile -Raw -ErrorAction Stop | ConvertFrom-Json
-                if ([double]$j.down_mbps -gt 0 -and [double]$j.up_mbps -gt 0) {
+                if ([double]$j.down_mbps -gt 0 -or [double]$j.up_mbps -gt 0) {
                     $quando = ([datetime]$j.ts).ToString('HH:mm')
                     $testo  = 'misurato alle ' + $quando
                     if ($inCorso) { $testo += ' · test in corso' }
@@ -422,7 +457,7 @@ function Get-LinePotential {
         if (-not $res) {
             $nicMbps = Get-NicLinkMbps
             if ($nicMbps -gt 0) {
-                $testo = if ($inCorso) { 'velocità scheda · primo test in corso' } else { 'velocità scheda · in attesa del primo test' }
+                $testo = if ($inCorso) { 'solo velocità scheda di rete (non è la linea) · test in corso' } else { 'solo velocità scheda di rete (non è la linea) · nessuna misura valida' }
                 $res = @{ ok = $true; down_mbps = $nicMbps; up_mbps = $nicMbps; fonte = 'scheda'; testo = $testo; in_corso = $inCorso }
             } else {
                 $res = @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; in_corso = $inCorso }
@@ -3041,8 +3076,8 @@ $HtmlPageLight = @'
 <div class="netstrip" id="netStrip">
   <div class="ns-meters">
     <div>
-      <div class="ns-pot fb" id="nsPotDc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
-        <div><div class="ns-pot-l">&#128225; Potenziale &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
@@ -3050,8 +3085,8 @@ $HtmlPageLight = @'
       <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
     </div>
     <div>
-      <div class="ns-pot fb" id="nsPotUc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
-        <div><div class="ns-pot-l">&#128225; Potenziale &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
@@ -5038,8 +5073,8 @@ $HtmlPage = @'
 <div class="netstrip" id="netStrip" style="margin-top:14px;">
   <div class="ns-meters">
     <div>
-      <div class="ns-pot fb" id="nsPotDc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
-        <div><div class="ns-pot-l">&#128225; Potenziale &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+      <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span>&#11015; Download</span><span><b id="nsDv">--</b> <small>Mbps</small></span></div>
@@ -5047,8 +5082,8 @@ $HtmlPage = @'
       <div class="ns-sc"><span>0</span><span id="nsDpk">picco 0 Mbps</span><span id="nsDmx">10</span></div>
     </div>
     <div>
-      <div class="ns-pot fb" id="nsPotUc" title="Velocit&agrave; massima della linea, misurata con un test reale a fine task AbuseCh30m (circa ogni 2 ore)">
-        <div><div class="ns-pot-l">&#128225; Potenziale &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+      <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: massimo misurato con un test reale a fine task AbuseCh30m (circa ogni 2 ore). Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
+        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span>&#11014; Upload</span><span><b id="nsUv">--</b> <small>Mbps</small></span></div>
