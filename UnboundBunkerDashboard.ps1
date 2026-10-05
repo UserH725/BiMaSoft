@@ -274,6 +274,7 @@ function Get-NicLinkMbps {
             if (($nic.Name + ' ' + $nic.Description) -match 'Virtual|vEthernet|VPN|Hyper-V|VMware|VirtualBox|Bluetooth|Pseudo|TAP-Windows|Wintun|WireGuard|Teredo|ISATAP|Loopback') { continue }
             if ([double]$nic.Speed -le 0 -or [double]$nic.Speed -eq 4294967295) { continue }
             $mb = [math]::Round([double]$nic.Speed / 1000000, 0)
+            if ($mb -gt 400000) { continue }
             if ($mb -gt $best) { $best = $mb }
         }
     } catch {}
@@ -281,27 +282,36 @@ function Get-NicLinkMbps {
 }
 
 function Start-LineSpeedTest {
+    # Restituisce 'started' | 'busy' (test gia' in corso) | 'error'. DelaySec = pausa prima di misurare:
+    # 20 s dopo il task AbuseCh30m (Unbound sta ricaricando le RPZ), 0 per la misura forzata dal pulsante.
+    param([int]$DelaySec = 20)
+    $old = $script:LpAsync
+    if ($old -and $old.Handle.IsCompleted) {
+        try { [void]$old.Ps.EndInvoke($old.Handle) } catch {}
+        try { $old.Ps.Dispose() } catch {}
+        $script:LpAsync = $null
+    }
     # Lock esclusivo: CreateNew fallisce se il file esiste gia' (test in corso in un altro runspace)
     try {
         if (Test-Path -LiteralPath $script:LpLockFile) {
             $lockAge = ((Get-Date) - (Get-Item -LiteralPath $script:LpLockFile).LastWriteTime).TotalSeconds
-            if ($lockAge -lt 180) { return }
+            if ($lockAge -lt 180) { return 'busy' }
             Remove-Item -LiteralPath $script:LpLockFile -Force -ErrorAction SilentlyContinue
         }
         $fs = [System.IO.File]::Open($script:LpLockFile, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
         $fs.Close()
-    } catch { return }
+    } catch { return 'busy' }
 
     try {
         $ps = [powershell]::Create()
         [void]$ps.AddScript({
-            param($OutFile, $LockFile, $Secs)
+            param($OutFile, $LockFile, $Secs, $Delay)
             $ProgressPreference = 'SilentlyContinue'
             $tmpUp = $null
             try {
                 # Pausa iniziale: il task AbuseCh30m riavvia Unbound per ricaricare le RPZ e il DNS
                 # potrebbe non essere ancora pronto appena il task risulta terminato.
-                Start-Sleep -Seconds 20
+                if ($Delay -gt 0) { Start-Sleep -Seconds $Delay }
                 $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
                 if (-not (Test-Path -LiteralPath $curl)) { return }
                 $inv = [System.Globalization.CultureInfo]::InvariantCulture
@@ -357,10 +367,12 @@ function Start-LineSpeedTest {
                 if ($tmpUp) { Remove-Item -LiteralPath $tmpUp -Force -ErrorAction SilentlyContinue }
                 Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
             }
-        }).AddArgument($script:LpFile).AddArgument($script:LpLockFile).AddArgument($script:LpTestSecs)
+        }).AddArgument($script:LpFile).AddArgument($script:LpLockFile).AddArgument($script:LpTestSecs).AddArgument($DelaySec)
         $script:LpAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke() }
+        return 'started'
     } catch {
         Remove-Item -LiteralPath $script:LpLockFile -Force -ErrorAction SilentlyContinue
+        return 'error'
     }
 }
 
@@ -387,7 +399,7 @@ function Get-LinePotential {
                 if (Test-Path -LiteralPath $script:LpFile) {
                     $ageMin = ($now - (Get-Item -LiteralPath $script:LpFile).LastWriteTime).TotalMinutes
                 }
-                if ($ageMin -ge $script:LpMinAgeMin) { Start-LineSpeedTest }
+                if ($ageMin -ge $script:LpMinAgeMin) { [void](Start-LineSpeedTest) }
             }
             $script:LpPrevRunning = $running
         }
@@ -2860,6 +2872,9 @@ $HtmlPageLight = @'
   .btn-restart { cursor: pointer; font-family: inherit; background: rgba(255,179,0,0.14); border-color: rgba(255,179,0,0.55); }
   .btn-restart:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,179,0,0.25); }
   .btn-restart:disabled { opacity: 0.6; cursor: wait; transform: none; }
+  .btn-line { cursor: pointer; font-family: inherit; background: rgba(79,179,255,0.14); border-color: rgba(79,179,255,0.55); }
+  .btn-line:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(79,179,255,0.25); }
+  .btn-line:disabled { opacity: 0.6; cursor: wait; transform: none; }
   .btn-reset { cursor: pointer; font-family: inherit; background: rgba(255,92,92,0.12); border-color: rgba(255,92,92,0.5); }
   .btn-reset:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(255,92,92,0.25); }
   .btn-reset:disabled { opacity: 0.6; cursor: wait; transform: none; }
@@ -3017,6 +3032,7 @@ $HtmlPageLight = @'
     <div class="top-actions">
       <span class="badge wait" id="engBadge"><span class="dot"></span><span id="engText">IN ATTESA</span></span>
       <button type="button" class="btn-pro btn-reset" id="btnResetLight" title="Svuota lo storico dei due indicatori e riparte da zero, come alla prima accensione">&#128465;&#65039; Azzera storico</button>
+      <button type="button" class="btn-pro btn-line" id="btnForceLine" title="Avvia subito il test di velocit&agrave; reale della linea (download, poi upload: circa 15 secondi, occupa tutta la banda)">&#128225; Misura linea ora</button>
       <button type="button" class="btn-pro btn-restart" id="btnRestartLight" title="Riavvia la Dashboard (la pagina si ricarica da sola)">&#128260; Riavvia Dashboard</button>
       <a class="btn-pro" href="/pro" title="Apri la dashboard completa">&#128295; Versione Pro &rarr;</a>
     </div>
@@ -3526,6 +3542,25 @@ $HtmlPageLight = @'
     document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
     document.getElementById(ids[3]).textContent = mx;
   }
+  var nsLineHold = 0;
+  async function forceLineTest() {
+    var btn = document.getElementById('btnForceLine'), st = document.getElementById('forceLineStatus');
+    if (btn && btn.disabled) return;
+    if (!confirm('Avviare subito il test di velocit\u00e0 della linea?\n\nDura circa 15 secondi: prima il download, poi l\'upload, e per qualche secondo occupa tutta la banda.')) return;
+    nsLineHold = Date.now() + 8000;
+    if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Avvio...'; }
+    try {
+      var res = await fetch('/api/force-line-test', { method: 'POST', cache: 'no-store' });
+      var data = await res.json().catch(function () { return {}; });
+      if (st) st.textContent = data.status === 'started' ? 'Test avviato alle ' + new Date().toLocaleTimeString('it-IT') + '.' : (data.status === 'busy' ? 'Un test \u00e8 gi\u00e0 in corso.' : 'Errore: ' + (data.error || 'sconosciuto'));
+      if (data.status === 'error') nsLineHold = 0;
+    } catch (e) {
+      nsLineHold = 0;
+      if (st) st.textContent = 'Errore di rete durante la richiesta.';
+    }
+    if (st) setTimeout(function () { st.textContent = ''; }, 30000);
+  }
+  (function () { var b = document.getElementById('btnForceLine'); if (b) b.addEventListener('click', forceLineTest); })();
   function nsPotUpdate(d) {
     var p = d.line_potential, n = d.net_speed;
     var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
@@ -3542,6 +3577,12 @@ $HtmlPageLight = @'
       } else {
         v.textContent = 'N/D'; s.innerHTML = '&nbsp;'; c.className = 'ns-pot fb';
       }
+    }
+    var fb = document.getElementById('btnForceLine');
+    if (fb) {
+      var busy = !!(p && p.in_corso) || Date.now() < nsLineHold;
+      fb.disabled = busy;
+      fb.innerHTML = busy ? '&#9203; Test in corso...' : '&#128225; Misura linea ora';
     }
   }
   function nsUpdate(d) {
@@ -4979,6 +5020,10 @@ $HtmlPage = @'
     &#128229; Forza Aggiornamento RPZ
   </button>
   <span id="forceRpzStatus" class="muted button-row-status"></span>
+  <button id="btnForceLine" class="btn-action btn-blue" title="Avvia subito il test di velocit&agrave; reale della linea (download, poi upload: circa 15 secondi, occupa tutta la banda)">
+    &#128225; Misura linea ora
+  </button>
+  <span id="forceLineStatus" class="muted button-row-status"></span>
   <button id="btnUpdateDash" onclick="confirmUpdateDashboard()" class="btn-action btn-red" title="Scarica dal repository GitHub l'ultima versione della dashboard e riavvia">
     &#11015;&#65039; Aggiorna Dashboard da GitHub
   </button>
@@ -6632,6 +6677,25 @@ function nsMeter(v, ring, ids, pk) {
   document.getElementById(ids[2]).textContent = 'picco ' + Math.round(pk) + ' Mbps';
   document.getElementById(ids[3]).textContent = mx;
 }
+var nsLineHold = 0;
+async function forceLineTest() {
+  var btn = document.getElementById('btnForceLine'), st = document.getElementById('forceLineStatus');
+  if (btn && btn.disabled) return;
+  if (!confirm('Avviare subito il test di velocit\u00e0 della linea?\n\nDura circa 15 secondi: prima il download, poi l\'upload, e per qualche secondo occupa tutta la banda.')) return;
+  nsLineHold = Date.now() + 8000;
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Avvio...'; }
+  try {
+    var res = await fetch('/api/force-line-test', { method: 'POST', cache: 'no-store' });
+    var data = await res.json().catch(function () { return {}; });
+    if (st) st.textContent = data.status === 'started' ? 'Test avviato alle ' + new Date().toLocaleTimeString('it-IT') + '.' : (data.status === 'busy' ? 'Un test \u00e8 gi\u00e0 in corso.' : 'Errore: ' + (data.error || 'sconosciuto'));
+    if (data.status === 'error') nsLineHold = 0;
+  } catch (e) {
+    nsLineHold = 0;
+    if (st) st.textContent = 'Errore di rete durante la richiesta.';
+  }
+  if (st) setTimeout(function () { st.textContent = ''; }, 30000);
+}
+(function () { var b = document.getElementById('btnForceLine'); if (b) b.addEventListener('click', forceLineTest); })();
 function nsPotUpdate(d) {
   var p = d.line_potential, n = d.net_speed;
   var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
@@ -6648,6 +6712,12 @@ function nsPotUpdate(d) {
     } else {
       v.textContent = 'N/D'; s.innerHTML = '&nbsp;'; c.className = 'ns-pot fb';
     }
+  }
+  var fb = document.getElementById('btnForceLine');
+  if (fb) {
+    var busy = !!(p && p.in_corso) || Date.now() < nsLineHold;
+    fb.disabled = busy;
+    fb.innerHTML = busy ? '&#9203; Test in corso...' : '&#128225; Misura linea ora';
   }
 }
 function nsUpdate(d) {
@@ -7892,6 +7962,23 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 if ($esito -eq "error") { $response.StatusCode = 500 }
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/force-line-test" -and $request.HttpMethod -eq "POST") {
+                Write-DashLog "Richiesta di misura forzata della linea ricevuta dall'interfaccia Web."
+                $lineStatus = 'error'
+                try {
+                    $lineRes    = @(Start-LineSpeedTest -DelaySec 0)
+                    $lineStatus = [string]$lineRes[-1]
+                } catch { Write-DashLog "Errore in /api/force-line-test: $($_.Exception.Message)" }
+                $script:LpCacheTime = [DateTime]::MinValue
+                Write-DashLog "Esito avvio misura linea forzata: $lineStatus"
+                $respObj = [ordered]@{ status = $lineStatus }
+                if ($lineStatus -eq 'error') { $respObj.error = 'avvio del test non riuscito (vedi dashboard_error.log)' }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes(($respObj | ConvertTo-Json -Compress))
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                if ($lineStatus -eq 'error') { $response.StatusCode = 500 }
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/update-dashboard" -and $request.HttpMethod -eq "POST") {
