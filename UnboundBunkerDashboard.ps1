@@ -742,9 +742,11 @@ $script:WanCacheData = @{
     ipv4_wan    = "N/D"
     ipv4_wan_ok = $false
     ipv4_loc    = ""
+    ipv4_isp    = ""
     ipv6_wan    = "N/D"
     ipv6_wan_ok = $false
     ipv6_loc    = ""
+    ipv6_isp    = ""
 }
 $script:WanAsync     = $null
 $script:WanFailCount = 0
@@ -755,22 +757,24 @@ function Start-WanRefreshAsync {
     $ps = [powershell]::Create()
     [void]$ps.AddScript({
         $ProgressPreference = 'SilentlyContinue'
-        $ip4Wan = "N/D"; $loc4 = ""
-        $ip6Wan = "N/D"; $loc6 = ""
+        $ip4Wan = "N/D"; $loc4 = ""; $isp4 = ""
+        $ip6Wan = "N/D"; $loc6 = ""; $isp6 = ""
 
         try {
-            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,query' -TimeoutSec 3 -ErrorAction Stop
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,org,query' -TimeoutSec 3 -ErrorAction Stop
             if ($r4.status -eq 'success') {
                 $ip4Wan = $r4.query
-                $city4  = if ($r4.city) { $r4.city } else { $r4.isp }
-                $loc4   = @($city4, $r4.country) -join ', '
+                $isp4   = if ($r4.isp) { [string]$r4.isp } elseif ($r4.org) { [string]$r4.org } else { "" }
+                $loc4   = (@($r4.city, $r4.country) | Where-Object { $_ }) -join ', '
             }
         } catch {
             try {
                 $r4 = Invoke-RestMethod -Uri 'https://ipinfo.io/json' -TimeoutSec 3 -ErrorAction Stop
                 if ($r4.ip) {
                     $ip4Wan = $r4.ip
-                    $loc4   = @($r4.city, $r4.country) -join ', '
+                    $loc4   = (@($r4.city, $r4.country) | Where-Object { $_ }) -join ', '
+                    # ipinfo restituisce "AS3269 Nome Provider": si toglie il prefisso ASN
+                    $isp4   = if ($r4.org) { ([string]$r4.org) -replace '^AS\d+\s+', '' } else { "" }
                 }
             } catch {}
         }
@@ -779,8 +783,8 @@ function Start-WanRefreshAsync {
             $r6 = Invoke-RestMethod -Uri 'https://ipapi.co/json/' -TimeoutSec 3 -ErrorAction Stop
             if ($r6.ip -match ':') {
                 $ip6Wan = $r6.ip
-                $city6  = if ($r6.city) { $r6.city } else { $r6.org }
-                $loc6   = @($city6, $r6.country_code) -join ', '
+                $isp6   = if ($r6.org) { ([string]$r6.org) -replace '^AS\d+\s+', '' } else { "" }
+                $loc6   = (@($r6.city, $r6.country_code) | Where-Object { $_ }) -join ', '
             }
         } catch {
             try {
@@ -792,7 +796,7 @@ function Start-WanRefreshAsync {
             } catch {}
         }
 
-        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; ip6 = $ip6Wan; loc6 = $loc6 }
+        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; isp4 = $isp4; ip6 = $ip6Wan; loc6 = $loc6; isp6 = $isp6 }
     })
     $script:WanAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke(); Started = (Get-Date) }
 }
@@ -811,17 +815,19 @@ function Update-WanCacheState {
                     ipv4_wan    = $res.ip4
                     ipv4_wan_ok = ($res.ip4 -ne "N/D")
                     ipv4_loc    = $res.loc4
+                    ipv4_isp    = $res.isp4
                     ipv6_wan    = $res.ip6
                     ipv6_wan_ok = ($res.ip6 -ne "N/D")
                     ipv6_loc    = $res.loc6
+                    ipv6_isp    = $res.isp6
                 }
             } else {
                 # Un solo giro a vuoto puo' essere un timeout isolato: si tiene l'ultimo valore; al secondo consecutivo si passa a N/D
                 $script:WanFailCount++
                 if ($script:WanFailCount -ge 2) {
                     $script:WanCacheData = @{
-                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""
-                        ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""
+                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""; ipv4_isp = ""
+                        ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""; ipv6_isp = ""
                     }
                 }
             }
@@ -878,9 +884,11 @@ function Get-IpConnectivityStatus {
         ipv4_wan    = $script:WanCacheData.ipv4_wan
         ipv4_wan_ok = $script:WanCacheData.ipv4_wan_ok
         ipv4_loc    = $script:WanCacheData.ipv4_loc
+        ipv4_isp    = $script:WanCacheData.ipv4_isp
         ipv6_wan    = $script:WanCacheData.ipv6_wan
         ipv6_wan_ok = $script:WanCacheData.ipv6_wan_ok
         ipv6_loc    = $script:WanCacheData.ipv6_loc
+        ipv6_isp    = $script:WanCacheData.ipv6_isp
     }
 }
 
@@ -3656,7 +3664,7 @@ $HtmlPageLight = @'
     var ip = d.connettivita_ip;
     if (ip) {
       nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
-      nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+      nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
       // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
       var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
       nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
@@ -6796,7 +6804,7 @@ function nsUpdate(d) {
   var ip = d.connettivita_ip;
   if (ip) {
     nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
-    nsSet('nsPubS', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_loc || '') || '&nbsp;' : 'non disponibile');
+    nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
     // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
     var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
     nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
