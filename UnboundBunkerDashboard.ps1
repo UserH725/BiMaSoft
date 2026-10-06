@@ -1052,12 +1052,15 @@ function Get-LiveRcodeFeed {
                 }
                 elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                     $rcodeMap = if ($matches[4] -eq 'nxdomain') { "NXDOMAIN" } else { "NOERROR" }
+                    $rOra = $matches[1]; $rLista = $matches[2]; $rDom = $matches[3]
+                    # [FIX] $matches[3] e' la REGOLA della lista (es. *.gvt2.com.): il dominio interrogato segue 'IP@porta'
+                    if ($ln -match 'rpz-(?:nxdomain|nodata|passthru)\s+\S+@\d+\s+(\S+)') { $rDom = $matches[1] }
                     $feed += @{
-                        orario    = $matches[1]
-                        dominio   = $matches[3].TrimEnd('.')
+                        orario    = $rOra
+                        dominio   = $rDom.TrimEnd('.')
                         rcode     = $rcodeMap
                         resolver  = "$shield Scudo RPZ"
-                        rpz_lista = $matches[2]
+                        rpz_lista = $rLista
                     }
                 }
             }
@@ -2682,9 +2685,14 @@ function Get-LightConnFeed {
                             }
                             elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                                 $code = 'NOERROR'
-                                if ($matches[4] -eq 'nxdomain') { $code = 'NXDOMAIN' }
+                                $rT = $matches[1]; $rK = $matches[4]; $rDom = $matches[3]
+                                if ($rK -eq 'nxdomain') { $code = 'NXDOMAIN' }
+                                # [FIX] $matches[3] e' la REGOLA della lista (es. *.gvt2.com.), non il dominio interrogato:
+                                # il dominio reale segue 'IP@porta' (rpz-nxdomain 127.0.0.1@54639 beacons.gcp.gvt2.com. A IN).
+                                # Cosi' la risposta successiva (stesso dominio, flag cache 1) viene riconosciuta come duplicato.
+                                if ($ln -match 'rpz-(?:nxdomain|nodata|passthru)\s+\S+@\d+\s+(\S+)') { $rDom = $matches[1] }
                                 $script:LightConnUpstream = $false
-                                Add-LightConnEvent -T $matches[1] -Dom $matches[3].TrimEnd('.') -Code $code -Via 'r'
+                                Add-LightConnEvent -T $rT -Dom $rDom.TrimEnd('.') -Code $code -Via 'r'
                             }
                         }
                     }
