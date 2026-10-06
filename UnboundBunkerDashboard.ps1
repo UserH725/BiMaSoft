@@ -2591,7 +2591,7 @@ function Reset-LightHistory {
     } catch {}
 }
 
-# === CONNESSIONI LIVE PER LA LIGHT (v1106.7; v1106.8: via cache/rete dal flag cache del log-replies) ===
+# === CONNESSIONI LIVE PER LA LIGHT (v1106.7; v1106.8: via cache/rete dal flag cache del log-replies; v1106.9: colonne Download/Upload disgiunte) ===
 # Feed leggero e INCREMENTALE: come Get-LiveFeedSummary tiene un puntatore di posizione byte su R:\unbound.log e
 # ad ogni chiamata legge e interpreta SOLO le righe nuove (costo proporzionale al traffico nuovo). Gli ultimi
 # eventi finiscono in un piccolo buffer circolare con numero progressivo: la pagina Light mostra solo quelli
@@ -2599,22 +2599,44 @@ function Reset-LightHistory {
 # v (via: 'c' = risposta dalla cache RAM, 'n' = risposta arrivata dalla rete tramite un resolver upstream,
 # 'r' = bloccata dallo scudo RPZ). Colonna Download della Light = tutti gli eventi (risposte servite al PC);
 # colonna Upload = solo quelli con v='n' (domande uscite davvero verso internet: cache e RPZ non generano traffico).
+# v1106.9: le due colonne sono DISGIUNTE. Ogni evento ha anche k ('u' = Upload, 'd' = Download):
+#   Upload   = query realmente INVIATE a un resolver upstream (righe "sending query:" + "sending to target: IP#porta"),
+#              sotto-query DNSSEC (DS/DNSKEY) comprese; v='n', ip = resolver di destinazione.
+#   Download = risposte che ARRIVANO al PC: risposte realmente ricevute da un upstream ("reply from IP#porta" +
+#              "query response was ...", v='n', ip), risposte servite dalla CACHE (v='c') e blocchi RPZ (v='r').
+# La risposta finale al client di una risoluzione in rete (flag cache 0) NON e' ripetuta: c'e' gia' la risposta dell'upstream.
+# Le richieste doppie 127.0.0.1 / ::1 (e A/AAAA nello stesso secondo) dello stesso dominio sono mostrate una volta sola.
+# Se il log non contiene le righe di dettaglio degli upstream (verbosita' bassa) si ripiega sul vecchio comportamento.
 $script:LightConnPos      = -1
 $script:LightConnPending  = ""
 $script:LightConnSeq      = 0
 $script:LightConnRing     = New-Object System.Collections.Generic.List[object]
 $script:LightConnUpstream = $false
 $script:LightConnLast     = $null
+$script:LcThrName         = @{}     # per thread: dominio dell'ultima query inviata / risposta in arrivo
+$script:LcThrIp           = @{}     # per thread: resolver upstream dell'ultima risposta ricevuta
+$script:LcDetail          = $false  # visto almeno un "sending to target": il log ha il dettaglio upstream
+$script:LcRecentT         = ""      # secondo corrente per l'anti-doppione
+$script:LcRecent          = @{}
 $script:LightConnSrc      = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
+# Anti-doppione: stesso dominio, stesso verso e stessa via nello stesso secondo (127.0.0.1 / ::1, A / AAAA) = un solo evento.
+function Test-LightConnDup {
+    param([string]$T, [string]$Key)
+    if ($script:LcRecentT -ne $T) { $script:LcRecentT = $T; $script:LcRecent = @{} }
+    if ($script:LcRecent.ContainsKey($Key)) { return $true }
+    $script:LcRecent[$Key] = 1
+    return $false
+}
+
 function Add-LightConnEvent {
-    param([string]$T, [string]$Dom, [string]$Code, [string]$Via)
+    param([string]$T, [string]$Dom, [string]$Code, [string]$Via, [string]$Kind = 'd', [string]$Ip = '')
     if ($Dom.Length -gt 90) { $Dom = $Dom.Substring(0, 90) }
     $script:LightConnSeq++
-    $ev = @{ n = $script:LightConnSeq; t = $T; d = $Dom; c = $Code; v = $Via }
+    $ev = @{ n = $script:LightConnSeq; t = $T; d = $Dom; c = $Code; v = $Via; k = $Kind; ip = $Ip }
     [void]$script:LightConnRing.Add($ev)
-    while ($script:LightConnRing.Count -gt 20) { $script:LightConnRing.RemoveAt(0) }
-    $script:LightConnLast = $ev
+    while ($script:LightConnRing.Count -gt 40) { $script:LightConnRing.RemoveAt(0) }
+    if ($Kind -eq 'd') { $script:LightConnLast = $ev }
 }
 
 function Get-LightConnFeed {
@@ -2664,7 +2686,39 @@ function Get-LightConnFeed {
                         for ($i = $startIdx; $i -lt ($parts.Count - 1); $i++) {
                             $ln = $parts[$i].TrimEnd("`r")
                             if ($ln.Length -lt 20) { continue }
-                            if ($ln -match 'info:\s+sending query to\s+[0-9a-fA-F.:]+') {
+                            $th = ''
+                            if ($ln -match '\[(\d+:\d+)\]') { $th = $matches[1] }
+                            $lt = ''
+                            if ($ln -match '(\d{2}:\d{2}:\d{2})') { $lt = $matches[1] }
+                            if ($ln -match 'info:\s+sending query:\s+(\S+)\s+\S+\s+IN') {
+                                $script:LcThrName[$th] = $matches[1].TrimEnd('.')
+                            }
+                            elseif ($ln -match 'debug:\s+sending to target:\s+<[^>]*>\s+(\S+?)#\d+') {
+                                # UPLOAD: query davvero inviata a un resolver upstream (DS/DNSKEY del DNSSEC compresi)
+                                $script:LcDetail = $true
+                                $upIp = $matches[1]
+                                $upDom = $script:LcThrName[$th]
+                                if ($upDom) { Add-LightConnEvent -T $lt -Dom $upDom -Code 'NOERROR' -Via 'n' -Kind 'u' -Ip $upIp }
+                            }
+                            elseif ($ln -match 'info:\s+response for\s+(\S+)\s+\S+\s+IN') {
+                                $script:LcThrName[$th] = $matches[1].TrimEnd('.')
+                            }
+                            elseif ($ln -match 'info:\s+reply from\s+<[^>]*>\s+(\S+?)#\d+') {
+                                $script:LcThrIp[$th] = $matches[1]
+                            }
+                            elseif ($ln -match 'info:\s+query response was\s+(.+)$') {
+                                # DOWNLOAD: risposta realmente ricevuta dall'upstream
+                                $rs = $matches[1].ToUpper()
+                                $rc = 'NOERROR'
+                                if ($rs -match 'NXDOMAIN') { $rc = 'NXDOMAIN' }
+                                elseif ($rs -match 'SERVFAIL') { $rc = 'SERVFAIL' }
+                                elseif ($rs -match 'REFUSED') { $rc = 'REFUSED' }
+                                elseif ($rs -match 'FORMERR') { $rc = 'FORMERR' }
+                                $dnDom = $script:LcThrName[$th]; $dnIp = $script:LcThrIp[$th]
+                                if ($dnDom -and $dnIp) { Add-LightConnEvent -T $lt -Dom $dnDom -Code $rc -Via 'n' -Kind 'd' -Ip $dnIp }
+                                $script:LcThrIp.Remove($th)
+                            }
+                            elseif ($ln -match 'info:\s+sending query to\s+[0-9a-fA-F.:]+') {
                                 $script:LightConnUpstream = $true
                             }
                             elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)(?:\s+([0-9.]+)\s+([01])\s+\d+)?') {
@@ -2681,7 +2735,21 @@ function Get-LightConnFeed {
                                 $dup = $false
                                 $lastEv = $script:LightConnLast
                                 if ($lastEv -and $lastEv.v -eq 'r' -and $lastEv.d -eq $dom -and $lastEv.t -eq $t) { $dup = $true }
-                                if (-not $dup) { Add-LightConnEvent -T $t -Dom $dom -Code $code -Via $via }
+                                if (-not $dup) {
+                                    if ($via -eq 'n' -and $script:LcDetail) {
+                                        # gia' mostrata come risposta dell'upstream (Download) e query inviata (Upload)
+                                    }
+                                    elseif ($via -eq 'n') {
+                                        # log senza dettaglio upstream: ripiego, la stessa risoluzione compare in entrambe le colonne
+                                        if (-not (Test-LightConnDup -T $t -Key ($dom + '|d|n'))) {
+                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'u'
+                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'd'
+                                        }
+                                    }
+                                    elseif (-not (Test-LightConnDup -T $t -Key ($dom + '|d|c'))) {
+                                        Add-LightConnEvent -T $t -Dom $dom -Code $code -Via $via -Kind 'd'
+                                    }
+                                }
                             }
                             elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
                                 $code = 'NOERROR'
@@ -2692,7 +2760,9 @@ function Get-LightConnFeed {
                                 # Cosi' la risposta successiva (stesso dominio, flag cache 1) viene riconosciuta come duplicato.
                                 if ($ln -match 'rpz-(?:nxdomain|nodata|passthru)\s+\S+@\d+\s+(\S+)') { $rDom = $matches[1] }
                                 $script:LightConnUpstream = $false
-                                Add-LightConnEvent -T $rT -Dom $rDom.TrimEnd('.') -Code $code -Via 'r'
+                                if (-not (Test-LightConnDup -T $rT -Key ($rDom.TrimEnd('.') + '|d|r'))) {
+                                    Add-LightConnEvent -T $rT -Dom $rDom.TrimEnd('.') -Code $code -Via 'r' -Kind 'd'
+                                }
                             }
                         }
                     }
@@ -3269,7 +3339,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.8 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.9 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3912,7 +3982,7 @@ $HtmlPageLight = @'
   }
 
   // ---- Connessioni live sotto Download/Upload (v1106.7) ----
-  // Download = tutte le risposte servite al PC; Upload = solo le domande uscite davvero verso i resolver upstream.
+  // Download = risposte in arrivo al PC (upstream con IP, cache, RPZ); Upload = query uscite davvero verso i resolver upstream (IP di destinazione). Colonne disgiunte (v1106.9).
   // Tre righe visibili, le nuove entrano dal basso e salgono in modo fluido (moto smorzato, senza scatti):
   // la prima e la terza riga sono meno luminose, quella centrale piena. Verde/rosso/ambra come il live log della Pro.
   var CE_RH = 22, CE_GAP = 900, CE_MAXQ = 3;
@@ -3940,7 +4010,7 @@ $HtmlPageLight = @'
     el.appendChild(d); el.appendChild(t); el.appendChild(n);
     if (ev.showVia) {
       var v = document.createElement('span'); v.className = 'cv';
-      v.textContent = ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache');
+      v.textContent = ev.vt ? ev.vt : (ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache'));
       el.appendChild(v);
     }
     this.el.appendChild(el);
@@ -3980,8 +4050,9 @@ $HtmlPageLight = @'
     for (var j = 0; j < ev.length; j++) {
       var e = ev[j];
       if ((e.n | 0) <= ceLastN) continue;
-      ceLaneD.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, showVia: true });
-      if (e.v === 'n') ceLaneU.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, showVia: false });
+      // v1106.9: colonne disgiunte. k='u' = query inviata a un upstream (Upload), altrimenti risposta in arrivo (Download)
+      if (e.k === 'u') ceLaneU.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: e.ip || 'rete', showVia: true });
+      else ceLaneD.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: (e.v === 'n' && e.ip) ? e.ip : '', showVia: true });
     }
     ceLastN = mx;
   }
@@ -4544,7 +4615,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.8 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.9 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -5385,7 +5456,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.8 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.9 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
