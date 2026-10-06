@@ -2588,6 +2588,108 @@ function Reset-LightHistory {
     } catch {}
 }
 
+# === CONNESSIONI LIVE PER LA LIGHT (v1106.7) ===
+# Feed leggero e INCREMENTALE: come Get-LiveFeedSummary tiene un puntatore di posizione byte su R:\unbound.log e
+# ad ogni chiamata legge e interpreta SOLO le righe nuove (costo proporzionale al traffico nuovo). Gli ultimi
+# eventi finiscono in un piccolo buffer circolare con numero progressivo: la pagina Light mostra solo quelli
+# che non ha ancora visto. Ogni evento ha: n (progressivo), t (orario), d (dominio), c (esito: NOERROR/NXDOMAIN/...),
+# v (via: 'c' = risposta dalla cache RAM, 'n' = risposta arrivata dalla rete tramite un resolver upstream,
+# 'r' = bloccata dallo scudo RPZ). Colonna Download della Light = tutti gli eventi (risposte servite al PC);
+# colonna Upload = solo quelli con v='n' (domande uscite davvero verso internet: cache e RPZ non generano traffico).
+$script:LightConnPos      = -1
+$script:LightConnPending  = ""
+$script:LightConnSeq      = 0
+$script:LightConnRing     = New-Object System.Collections.Generic.List[object]
+$script:LightConnUpstream = $false
+$script:LightConnLast     = $null
+$script:LightConnSrc      = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+
+function Add-LightConnEvent {
+    param([string]$T, [string]$Dom, [string]$Code, [string]$Via)
+    if ($Dom.Length -gt 90) { $Dom = $Dom.Substring(0, 90) }
+    $script:LightConnSeq++
+    $ev = @{ n = $script:LightConnSeq; t = $T; d = $Dom; c = $Code; v = $Via }
+    [void]$script:LightConnRing.Add($ev)
+    while ($script:LightConnRing.Count -gt 20) { $script:LightConnRing.RemoveAt(0) }
+    $script:LightConnLast = $ev
+}
+
+function Get-LightConnFeed {
+    try {
+        if ([System.IO.File]::Exists($RpzLog)) {
+            $fs = New-Object System.IO.FileStream($RpzLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            try {
+                $len       = $fs.Length
+                $dropFirst = $false
+                if ($script:LightConnPos -lt 0) {
+                    # primo giro: parte vicino alla fine (niente rilettura dell'intero log)
+                    $script:LightConnPos     = [math]::Max(0, $len - 65536)
+                    $script:LightConnPending = ""
+                    $dropFirst = ($script:LightConnPos -gt 0)
+                }
+                elseif ($len -lt $script:LightConnPos) {
+                    # log svuotato (riavvio Unbound/Dashboard o ciclo biorario): si riparte dall'inizio
+                    $script:LightConnPos     = 0
+                    $script:LightConnPending = ""
+                }
+                elseif (($len - $script:LightConnPos) -gt 262144) {
+                    # arretrato eccessivo (es. la Pro era aperta e questo feed non e' stato letto): salta alla coda
+                    $script:LightConnPos     = $len - 262144
+                    $script:LightConnPending = ""
+                    $dropFirst = $true
+                }
+
+                if ($len -gt $script:LightConnPos) {
+                    $toRead = $len - $script:LightConnPos
+                    [void]$fs.Seek($script:LightConnPos, [System.IO.SeekOrigin]::Begin)
+                    $buf = New-Object byte[] $toRead
+                    $off = 0
+                    while ($off -lt $toRead) {
+                        $n = $fs.Read($buf, $off, $toRead - $off)
+                        if ($n -le 0) { break }
+                        $off += $n
+                    }
+                    $script:LightConnPos += $off
+
+                    $text  = $script:LightConnPending + [System.Text.Encoding]::UTF8.GetString($buf, 0, $off)
+                    $parts = $text -split "`n"
+                    # l'ultima porzione puo' essere una riga ancora incompleta: resta da parte per il prossimo giro
+                    $script:LightConnPending = $parts[-1]
+                    if ($parts.Count -gt 1) {
+                        $startIdx = 0
+                        if ($dropFirst) { $startIdx = 1 }   # prima riga probabilmente troncata a meta'
+                        for ($i = $startIdx; $i -lt ($parts.Count - 1); $i++) {
+                            $ln = $parts[$i].TrimEnd("`r")
+                            if ($ln.Length -lt 20) { continue }
+                            if ($ln -match 'info:\s+sending query to\s+[0-9a-fA-F.:]+') {
+                                $script:LightConnUpstream = $true
+                            }
+                            elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)') {
+                                $t = $matches[1]; $dom = $matches[2].TrimEnd('.'); $code = $matches[3].ToUpper()
+                                $via = 'c'
+                                if ($script:LightConnUpstream) { $via = 'n' }
+                                $script:LightConnUpstream = $false
+                                # la riga di risposta che segue subito una riga RPZ dello stesso dominio e secondo e' lo stesso evento
+                                $dup = $false
+                                $lastEv = $script:LightConnLast
+                                if ($lastEv -and $lastEv.v -eq 'r' -and $lastEv.d -eq $dom -and $lastEv.t -eq $t) { $dup = $true }
+                                if (-not $dup) { Add-LightConnEvent -T $t -Dom $dom -Code $code -Via $via }
+                            }
+                            elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\[([a-zA-Z0-9_\-]+)\].*?(\S+)\s+rpz-(nxdomain|nodata|passthru)') {
+                                $code = 'NOERROR'
+                                if ($matches[4] -eq 'nxdomain') { $code = 'NXDOMAIN' }
+                                $script:LightConnUpstream = $false
+                                Add-LightConnEvent -T $matches[1] -Dom $matches[3].TrimEnd('.') -Code $code -Via 'r'
+                            }
+                        }
+                    }
+                }
+            } finally { $fs.Close() }
+        }
+    } catch {}
+    return [ordered]@{ src = $script:LightConnSrc; ev = $script:LightConnRing.ToArray() }
+}
+
 function Get-BunkerStatusJson {
     param([switch]$ForceVersions)
 
@@ -2602,6 +2704,7 @@ function Get-BunkerStatusJson {
     $stats       = Get-LiveStats
     $liveRcode   = Get-LiveRcodeFeed
     $liveFeedSummary = Get-LiveFeedSummary
+    $connLive    = Get-LightConnFeed
     $trafficAnomalie = Update-AnomalyTracking -liveRcode $liveRcode
     $radar       = Get-UpstreamRadar
     $rootRadar   = Get-RootServersRadar
@@ -2724,6 +2827,7 @@ function Get-BunkerStatusJson {
         unbound_restart_log = $script:UnboundRestartLog
         live_rcode_feed  = $liveRcode
         live_feed_summary = $liveFeedSummary
+        conn_live        = $connLive
         upstream_radar   = $radar
         root_radar       = $rootRadar
         dns_fallback_log = $dnsFallback
@@ -2828,6 +2932,8 @@ function Get-BunkerStatusLightJson {
     $netSpeed = Get-NetworkSpeed
     $linePot = Get-LinePotential
     $ipConn   = Get-IpConnectivityStatus
+    # Connessioni live (colonne Download/Upload): lettura incrementale delle sole righe nuove del log
+    $connLive = Get-LightConnFeed
     # Mantiene aggiornata la finestra 24h (campiona al massimo 1 volta/minuto, costo minimo)
     [void](Update-SessionHistory)
 
@@ -2876,6 +2982,7 @@ function Get-BunkerStatusLightJson {
         net_speed        = $netSpeed
         line_potential   = $linePot
         connettivita_ip  = $ipConn
+        conn_live        = $connLive
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -2979,6 +3086,16 @@ $HtmlPageLight = @'
   .ns-mh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 0.74em; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
   .ns-mh b { font-family: var(--font-mono); font-size: 1.7em; color: var(--text); letter-spacing: 0; }
   .ns-mh small { font-size: 0.9em; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  /* ---------- Connessioni live sotto Download/Upload: 3 righe, scorrimento verticale fluido, nuove in basso ---------- */
+  .ns-lane { position: relative; height: 66px; margin: 0 0 6px; overflow: hidden; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .ns-lane .ce { position: absolute; left: 0; right: 0; top: 0; height: 22px; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-family: var(--font-mono); font-size: 12px; white-space: nowrap; opacity: 0; will-change: transform, opacity; }
+  .ns-lane .ce .cd { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .ns-lane .ce .ct { flex: 0 0 auto; opacity: 0.6; }
+  .ns-lane .ce .cn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ns-lane .ce .cv { flex: 0 0 auto; font-size: 0.85em; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.05em; }
+  .ns-lane .ce.ok { color: var(--green); }
+  .ns-lane .ce.no { color: var(--red); }
+  .ns-lane .ce.er { color: var(--amber); }
   .ns-g { display: block; width: 100%; max-width: 250px; margin: 0 auto; }
   .ns-g .gl { fill: var(--dim); font-size: 10px; }
   .ns-g .gt { stroke: var(--dim); stroke-width: 1.2; }
@@ -3139,7 +3256,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.6 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.7 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3159,6 +3276,7 @@ $HtmlPageLight = @'
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
+      <div class="ns-lane" id="nsLaneD" title="Risposte DNS servite al PC (dalla cache RAM, dalla rete o bloccate dallo scudo RPZ). Verde = consentita, rosso = NXDOMAIN o bloccata, giallo = errore del resolver (SERVFAIL)"></div>
       <svg class="ns-g ns-cv" id="nsDc" viewBox="0 0 200 104" role="img" aria-label="Indicatore download"><polyline class="cv-c" id="nsDc0" style="--i:0" points="20,6.0 30,13.0 40,6.0"/><polyline class="cv-c" id="nsDc1" style="--i:1" points="20,18.5 30,25.5 40,18.5"/><polyline class="cv-c" id="nsDc2" style="--i:2" points="20,31.0 30,38.0 40,31.0"/><polyline class="cv-c" id="nsDc3" style="--i:3" points="20,43.5 30,50.5 40,43.5"/><polyline class="cv-c" id="nsDc4" style="--i:4" points="20,56.0 30,63.0 40,56.0"/><polyline class="cv-c" id="nsDc5" style="--i:5" points="20,68.5 30,75.5 40,68.5"/><polyline class="cv-c" id="nsDc6" style="--i:6" points="20,81.0 30,88.0 40,81.0"/><polyline class="cv-c" id="nsDc7" style="--i:7" points="20,93.5 30,100.5 40,93.5"/><text class="gv" id="nsDv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsDx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsDt">&nbsp;</div>
       <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="2" y="15">&nbsp;</text><text class="gl" id="nsDm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsDSa">--</b></span><span><small>Min</small><b id="nsDSn">--</b></span><span><small>Max</small><b id="nsDSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
@@ -3169,6 +3287,7 @@ $HtmlPageLight = @'
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
+      <div class="ns-lane" id="nsLaneU" title="Domande uscite davvero verso internet tramite i resolver upstream. Le risposte dalla cache RAM e i blocchi dello scudo RPZ non generano traffico in uscita e non compaiono qui"></div>
       <svg class="ns-g ns-cv" id="nsUc" viewBox="0 0 200 104" role="img" aria-label="Indicatore upload"><polyline class="cv-c" id="nsUc0" style="--i:7" points="20,13.0 30,6.0 40,13.0"/><polyline class="cv-c" id="nsUc1" style="--i:6" points="20,25.5 30,18.5 40,25.5"/><polyline class="cv-c" id="nsUc2" style="--i:5" points="20,38.0 30,31.0 40,38.0"/><polyline class="cv-c" id="nsUc3" style="--i:4" points="20,50.5 30,43.5 40,50.5"/><polyline class="cv-c" id="nsUc4" style="--i:3" points="20,63.0 30,56.0 40,63.0"/><polyline class="cv-c" id="nsUc5" style="--i:2" points="20,75.5 30,68.5 40,75.5"/><polyline class="cv-c" id="nsUc6" style="--i:1" points="20,88.0 30,81.0 40,88.0"/><polyline class="cv-c" id="nsUc7" style="--i:0" points="20,100.5 30,93.5 40,100.5"/><text class="gv" id="nsUv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsUx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsUt">&nbsp;</div>
       <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="2" y="15">&nbsp;</text><text class="gl" id="nsUm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsUSa">--</b></span><span><small>Min</small><b id="nsUSn">--</b></span><span><small>Max</small><b id="nsUSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
@@ -3779,6 +3898,81 @@ $HtmlPageLight = @'
     }
   }
 
+  // ---- Connessioni live sotto Download/Upload (v1106.7) ----
+  // Download = tutte le risposte servite al PC; Upload = solo le domande uscite davvero verso i resolver upstream.
+  // Tre righe visibili, le nuove entrano dal basso e salgono in modo fluido (moto smorzato, senza scatti):
+  // la prima e la terza riga sono meno luminose, quella centrale piena. Verde/rosso/ambra come il live log della Pro.
+  var CE_RH = 22, CE_GAP = 900, CE_MAXQ = 3;
+  var CE_OP = [[-1, 0], [0, 0.5], [1, 1], [2, 0.5], [3, 0]];
+  var ceReduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var ceSrc = null, ceLastN = 0;
+  function ceOp(p) {
+    if (p <= -1 || p >= 3) return 0;
+    for (var i = 0; i < CE_OP.length - 1; i++) {
+      var a = CE_OP[i], b = CE_OP[i + 1];
+      if (p >= a[0] && p <= b[0]) return a[1] + (b[1] - a[1]) * ((p - a[0]) / (b[0] - a[0]));
+    }
+    return 0;
+  }
+  function CeLane(id) { this.el = document.getElementById(id); this.items = []; this.q = []; this.last = 0; }
+  CeLane.prototype.push = function (ev) { this.q.push(ev); while (this.q.length > CE_MAXQ) this.q.shift(); };
+  CeLane.prototype.add = function (ev) {
+    if (!this.el) return;
+    var cls = ev.c === 'NOERROR' ? 'ok' : (ev.c === 'NXDOMAIN' ? 'no' : 'er');
+    var el = document.createElement('div');
+    el.className = 'ce ' + cls;
+    var d = document.createElement('span'); d.className = 'cd';
+    var t = document.createElement('span'); t.className = 'ct'; t.textContent = ev.t || '--:--:--';
+    var n = document.createElement('span'); n.className = 'cn'; n.textContent = ev.d || '-';
+    el.appendChild(d); el.appendChild(t); el.appendChild(n);
+    if (ev.showVia) {
+      var v = document.createElement('span'); v.className = 'cv';
+      v.textContent = ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache');
+      el.appendChild(v);
+    }
+    this.el.appendChild(el);
+    for (var i = 0; i < this.items.length; i++) this.items[i].target -= 1;
+    this.items.push({ el: el, pos: 3, target: 2 });
+  };
+  CeLane.prototype.tick = function (dt, now) {
+    if (this.q.length && now - this.last >= CE_GAP) { this.add(this.q.shift()); this.last = now; }
+    if (!this.items.length) return;
+    var k = ceReduce ? 1 : 1 - Math.exp(-dt * 6);
+    for (var i = this.items.length - 1; i >= 0; i--) {
+      var it = this.items[i];
+      it.pos += (it.target - it.pos) * k;
+      it.el.style.transform = 'translateY(' + (it.pos * CE_RH).toFixed(2) + 'px)';
+      it.el.style.opacity = ceOp(it.pos).toFixed(3);
+      if (it.target < -1 && it.pos < -0.98) { it.el.remove(); this.items.splice(i, 1); }
+    }
+  };
+  var ceLaneD = new CeLane('nsLaneD'), ceLaneU = new CeLane('nsLaneU');
+  var cePrev = performance.now();
+  function ceFrame(now) {
+    var dt = Math.min(0.1, (now - cePrev) / 1000); cePrev = now;
+    ceLaneD.tick(dt, now); ceLaneU.tick(dt, now);
+    requestAnimationFrame(ceFrame);
+  }
+  requestAnimationFrame(ceFrame);
+  function connUpdate(d) {
+    var cl = d && d.conn_live;
+    if (!cl || cl.ev == null) return;
+    var ev = Array.isArray(cl.ev) ? cl.ev : [cl.ev];
+    var src = String(cl.src || '');
+    var mx = ceLastN;
+    for (var i = 0; i < ev.length; i++) { var nn = ev[i].n | 0; if (nn > mx) mx = nn; }
+    if (src !== ceSrc) {   // primo contatto (o riavvio del server): si parte da adesso, senza riproporre il passato
+      ceSrc = src; ceLastN = mx; return;
+    }
+    for (var j = 0; j < ev.length; j++) {
+      var e = ev[j];
+      if ((e.n | 0) <= ceLastN) continue;
+      ceLaneD.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, showVia: true });
+      if (e.v === 'n') ceLaneU.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, showVia: false });
+    }
+    ceLastN = mx;
+  }
+
   async function refresh() {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -3802,6 +3996,7 @@ $HtmlPageLight = @'
       if (snap && snap === lastSnap) return;
       lastSnap = snap;
       try { nsUpdate(d); } catch (e) { /* la riga di rete non deve mai bloccare le lancette */ }
+      try { connUpdate(d); } catch (e) { /* le connessioni live non devono mai bloccare le lancette */ }
 
       var engineOn = !!d.engine_attivo;
       setEngine(engineOn ? 'ok' : 'bad', engineOn ? 'UNBOUND ATTIVO' : 'UNBOUND FERMO');
@@ -4336,7 +4531,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.6 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.7 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -5177,7 +5372,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.6 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1106.7 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
