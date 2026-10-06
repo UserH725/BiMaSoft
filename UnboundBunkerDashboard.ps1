@@ -2995,6 +2995,12 @@ $HtmlPageLight = @'
   #nsDs { stroke: #22d3ee; } #nsDa, #nsDd { fill: #22d3ee; }
   #nsUs { stroke: #ff8c1a; } #nsUa, #nsUd { fill: #ff8c1a; }
   #nsDq, #nsUq { stroke: rgba(219,229,238,0.5); }
+  .ns-st { display: flex; gap: 6px; max-width: 250px; margin: 6px auto 0; }
+  .ns-st span { flex: 1; min-width: 0; text-align: center; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 4px 2px; }
+  .ns-st small { display: block; font-size: 0.66em; letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); }
+  .ns-st b { font-family: var(--font-mono); font-size: 0.95em; color: var(--text); font-weight: 700; }
+  .ns-stc { max-width: 250px; margin: 3px auto 0; font-size: 0.66em; text-align: center; color: var(--dim); }
+  #nsDSa { color: #22d3ee; } #nsUSa { color: #ff8c1a; }
   #nsPotDc:not(.fb) .ns-pot-v b { color: #22d3ee; } #nsPotUc:not(.fb) .ns-pot-v b { color: #ff8c1a; }
   .ns-tr { font-size: 0.76em; text-align: center; margin: 2px 0 4px; min-height: 1.3em; }
   .ns-trs { color: var(--dim); }
@@ -3155,7 +3161,7 @@ $HtmlPageLight = @'
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsDc" viewBox="0 0 200 104" role="img" aria-label="Indicatore download"><polyline class="cv-c" id="nsDc0" style="--i:0" points="20,6.0 30,13.0 40,6.0"/><polyline class="cv-c" id="nsDc1" style="--i:1" points="20,18.5 30,25.5 40,18.5"/><polyline class="cv-c" id="nsDc2" style="--i:2" points="20,31.0 30,38.0 40,31.0"/><polyline class="cv-c" id="nsDc3" style="--i:3" points="20,43.5 30,50.5 40,43.5"/><polyline class="cv-c" id="nsDc4" style="--i:4" points="20,56.0 30,63.0 40,56.0"/><polyline class="cv-c" id="nsDc5" style="--i:5" points="20,68.5 30,75.5 40,68.5"/><polyline class="cv-c" id="nsDc6" style="--i:6" points="20,81.0 30,88.0 40,81.0"/><polyline class="cv-c" id="nsDc7" style="--i:7" points="20,93.5 30,100.5 40,93.5"/><text class="gv" id="nsDv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsDx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsDt">&nbsp;</div>
-      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="2" y="15">&nbsp;</text><text class="gl" id="nsDm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsDSa">--</b></span><span><small>Min</small><b id="nsDSn">--</b></span><span><small>Max</small><b id="nsDSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
@@ -3165,7 +3171,7 @@ $HtmlPageLight = @'
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsUc" viewBox="0 0 200 104" role="img" aria-label="Indicatore upload"><polyline class="cv-c" id="nsUc0" style="--i:7" points="20,13.0 30,6.0 40,13.0"/><polyline class="cv-c" id="nsUc1" style="--i:6" points="20,25.5 30,18.5 40,25.5"/><polyline class="cv-c" id="nsUc2" style="--i:5" points="20,38.0 30,31.0 40,38.0"/><polyline class="cv-c" id="nsUc3" style="--i:4" points="20,50.5 30,43.5 40,50.5"/><polyline class="cv-c" id="nsUc4" style="--i:3" points="20,63.0 30,56.0 40,63.0"/><polyline class="cv-c" id="nsUc5" style="--i:2" points="20,75.5 30,68.5 40,75.5"/><polyline class="cv-c" id="nsUc6" style="--i:1" points="20,88.0 30,81.0 40,88.0"/><polyline class="cv-c" id="nsUc7" style="--i:0" points="20,100.5 30,93.5 40,100.5"/><text class="gv" id="nsUv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsUx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsUt">&nbsp;</div>
-      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="2" y="15">&nbsp;</text><text class="gl" id="nsUm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsUSa">--</b></span><span><small>Min</small><b id="nsUSn">--</b></span><span><small>Max</small><b id="nsUSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
     </div>
   </div>
   <div class="ns-info">
@@ -3668,8 +3674,12 @@ $HtmlPageLight = @'
     el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', d);
     el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', d + 'L' + last[0].toFixed(1) + ' 58L' + first.toFixed(1) + ' 58Z');
     el = document.getElementById('ns' + X + 'd'); if (el) { el.setAttribute('cx', last[0].toFixed(1)); el.setAttribute('cy', last[1].toFixed(1)); }
-    el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(pk / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
-    el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = 'scala ' + cm + ' Mbps';
+    el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(hmax / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
+    el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = cm + ' Mbps';
+    el = document.getElementById('ns' + X + 'm2'); if (el) el.textContent = (cm % 2 === 0) ? String(cm / 2) : nsFmt(cm / 2);
+    el = document.getElementById('ns' + X + 'Sa'); if (el) el.textContent = nsFmt(v);
+    el = document.getElementById('ns' + X + 'Sn'); if (el) el.textContent = nsFmt(Math.min.apply(null, pts));
+    el = document.getElementById('ns' + X + 'Sx'); if (el) el.textContent = nsFmt(hmax);
   }
   function nsGaugeOff(X) {
     var el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = 'N/D'; el.style.fill = 'var(--dim)'; }
@@ -3679,6 +3689,8 @@ $HtmlPageLight = @'
     el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', '');
     el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', '');
     el = document.getElementById('ns' + X + 'd'); if (el) el.setAttribute('cx', '-10');
+  var ids = ['Sa', 'Sn', 'Sx'];
+  for (var si = 0; si < 3; si++) { el = document.getElementById('ns' + X + ids[si]); if (el) el.textContent = '--'; }
   }
   var nsLineHold = 0;
   async function forceLineTest() {
@@ -4407,6 +4419,12 @@ $HtmlPage = @'
   #nsDs { stroke: #22d3ee; } #nsDa, #nsDd { fill: #22d3ee; }
   #nsUs { stroke: #ff8c1a; } #nsUa, #nsUd { fill: #ff8c1a; }
   #nsDq, #nsUq { stroke: rgba(219,229,238,0.5); }
+  .ns-st { display: flex; gap: 6px; max-width: 250px; margin: 6px auto 0; }
+  .ns-st span { flex: 1; min-width: 0; text-align: center; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 4px 2px; }
+  .ns-st small { display: block; font-size: 0.66em; letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); }
+  .ns-st b { font-family: var(--font-mono); font-size: 0.95em; color: var(--text); font-weight: 700; }
+  .ns-stc { max-width: 250px; margin: 3px auto 0; font-size: 0.66em; text-align: center; color: var(--dim); }
+  #nsDSa { color: #22d3ee; } #nsUSa { color: #ff8c1a; }
   #nsPotDc:not(.fb) .ns-pot-v b { color: #22d3ee; } #nsPotUc:not(.fb) .ns-pot-v b { color: #ff8c1a; }
   .ns-tr { font-size: 0.76em; text-align: center; margin: 2px 0 4px; min-height: 1.3em; }
   .ns-trs { color: var(--dim); }
@@ -5211,7 +5229,7 @@ $HtmlPage = @'
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsDc" viewBox="0 0 200 104" role="img" aria-label="Indicatore download"><polyline class="cv-c" id="nsDc0" style="--i:0" points="20,6.0 30,13.0 40,6.0"/><polyline class="cv-c" id="nsDc1" style="--i:1" points="20,18.5 30,25.5 40,18.5"/><polyline class="cv-c" id="nsDc2" style="--i:2" points="20,31.0 30,38.0 40,31.0"/><polyline class="cv-c" id="nsDc3" style="--i:3" points="20,43.5 30,50.5 40,43.5"/><polyline class="cv-c" id="nsDc4" style="--i:4" points="20,56.0 30,63.0 40,56.0"/><polyline class="cv-c" id="nsDc5" style="--i:5" points="20,68.5 30,75.5 40,68.5"/><polyline class="cv-c" id="nsDc6" style="--i:6" points="20,81.0 30,88.0 40,81.0"/><polyline class="cv-c" id="nsDc7" style="--i:7" points="20,93.5 30,100.5 40,93.5"/><text class="gv" id="nsDv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsDx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsDt">&nbsp;</div>
-      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="2" y="15">&nbsp;</text><text class="gl" id="nsDm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsDSa">--</b></span><span><small>Min</small><b id="nsDSn">--</b></span><span><small>Max</small><b id="nsDSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
@@ -5221,7 +5239,7 @@ $HtmlPage = @'
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsUc" viewBox="0 0 200 104" role="img" aria-label="Indicatore upload"><polyline class="cv-c" id="nsUc0" style="--i:7" points="20,13.0 30,6.0 40,13.0"/><polyline class="cv-c" id="nsUc1" style="--i:6" points="20,25.5 30,18.5 40,25.5"/><polyline class="cv-c" id="nsUc2" style="--i:5" points="20,38.0 30,31.0 40,38.0"/><polyline class="cv-c" id="nsUc3" style="--i:4" points="20,50.5 30,43.5 40,50.5"/><polyline class="cv-c" id="nsUc4" style="--i:3" points="20,63.0 30,56.0 40,63.0"/><polyline class="cv-c" id="nsUc5" style="--i:2" points="20,75.5 30,68.5 40,75.5"/><polyline class="cv-c" id="nsUc6" style="--i:1" points="20,88.0 30,81.0 40,88.0"/><polyline class="cv-c" id="nsUc7" style="--i:0" points="20,100.5 30,93.5 40,100.5"/><text class="gv" id="nsUv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsUx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsUt">&nbsp;</div>
-      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="198" y="15" text-anchor="end">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg>
+      <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="2" y="15">&nbsp;</text><text class="gl" id="nsUm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsUSa">--</b></span><span><small>Min</small><b id="nsUSn">--</b></span><span><small>Max</small><b id="nsUSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
     </div>
   </div>
   <div class="ns-info">
@@ -6862,8 +6880,12 @@ function nsGauge(v, hist, X, pk, pot) {
   el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', d);
   el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', d + 'L' + last[0].toFixed(1) + ' 58L' + first.toFixed(1) + ' 58Z');
   el = document.getElementById('ns' + X + 'd'); if (el) { el.setAttribute('cx', last[0].toFixed(1)); el.setAttribute('cy', last[1].toFixed(1)); }
-  el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(pk / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
-  el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = 'scala ' + cm + ' Mbps';
+  el = document.getElementById('ns' + X + 'q'); if (el) { var py = 58 - Math.min(hmax / cm, 1) * 52; el.setAttribute('y1', py.toFixed(1)); el.setAttribute('y2', py.toFixed(1)); }
+  el = document.getElementById('ns' + X + 'm'); if (el) el.textContent = cm + ' Mbps';
+    el = document.getElementById('ns' + X + 'm2'); if (el) el.textContent = (cm % 2 === 0) ? String(cm / 2) : nsFmt(cm / 2);
+    el = document.getElementById('ns' + X + 'Sa'); if (el) el.textContent = nsFmt(v);
+    el = document.getElementById('ns' + X + 'Sn'); if (el) el.textContent = nsFmt(Math.min.apply(null, pts));
+    el = document.getElementById('ns' + X + 'Sx'); if (el) el.textContent = nsFmt(hmax);
 }
 function nsGaugeOff(X) {
   var el = document.getElementById('ns' + X + 'v'); if (el) { el.textContent = 'N/D'; el.style.fill = 'var(--dim)'; }
@@ -6873,6 +6895,8 @@ function nsGaugeOff(X) {
   el = document.getElementById('ns' + X + 's'); if (el) el.setAttribute('d', '');
   el = document.getElementById('ns' + X + 'a'); if (el) el.setAttribute('d', '');
   el = document.getElementById('ns' + X + 'd'); if (el) el.setAttribute('cx', '-10');
+  var ids = ['Sa', 'Sn', 'Sx'];
+  for (var si = 0; si < 3; si++) { el = document.getElementById('ns' + X + ids[si]); if (el) el.textContent = '--'; }
 }
 var nsLineHold = 0;
 async function forceLineTest() {
