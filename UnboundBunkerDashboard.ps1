@@ -3106,6 +3106,9 @@ $HtmlShell = @'
   #radioBar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 12px; height: 52px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
   #radioBtn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #555; background: #111; color: #fff; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
   #radioBtn:hover { background: #222; border-color: #888; }
+  #radioViz { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 2px; width: 110px; height: 30px; opacity: 0; transition: opacity .25s; }
+  #radioViz.on { opacity: 1; }
+  #radioViz .vb { flex: 0 0 5px; width: 5px; height: 2px; border-radius: 1px; }
   #radioIcon { flex: 0 0 auto; font-size: 18px; }
   #radioSel { flex: 0 0 auto; max-width: 220px; height: 30px; padding: 0 8px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
   #radioSel:hover { border-color: #888; }
@@ -3155,6 +3158,7 @@ $HtmlShell = @'
 <body>
 <div id="radioBar">
   <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
+  <div id="radioViz" aria-hidden="true"></div>
   <span id="radioIcon">&#128251;</span>
   <select id="radioSel" title="Scegli la radio"></select>
   <button id="radioAddBtn" type="button" title="Aggiungi una radio all'elenco">+</button>
@@ -3277,6 +3281,20 @@ $HtmlShell = @'
       return r.text();
     }).then(function (txt) { clearTimeout(to); return parseSong(kind, txt); }, function (e) { clearTimeout(to); throw e; });
   }
+  // Se la pagina di stato della radio non e' leggibile dal browser (CORS o piattaforma diversa), il titolo lo legge il server della dashboard
+  // (metadati ICY dentro lo stream) tramite /api/radio-meta; 'pending' = prima richiesta, la risposta e' in preparazione.
+  function proxySong(u, tries) {
+    fetch('/api/radio-meta?u=' + encodeURIComponent(u), { cache: 'no-store', headers: { 'X-Bunker-Radio': '1' } }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (au.paused) return;
+      var s = cleanSong(j && j.title);
+      if (s) { songEl.textContent = '\u266A ' + s; songEl.title = s; }
+      else if (j && j.pending && tries < 4) { setTimeout(function () { if (!au.paused) proxySong(u, tries + 1); }, 2000); }
+      else { songEl.textContent = ''; songEl.title = ''; }
+    }, function () {});
+  }
   function pollSong() {
     if (au.paused) { songEl.textContent = ''; songEl.title = ''; return; }
     var o = STREAMS[sIdx].replace(/^(https?:\/\/[^\/]+).*$/, '$1');
@@ -3287,7 +3305,10 @@ $HtmlShell = @'
     ];
     if (songKind[o]) { eps = eps.filter(function (e) { return e.k === songKind[o]; }); }
     (function next(i) {
-      if (i >= eps.length) { delete songKind[o]; return; }
+      if (i >= eps.length) {
+        if (songKind[o] === 'proxy' || eps.length > 1) songKind[o] = 'proxy'; else delete songKind[o];
+        proxySong(STREAMS[sIdx], 0); return;
+      }
       fetchSong(eps[i].u, eps[i].k).then(function (s) {
         songKind[o] = eps[i].k;
         songEl.textContent = s ? '\u266A ' + s : '';
@@ -3298,6 +3319,31 @@ $HtmlShell = @'
   au.addEventListener('playing', function () { setTimeout(pollSong, 1500); });
   au.addEventListener('pause', pollSong);
   setInterval(pollSong, 10000);
+
+  // === ISTOGRAMMA COLORATO (stile B): barre piene, un colore per banda; si muove solo se dalla radio arriva audio davvero ===
+  // 'Arriva audio' = in riproduzione, dati sufficienti nel buffer e orologio dello stream che avanza. Senza dati le barre scendono e spariscono.
+  var viz = document.getElementById('radioViz'), vBars = [], vLv = [], vTimer = null, vLastT = -1, VN = 16;
+  for (var vi = 0; vi < VN; vi++) {
+    var vb = document.createElement('span'); vb.className = 'vb';
+    vb.style.background = 'hsl(' + Math.round(vi * 300 / VN) + ',80%,60%)';
+    viz.appendChild(vb); vBars.push(vb); vLv.push(0);
+  }
+  function vizTick() {
+    if (document.hidden) return;
+    var ct = au.currentTime, flowing = !au.paused && au.readyState >= 3 && Math.abs(ct - vLastT) > 0.005, any = false;
+    vLastT = ct;
+    for (var i = 0; i < VN; i++) {
+      var t = flowing ? Math.max(0.05, Math.min(1, Math.random() * (1 - 0.6 * i / VN) * (0.55 + Math.random() * 0.6))) : 0;
+      vLv[i] = Math.max(t, vLv[i] * (flowing ? 0.78 : 0.6));
+      vBars[i].style.height = Math.max(2, Math.round(vLv[i] * 30)) + 'px';
+      if (vLv[i] > 0.03) any = true;
+    }
+    viz.classList.toggle('on', flowing || any);
+    if (!flowing && !any && au.paused) { clearInterval(vTimer); vTimer = null; viz.classList.remove('on'); }
+  }
+  function vizStart() { if (!vTimer) vTimer = setInterval(vizTick, 90); }
+  au.addEventListener('play', vizStart);
+  au.addEventListener('playing', vizStart);
 
   // === TENDINA RADIO: sceglie la radio, ricorda l'ultima scelta e fa ripartire l'audio ===
   var sel = document.getElementById('radioSel'), cur = 0;
@@ -3491,6 +3537,80 @@ function Update-RadioShellMemory {
         $script:HtmlShell = $script:HtmlShell.Substring(0, $sB) + $NewScriptText.Substring($nB, $nE - $nB) + $script:HtmlShell.Substring($sE)
         return $true
     } catch { return $false }
+}
+
+# === TITOLO CANZONE DELLE RADIO (rotta /api/radio-meta) ===
+# Legge i metadati ICY (StreamTitle) dentro lo stream della radio, per le radio la cui pagina di stato non e' leggibile dal browser.
+# La lettura gira in un runspace in background: il server HTTP, che e' a thread unico, non aspetta mai la radio.
+$script:RadioMetaCache = @{}
+$script:RadioMetaJobs  = @{}
+$script:RadioMetaScript = {
+    param($u)
+    try {
+        try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch {}
+        if ($u -match '\.m3u8') { return '' }
+        $req = [System.Net.HttpWebRequest]::Create($u)
+        $req.Headers.Add('Icy-MetaData', '1')
+        $req.UserAgent = 'Mozilla/5.0 UnboundBunkerDashboard'
+        $req.Timeout = 6000
+        $req.ReadWriteTimeout = 6000
+        $resp = $req.GetResponse()
+        try {
+            $mi = 0
+            [void][int]::TryParse([string]$resp.Headers['icy-metaint'], [ref]$mi)
+            if ($mi -le 0 -or $mi -gt 65536) { return '' }
+            $s = $resp.GetResponseStream()
+            $buf = New-Object byte[] 4096
+            $left = $mi
+            while ($left -gt 0) {
+                $n = $s.Read($buf, 0, [Math]::Min($left, $buf.Length))
+                if ($n -le 0) { return '' }
+                $left -= $n
+            }
+            $lb = $s.ReadByte()
+            if ($lb -le 0) { return '' }
+            $mb = New-Object byte[] ($lb * 16)
+            $got = 0
+            while ($got -lt $mb.Length) {
+                $n = $s.Read($mb, $got, $mb.Length - $got)
+                if ($n -le 0) { break }
+                $got += $n
+            }
+            $txt = [System.Text.Encoding]::UTF8.GetString($mb, 0, $got)
+            if ($txt.Contains([string][char]0xFFFD)) { $txt = [System.Text.Encoding]::GetEncoding(28591).GetString($mb, 0, $got) }
+            if ($txt -match "StreamTitle='(.*?)';") { return $Matches[1] }
+            return ''
+        } finally { try { $resp.Close() } catch {} }
+    } catch { return '' }
+}
+
+function Get-RadioMetaTitle {
+    param([string]$Url)
+    $now = Get-Date
+    foreach ($k in @($script:RadioMetaJobs.Keys)) {
+        $j = $script:RadioMetaJobs[$k]
+        $done = $j.h.IsCompleted
+        if ($done -or (($now - $j.started).TotalSeconds -gt 20)) {
+            $t = ''
+            if ($done) {
+                try { $r = $j.ps.EndInvoke($j.h); if ($r -and $r.Count -gt 0) { $t = [string]$r[0] } } catch {}
+                try { $j.ps.Dispose() } catch {}
+            } else {
+                try { [void]$j.ps.BeginStop($null, $null) } catch {}
+            }
+            $script:RadioMetaJobs.Remove($k)
+            $script:RadioMetaCache[$k] = @{ title = $t; ts = $now }
+        }
+    }
+    $c = $script:RadioMetaCache[$Url]
+    if (-not $script:RadioMetaJobs.ContainsKey($Url) -and ((-not $c) -or (($now - $c.ts).TotalSeconds -ge 8))) {
+        try {
+            $ps = [powershell]::Create()
+            [void]$ps.AddScript($script:RadioMetaScript.ToString()).AddArgument($Url)
+            $script:RadioMetaJobs[$Url] = @{ ps = $ps; h = $ps.BeginInvoke(); started = $now }
+        } catch { Write-DashLog "Errore avvio lettura titolo radio: $($_.Exception.Message)" }
+    }
+    if ($c) { return [string]$c.title } else { return '' }
 }
 
 # === PAGINA LIGHT (rotta / ): 2 indicatori a lancette in tempo reale + pulsante verso la versione Pro (/pro) ===
@@ -8692,6 +8812,48 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.StatusCode = $lrStatus
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/radio-meta" -and $request.HttpMethod -eq "GET") {
+                # Titolo della canzone in onda, letto dal server (metadati ICY). Stesse difese delle altre rotte radio (header custom,
+                # Host/Origin) e in piu' accetta SOLO indirizzi presenti nell'elenco radio: non e' un proxy aperto.
+                $rmStatus = 403
+                $rmBody   = '{"ok":false}'
+                try {
+                    $hdrOk  = ([string]$request.Headers["X-Bunker-Radio"] -eq "1")
+                    $hostOk = (@("127.0.0.1:$Port", "localhost:$Port") -contains [string]$request.UserHostName)
+                    $origHdr = [string]$request.Headers["Origin"]
+                    $origOk = ([string]::IsNullOrEmpty($origHdr) -or (@("http://127.0.0.1:$Port", "http://localhost:$Port") -contains $origHdr))
+                    if ($hdrOk -and $hostOk -and $origOk) {
+                        $rmUrl = [string]$request.QueryString["u"]
+                        $rmAllowed = $false
+                        if ($rmUrl -and $rmUrl.Length -le 300) {
+                            $rmB = $script:HtmlShell.IndexOf('// RADIO_LIST_' + 'BEGIN', [System.StringComparison]::Ordinal)
+                            $rmE = if ($rmB -ge 0) { $script:HtmlShell.IndexOf('// RADIO_LIST_' + 'END', $rmB, [System.StringComparison]::Ordinal) } else { -1 }
+                            if ($rmB -ge 0 -and $rmE -gt $rmB) {
+                                $rmBlock = $script:HtmlShell.Substring($rmB, $rmE - $rmB)
+                                foreach ($rmM in [regex]::Matches($rmBlock, "'(https?://[^']+)'")) {
+                                    if ($rmM.Groups[1].Value -ceq $rmUrl) { $rmAllowed = $true; break }
+                                }
+                            }
+                        }
+                        if ($rmAllowed) {
+                            $rmTitle = Get-RadioMetaTitle $rmUrl
+                            $rmPending = (-not $script:RadioMetaCache.ContainsKey($rmUrl))
+                            $rmStatus = 200
+                            $rmBody   = (@{ ok = $true; title = $rmTitle; pending = $rmPending } | ConvertTo-Json -Compress)
+                        } else {
+                            $rmStatus = 400
+                        }
+                    }
+                } catch {
+                    $rmStatus = 500
+                    Write-DashLog "Errore in /api/radio-meta: $($_.Exception.Message)"
+                }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($rmBody)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.StatusCode = $rmStatus
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/radio-add" -and $request.HttpMethod -eq "POST") {
