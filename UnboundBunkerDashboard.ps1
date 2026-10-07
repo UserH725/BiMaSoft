@@ -3103,11 +3103,11 @@ $HtmlShell = @'
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; color-scheme: dark; overflow: hidden; }
   body { display: flex; flex-direction: column; }
-  #radioBar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
+  #radioBar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 12px; height: 52px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
   #radioBtn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #555; background: #111; color: #fff; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
   #radioBtn:hover { background: #222; border-color: #888; }
   #radioName { font-weight: 700; letter-spacing: 0.03em; }
-  #radioSong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4fb3ff; font-weight: 600; }
+  #radioSong { flex: 0 1 auto; min-width: 0; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4fb3ff; font-weight: 600; }
   #radioState { flex: 0 0 auto; color: #8a8a8a; font-size: 12px; }
   #radioVol { flex: 0 0 auto; width: 110px; accent-color: #4fb3ff; }
   #mainFrame { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: #000; }
