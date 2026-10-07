@@ -3165,13 +3165,13 @@ $HtmlShell = @'
   <audio id="radioAudio" preload="none"></audio>
 </div>
 <div id="radioAdd" hidden>
-  <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e la dashboard si riavvia. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva.</p>
+  <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva.</p>
   <div class="ra-row"><label for="raName">Nome</label><input id="raName" type="text" maxlength="40" placeholder="Nome della radio" autocomplete="off"></div>
   <div class="ra-row"><label for="raUrl">URL</label><input id="raUrl" type="text" placeholder="https://server:porta/stream.mp3" autocomplete="off" spellcheck="false"></div>
-  <div class="ra-row"><span id="raMsg"></span><button id="raCancel" type="button">Annulla</button><button id="raSave" type="button">Salva e riavvia</button></div>
+  <div class="ra-row"><span id="raMsg"></span><button id="raCancel" type="button">Annulla</button><button id="raSave" type="button">Salva</button></div>
 </div>
 <div id="radioDel" hidden>
-  <p id="rdHint">Stai per rimuovere questa radio dall'elenco dentro lo script UnboundBunkerDashboard.ps1: serviranno due conferme e alla fine la dashboard si riavvia.</p>
+  <p id="rdHint">Stai per rimuovere questa radio dall'elenco dentro lo script UnboundBunkerDashboard.ps1: serviranno due conferme e alla fine sparisce subito dalla tendina, senza riavviare la dashboard.</p>
   <div class="ra-row"><label for="rdName">Nome</label><input id="rdName" type="text" readonly tabindex="-1"></div>
   <div class="ra-row"><label for="rdUrl">URL</label><textarea id="rdUrl" readonly rows="2" spellcheck="false" tabindex="-1"></textarea></div>
   <div class="ra-row"><span id="rdMsg"></span><button id="rdCancel" type="button">Annulla</button><button id="rdGo" type="button">Rimuovi</button></div>
@@ -3192,6 +3192,7 @@ $HtmlShell = @'
     // RADIO_LIST_BEGIN
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'] },
+    { name: 'RTL 102.5', urls: ['https://streamcdnm7-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/WjpMtPyNjHwj/chunklist_b192000.m3u8'] },
     // RADIO_LIST_END
   ];
   var STREAMS = RADIO_STATIONS[0].urls;
@@ -3310,6 +3311,18 @@ $HtmlShell = @'
     wantPlay = true; clearTimeout(retryTimer); startRadio(true);
   });
 
+  // Aggiorna la tendina e la radio in uso SENZA ricaricare la pagina: l'audio in onda non si interrompe se la radio non cambia
+  function rebuildSel() {
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    RADIO_STATIONS.forEach(function (s, i) { var o = document.createElement('option'); o.value = i; o.textContent = s.name; sel.appendChild(o); });
+  }
+  function useStation(i, play) {
+    cur = i; sel.value = i; STREAMS = RADIO_STATIONS[i].urls; sIdx = 0;
+    try { localStorage.setItem('radioStation', RADIO_STATIONS[i].name); } catch (e) {}
+    songEl.textContent = ''; songEl.title = '';
+    if (play) { wantPlay = true; clearTimeout(retryTimer); startRadio(true); }
+  }
+
   // === PULSANTE +: aggiunge una radio all'elenco scritto nello script e riavvia la dashboard ===
   var addBtn = document.getElementById('radioAddBtn'), addPanel = document.getElementById('radioAdd');
   var raName = document.getElementById('raName'), raUrl = document.getElementById('raUrl');
@@ -3349,10 +3362,17 @@ $HtmlShell = @'
       return r.json().catch(function () { return { ok: false, error: 'Risposta non valida dal server (HTTP ' + r.status + ')' }; });
     }).then(function (j) {
       if (!j || !j.ok) { raSay((j && j.error) || 'Errore nel salvataggio.', true); raSave.disabled = false; raCancel.disabled = false; return; }
-      try { localStorage.setItem('radioStation', nm); } catch (e) {}
-      raSay('Salvata. Riavvio completo della dashboard...');
-      fetch('/api/restart', { method: 'POST' }).catch(function () {});
-      waitServerBack();
+      if (j.restart) {
+        // Il server non e' riuscito ad aggiornare la pagina in memoria: ripiego sul riavvio completo
+        try { localStorage.setItem('radioStation', nm); } catch (e) {}
+        raSay('Salvata. Riavvio completo della dashboard...');
+        fetch('/api/restart', { method: 'POST' }).catch(function () {});
+        waitServerBack();
+        return;
+      }
+      RADIO_STATIONS.push({ name: nm, urls: ur.split(/\s+/).filter(Boolean) });
+      rebuildSel(); useStation(RADIO_STATIONS.length - 1, wantPlay);
+      raName.value = ''; raUrl.value = ''; raSave.disabled = false; raCancel.disabled = false; raOpen(false);
     }, function () {
       raSay('Server non raggiungibile.', true); raSave.disabled = false; raCancel.disabled = false;
     });
@@ -3393,7 +3413,7 @@ $HtmlShell = @'
     }
     if (rdStep === 1) {
       rdStep = 2; rdGo.className = 'final'; rdGo.textContent = 'Rimuovi definitivamente';
-      rdSay('Conferma 2 di 2: ULTIMA conferma. La radio viene cancellata dallo script e la dashboard si riavvia.', 'warn');
+      rdSay('Conferma 2 di 2: ULTIMA conferma. La radio viene cancellata dallo script e dalla tendina.', 'warn');
       return;
     }
     rdGo.disabled = true; rdCancel.disabled = true; rdSay('Rimozione dallo script...');
@@ -3405,10 +3425,17 @@ $HtmlShell = @'
       return r.json().catch(function () { return { ok: false, error: 'Risposta non valida dal server (HTTP ' + r.status + ')' }; });
     }).then(function (j) {
       if (!j || !j.ok) { rdReset(); rdSay((j && j.error) || 'Errore nella rimozione.', 'err'); return; }
-      try { if (localStorage.getItem('radioStation') === nm) localStorage.removeItem('radioStation'); } catch (e) {}
-      rdSay('Rimossa. Riavvio completo della dashboard...');
-      fetch('/api/restart', { method: 'POST' }).catch(function () {});
-      waitServerBack();
+      if (j.restart) {
+        // Il server non e' riuscito ad aggiornare la pagina in memoria: ripiego sul riavvio completo
+        try { if (localStorage.getItem('radioStation') === nm) localStorage.removeItem('radioStation'); } catch (e) {}
+        rdSay('Rimossa. Riavvio completo della dashboard...');
+        fetch('/api/restart', { method: 'POST' }).catch(function () {});
+        waitServerBack();
+        return;
+      }
+      RADIO_STATIONS.splice(ix, 1);
+      rebuildSel(); useStation(0, wantPlay);
+      rdReset(); rdOpen(false);
     }, function () {
       rdReset(); rdSay('Server non raggiungibile.', 'err');
     });
@@ -3446,6 +3473,24 @@ $HtmlShell = @'
 function Test-WantsShell {
     param($req)
     try { return ([string]$req.Headers['Sec-Fetch-Dest'] -eq 'document') } catch { return $false }
+}
+
+# Dopo che /api/radio-add o /api/radio-remove hanno riscritto l'elenco nel file, aggiorna anche la copia in memoria della pagina
+# contenitore ($HtmlShell, letta una sola volta all'avvio): cosi' un ricaricamento della pagina mostra subito l'elenco nuovo
+# e non serve riavviare la dashboard. Restituisce $false se non riesce (la pagina ripiega allora sul riavvio completo).
+function Update-RadioShellMemory {
+    param([string]$NewScriptText)
+    try {
+        $mB = '// RADIO_LIST_' + 'BEGIN'
+        $mE = '// RADIO_LIST_' + 'END'
+        $nB = $NewScriptText.IndexOf($mB, [System.StringComparison]::Ordinal)
+        $nE = if ($nB -ge 0) { $NewScriptText.IndexOf($mE, $nB, [System.StringComparison]::Ordinal) } else { -1 }
+        $sB = $script:HtmlShell.IndexOf($mB, [System.StringComparison]::Ordinal)
+        $sE = if ($sB -ge 0) { $script:HtmlShell.IndexOf($mE, $sB, [System.StringComparison]::Ordinal) } else { -1 }
+        if ($nB -lt 0 -or $nE -lt 0 -or $sB -lt 0 -or $sE -lt 0) { return $false }
+        $script:HtmlShell = $script:HtmlShell.Substring(0, $sB) + $NewScriptText.Substring($nB, $nE - $nB) + $script:HtmlShell.Substring($sE)
+        return $true
+    } catch { return $false }
 }
 
 # === PAGINA LIGHT (rotta / ): 2 indicatori a lancette in tempo reale + pulsante verso la versione Pro (/pro) ===
@@ -8717,7 +8762,7 @@ try {
                                     Move-Item -LiteralPath $raTmp -Destination $raTarget -Force
                                     Write-DashLog "Radio aggiunta all'elenco dello script: $raName"
                                     $raStatus = 200
-                                    $raBody   = '{"ok":true}'
+                                    $raBody   = if (Update-RadioShellMemory $raNew) { '{"ok":true}' } else { '{"ok":true,"restart":true}' }
                                 }
                             }
                         }
@@ -8782,7 +8827,7 @@ try {
                                 Move-Item -LiteralPath $rrTmp -Destination $rrTarget -Force
                                 Write-DashLog "Radio rimossa dall'elenco dello script: $rrName"
                                 $rrStatus = 200
-                                $rrBody   = '{"ok":true}'
+                                $rrBody   = if (Update-RadioShellMemory $rrNew) { '{"ok":true}' } else { '{"ok":true,"restart":true}' }
                             }
                         }
                     }
