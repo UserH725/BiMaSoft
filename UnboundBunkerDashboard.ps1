@@ -3091,6 +3091,183 @@ function Get-BunkerStatusLightJson {
 
 # === INTERFACCIA WEB HTML5 / JS ===
 
+# === PAGINA SHELL (rotta / e /pro aperte come pagina principale del browser): contiene la radio, che non viene mai ricaricata, e la dashboard (Light/Pro) in un frame ===
+$HtmlShell = @'
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNBOUND BUNKER CERBERO</title>
+<link rel="icon" id="shellIcon" href="data:,">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; color-scheme: dark; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+  #radioBar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
+  #radioBtn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #555; background: #111; color: #fff; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
+  #radioBtn:hover { background: #222; border-color: #888; }
+  #radioName { font-weight: 700; letter-spacing: 0.03em; }
+  #radioSong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4fb3ff; font-weight: 600; }
+  #radioState { flex: 0 0 auto; color: #8a8a8a; font-size: 12px; }
+  #radioVol { flex: 0 0 auto; width: 110px; accent-color: #4fb3ff; }
+  #mainFrame { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: #000; }
+</style>
+</head>
+<body>
+<div id="radioBar">
+  <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
+  <span id="radioName">&#128251; Q8 Radio</span>
+  <span id="radioSong"></span>
+  <span id="radioState">connessione...</span>
+  <input id="radioVol" type="range" min="0" max="100" value="100" title="Volume">
+  <audio id="radioAudio" preload="none"></audio>
+</div>
+<iframe id="mainFrame" title="Unbound Bunker Dashboard"></iframe>
+<script>
+(function () {
+  var f = document.getElementById('mainFrame');
+  var lastTitle = '', lastIcon = '', lastPath = location.pathname;
+
+  // === RADIO: lettore audio nativo sullo stream diretto, vive nella shell e non si ricarica cambiando pagina ===
+  // Stream in ordine di preferenza: se uno non risponde si passa al successivo (e poi di nuovo al primo)
+  var STREAMS = ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'];
+  var sIdx = 0;
+  var au = document.getElementById('radioAudio'), btn = document.getElementById('radioBtn');
+  var st = document.getElementById('radioState'), vol = document.getElementById('radioVol');
+  var wantPlay = true, retryTimer = null, armed = false;
+  try { var sv = localStorage.getItem('radioVol'); if (sv !== null) vol.value = sv; } catch (e) {}
+  au.volume = vol.value / 100;
+  vol.addEventListener('input', function () {
+    au.volume = vol.value / 100;
+    try { localStorage.setItem('radioVol', vol.value); } catch (e) {}
+  });
+  function setUi(playing, msg) { btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;'; st.textContent = msg; }
+  function startRadio(fresh) {
+    clearTimeout(retryTimer);
+    if (fresh || !au.src) { var u = STREAMS[sIdx]; au.src = (u.indexOf('?') < 0) ? u : u + '&_=' + Date.now(); }
+    var pr = au.play();
+    if (pr && pr.catch) pr.catch(function (err) {
+      if (err && err.name === 'NotAllowedError') { setUi(false, 'clicca play (il browser blocca l\'avvio automatico)'); armAutoplay(); }
+      else { scheduleRetry(); }
+    });
+  }
+  function scheduleRetry() {
+    if (!wantPlay) return;
+    setUi(false, 'riconnessione...');
+    clearTimeout(retryTimer);
+    sIdx = (sIdx + 1) % STREAMS.length;   // prova lo stream successivo
+    retryTimer = setTimeout(function () { startRadio(true); }, sIdx === 0 ? 3000 : 800);
+  }
+  // Il primo clic/tasto ovunque nella pagina (anche dentro la dashboard, che e' dello stesso sito) sblocca l'audio
+  function armAutoplay() {
+    if (armed) return; armed = true;
+    var go = function () {
+      if (!wantPlay || !au.paused) return;
+      armed = false;
+      document.removeEventListener('pointerdown', go, true); document.removeEventListener('keydown', go, true);
+      try { f.contentDocument.removeEventListener('pointerdown', go, true); f.contentDocument.removeEventListener('keydown', go, true); } catch (e) {}
+      startRadio(false);
+    };
+    document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true);
+    var hook = function () { try { f.contentDocument.addEventListener('pointerdown', go, true); f.contentDocument.addEventListener('keydown', go, true); } catch (e) {} };
+    hook(); f.addEventListener('load', hook);
+  }
+  au.addEventListener('playing', function () { setUi(true, 'in onda'); });
+  au.addEventListener('waiting', function () { if (wantPlay) st.textContent = 'buffering...'; });
+  au.addEventListener('error', scheduleRetry);
+  au.addEventListener('stalled', function () { if (wantPlay) { clearTimeout(retryTimer); retryTimer = setTimeout(function () { if (!au.paused && au.readyState < 3) startRadio(true); }, 8000); } });
+  au.addEventListener('ended', scheduleRetry);
+  btn.addEventListener('click', function () {
+    if (au.paused) { wantPlay = true; sIdx = 0; startRadio(true); }
+    else { wantPlay = false; clearTimeout(retryTimer); au.pause(); au.removeAttribute('src'); au.load(); setUi(false, 'in pausa'); }
+  });
+
+  // === TITOLO DELLA CANZONE IN ONDA: letto dalla pagina di stato del server radio (Icecast, poi Shoutcast v2, poi v1) ===
+  var songEl = document.getElementById('radioSong');
+  var songKind = {};   // per ogni server, quale tipo di pagina di stato ha risposto l'ultima volta
+  function cleanSong(s) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    return (!s || /^(no live title|n\/a|unknown|-)$/i.test(s)) ? '' : s;
+  }
+  function parseSong(kind, txt) {
+    if (kind === 'ice') {
+      var j = JSON.parse(txt), src = j.icestats && j.icestats.source;
+      var arr = Array.isArray(src) ? src : (src ? [src] : []);
+      var pick = null, i;
+      for (i = 0; i < arr.length; i++) { if (/\/stream$/.test(String(arr[i].listenurl || '').split('?')[0])) { pick = arr[i]; break; } }
+      if (!pick) pick = arr[0];
+      if (!pick) return '';
+      var ti = String(pick.title || ''), ar = String(pick.artist || '');
+      return cleanSong(ar && ti && ti.toLowerCase().indexOf(ar.toLowerCase()) < 0 ? ar + ' - ' + ti : ti);
+    }
+    if (kind === 'sc2') { return cleanSong(JSON.parse(txt).songtitle); }
+    var f7 = txt.replace(/<[^>]*>/g, '').trim().split(',');   // Shoutcast v1 /7.html: ... ,ultimo campo = titolo
+    return f7.length > 6 ? cleanSong(f7.slice(6).join(',')) : '';
+  }
+  function fetchSong(url, kind) {
+    var ac = (window.AbortController ? new AbortController() : null);
+    var to = setTimeout(function () { if (ac) ac.abort(); }, 6000);
+    return fetch(url, { cache: 'no-store', signal: ac ? ac.signal : undefined }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (txt) { clearTimeout(to); return parseSong(kind, txt); }, function (e) { clearTimeout(to); throw e; });
+  }
+  function pollSong() {
+    if (au.paused) { songEl.textContent = ''; songEl.title = ''; return; }
+    var o = STREAMS[sIdx].replace(/^(https?:\/\/[^\/]+).*$/, '$1');
+    var eps = [
+      { k: 'ice', u: o + '/status-json.xsl' },
+      { k: 'sc2', u: o + '/stats?sid=1&json=1' },
+      { k: 'sc1', u: o + '/7.html' }
+    ];
+    if (songKind[o]) { eps = eps.filter(function (e) { return e.k === songKind[o]; }); }
+    (function next(i) {
+      if (i >= eps.length) { delete songKind[o]; return; }
+      fetchSong(eps[i].u, eps[i].k).then(function (s) {
+        songKind[o] = eps[i].k;
+        songEl.textContent = s ? '\u266A ' + s : '';
+        songEl.title = s;
+      }, function () { next(i + 1); });
+    })(0);
+  }
+  au.addEventListener('playing', function () { setTimeout(pollSong, 1500); });
+  au.addEventListener('pause', pollSong);
+  setInterval(pollSong, 10000);
+  startRadio(false);
+  f.src = location.pathname + location.search;
+  // La dashboard vive nel frame: titolo (pallini colorati), favicon e indirizzo vengono ricopiati sulla scheda del browser
+  setInterval(function () {
+    try {
+      var d = f.contentDocument;
+      if (!d) return;
+      var t = d.title;
+      if (t && t !== lastTitle) { document.title = t; lastTitle = t; }
+      var l = d.querySelector('link[rel~="icon"]');
+      var h = l ? l.getAttribute('href') : '';
+      if (h && h !== lastIcon) {
+        lastIcon = h;
+        var old = document.getElementById('shellIcon');
+        var n = document.createElement('link');
+        n.id = 'shellIcon'; n.rel = 'icon'; n.href = h;
+        old.parentNode.replaceChild(n, old);
+      }
+      var p = f.contentWindow.location.pathname;
+      if (p && p.charAt(0) === '/' && p !== lastPath) { lastPath = p; history.replaceState(null, '', p); }
+    } catch (e) {}
+  }, 400);
+})();
+</script>
+</body>
+</html>
+'@
+
+# Il browser dichiara con Sec-Fetch-Dest se la richiesta e' la pagina principale (document) o un frame (iframe):
+# solo la pagina principale riceve la shell con la radio. Senza intestazione (curl, controlli esterni) si serve la dashboard come prima.
+function Test-WantsShell {
+    param($req)
+    try { return ([string]$req.Headers['Sec-Fetch-Dest'] -eq 'document') } catch { return $false }
+}
+
 # === PAGINA LIGHT (rotta / ): 2 indicatori a lancette in tempo reale + pulsante verso la versione Pro (/pro) ===
 $HtmlPageLight = @'
 <!DOCTYPE html>
@@ -8579,14 +8756,22 @@ try {
                     break
                 }
             } elseif ($request.Url.AbsolutePath -eq "/pro" -or $request.Url.AbsolutePath -eq "/pro/") {
-                Set-ProActive
-                $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
+                if (Test-WantsShell $request) {
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlShell)
+                } else {
+                    Set-ProActive
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPage)
+                }
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/" -or $request.Url.AbsolutePath -eq "/index.html") {
-                $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPageLight)
+                if (Test-WantsShell $request) {
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlShell)
+                } else {
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($HtmlPageLight)
+                }
                 $response.ContentType = "text/html; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.ContentLength64 = $buffer.Length
