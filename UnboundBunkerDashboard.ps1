@@ -2792,14 +2792,20 @@ function Add-LightConnEvent {
     [void]$script:LightConnRing.Add($ev)
     while ($script:LightConnRing.Count -gt 40) { $script:LightConnRing.RemoveAt(0) }
     if ($Kind -eq 'd') { $script:LightConnLast = $ev }
-    # [v1107.8] conteggio per bandierina: solo risposte/query reali (NOERROR, non RPZ, non DNSSEC, non traffico della dashboard)
-    if ($sub -eq 0 -and $own -eq 0 -and $Via -ne 'r' -and $Code -eq 'NOERROR') {
-        $dcm = $script:LcDomCnt[$Kind]
-        if ($dcm) {
-            if ($dcm.ContainsKey($Dom)) { $dcm[$Dom]++ } elseif ($dcm.Count -lt 20000) { $dcm[$Dom] = 1 }
-        }
-        if ($Kind -eq 'u') { Request-GeoCountry $Dom }
+    # [v1107.8] conteggio di OGNI icona mostrata nel ticker (stessa logica della Light): stop RPZ, chiave+lucchetto DS, chiave DNSKEY,
+    # sigillo RRSIG/NSEC, PTR, punto interrogativo NXDOMAIN, avviso per gli errori e, per le risposte normali, la bandierina del paese
+    # (contata per dominio e risolta all'uscita)
+    $dcm = $script:LcDomCnt[$Kind]
+    if ($dcm) {
+        $ek = $Dom
+        if ($Via -eq 'r') { $ek = '!R' }
+        elseif ($sub -eq 1) { if ($Qt -eq 'DS') { $ek = '!DS' } elseif ($Qt -eq 'DNSKEY') { $ek = '!DK' } else { $ek = '!SG' } }
+        elseif ($Dom -match '\.(in-addr|ip6)\.arpa$' -or $Qt -eq 'PTR') { $ek = '!PT' }
+        elseif ($Code -eq 'NXDOMAIN') { $ek = '!NX' }
+        elseif ($Code -ne 'NOERROR') { $ek = '!ER' }
+        if ($dcm.ContainsKey($ek)) { $dcm[$ek]++ } elseif ($dcm.Count -lt 20000) { $dcm[$ek] = 1 }
     }
+    if ($Kind -eq 'u' -and $sub -eq 0 -and $own -eq 0 -and $Code -eq 'NOERROR' -and $Via -ne 'r') { Request-GeoCountry $Dom }
     # bandierina: solo per risposte reali (NOERROR, non RPZ), non sotto-query DNSSEC e non traffico della dashboard
     if ($Kind -eq 'd' -and $Code -eq 'NOERROR' -and $Via -ne 'r' -and $sub -eq 0 -and $own -eq 0) { Request-GeoCountry $Dom }
 }
@@ -2947,21 +2953,27 @@ function Get-LightConnFeed {
             if ($script:GeoState.TryGetValue([string]$ge.d, [ref]$gv)) { if ($gv) { $geoOut[[string]$ge.d] = $gv } }
         }
     } catch {}
-    # [v1107.8] classifica paesi (tutti, max 60 per verso), ricalcolata al massimo ogni 2 s
+    # [v1107.8] classifica emoji (bandierine + icone speciali, codici _XX), ricalcolata al massimo ogni 2 s
     try {
         if (-not $script:LcFlCacheT -or ((Get-Date) - $script:LcFlCacheT).TotalSeconds -ge 2) {
             if ($script:LcCcKnown.Count -gt 20000) { $script:LcCcKnown = @{} }
             foreach ($fk in @('d', 'u')) {
                 $agg = @{}
                 foreach ($fe in $script:LcDomCnt[$fk].GetEnumerator()) {
+                    $fkey = [string]$fe.Key
                     $fcc = ''
-                    [void]$script:GeoState.TryGetValue([string]$fe.Key, [ref]$fcc)
-                    if ($fcc -match '^[A-Z]{2}$') { $script:LcCcKnown[[string]$fe.Key] = $fcc }
-                    else { $fcc = [string]$script:LcCcKnown[[string]$fe.Key] }
-                    if ($fcc -match '^[A-Z]{2}$') { if ($agg.ContainsKey($fcc)) { $agg[$fcc] += $fe.Value } else { $agg[$fcc] = $fe.Value } }
+                    if ($fkey.StartsWith('!')) { $fcc = '_' + $fkey.Substring(1) }
+                    else {
+                        $gs = ''
+                        $has = $script:GeoState.TryGetValue($fkey, [ref]$gs)
+                        if ($gs -match '^[A-Z]{2}$') { $script:LcCcKnown[$fkey] = $gs; $fcc = $gs }
+                        elseif ($script:LcCcKnown.ContainsKey($fkey)) { $fcc = [string]$script:LcCcKnown[$fkey] }
+                        elseif ($gs -eq '-' -or -not $has) { $fcc = '_WW' }
+                    }
+                    if ($fcc) { if ($agg.ContainsKey($fcc)) { $agg[$fcc] += $fe.Value } else { $agg[$fcc] = $fe.Value } }
                 }
                 $farr = @()
-                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 60)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
+                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 80)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
                 $script:LcFlCache[$fk] = $farr
             }
             $script:LcFlCacheT = Get-Date
@@ -4638,6 +4650,7 @@ $HtmlPageLight = @'
     var fl = d.conn_live && d.conn_live.fl;
     if (!fl) return;
     var m = document.querySelector('.ns-meters'); if (!m) return;
+    var SP = { _R: ['\uD83D\uDED1', 'Bloccato dallo scudo RPZ'], _DS: ['\uD83D\uDD10', 'Verifica DNSSEC (DS)'], _DK: ['\uD83D\uDD11', 'Verifica DNSSEC (DNSKEY)'], _SG: ['\uD83D\uDD0F', 'Verifica DNSSEC (RRSIG/NSEC)'], _PT: ['\uD83D\uDD01', 'Ricerca inversa (PTR)'], _NX: ['\u2753', 'Dominio inesistente (NXDOMAIN)'], _ER: ['\u26A0\uFE0F', 'Errore del resolver'], _WW: ['\uD83C\uDF10', 'Paese non determinabile'] };
     var S = nsFlags.S || (nsFlags.S = { rows: { L: {}, R: {} }, prev: { L: {}, R: {} } });
     if (!S.L) {
       S.L = document.createElement('div'); S.L.className = 'rz rz-l';
@@ -4647,7 +4660,7 @@ $HtmlPageLight = @'
     var H = 20, sides = [['L', S.L, fl.d], ['R', S.R, fl.u]];
     for (var s = 0; s < sides.length; s++) {
       var side = sides[s][0], box = sides[s][1], rows = S.rows[side], prev = S.prev[side];
-      var list = (sides[s][2] || []).filter(function (x) { return x && /^[A-Z]{2}$/.test(x.cc); });
+      var list = (sides[s][2] || []).filter(function (x) { return x && /^(_[A-Z]{1,2}|[A-Z]{2})$/.test(x.cc) && (x.cc.charAt(0) !== '_' || SP[x.cc]); });
       list.sort(function (a, b) { return (b.n - a.n) || (a.cc < b.cc ? -1 : 1); });
       var seen = {};
       box.style.height = (Math.ceil(list.length / 2) * H) + 'px';
@@ -4656,12 +4669,14 @@ $HtmlPageLight = @'
         if (!r) {
           r = rows[it.cc] = document.createElement('div'); r.className = 'rz-i';
           r.innerHTML = side === 'L' ? '<b></b><span class="rz-e"></span>' : '<span class="rz-e"></span><b></b>';
-          (side === 'L' ? r.lastChild : r.firstChild).textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65);
-          r.title = it.cc; box.appendChild(r);
+          var ico = side === 'L' ? r.lastChild : r.firstChild;
+          if (SP[it.cc]) { ico.textContent = SP[it.cc][0]; r.title = SP[it.cc][1]; }
+          else { ico.textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65); r.title = it.cc; }
+          box.appendChild(r);
         }
-        var col = j % 2, row = Math.floor(j / 2);
+        var rowsN = Math.ceil(list.length / 2), col = Math.floor(j / rowsN), row = j % rowsN;
         r.style.top = (row * H) + 'px';
-        r.style.left = ((side === 'L' ? 1 - col : col) * 50) + '%';
+        r.style.left = (col * 50) + '%';
         var b = side === 'L' ? r.firstChild : r.lastChild, txt = Number(it.n).toLocaleString('it-IT');
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
