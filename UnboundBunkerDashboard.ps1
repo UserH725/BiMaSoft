@@ -2615,6 +2615,10 @@ $script:LightConnUpstream = $false
 $script:LightConnLast     = $null
 $script:LcThrName         = @{}     # per thread: dominio dell'ultima query inviata / risposta in arrivo
 $script:LcThrIp           = @{}     # per thread: resolver upstream dell'ultima risposta ricevuta
+$script:LcThrType         = @{}     # per thread: tipo (A/AAAA/DS/DNSKEY...) dell'ultima query inviata / risposta in arrivo
+# v1107.2: ogni evento porta anche q (tipo query), s (1 = sotto-query DNSSEC DS/DNSKEY, non richiesta da un programma)
+#          e o (1 = traffico della dashboard stessa: geolocalizzazione IP, controllo versioni GitHub)
+$script:LcOwnRx           = '^(ip-api\.com|ipinfo\.io|ipapi\.co|(ipv4\.|ipv6\.)?icanhazip\.com|api\.github\.com|raw\.githubusercontent\.com)$'
 $script:LcDetail          = $false  # visto almeno un "sending to target": il log ha il dettaglio upstream
 $script:LcRecentT         = ""      # secondo corrente per l'anti-doppione
 $script:LcRecent          = @{}
@@ -2630,10 +2634,12 @@ function Test-LightConnDup {
 }
 
 function Add-LightConnEvent {
-    param([string]$T, [string]$Dom, [string]$Code, [string]$Via, [string]$Kind = 'd', [string]$Ip = '')
+    param([string]$T, [string]$Dom, [string]$Code, [string]$Via, [string]$Kind = 'd', [string]$Ip = '', [string]$Qt = '')
     if ($Dom.Length -gt 90) { $Dom = $Dom.Substring(0, 90) }
     $script:LightConnSeq++
-    $ev = @{ n = $script:LightConnSeq; t = $T; d = $Dom; c = $Code; v = $Via; k = $Kind; ip = $Ip }
+    $sub = 0; if ($Qt -match '^(DS|DNSKEY|NSEC|NSEC3|NSEC3PARAM|RRSIG)$') { $sub = 1 }
+    $own = 0; if ($Dom -match $script:LcOwnRx) { $own = 1 }
+    $ev = @{ n = $script:LightConnSeq; t = $T; d = $Dom; c = $Code; v = $Via; k = $Kind; ip = $Ip; q = $Qt; s = $sub; o = $own }
     [void]$script:LightConnRing.Add($ev)
     while ($script:LightConnRing.Count -gt 40) { $script:LightConnRing.RemoveAt(0) }
     if ($Kind -eq 'd') { $script:LightConnLast = $ev }
@@ -2690,18 +2696,20 @@ function Get-LightConnFeed {
                             if ($ln -match '\[(\d+:\d+)\]') { $th = $matches[1] }
                             $lt = ''
                             if ($ln -match '(\d{2}:\d{2}:\d{2})') { $lt = $matches[1] }
-                            if ($ln -match 'info:\s+sending query:\s+(\S+)\s+\S+\s+IN') {
+                            if ($ln -match 'info:\s+sending query:\s+(\S+)\s+(\S+)\s+IN') {
                                 $script:LcThrName[$th] = $matches[1].TrimEnd('.')
+                                $script:LcThrType[$th] = $matches[2]
                             }
                             elseif ($ln -match 'debug:\s+sending to target:\s+<[^>]*>\s+(\S+?)#\d+') {
                                 # UPLOAD: query davvero inviata a un resolver upstream (DS/DNSKEY del DNSSEC compresi)
                                 $script:LcDetail = $true
                                 $upIp = $matches[1]
                                 $upDom = $script:LcThrName[$th]
-                                if ($upDom) { Add-LightConnEvent -T $lt -Dom $upDom -Code 'NOERROR' -Via 'n' -Kind 'u' -Ip $upIp }
+                                if ($upDom) { Add-LightConnEvent -T $lt -Dom $upDom -Code 'NOERROR' -Via 'n' -Kind 'u' -Ip $upIp -Qt $script:LcThrType[$th] }
                             }
-                            elseif ($ln -match 'info:\s+response for\s+(\S+)\s+\S+\s+IN') {
+                            elseif ($ln -match 'info:\s+response for\s+(\S+)\s+(\S+)\s+IN') {
                                 $script:LcThrName[$th] = $matches[1].TrimEnd('.')
+                                $script:LcThrType[$th] = $matches[2]
                             }
                             elseif ($ln -match 'info:\s+reply from\s+<[^>]*>\s+(\S+?)#\d+') {
                                 $script:LcThrIp[$th] = $matches[1]
@@ -2715,14 +2723,14 @@ function Get-LightConnFeed {
                                 elseif ($rs -match 'REFUSED') { $rc = 'REFUSED' }
                                 elseif ($rs -match 'FORMERR') { $rc = 'FORMERR' }
                                 $dnDom = $script:LcThrName[$th]; $dnIp = $script:LcThrIp[$th]
-                                if ($dnDom -and $dnIp) { Add-LightConnEvent -T $lt -Dom $dnDom -Code $rc -Via 'n' -Kind 'd' -Ip $dnIp }
+                                if ($dnDom -and $dnIp) { Add-LightConnEvent -T $lt -Dom $dnDom -Code $rc -Via 'n' -Kind 'd' -Ip $dnIp -Qt $script:LcThrType[$th] }
                                 $script:LcThrIp.Remove($th)
                             }
                             elseif ($ln -match 'info:\s+sending query to\s+[0-9a-fA-F.:]+') {
                                 $script:LightConnUpstream = $true
                             }
-                            elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+\S+\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)(?:\s+([0-9.]+)\s+([01])\s+\d+)?') {
-                                $t = $matches[1]; $dom = $matches[2].TrimEnd('.'); $code = $matches[3].ToUpper()
+                            elseif ($ln -match '(\d{2}:\d{2}:\d{2}).*?\s+info:\s+\S+\s+(\S+)\s+(?<qt>\S+)\s+IN\s+(NOERROR|NXDOMAIN|SERVFAIL|REFUSED|FORMERR)(?:\s+([0-9.]+)\s+([01])\s+\d+)?') {
+                                $t = $matches[1]; $dom = $matches[2].TrimEnd('.'); $code = $matches[3].ToUpper(); $qt0 = $matches['qt']
                                 # Il log-replies di Unbound chiude la riga con: durata, flag cache (1 = servita dalla cache, 0 = risolta
                                 # in rete verso un upstream), dimensione. E' il segnale affidabile per distinguere cache e rete; solo se
                                 # mancano quei campi si ripiega sulla riga "sending query to" vista poco prima.
@@ -2742,12 +2750,12 @@ function Get-LightConnFeed {
                                     elseif ($via -eq 'n') {
                                         # log senza dettaglio upstream: ripiego, la stessa risoluzione compare in entrambe le colonne
                                         if (-not (Test-LightConnDup -T $t -Key ($dom + '|d|n'))) {
-                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'u'
-                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'd'
+                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'u' -Qt $qt0
+                                            Add-LightConnEvent -T $t -Dom $dom -Code $code -Via 'n' -Kind 'd' -Qt $qt0
                                         }
                                     }
                                     elseif (-not (Test-LightConnDup -T $t -Key ($dom + '|d|c'))) {
-                                        Add-LightConnEvent -T $t -Dom $dom -Code $code -Via $via -Kind 'd'
+                                        Add-LightConnEvent -T $t -Dom $dom -Code $code -Via $via -Kind 'd' -Qt $qt0
                                     }
                                 }
                             }
@@ -2758,10 +2766,11 @@ function Get-LightConnFeed {
                                 # [FIX] $matches[3] e' la REGOLA della lista (es. *.gvt2.com.), non il dominio interrogato:
                                 # il dominio reale segue 'IP@porta' (rpz-nxdomain 127.0.0.1@54639 beacons.gcp.gvt2.com. A IN).
                                 # Cosi' la risposta successiva (stesso dominio, flag cache 1) viene riconosciuta come duplicato.
-                                if ($ln -match 'rpz-(?:nxdomain|nodata|passthru)\s+\S+@\d+\s+(\S+)') { $rDom = $matches[1] }
+                                $rQt = ''
+                                if ($ln -match 'rpz-(?:nxdomain|nodata|passthru)\s+\S+@\d+\s+(\S+)(?:\s+(\S+)\s+IN)?') { $rDom = $matches[1]; if ($matches[2]) { $rQt = $matches[2] } }
                                 $script:LightConnUpstream = $false
                                 if (-not (Test-LightConnDup -T $rT -Key ($rDom.TrimEnd('.') + '|d|r'))) {
-                                    Add-LightConnEvent -T $rT -Dom $rDom.TrimEnd('.') -Code $code -Via 'r' -Kind 'd'
+                                    Add-LightConnEvent -T $rT -Dom $rDom.TrimEnd('.') -Code $code -Via 'r' -Kind 'd' -Qt $rQt
                                 }
                             }
                         }
@@ -3744,9 +3753,15 @@ $HtmlPageLight = @'
   .ns-lane .ce .ct { flex: 0 0 auto; opacity: 0.6; }
   .ns-lane .ce .cn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .ns-lane .ce .cv { flex: 0 0 auto; font-size: 0.85em; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.05em; }
+  .ns-lane .ce .cq { flex: 0 0 auto; font-size: 0.78em; opacity: 0.8; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 1.35; }
+  .ns-lane .ce .cx { flex: 0 0 auto; font-size: 0.85em; opacity: 0.9; font-weight: 700; }
+  .ns-lane .ce .cw { flex: 0 0 auto; font-size: 0.75em; opacity: 0.6; font-style: italic; }
   .ns-lane .ce.ok { color: var(--green); }
   .ns-lane .ce.no { color: var(--red); }
   .ns-lane .ce.er { color: var(--amber); }
+  .ns-lane .ce.sub.ok { color: var(--dim); }
+  .ns-lane .ce.ow .cn { font-style: italic; }
+  .ns-lane .ce-more { position: absolute; right: 6px; top: 2px; z-index: 2; font-family: var(--font-mono); font-size: 10px; color: var(--dim); background: rgba(0,0,0,0.5); border-radius: 6px; padding: 0 5px; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
   .ns-g { display: block; width: 100%; max-width: 250px; margin: 0 auto; }
   .ns-g .gl { fill: var(--dim); font-size: 10px; }
   .ns-g .gt { stroke: var(--dim); stroke-width: 1.2; }
@@ -3907,7 +3922,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.1 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.2 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -3927,7 +3942,7 @@ $HtmlPageLight = @'
         <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
-      <div class="ns-lane" id="nsLaneD" title="Risposte DNS servite al PC (dalla cache RAM, dalla rete o bloccate dallo scudo RPZ). Verde = consentita, rosso = NXDOMAIN o bloccata, giallo = errore del resolver (SERVFAIL)"></div>
+      <div class="ns-lane" id="nsLaneD" title="Risposte DNS servite al PC (dalla cache RAM, dalla rete o bloccate dallo scudo RPZ). Verde = consentita, rosso = NXDOMAIN o bloccata, giallo = errore del resolver (SERVFAIL). Il riquadro indica il tipo di query; grigio = verifica DNSSEC (DS/DNSKEY) non richiesta direttamente da un programma; 'dash' = traffico della dashboard stessa; xN = richieste identiche nello stesso istante unite"></div>
       <svg class="ns-g ns-cv" id="nsDc" viewBox="0 0 200 104" role="img" aria-label="Indicatore download"><polyline class="cv-c" id="nsDc0" style="--i:0" points="20,6.0 30,13.0 40,6.0"/><polyline class="cv-c" id="nsDc1" style="--i:1" points="20,18.5 30,25.5 40,18.5"/><polyline class="cv-c" id="nsDc2" style="--i:2" points="20,31.0 30,38.0 40,31.0"/><polyline class="cv-c" id="nsDc3" style="--i:3" points="20,43.5 30,50.5 40,43.5"/><polyline class="cv-c" id="nsDc4" style="--i:4" points="20,56.0 30,63.0 40,56.0"/><polyline class="cv-c" id="nsDc5" style="--i:5" points="20,68.5 30,75.5 40,68.5"/><polyline class="cv-c" id="nsDc6" style="--i:6" points="20,81.0 30,88.0 40,81.0"/><polyline class="cv-c" id="nsDc7" style="--i:7" points="20,93.5 30,100.5 40,93.5"/><text class="gv" id="nsDv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsDx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsDt">&nbsp;</div>
       <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico download"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsDq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsDa" d=""/><path class="ln" id="nsDs" d=""/><circle class="dt" id="nsDd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsDm" x="2" y="15">&nbsp;</text><text class="gl" id="nsDm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsDSa">--</b></span><span><small>Min</small><b id="nsDSn">--</b></span><span><small>Max</small><b id="nsDSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
@@ -3938,7 +3953,7 @@ $HtmlPageLight = @'
         <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
       </div>
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
-      <div class="ns-lane" id="nsLaneU" title="Domande uscite davvero verso internet tramite i resolver upstream. Le risposte dalla cache RAM e i blocchi dello scudo RPZ non generano traffico in uscita e non compaiono qui"></div>
+      <div class="ns-lane" id="nsLaneU" title="Domande uscite davvero verso internet tramite i resolver upstream. Le risposte dalla cache RAM e i blocchi dello scudo RPZ non generano traffico in uscita e non compaiono qui. Il riquadro indica il tipo di query; grigio = verifica DNSSEC (DS/DNSKEY) non richiesta direttamente da un programma; 'dash' = traffico della dashboard stessa; xN = richieste identiche nello stesso istante unite; +N in alto a destra = eventi non mostrati negli ultimi 30 s"></div>
       <svg class="ns-g ns-cv" id="nsUc" viewBox="0 0 200 104" role="img" aria-label="Indicatore upload"><polyline class="cv-c" id="nsUc0" style="--i:7" points="20,13.0 30,6.0 40,13.0"/><polyline class="cv-c" id="nsUc1" style="--i:6" points="20,25.5 30,18.5 40,25.5"/><polyline class="cv-c" id="nsUc2" style="--i:5" points="20,38.0 30,31.0 40,38.0"/><polyline class="cv-c" id="nsUc3" style="--i:4" points="20,50.5 30,43.5 40,50.5"/><polyline class="cv-c" id="nsUc4" style="--i:3" points="20,63.0 30,56.0 40,63.0"/><polyline class="cv-c" id="nsUc5" style="--i:2" points="20,75.5 30,68.5 40,75.5"/><polyline class="cv-c" id="nsUc6" style="--i:1" points="20,88.0 30,81.0 40,88.0"/><polyline class="cv-c" id="nsUc7" style="--i:0" points="20,100.5 30,93.5 40,100.5"/><text class="gv" id="nsUv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsUx" x="66" y="82">&nbsp;</text></svg>
       <div class="ns-tr" id="nsUt">&nbsp;</div>
       <svg class="ns-hc" viewBox="0 0 200 70" role="img" aria-label="Storico upload"><line class="gr" x1="0" x2="200" y1="6" y2="6"/><line class="gr" x1="0" x2="200" y1="32" y2="32"/><line class="gr" x1="0" x2="200" y1="58" y2="58"/><line class="pq" id="nsUq" x1="0" x2="200" y1="58" y2="58"/><path class="ar" id="nsUa" d=""/><path class="ln" id="nsUs" d=""/><circle class="dt" id="nsUd" r="2.6" cx="-10" cy="58"/><text class="gl" id="nsUm" x="2" y="15">&nbsp;</text><text class="gl" id="nsUm2" x="2" y="41">&nbsp;</text><text class="gl" x="0" y="69">-6 min</text><text class="gl" x="200" y="69" text-anchor="end">ora</text></svg><div class="ns-st"><span><small>Attuale</small><b id="nsUSa">--</b></span><span><small>Min</small><b id="nsUSn">--</b></span><span><small>Max</small><b id="nsUSx">--</b></span></div><div class="ns-stc">Mbps, ultimi 6 min</div>
@@ -4565,17 +4580,43 @@ $HtmlPageLight = @'
     }
     return 0;
   }
-  function CeLane(id) { this.el = document.getElementById(id); this.items = []; this.q = []; this.last = 0; }
-  CeLane.prototype.push = function (ev) { this.q.push(ev); while (this.q.length > CE_MAXQ) this.q.shift(); };
+  function CeLane(id) {
+    this.el = document.getElementById(id); this.items = []; this.q = []; this.last = 0;
+    this.drops = []; this.moreTxt = '';   // v1107.2: eventi scartati (istante, quantita') per l'indicatore +N
+    this.more = null;
+    if (this.el) { this.more = document.createElement('div'); this.more.className = 'ce-more'; this.el.appendChild(this.more); }
+  }
+  // v1107.2: richieste identiche (stesso nome, tipo, orario e verso) ancora in coda = una sola riga con xN;
+  // gli eventi che escono dalla coda senza essere mostrati vengono contati nell'indicatore +N (ultimi 30 s)
+  CeLane.prototype.push = function (ev) {
+    var key = ev.d + '|' + (ev.q || '') + '|' + (ev.t || '') + '|' + ev.v;
+    ev.x = ev.x || 1;
+    for (var i = 0; i < this.q.length; i++) {
+      var o = this.q[i];
+      if (o.d + '|' + (o.q || '') + '|' + (o.t || '') + '|' + o.v === key) { o.x += ev.x; return; }
+    }
+    this.q.push(ev);
+    while (this.q.length > CE_MAXQ) { var g = this.q.shift(); this.drops.push([performance.now(), g.x || 1]); }
+  };
+  CeLane.prototype.updMore = function (now) {
+    if (!this.more) return;
+    while (this.drops.length && now - this.drops[0][0] > 30000) this.drops.shift();
+    var n = 0; for (var i = 0; i < this.drops.length; i++) n += this.drops[i][1];
+    var tx = n > 0 ? '+' + n : '';
+    if (tx !== this.moreTxt) { this.moreTxt = tx; this.more.textContent = tx; this.more.style.opacity = n > 0 ? '1' : '0'; }
+  };
   CeLane.prototype.add = function (ev) {
     if (!this.el) return;
     var cls = ev.c === 'NOERROR' ? 'ok' : (ev.c === 'NXDOMAIN' ? 'no' : 'er');
     var el = document.createElement('div');
-    el.className = 'ce ' + cls;
+    el.className = 'ce ' + cls + (ev.s ? ' sub' : '') + (ev.o ? ' ow' : '');
     var d = document.createElement('span'); d.className = 'cd';
     var t = document.createElement('span'); t.className = 'ct'; t.textContent = ev.t || '--:--:--';
     var n = document.createElement('span'); n.className = 'cn'; n.textContent = ev.d || '-';
     el.appendChild(d); el.appendChild(t); el.appendChild(n);
+    if (ev.o) { var w = document.createElement('span'); w.className = 'cw'; w.textContent = 'dash'; el.appendChild(w); }
+    if (ev.x > 1) { var xx = document.createElement('span'); xx.className = 'cx'; xx.textContent = '\u00d7' + ev.x; el.appendChild(xx); }
+    if (ev.q) { var qq = document.createElement('span'); qq.className = 'cq'; qq.textContent = ev.q; el.appendChild(qq); }
     if (ev.showVia) {
       var v = document.createElement('span'); v.className = 'cv';
       v.textContent = ev.vt ? ev.vt : (ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache'));
@@ -4602,6 +4643,7 @@ $HtmlPageLight = @'
   function ceFrame(now) {
     var dt = Math.min(0.1, (now - cePrev) / 1000); cePrev = now;
     ceLaneD.tick(dt, now); ceLaneU.tick(dt, now);
+    ceLaneD.updMore(now); ceLaneU.updMore(now);
     requestAnimationFrame(ceFrame);
   }
   requestAnimationFrame(ceFrame);
@@ -4619,8 +4661,8 @@ $HtmlPageLight = @'
       var e = ev[j];
       if ((e.n | 0) <= ceLastN) continue;
       // v1106.9: colonne disgiunte. k='u' = query inviata a un upstream (Upload), altrimenti risposta in arrivo (Download)
-      if (e.k === 'u') ceLaneU.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: e.ip || 'rete', showVia: true });
-      else ceLaneD.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: (e.v === 'n' && e.ip) ? e.ip : '', showVia: true });
+      if (e.k === 'u') ceLaneU.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: e.ip || 'rete', q: e.q, s: e.s, o: e.o, showVia: true });
+      else ceLaneD.push({ n: e.n, t: e.t, d: e.d, c: e.c, v: e.v, vt: (e.v === 'n' && e.ip) ? e.ip : '', q: e.q, s: e.s, o: e.o, showVia: true });
     }
     ceLastN = mx;
   }
@@ -5183,7 +5225,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.1 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.2 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -6024,7 +6066,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.1 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1107.2 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
