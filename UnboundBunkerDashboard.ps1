@@ -2622,6 +2622,12 @@ $script:LcOwnRx           = '^(ip-api\.com|ipinfo\.io|ipapi\.co|(ipv4\.|ipv6\.)?
 $script:LcDetail          = $false  # visto almeno un "sending to target": il log ha il dettaglio upstream
 $script:LcRecentT         = ""      # secondo corrente per l'anti-doppione
 $script:LcRecent          = @{}
+# [v1107.8] Conteggi per bandierina (paese del server) ai lati dei badge Velocita linea: per verso (d = Download, u = Upload)
+# si conta quante volte compare ogni dominio nel log; il paese si ricava dalla cache GeoState (con copia permanente in LcCcKnown).
+$script:LcDomCnt    = @{ d = @{}; u = @{} }
+$script:LcCcKnown   = @{}
+$script:LcFlCache   = @{ d = @(); u = @() }
+$script:LcFlCacheT  = $null
 $script:LightConnSrc      = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
 # Anti-doppione: stesso dominio, stesso verso e stessa via nello stesso secondo (127.0.0.1 / ::1, A / AAAA) = un solo evento.
@@ -2786,6 +2792,14 @@ function Add-LightConnEvent {
     [void]$script:LightConnRing.Add($ev)
     while ($script:LightConnRing.Count -gt 40) { $script:LightConnRing.RemoveAt(0) }
     if ($Kind -eq 'd') { $script:LightConnLast = $ev }
+    # [v1107.8] conteggio per bandierina: solo risposte/query reali (NOERROR, non RPZ, non DNSSEC, non traffico della dashboard)
+    if ($sub -eq 0 -and $own -eq 0 -and $Via -ne 'r' -and $Code -eq 'NOERROR') {
+        $dcm = $script:LcDomCnt[$Kind]
+        if ($dcm) {
+            if ($dcm.ContainsKey($Dom)) { $dcm[$Dom]++ } elseif ($dcm.Count -lt 20000) { $dcm[$Dom] = 1 }
+        }
+        if ($Kind -eq 'u') { Request-GeoCountry $Dom }
+    }
     # bandierina: solo per risposte reali (NOERROR, non RPZ), non sotto-query DNSSEC e non traffico della dashboard
     if ($Kind -eq 'd' -and $Code -eq 'NOERROR' -and $Via -ne 'r' -and $sub -eq 0 -and $own -eq 0) { Request-GeoCountry $Dom }
 }
@@ -2805,6 +2819,7 @@ function Get-LightConnFeed {
                 }
                 elseif ($len -lt $script:LightConnPos) {
                     # log svuotato (riavvio Unbound/Dashboard o ciclo biorario): si riparte dall'inizio
+                    $script:LcDomCnt = @{ d = @{}; u = @{} }; $script:LcFlCacheT = $null
                     $script:LightConnPos     = 0
                     $script:LightConnPending = ""
                 }
@@ -2932,7 +2947,27 @@ function Get-LightConnFeed {
             if ($script:GeoState.TryGetValue([string]$ge.d, [ref]$gv)) { if ($gv) { $geoOut[[string]$ge.d] = $gv } }
         }
     } catch {}
-    return [ordered]@{ src = $script:LightConnSrc; ev = $script:LightConnRing.ToArray(); geo = $geoOut }
+    # [v1107.8] classifica paesi (max 8 per verso), ricalcolata al massimo ogni 2 s
+    try {
+        if (-not $script:LcFlCacheT -or ((Get-Date) - $script:LcFlCacheT).TotalSeconds -ge 2) {
+            if ($script:LcCcKnown.Count -gt 20000) { $script:LcCcKnown = @{} }
+            foreach ($fk in @('d', 'u')) {
+                $agg = @{}
+                foreach ($fe in $script:LcDomCnt[$fk].GetEnumerator()) {
+                    $fcc = ''
+                    [void]$script:GeoState.TryGetValue([string]$fe.Key, [ref]$fcc)
+                    if ($fcc -match '^[A-Z]{2}$') { $script:LcCcKnown[[string]$fe.Key] = $fcc }
+                    else { $fcc = [string]$script:LcCcKnown[[string]$fe.Key] }
+                    if ($fcc -match '^[A-Z]{2}$') { if ($agg.ContainsKey($fcc)) { $agg[$fcc] += $fe.Value } else { $agg[$fcc] = $fe.Value } }
+                }
+                $farr = @()
+                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 8)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
+                $script:LcFlCache[$fk] = $farr
+            }
+            $script:LcFlCacheT = Get-Date
+        }
+    } catch {}
+    return [ordered]@{ src = $script:LightConnSrc; ev = $script:LightConnRing.ToArray(); geo = $geoOut; fl = $script:LcFlCache }
 }
 
 function Get-BunkerStatusJson {
@@ -3973,6 +4008,16 @@ $HtmlPageLight = @'
   .ns-dot.bad { background: #ff5c5c; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
+  /* [v1107.8] Classifica bandierine ai lati dei badge Velocita linea (sinistra = Download, destra = Upload) */
+  .ns-meters.rz-on { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .rz { position: relative; width: 84px; align-self: start; font-family: var(--font-mono); font-size: 12px; }
+  .rz-i { position: absolute; left: 0; right: 0; height: 20px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .rz-l .rz-i { justify-content: flex-end; }
+  .rz-e { font-size: 15px; line-height: 1; font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+  .rz-i b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .rz-i.up b { animation: rzUp 1s ease-out; }
+  @keyframes rzUp { 0% { color: #ffd600; } 100% { color: var(--text); } }
+  @media (max-width: 560px) { .ns-meters.rz-on { grid-template-columns: 1fr; } .rz { width: auto; height: auto !important; display: flex; flex-wrap: wrap; gap: 4px 14px; } .rz-i { position: static; } .rz-l { order: -1; } .rz-r { order: 3; } }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
   .card {
@@ -4589,6 +4634,43 @@ $HtmlPageLight = @'
   var NSN = 40, nsPkD = 0, nsPkU = 0, nsRingD = [], nsRingU = [];
   function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
   function nsFmt(v) { return (Math.round(v * 10) / 10).toFixed(1).replace('.', ','); }
+  function nsFlags(d) {
+    var fl = d.conn_live && d.conn_live.fl;
+    if (!fl) return;
+    var m = document.querySelector('.ns-meters'); if (!m) return;
+    var S = nsFlags.S || (nsFlags.S = { rows: { L: {}, R: {} }, prev: { L: {}, R: {} } });
+    if (!S.L) {
+      S.L = document.createElement('div'); S.L.className = 'rz rz-l';
+      S.R = document.createElement('div'); S.R.className = 'rz rz-r';
+      m.insertBefore(S.L, m.firstChild); m.appendChild(S.R); m.classList.add('rz-on');
+    }
+    var H = 20, sides = [['L', S.L, fl.d], ['R', S.R, fl.u]];
+    for (var s = 0; s < sides.length; s++) {
+      var side = sides[s][0], box = sides[s][1], rows = S.rows[side], prev = S.prev[side];
+      var list = (sides[s][2] || []).filter(function (x) { return x && /^[A-Z]{2}$/.test(x.cc); });
+      list.sort(function (a, b) { return (b.n - a.n) || (a.cc < b.cc ? -1 : 1); });
+      var seen = {};
+      box.style.height = (list.length * H) + 'px';
+      for (var j = 0; j < list.length; j++) {
+        var it = list[j], r = rows[it.cc]; seen[it.cc] = 1;
+        if (!r) {
+          r = rows[it.cc] = document.createElement('div'); r.className = 'rz-i';
+          r.innerHTML = side === 'L' ? '<b></b><span class="rz-e"></span>' : '<span class="rz-e"></span><b></b>';
+          (side === 'L' ? r.lastChild : r.firstChild).textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65);
+          r.title = it.cc; r.style.top = (j * H) + 'px'; box.appendChild(r);
+        }
+        r.style.top = (j * H) + 'px';
+        var b = side === 'L' ? r.firstChild : r.lastChild, txt = Number(it.n).toLocaleString('it-IT');
+        if (b.textContent !== txt) {
+          var up = prev[it.cc] != null && it.n > prev[it.cc];
+          b.textContent = txt;
+          if (up) { r.classList.remove('up'); void r.offsetWidth; r.classList.add('up'); }
+        }
+        prev[it.cc] = it.n;
+      }
+      for (var k in rows) { if (!seen[k]) { box.removeChild(rows[k]); delete rows[k]; delete prev[k]; } }
+    }
+  }
   function nsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function nsSet(id, html) { var e = document.getElementById(id); if (e) e.innerHTML = html; }
   function nsGauge(v, hist, X, pk, pot) {
@@ -4663,6 +4745,7 @@ $HtmlPageLight = @'
   }
   (function () { var b = document.getElementById('btnForceLine'); if (b) b.addEventListener('click', forceLineTest); })();
   function nsPotUpdate(d) {
+    try { nsFlags(d); } catch (e) {}
     var p = d.line_potential, n = d.net_speed;
     var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
     for (var i = 0; i < cfg.length; i++) {
