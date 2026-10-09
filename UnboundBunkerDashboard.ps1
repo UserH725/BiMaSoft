@@ -2622,12 +2622,34 @@ $script:LcOwnRx           = '^(ip-api\.com|ipinfo\.io|ipapi\.co|(ipv4\.|ipv6\.)?
 $script:LcDetail          = $false  # visto almeno un "sending to target": il log ha il dettaglio upstream
 $script:LcRecentT         = ""      # secondo corrente per l'anti-doppione
 $script:LcRecent          = @{}
-# [v1107.8] Conteggi per bandierina (paese del server) ai lati dei badge Velocita linea: per verso (d = Download, u = Upload)
-# si conta quante volte compare ogni dominio nel log; il paese si ricava dalla cache GeoState (con copia permanente in LcCcKnown).
+# [v1107.9] Conteggi delle emoji mostrate ai lati dei badge Velocita linea (d = Download, u = Upload).
+# LcFold = totali gia' attribuiti (chiave = codice paese a 2 lettere oppure _R/_DS/_DK/_SG/_PT/_NX/_ER/_WW per le icone speciali);
+# LcDomCnt = domini in attesa del paese (si "piegano" in LcFold appena la bandierina e' risolta).
+# Come per session_history.json, i totali sono salvati su RAM disk (R:\emoji_counts.txt, scrittura atomica ogni 15 s) insieme alla
+# posizione di lettura del log: al riavvio della Dashboard si riparte da li' senza perdere ne' contare due volte le righe.
+# Si azzerano solo con lo spegnimento reale del PC (R: e' volatile), non allo svuotamento biorario del log.
+$script:LcFold      = @{ d = @{}; u = @{} }
 $script:LcDomCnt    = @{ d = @{}; u = @{} }
 $script:LcCcKnown   = @{}
 $script:LcFlCache   = @{ d = @(); u = @() }
 $script:LcFlCacheT  = $null
+$script:LcCountFile = 'R:\emoji_counts.txt'
+$script:LcSaveT     = $null
+$script:LcCatchUp   = $false
+if ($script:IsBackgroundCollector) {
+    try {
+        if ([System.IO.File]::Exists($script:LcCountFile)) {
+            foreach ($lcLn in [System.IO.File]::ReadAllLines($script:LcCountFile, [System.Text.Encoding]::UTF8)) {
+                $lcP = $lcLn.Split("`t")
+                if ($lcP[0] -eq 'pos' -and $lcP.Count -ge 2) { $script:LightConnPos = [int64]$lcP[1]; $script:LcCatchUp = $true }
+                elseif ($lcP.Count -ge 4 -and ($lcP[1] -eq 'd' -or $lcP[1] -eq 'u')) {
+                    if ($lcP[0] -eq 'F') { $script:LcFold[$lcP[1]][$lcP[2]] = [int64]$lcP[3] }
+                    elseif ($lcP[0] -eq 'P') { $script:LcDomCnt[$lcP[1]][$lcP[2]] = [int64]$lcP[3] }
+                }
+            }
+        }
+    } catch {}
+}
 $script:LightConnSrc      = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
 # Anti-doppione: stesso dominio, stesso verso e stessa via nello stesso secondo (127.0.0.1 / ::1, A / AAAA) = un solo evento.
@@ -2771,6 +2793,31 @@ function Request-GeoCountry {
     } catch {}
 }
 
+# [v1107.9] Il dominio e' eleggibile alla ricerca del paese? (stesse regole di Request-GeoCountry + traffico della dashboard)
+function Test-GeoEligible {
+    param([string]$Dom)
+    if ($Dom -match $script:LcOwnRx) { return $false }
+    if ($Dom -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\.in-addr\.arpa$') { return $true }
+    if ($Dom.Length -lt 4 -or $Dom -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9-]{2,}$') { return $false }
+    if ($Dom -match '\.(arpa|local|lan|internal|home|localdomain)$') { return $false }
+    return $true
+}
+
+# [v1107.9] Salvataggio atomico dei conteggi su RAM disk (file temporaneo + rinomina), come session_history.json
+function Save-EmojiCounts {
+    try {
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.Append('pos' + "`t" + [string][int64]$script:LightConnPos + "`n")
+        foreach ($k in @('d', 'u')) {
+            foreach ($e in @($script:LcFold[$k].GetEnumerator())) { [void]$sb.Append('F' + "`t" + $k + "`t" + $e.Key + "`t" + $e.Value + "`n") }
+            foreach ($e in @($script:LcDomCnt[$k].GetEnumerator())) { [void]$sb.Append('P' + "`t" + $k + "`t" + $e.Key + "`t" + $e.Value + "`n") }
+        }
+        $tmp = $script:LcCountFile + '.tmp'
+        [System.IO.File]::WriteAllText($tmp, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $tmp -Destination $script:LcCountFile -Force
+    } catch { Write-DashLog "Errore salvataggio conteggi emoji: $($_.Exception.Message)" }
+}
+
 function Add-LightConnEvent {
     param([string]$T, [string]$Dom, [string]$Code, [string]$Via, [string]$Kind = 'd', [string]$Ip = '', [string]$Qt = '')
     if ($Dom.Length -gt 90) { $Dom = $Dom.Substring(0, 90) }
@@ -2792,18 +2839,26 @@ function Add-LightConnEvent {
     [void]$script:LightConnRing.Add($ev)
     while ($script:LightConnRing.Count -gt 40) { $script:LightConnRing.RemoveAt(0) }
     if ($Kind -eq 'd') { $script:LightConnLast = $ev }
-    # [v1107.8] conteggio di OGNI icona mostrata nel ticker (stessa logica della Light): stop RPZ, chiave+lucchetto DS, chiave DNSKEY,
-    # sigillo RRSIG/NSEC, PTR, punto interrogativo NXDOMAIN, avviso per gli errori e, per le risposte normali, la bandierina del paese
-    # (contata per dominio e risolta all'uscita)
-    $dcm = $script:LcDomCnt[$Kind]
-    if ($dcm) {
-        $ek = $Dom
-        if ($Via -eq 'r') { $ek = '!R' }
-        elseif ($sub -eq 1) { if ($Qt -eq 'DS') { $ek = '!DS' } elseif ($Qt -eq 'DNSKEY') { $ek = '!DK' } else { $ek = '!SG' } }
-        elseif ($Dom -match '\.(in-addr|ip6)\.arpa$' -or $Qt -eq 'PTR') { $ek = '!PT' }
-        elseif ($Code -eq 'NXDOMAIN') { $ek = '!NX' }
-        elseif ($Code -ne 'NOERROR') { $ek = '!ER' }
-        if ($dcm.ContainsKey($ek)) { $dcm[$ek]++ } elseif ($dcm.Count -lt 20000) { $dcm[$ek] = 1 }
+    # [v1107.9] conteggio di OGNI icona mostrata nel ticker (stessa logica della Light): stop RPZ, chiave+lucchetto DS, chiave DNSKEY,
+    # sigillo RRSIG/NSEC, PTR, punto interrogativo NXDOMAIN, avviso per gli errori; per le risposte normali la bandierina del paese
+    $fold = $script:LcFold[$Kind]
+    if ($fold) {
+        $fkey = ''
+        if ($Via -eq 'r') { $fkey = '_R' }
+        elseif ($sub -eq 1) { if ($Qt -eq 'DS') { $fkey = '_DS' } elseif ($Qt -eq 'DNSKEY') { $fkey = '_DK' } else { $fkey = '_SG' } }
+        elseif ($Dom -match '\.(in-addr|ip6)\.arpa$' -or $Qt -eq 'PTR') { $fkey = '_PT' }
+        elseif ($Code -eq 'NXDOMAIN') { $fkey = '_NX' }
+        elseif ($Code -ne 'NOERROR') { $fkey = '_ER' }
+        elseif ($own -eq 1 -or -not (Test-GeoEligible $Dom)) { $fkey = '_WW' }
+        else {
+            $kn = [string]$script:LcCcKnown[$Dom]
+            if ($kn) { $fkey = $kn }
+            else {
+                $dcm = $script:LcDomCnt[$Kind]
+                if ($dcm.ContainsKey($Dom)) { $dcm[$Dom]++ } elseif ($dcm.Count -lt 5000) { $dcm[$Dom] = 1 }
+            }
+        }
+        if ($fkey) { $fold[$fkey] = [int64]$fold[$fkey] + 1 }
     }
     if ($Kind -eq 'u' -and $sub -eq 0 -and $own -eq 0 -and $Code -eq 'NOERROR' -and $Via -ne 'r') { Request-GeoCountry $Dom }
     # bandierina: solo per risposte reali (NOERROR, non RPZ), non sotto-query DNSSEC e non traffico della dashboard
@@ -2825,11 +2880,10 @@ function Get-LightConnFeed {
                 }
                 elseif ($len -lt $script:LightConnPos) {
                     # log svuotato (riavvio Unbound/Dashboard o ciclo biorario): si riparte dall'inizio
-                    $script:LcDomCnt = @{ d = @{}; u = @{} }; $script:LcFlCacheT = $null
                     $script:LightConnPos     = 0
                     $script:LightConnPending = ""
                 }
-                elseif (($len - $script:LightConnPos) -gt 262144) {
+                elseif (($len - $script:LightConnPos) -gt $(if ($script:LcCatchUp) { 8388608 } else { 262144 })) {
                     # arretrato eccessivo (es. la Pro era aperta e questo feed non e' stato letto): salta alla coda
                     $script:LightConnPos     = $len - 262144
                     $script:LightConnPending = ""
@@ -2847,6 +2901,7 @@ function Get-LightConnFeed {
                         $off += $n
                     }
                     $script:LightConnPos += $off
+                    $script:LcCatchUp = $false
 
                     $text  = $script:LightConnPending + [System.Text.Encoding]::UTF8.GetString($buf, 0, $off)
                     $parts = $text -split "`n"
@@ -2953,30 +3008,31 @@ function Get-LightConnFeed {
             if ($script:GeoState.TryGetValue([string]$ge.d, [ref]$gv)) { if ($gv) { $geoOut[[string]$ge.d] = $gv } }
         }
     } catch {}
-    # [v1107.8] classifica emoji (bandierine + icone speciali, codici _XX), ricalcolata al massimo ogni 2 s
+    # [v1107.9] classifica emoji (bandierine + icone speciali _XX): ricalcolata al massimo ogni 2 s; i domini in attesa si "piegano" nei totali
     try {
         if (-not $script:LcFlCacheT -or ((Get-Date) - $script:LcFlCacheT).TotalSeconds -ge 2) {
             if ($script:LcCcKnown.Count -gt 20000) { $script:LcCcKnown = @{} }
             foreach ($fk in @('d', 'u')) {
-                $agg = @{}
-                foreach ($fe in $script:LcDomCnt[$fk].GetEnumerator()) {
-                    $fkey = [string]$fe.Key
+                $dcm = $script:LcDomCnt[$fk]; $fold = $script:LcFold[$fk]
+                foreach ($dom in @($dcm.Keys)) {
+                    $gs = ''
+                    $has = $script:GeoState.TryGetValue([string]$dom, [ref]$gs)
                     $fcc = ''
-                    if ($fkey.StartsWith('!')) { $fcc = '_' + $fkey.Substring(1) }
-                    else {
-                        $gs = ''
-                        $has = $script:GeoState.TryGetValue($fkey, [ref]$gs)
-                        if ($gs -match '^[A-Z]{2}$') { $script:LcCcKnown[$fkey] = $gs; $fcc = $gs }
-                        elseif ($script:LcCcKnown.ContainsKey($fkey)) { $fcc = [string]$script:LcCcKnown[$fkey] }
-                        elseif ($gs -eq '-' -or -not $has) { $fcc = '_WW' }
-                    }
-                    if ($fcc) { if ($agg.ContainsKey($fcc)) { $agg[$fcc] += $fe.Value } else { $agg[$fcc] = $fe.Value } }
+                    if ($gs -match '^[A-Z]{2}$') { $fcc = $gs; $script:LcCcKnown[[string]$dom] = $gs }
+                    elseif ($gs -eq '-') { $fcc = '_WW' }
+                    elseif (-not $has) { Request-GeoCountry ([string]$dom) }
+                    if ($fcc) { $fold[$fcc] = [int64]$fold[$fcc] + [int64]$dcm[$dom]; $dcm.Remove($dom) }
                 }
                 $farr = @()
-                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 80)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
+                foreach ($fa in ($fold.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 80)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
                 $script:LcFlCache[$fk] = $farr
             }
             $script:LcFlCacheT = Get-Date
+        }
+        # salvataggio su R:\ ogni 15 s (solo il raccoglitore in background, per non avere due scrittori)
+        if ($script:IsBackgroundCollector) {
+            if (-not $script:LcSaveT) { $script:LcSaveT = Get-Date }
+            elseif (((Get-Date) - $script:LcSaveT).TotalSeconds -ge 15) { $script:LcSaveT = Get-Date; Save-EmojiCounts }
         }
     } catch {}
     return [ordered]@{ src = $script:LightConnSrc; ev = $script:LightConnRing.ToArray(); geo = $geoOut; fl = $script:LcFlCache }
