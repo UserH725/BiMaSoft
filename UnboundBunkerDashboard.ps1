@@ -2947,7 +2947,7 @@ function Get-LightConnFeed {
             if ($script:GeoState.TryGetValue([string]$ge.d, [ref]$gv)) { if ($gv) { $geoOut[[string]$ge.d] = $gv } }
         }
     } catch {}
-    # [v1107.8] classifica paesi (max 8 per verso), ricalcolata al massimo ogni 2 s
+    # [v1107.8] classifica paesi (tutti, max 60 per verso), ricalcolata al massimo ogni 2 s
     try {
         if (-not $script:LcFlCacheT -or ((Get-Date) - $script:LcFlCacheT).TotalSeconds -ge 2) {
             if ($script:LcCcKnown.Count -gt 20000) { $script:LcCcKnown = @{} }
@@ -2961,7 +2961,7 @@ function Get-LightConnFeed {
                     if ($fcc -match '^[A-Z]{2}$') { if ($agg.ContainsKey($fcc)) { $agg[$fcc] += $fe.Value } else { $agg[$fcc] = $fe.Value } }
                 }
                 $farr = @()
-                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 8)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
+                foreach ($fa in ($agg.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 60)) { $farr += @{ cc = $fa.Key; n = $fa.Value } }
                 $script:LcFlCache[$fk] = $farr
             }
             $script:LcFlCacheT = Get-Date
@@ -4010,14 +4010,14 @@ $HtmlPageLight = @'
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
   /* [v1107.8] Classifica bandierine ai lati dei badge Velocita linea (sinistra = Download, destra = Upload) */
   .ns-meters.rz-on { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
-  .rz { position: relative; width: 84px; align-self: start; font-family: var(--font-mono); font-size: 12px; }
-  .rz-i { position: absolute; left: 0; right: 0; height: 20px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .rz { position: relative; width: 172px; align-self: start; font-family: var(--font-mono); font-size: 12px; }
+  .rz-i { position: absolute; left: 0; width: 50%; box-sizing: border-box; padding: 0 5px; height: 20px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .rz-l .rz-i { justify-content: flex-end; }
   .rz-e { font-size: 15px; line-height: 1; font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
   .rz-i b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .rz-i.up b { animation: rzUp 1s ease-out; }
   @keyframes rzUp { 0% { color: #ffd600; } 100% { color: var(--text); } }
-  @media (max-width: 560px) { .ns-meters.rz-on { grid-template-columns: 1fr; } .rz { width: auto; height: auto !important; display: flex; flex-wrap: wrap; gap: 4px 14px; } .rz-i { position: static; } .rz-l { order: -1; } .rz-r { order: 3; } }
+  @media (max-width: 560px) { .ns-meters.rz-on { grid-template-columns: 1fr; } .rz { width: auto; height: auto !important; display: flex; flex-wrap: wrap; gap: 4px 14px; } .rz-i { position: static; width: auto; } .rz-l { order: -1; } .rz-r { order: 3; } }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
   .card {
@@ -4650,16 +4650,18 @@ $HtmlPageLight = @'
       var list = (sides[s][2] || []).filter(function (x) { return x && /^[A-Z]{2}$/.test(x.cc); });
       list.sort(function (a, b) { return (b.n - a.n) || (a.cc < b.cc ? -1 : 1); });
       var seen = {};
-      box.style.height = (list.length * H) + 'px';
+      box.style.height = (Math.ceil(list.length / 2) * H) + 'px';
       for (var j = 0; j < list.length; j++) {
         var it = list[j], r = rows[it.cc]; seen[it.cc] = 1;
         if (!r) {
           r = rows[it.cc] = document.createElement('div'); r.className = 'rz-i';
           r.innerHTML = side === 'L' ? '<b></b><span class="rz-e"></span>' : '<span class="rz-e"></span><b></b>';
           (side === 'L' ? r.lastChild : r.firstChild).textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65);
-          r.title = it.cc; r.style.top = (j * H) + 'px'; box.appendChild(r);
+          r.title = it.cc; box.appendChild(r);
         }
-        r.style.top = (j * H) + 'px';
+        var col = j % 2, row = Math.floor(j / 2);
+        r.style.top = (row * H) + 'px';
+        r.style.left = ((side === 'L' ? 1 - col : col) * 50) + '%';
         var b = side === 'L' ? r.firstChild : r.lastChild, txt = Number(it.n).toLocaleString('it-IT');
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
