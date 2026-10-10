@@ -3418,6 +3418,16 @@ $HtmlShell = @'
   #radioAdd label { flex: 0 0 52px; color: #9a9a9a; }
   #radioAdd input { flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font: inherit; }
   #radioAdd input:focus { outline: none; border-color: #4fb3ff; }
+  #radioAdd .ra-src-row { align-items: flex-start; }
+  #radioAdd .ra-src-row > label { padding-top: 7px; }
+  #raSrcWrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  #raSrcList { display: flex; flex-direction: column; gap: 6px; }
+  #radioAdd .ra-src { display: flex; align-items: center; gap: 6px; }
+  #radioAdd .ra-src .ra-n { flex: 0 0 28px; color: #4fb3ff; font: 600 12px Consolas, "Cascadia Mono", monospace; text-align: right; }
+  #radioAdd .ra-src input.bad { border-color: #ff7b7b; background: #2a1010; }
+  #radioAdd .ra-src button { flex: 0 0 auto; width: 32px; padding: 0; font-size: 18px; line-height: 1; }
+  #radioAdd .ra-src button.ra-x { color: #ff7b7b; }
+  #radioAdd #raSrcAdd { align-self: flex-start; height: 28px; margin-left: 34px; padding: 0 12px; font-size: 13px; color: #4fb3ff; }
   #radioAdd button { height: 32px; padding: 0 14px; border-radius: 6px; border: 1px solid #555; background: #151515; color: #fff; font: inherit; cursor: pointer; }
   #radioAdd button:hover:not(:disabled) { background: #222; border-color: #888; }
   #radioAdd button:disabled { opacity: 0.5; cursor: default; }
@@ -3496,9 +3506,9 @@ $HtmlShell = @'
 </div>
 <div id="radioSongRow"><span id="radioSong"></span></div>
 <div id="radioAdd" hidden>
-  <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva.</p>
+  <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Fonti stream: una per riga, fino a 5; la (1) e' la principale, le altre sono di riserva (se una cade la dashboard passa alla successiva).</p>
   <div class="ra-row"><label for="raName">Nome</label><input id="raName" type="text" maxlength="40" placeholder="Nome della radio" autocomplete="off"></div>
-  <div class="ra-row"><label for="raUrl">URL</label><input id="raUrl" type="text" placeholder="https://server:porta/stream.mp3" autocomplete="off" spellcheck="false"></div>
+  <div class="ra-row ra-src-row"><label>Fonti</label><div id="raSrcWrap"><div id="raSrcList"></div><button id="raSrcAdd" type="button">+ Aggiungi fonte</button></div></div>
   <div class="ra-row"><label for="raInfo">Info</label><input id="raInfo" type="text" placeholder="(facoltativo) https://.../playerInfo - pagina con il brano in onda" autocomplete="off" spellcheck="false"></div>
   <div class="ra-row"><span id="raMsg"></span><button id="raCancel" type="button">Annulla</button><button id="raSave" type="button">Salva</button></div>
 </div>
@@ -3885,13 +3895,94 @@ $HtmlShell = @'
   // === PULSANTI + e matita: aggiungono una radio all'elenco scritto nello script (nome, stream, info) o modificano quella selezionata ===
   // La modifica chiede SEMPRE conferma, con il riepilogo di cio' che cambia (nome, stream, info). Toccando un campo la conferma riparte da zero.
   var addBtn = document.getElementById('radioAddBtn'), editBtn = document.getElementById('radioEditBtn'), addPanel = document.getElementById('radioAdd');
-  var raName = document.getElementById('raName'), raUrl = document.getElementById('raUrl'), raInfo = document.getElementById('raInfo');
+  var raName = document.getElementById('raName'), raInfo = document.getElementById('raInfo'), raSrcList = document.getElementById('raSrcList'), raSrcAdd = document.getElementById('raSrcAdd');
   var raMsg = document.getElementById('raMsg'), raSave = document.getElementById('raSave'), raCancel = document.getElementById('raCancel'), raHint = document.getElementById('raHint');
-  var RA_HINT_ADD = "La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva. Info (facoltativo): pagina della radio che pubblica il brano in onda, come per Radio Toscana e Radio Subasio; se vuoto il titolo si legge dai metadati dello stream.";
-  var RA_HINT_EDIT = "Stai modificando la radio selezionata: cambia nome, stream (piu' stream separati da uno spazio, il primo e' il principale) o Info (pagina con il brano in onda; vuoto = titolo letto dai metadati dello stream). Prima di scrivere nello script ti viene mostrato il riepilogo da confermare.";
+  var RA_HINT_ADD = "La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Fonti stream: una per riga, fino a 5; la (1) e' la principale, le altre sono di riserva (se una cade la dashboard passa alla successiva). Info (facoltativo): pagina della radio che pubblica il brano in onda, come per Radio Toscana e Radio Subasio; se vuoto il titolo si legge dai metadati dello stream.";
+  var RA_HINT_EDIT = "Stai modificando la radio selezionata: cambia nome, fonti stream (una per riga, fino a 5: la (1) e' la principale) o Info (pagina con il brano in onda; vuoto = titolo letto dai metadati dello stream). Prima di scrivere nello script ti viene mostrato il riepilogo da confermare.";
   var raMode = 'add', raStep = 0, raEditIx = -1, raEditName = '';
   function raSay(s, cls) { raMsg.textContent = s || ''; raMsg.className = (cls === true) ? 'err' : (cls || ''); }
   function raReset() { raStep = 0; raSave.className = ''; raSave.textContent = (raMode === 'edit') ? 'Salva modifiche' : 'Salva'; raSave.disabled = false; raCancel.disabled = false; }
+  // === FONTI STREAM: una per riga, da 1 a 5 (la (1) e' la principale, le altre di riserva); ogni riga viene controllata prima del salvataggio ===
+  var RA_MAX_SRC = 5;
+  var RA_URL_RE = /^https?:\/\/[A-Za-z0-9._~:\/?#@!$&()*+,;=%\[\]\-]+$/i;   // stessi caratteri ammessi dal server
+  function raSrcInputs() { return raSrcList.querySelectorAll('input'); }
+  function raSrcRenum() {
+    var rows = raSrcList.querySelectorAll('.ra-src'), i;
+    for (i = 0; i < rows.length; i++) {
+      rows[i].querySelector('.ra-n').textContent = '(' + (i + 1) + ')';
+      rows[i].querySelector('input').title = (i === 0) ? 'Fonte principale' : 'Fonte di riserva (' + (i + 1) + ')';
+    }
+    raSrcAdd.textContent = '+ Aggiungi fonte (' + rows.length + '/' + RA_MAX_SRC + ')';
+    raSrcAdd.disabled = (rows.length >= RA_MAX_SRC);
+  }
+  function raSrcRow(v) {
+    var row = document.createElement('div'), n = document.createElement('span'), inp = document.createElement('input'), x = document.createElement('button');
+    row.className = 'ra-src'; n.className = 'ra-n';
+    inp.type = 'text'; inp.value = v || ''; inp.autocomplete = 'off'; inp.spellcheck = false; inp.placeholder = 'https://server:porta/stream.mp3';
+    x.type = 'button'; x.className = 'ra-x'; x.textContent = '\u00D7'; x.title = 'Rimuovi questa fonte';
+    x.addEventListener('click', function () {
+      if (raSrcList.children.length <= 1) { inp.value = ''; inp.classList.remove('bad'); inp.focus(); }
+      else { raSrcList.removeChild(row); raSrcRenum(); }
+      if (raStep) { raReset(); raSay(''); }
+    });
+    row.appendChild(n); row.appendChild(inp); row.appendChild(x);
+    return row;
+  }
+  function raSrcSet(arr) {
+    while (raSrcList.firstChild) { raSrcList.removeChild(raSrcList.firstChild); }
+    (arr && arr.length ? arr : ['']).slice(0, RA_MAX_SRC).forEach(function (u) { raSrcList.appendChild(raSrcRow(u)); });
+    raSrcRenum();
+  }
+  // Legge le fonti; se ci sono righe vuote le toglie, cosi' i numeri negli errori coincidono con l'ordine che verra' salvato
+  function raSrcGet() {
+    var vals = [], ins = raSrcInputs(), i, v;
+    for (i = 0; i < ins.length; i++) { v = ins[i].value.trim(); if (v) { vals.push(v); } }
+    if (vals.length !== ins.length) { raSrcSet(vals); }
+    return vals;
+  }
+  // Controlla ogni riga: evidenzia in rosso la prima non valida e dice perche'
+  function raSrcCheck() {
+    var ins = raSrcInputs(), seen = {}, bad = null, msg = '', i, v, key;
+    for (i = 0; i < ins.length; i++) { ins[i].classList.remove('bad'); }
+    for (i = 0; i < ins.length && !bad; i++) {
+      v = ins[i].value.trim(); key = v.toLowerCase();
+      if (!v) { msg = 'Scrivi almeno una fonte stream (http:// o https://)'; }
+      else if (/\s/.test(v)) { msg = 'Fonte ' + (i + 1) + ': contiene spazi (una sola fonte per riga)'; }
+      else if (!/^https?:\/\//i.test(v)) { msg = 'Fonte ' + (i + 1) + ': deve iniziare con http:// o https://'; }
+      else if (v.length > 300) { msg = 'Fonte ' + (i + 1) + ': troppo lunga (max 300 caratteri)'; }
+      else if (!RA_URL_RE.test(v)) { msg = 'Fonte ' + (i + 1) + ': contiene caratteri non ammessi (apici, virgolette o simili)'; }
+      else if (seen[key]) { msg = "Fonte " + (i + 1) + ": e' uguale alla fonte " + seen[key]; }
+      else { seen[key] = i + 1; continue; }
+      bad = ins[i];
+    }
+    if (bad) { bad.classList.add('bad'); raSay(msg, true); bad.focus(); return false; }
+    return true;
+  }
+  raSrcAdd.addEventListener('click', function () {
+    if (raSrcList.children.length >= RA_MAX_SRC) { return; }
+    var r = raSrcRow(''); raSrcList.appendChild(r); raSrcRenum(); r.querySelector('input').focus();
+    if (raStep) { raReset(); raSay(''); }
+  });
+  raSrcList.addEventListener('input', function (e) {
+    if (e.target && e.target.classList) { e.target.classList.remove('bad'); }
+    if (raStep) { raReset(); raSay(''); }
+  });
+  // Incollando piu' indirizzi insieme (uno per riga o separati da spazio) vengono distribuiti sulle righe
+  raSrcList.addEventListener('paste', function (e) {
+    var tx = (e.clipboardData && e.clipboardData.getData('text')) || '', parts = tx.trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2 || !e.target || e.target.tagName !== 'INPUT') { return; }
+    e.preventDefault();
+    var rows = Array.prototype.slice.call(raSrcList.children), at = rows.indexOf(e.target.parentNode), before = [], after = [], i, v, all;
+    for (i = 0; i < rows.length; i++) {
+      v = rows[i].querySelector('input').value.trim();
+      if (i < at) { before.push(v); } else if (i > at && v) { after.push(v); }
+    }
+    all = before.concat(parts, after);
+    raSrcSet(all.slice(0, RA_MAX_SRC));
+    if (all.length > RA_MAX_SRC) { raSay('Hai incollato troppe fonti: ne tengo solo ' + RA_MAX_SRC, true); }
+    else if (raStep) { raReset(); raSay(''); }
+  });
+  raSrcSet([]);
   function raOpen(show, mode) {
     addPanel.hidden = !show;
     if (!show) { raReset(); return; }
@@ -3900,10 +3991,10 @@ $HtmlShell = @'
     if (raMode === 'edit') {
       var s0 = RADIO_STATIONS[cur];
       raEditIx = cur; raEditName = s0.name;
-      raName.value = s0.name; raUrl.value = s0.urls.join(' '); raInfo.value = s0.info || '';
+      raName.value = s0.name; raSrcSet(s0.urls); raInfo.value = s0.info || '';
       raHint.textContent = RA_HINT_EDIT;
     } else {
-      if (prev === 'edit') { raName.value = ''; raUrl.value = ''; raInfo.value = ''; }
+      if (prev === 'edit') { raName.value = ''; raSrcSet([]); raInfo.value = ''; }
       raHint.textContent = RA_HINT_ADD;
     }
     raReset(); raSay('');
@@ -3912,10 +4003,11 @@ $HtmlShell = @'
   addBtn.addEventListener('click', function () { rdOpen(false); if (!addPanel.hidden && raMode === 'add') { raOpen(false); } else { raOpen(true, 'add'); } });
   editBtn.addEventListener('click', function () { rdOpen(false); if (!addPanel.hidden && raMode === 'edit') { raOpen(false); } else { raOpen(true, 'edit'); } });
   raCancel.addEventListener('click', function () { raOpen(false); });
-  [raName, raUrl, raInfo].forEach(function (el) { el.addEventListener('input', function () { if (raStep) { raReset(); raSay(''); } }); });
+  [raName, raInfo].forEach(function (el) { el.addEventListener('input', function () { if (raStep) { raReset(); raSay(''); } }); });
   addPanel.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { raOpen(false); }
     else if (e.key === 'Enter') {
+      if (e.target && e.target.tagName === 'BUTTON') { return; }   // Invio su un pulsante lo preme, non salva
       e.preventDefault();
       if (raMode === 'edit' && raStep) { return; }   // nella conferma della modifica si procede solo con il clic sul pulsante
       raSave.click();
@@ -3975,10 +4067,9 @@ $HtmlShell = @'
     }, function () { raSay('Server non raggiungibile.', true); raReset(); });
   }
   raSave.addEventListener('click', function () {
-    var nm = raName.value.trim(), urs = raUrl.value.trim().split(/\s+/).filter(Boolean), inf = raInfo.value.trim(), k;
+    var nm = raName.value.trim(), urs = raSrcGet(), inf = raInfo.value.trim(), k;
     if (!nm) { raSay('Scrivi il nome della radio.', true); raName.focus(); return; }
-    if (!urs.length) { raSay('Scrivi almeno un indirizzo stream (http:// o https://).', true); raUrl.focus(); return; }
-    for (k = 0; k < urs.length; k++) { if (!/^https?:\/\//i.test(urs[k])) { raSay("Ogni indirizzo stream deve iniziare con http:// o https://", true); raUrl.focus(); return; } }
+    if (!raSrcCheck()) { return; }
     if (inf && !/^https?:\/\//i.test(inf)) { raSay("L'indirizzo Info deve iniziare con http:// o https:// (oppure lascialo vuoto)", true); raInfo.focus(); return; }
     if (raMode === 'edit') { raEdit(nm, urs, inf); return; }
     raSave.disabled = true; raCancel.disabled = true; raSay('Salvataggio nello script...');
@@ -3995,7 +4086,7 @@ $HtmlShell = @'
       var ns = { name: nm, urls: urs }; if (inf) { ns.info = inf; }
       RADIO_STATIONS.push(ns);
       rebuildSel(); useStation(RADIO_STATIONS.length - 1, wantPlay);
-      raName.value = ''; raUrl.value = ''; raInfo.value = ''; raReset(); raOpen(false);
+      raName.value = ''; raSrcSet([]); raInfo.value = ''; raReset(); raOpen(false);
     }, function () { raSay('Server non raggiungibile.', true); raReset(); });
   });
 
@@ -4009,7 +4100,7 @@ $HtmlShell = @'
   function rdFill() {
     var s = RADIO_STATIONS[cur];
     rdName.value = s.name;
-    rdUrl.value = s.urls.join('\n');
+    rdUrl.value = s.urls.map(function (u, i) { return '(' + (i + 1) + ') ' + u; }).join('\n');
     rdUrl.rows = Math.max(2, Math.min(5, s.urls.length));
     rdInfo.value = s.info ? s.info : '(nessuna: il titolo si legge dai metadati dello stream)';
     rdReset();
