@@ -3490,7 +3490,7 @@ $HtmlShell = @'
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
-    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] },
+    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio' },
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'] },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
     { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'] },
@@ -3997,6 +3997,18 @@ $script:RadioMetaScript = {
                     $ip = $ij.PSObject.Properties[$ik]
                     if ($ip -and ($ip.Value -is [string]) -and $ip.Value.Trim()) { return $ip.Value.Trim() }
                 }
+                # Formato con involucro (es. meta1.xdevel.com): {"success":true,"result":{"meta":"ARTISTA - Titolo","artist":..,"title":..}}
+                try {
+                    $ir = $ij.result
+                    if ($ir -is [array]) { $ir = $ir[0] }
+                    if ($ir -and ($ir -isnot [string])) {
+                        $im = [string]$ir.meta
+                        if ($im.Trim()) { return $im.Trim() }
+                        $ia = [string]$ir.artist; $it = [string]$ir.title
+                        if ($ia.Trim() -and $it.Trim()) { return ($ia.Trim() + ' - ' + $it.Trim()) }
+                        if ($it.Trim()) { return $it.Trim() }
+                    }
+                } catch {}
                 try { $i2 = [string]$ij.now_playing.song.text; if ($i2.Trim()) { return $i2.Trim() } } catch {}
                 try {
                     $ia = [string]$ij.artist; $it = [string]$ij.title
@@ -4873,8 +4885,8 @@ $HtmlPageLight = @'
         var it = list[j], r = rows[it.cc]; seen[it.cc] = 1;
         if (!r) {
           r = rows[it.cc] = document.createElement('div'); r.className = 'rz-i';
-          r.innerHTML = side === 'L' ? '<b></b><span class="rz-e"></span>' : '<span class="rz-e"></span><b></b>';
-          var ico = side === 'L' ? r.lastChild : r.firstChild;
+          r.innerHTML = '<b></b><span class="rz-e"></span>';
+          var ico = r.lastChild;
           if (SP[it.cc]) { ico.textContent = SP[it.cc][0]; r.title = SP[it.cc][1]; }
           else { ico.textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65); r.title = it.cc; }
           box.appendChild(r);
@@ -4882,7 +4894,7 @@ $HtmlPageLight = @'
         var rowsN = Math.ceil(list.length / COLS), col = Math.floor(j / rowsN), row = j % rowsN;
         r.style.top = (row * H) + 'px';
         r.style.left = (col * 96) + 'px';
-        var b = side === 'L' ? r.firstChild : r.lastChild, txt = Number(it.n).toLocaleString('it-IT');
+        var b = r.firstChild, txt = Number(it.n).toLocaleString('it-IT');
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
           b.textContent = txt;
