@@ -3424,7 +3424,22 @@ $HtmlShell = @'
   #rdHint { margin: 0 0 10px 0; font-size: 12px; color: #8a8a8a; line-height: 1.4; }
   #radioSel option { background: #111; color: #fff; }
   #radioSong { flex: 0 1 auto; min-width: 0; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4fb3ff; font-weight: 600; }
-  #radioState { flex: 0 0 auto; color: #8a8a8a; font-size: 12px; }
+  /* Stato della radio: in onda = verde lampeggiante con onde; buffering/connessione = giallo lampeggiante; off line = pallino rosso fisso */
+  #radioState { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 104px; font-size: 12px; font-weight: 600; color: #ff4d4d; }
+  #radioState .rs-led { position: relative; width: 12px; height: 12px; flex: 0 0 12px; }
+  #radioState .rs-dot { position: absolute; inset: 2px; border-radius: 50%; background: #ff2d2d; }
+  #radioState .rs-ring { position: absolute; inset: 2px; border-radius: 50%; border: 2px solid #2ecc40; opacity: 0; }
+  #radioState.on { color: #2ecc40; }
+  #radioState.on .rs-dot { background: #2ecc40; box-shadow: 0 0 6px #2ecc40; }
+  #radioState.on .rs-ring { animation: rsWave 1.8s ease-out infinite; }
+  #radioState.on .rs-ring:nth-child(2) { animation-delay: 0.6s; }
+  #radioState.on .rs-ring:nth-child(3) { animation-delay: 1.2s; }
+  #radioState.on .rs-tx { animation: rsBlink 1.2s ease-in-out infinite; }
+  #radioState.buf { color: #ffd600; }
+  #radioState.buf .rs-dot { background: #ffd600; animation: rsBlink 0.7s ease-in-out infinite; }
+  #radioState.buf .rs-tx { animation: rsBlink 0.7s ease-in-out infinite; }
+  @keyframes rsWave { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(3.2); opacity: 0; } }
+  @keyframes rsBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
   #radioVol { flex: 0 0 auto; width: 110px; accent-color: #4fb3ff; }
   #mainFrame { flex: 1 1 auto; display: block; width: 100%; min-height: 0; border: 0; background: #000; }
 </style>
@@ -3440,7 +3455,7 @@ $HtmlShell = @'
   <button id="radioDelBtn" type="button" title="Rimuovi la radio selezionata dall'elenco">&#8722;</button>
   <button id="radioNotifBtn" type="button" title="Notifica del browser con il titolo della canzone (spenta)">&#128277;</button>
   <span id="radioSong"></span>
-  <span id="radioState">connessione...</span>
+  <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
   <input id="radioVol" type="range" min="0" max="100" value="100" title="Volume">
   <audio id="radioAudio" preload="none"></audio>
 </div>
@@ -3510,7 +3525,14 @@ $HtmlShell = @'
     au.volume = vol.value / 100;
     try { localStorage.setItem('radioVol', vol.value); } catch (e) {}
   });
-  function setUi(playing, msg) { btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;'; st.textContent = msg; }
+  // Stato visivo: 'on' = in onda, 'buf' = connessione/buffering, 'off' = fermo ("in pausa" diventa "off line")
+  function setSt(cls, txt) { st.className = cls; st.querySelector('.rs-tx').textContent = txt; }
+  function setUi(playing, msg) {
+    btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+    if (playing) setSt('on', msg);
+    else if (/connessione/.test(msg)) setSt('buf', msg);
+    else setSt('off', msg === 'in pausa' ? 'off line' : msg);
+  }
   function startRadio(fresh) {
     clearTimeout(retryTimer);
     if (fresh || !au.src) { var u = STREAMS[sIdx]; au.src = (u.indexOf('?') < 0) ? u : u + '&_=' + Date.now(); }
@@ -3542,7 +3564,7 @@ $HtmlShell = @'
     hook(); f.addEventListener('load', hook);
   }
   au.addEventListener('playing', function () { setUi(true, 'in onda'); });
-  au.addEventListener('waiting', function () { if (wantPlay) st.textContent = 'buffering...'; });
+  au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
   au.addEventListener('error', scheduleRetry);
   au.addEventListener('stalled', function () { if (wantPlay) { clearTimeout(retryTimer); retryTimer = setTimeout(function () { if (!au.paused && au.readyState < 3) startRadio(true); }, 8000); } });
   au.addEventListener('ended', scheduleRetry);
