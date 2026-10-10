@@ -3467,11 +3467,13 @@ $HtmlShell = @'
   // Il pulsante + della barra aggiunge una riga qui sotto (la scrive il server dentro questo script), poi la dashboard si riavvia.
   // A mano: una riga { name: 'Nome', urls: ['stream principale', 'stream di riserva'] }, con la virgola finale, tra i due commenti.
   // Gli url di una radio sono in ordine di preferenza: se uno non risponde si passa al successivo (e poi di nuovo al primo).
+  // Campo facoltativo info: 'https://...' = pagina della radio che pubblica il brano in onda (JSON con nowplaying/title/song... oppure testo semplice).
+  // Se presente, il titolo si legge da li' (tramite il server della dashboard) invece che dai metadati dello stream.
   // NON modificare ne' spostare i due commenti che delimitano l'elenco: il server li usa per trovare il punto dove inserire.
   var RADIO_STATIONS = [
     // RADIO_LIST_BEGIN
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
-    { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'] },
+    { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
     { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] },
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'] },
@@ -3581,20 +3583,22 @@ $HtmlShell = @'
   }
   // Se la pagina di stato della radio non e' leggibile dal browser (CORS o piattaforma diversa), il titolo lo legge il server della dashboard
   // (metadati ICY dentro lo stream) tramite /api/radio-meta; 'pending' = prima richiesta, la risposta e' in preparazione.
-  function proxySong(u, tries) {
-    fetch('/api/radio-meta?u=' + encodeURIComponent(u), { cache: 'no-store', headers: { 'X-Bunker-Radio': '1' } }).then(function (r) {
+  function proxySong(u, tries, info) {
+    fetch('/api/radio-meta?u=' + encodeURIComponent(u) + (info ? '&t=info' : ''), { cache: 'no-store', headers: { 'X-Bunker-Radio': '1' } }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (j) {
       if (au.paused) return;
       var s = cleanSong(j && j.title);
       if (s) { songEl.textContent = '\u266A ' + s; songEl.title = s; }
-      else if (j && j.pending && tries < 4) { setTimeout(function () { if (!au.paused) proxySong(u, tries + 1); }, 2000); }
+      else if (j && j.pending && tries < 4) { setTimeout(function () { if (!au.paused) proxySong(u, tries + 1, info); }, 2000); }
       else { songEl.textContent = ''; songEl.title = ''; }
     }, function () {});
   }
   function pollSong() {
     if (au.paused) { songEl.textContent = ''; songEl.title = ''; return; }
+    var stn = RADIO_STATIONS[cur];
+    if (stn && stn.info) { proxySong(stn.info, 0, true); return; }   // radio con pagina "now playing" dedicata
     var o = STREAMS[sIdx].replace(/^(https?:\/\/[^\/]+).*$/, '$1');
     var eps = [
       { k: 'ice', u: o + '/status-json.xsl' },
@@ -3942,9 +3946,39 @@ function Update-RadioShellMemory {
 $script:RadioMetaCache = @{}
 $script:RadioMetaJobs  = @{}
 $script:RadioMetaScript = {
-    param($u)
+    param($u, $kind)
     try {
         try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch {}
+        if ($kind -eq 'info') {
+            # Pagina "now playing" della radio (campo info): JSON con il titolo in uno dei campi piu' comuni, oppure testo semplice
+            $ireq = [System.Net.HttpWebRequest]::Create($u)
+            $ireq.UserAgent = 'Mozilla/5.0 UnboundBunkerDashboard'
+            $ireq.Timeout = 6000
+            $ireq.ReadWriteTimeout = 6000
+            $iresp = $ireq.GetResponse()
+            $itxt = ''
+            try {
+                $isr = New-Object System.IO.StreamReader($iresp.GetResponseStream(), [System.Text.Encoding]::UTF8)
+                $itxt = $isr.ReadToEnd()
+            } finally { try { $iresp.Close() } catch {} }
+            if ($itxt.Length -gt 65536) { return '' }
+            $itxt = $itxt.Trim()
+            if ($itxt.StartsWith('{') -or $itxt.StartsWith('[')) {
+                $ij = $itxt | ConvertFrom-Json
+                if ($ij -is [array]) { $ij = $ij[0] }
+                foreach ($ik in @('nowplaying', 'now_playing', 'nowPlaying', 'songtitle', 'song', 'title', 'current_song', 'currentSong', 'currenttrack', 'track')) {
+                    $ip = $ij.PSObject.Properties[$ik]
+                    if ($ip -and ($ip.Value -is [string]) -and $ip.Value.Trim()) { return $ip.Value.Trim() }
+                }
+                try { $i2 = [string]$ij.now_playing.song.text; if ($i2.Trim()) { return $i2.Trim() } } catch {}
+                try {
+                    $ia = [string]$ij.artist; $it = [string]$ij.title
+                    if ($ia.Trim() -and $it.Trim()) { return ($ia.Trim() + ' - ' + $it.Trim()) }
+                } catch {}
+                return ''
+            }
+            return (($itxt -split "`r?`n")[0]).Trim()
+        }
         if ($u -match '\.m3u8') { return '' }
         $req = [System.Net.HttpWebRequest]::Create($u)
         $req.Headers.Add('Icy-MetaData', '1')
@@ -3982,7 +4016,7 @@ $script:RadioMetaScript = {
 }
 
 function Get-RadioMetaTitle {
-    param([string]$Url)
+    param([string]$Url, [string]$Kind = '')
     $now = Get-Date
     foreach ($k in @($script:RadioMetaJobs.Keys)) {
         $j = $script:RadioMetaJobs[$k]
@@ -4003,7 +4037,7 @@ function Get-RadioMetaTitle {
     if (-not $script:RadioMetaJobs.ContainsKey($Url) -and ((-not $c) -or (($now - $c.ts).TotalSeconds -ge 8))) {
         try {
             $ps = [powershell]::Create()
-            [void]$ps.AddScript($script:RadioMetaScript.ToString()).AddArgument($Url)
+            [void]$ps.AddScript($script:RadioMetaScript.ToString()).AddArgument($Url).AddArgument($Kind)
             $script:RadioMetaJobs[$Url] = @{ ps = $ps; h = $ps.BeginInvoke(); started = $now }
         } catch { Write-DashLog "Errore avvio lettura titolo radio: $($_.Exception.Message)" }
     }
@@ -9374,7 +9408,8 @@ try {
                             }
                         }
                         if ($rmAllowed) {
-                            $rmTitle = Get-RadioMetaTitle $rmUrl
+                            $rmKind = if ([string]$request.QueryString["t"] -eq 'info') { 'info' } else { '' }
+                            $rmTitle = Get-RadioMetaTitle $rmUrl $rmKind
                             $rmPending = (-not $script:RadioMetaCache.ContainsKey($rmUrl))
                             $rmStatus = 200
                             $rmBody   = (@{ ok = $true; title = $rmTitle; pending = $rmPending } | ConvertTo-Json -Compress)
