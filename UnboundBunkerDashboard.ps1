@@ -3490,7 +3490,7 @@ $HtmlShell = @'
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
-    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] }, info: 'https://meta1.xdevel.com/song/current/radio-subasio'
+    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] },
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'] },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
     { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'] },
@@ -4226,11 +4226,10 @@ $HtmlPageLight = @'
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
   /* [v1107.8] Classifica bandierine ai lati dei badge Velocita linea (sinistra = Download, destra = Upload) */
   .ns-meters.rz-on { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
-  .rz { position: relative; width: 172px; align-self: start; font-family: var(--font-mono); font-size: 12px; }
-  .rz-i { position: absolute; left: 0; width: 50%; box-sizing: border-box; padding: 0 5px; height: 20px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .rz-l .rz-i { justify-content: flex-end; }
-  .rz-e { font-size: 15px; line-height: 1; font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
-  .rz-i b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .rz { position: relative; width: calc(var(--rz-cols, 2) * 96px); align-self: start; font-family: var(--font-mono); font-size: 12px; }
+  .rz-i { position: absolute; left: 0; width: 96px; box-sizing: border-box; padding: 0 4px; height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .rz-e { flex: 0 0 20px; text-align: center; font-size: 15px; line-height: 1; font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
+  .rz-i b { flex: 0 0 60px; text-align: right; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .rz-i.up b { animation: rzUp 1s ease-out; }
   @keyframes rzUp { 0% { color: #ffd600; } 100% { color: var(--text); } }
   @media (max-width: 560px) { .ns-meters.rz-on { grid-template-columns: 1fr; } .rz { width: auto; height: auto !important; display: flex; flex-wrap: wrap; gap: 4px 14px; } .rz-i { position: static; width: auto; } .rz-l { order: -1; } .rz-r { order: 3; } }
@@ -4861,13 +4860,15 @@ $HtmlPageLight = @'
       S.R = document.createElement('div'); S.R.className = 'rz rz-r';
       m.insertBefore(S.L, m.firstChild); m.appendChild(S.R); m.classList.add('rz-on');
     }
+    var COLS = m.clientWidth >= 1200 ? 3 : 2;   // 3 colonne per lato se la pagina e' larga, altrimenti 2
+    m.style.setProperty('--rz-cols', COLS);
     var H = 20, sides = [['L', S.L, fl.d], ['R', S.R, fl.u]];
     for (var s = 0; s < sides.length; s++) {
       var side = sides[s][0], box = sides[s][1], rows = S.rows[side], prev = S.prev[side];
       var list = (sides[s][2] || []).filter(function (x) { return x && /^(_[A-Z]{1,2}|[A-Z]{2})$/.test(x.cc) && (x.cc.charAt(0) !== '_' || SP[x.cc]); });
       list.sort(function (a, b) { return (b.n - a.n) || (a.cc < b.cc ? -1 : 1); });
       var seen = {};
-      box.style.height = (Math.ceil(list.length / 2) * H) + 'px';
+      box.style.height = (Math.ceil(list.length / COLS) * H) + 'px';
       for (var j = 0; j < list.length; j++) {
         var it = list[j], r = rows[it.cc]; seen[it.cc] = 1;
         if (!r) {
@@ -4878,9 +4879,9 @@ $HtmlPageLight = @'
           else { ico.textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65); r.title = it.cc; }
           box.appendChild(r);
         }
-        var rowsN = Math.ceil(list.length / 2), col = Math.floor(j / rowsN), row = j % rowsN;
+        var rowsN = Math.ceil(list.length / COLS), col = Math.floor(j / rowsN), row = j % rowsN;
         r.style.top = (row * H) + 'px';
-        r.style.left = (col * 50) + '%';
+        r.style.left = (col * 96) + 'px';
         var b = side === 'L' ? r.firstChild : r.lastChild, txt = Number(it.n).toLocaleString('it-IT');
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
