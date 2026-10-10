@@ -3448,6 +3448,7 @@ $HtmlShell = @'
 <div id="radioBar">
   <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
   <div id="radioViz" aria-hidden="true"></div>
+  <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
   <div id="radioBuf" title="Buffer audio: secondi gia' scaricati davanti al punto in ascolto e percentuale di riempimento" aria-hidden="true"><span id="radioBufTxt">0% &middot; 0,0 s</span><div id="radioBufBar"><i id="radioBufG"></i><b id="radioBufM"></b></div></div>
   <span id="radioIcon">&#128251;</span>
   <select id="radioSel" title="Scegli la radio"></select>
@@ -3455,7 +3456,6 @@ $HtmlShell = @'
   <button id="radioDelBtn" type="button" title="Rimuovi la radio selezionata dall'elenco">&#8722;</button>
   <button id="radioNotifBtn" type="button" title="Notifica del browser con il titolo della canzone (spenta)">&#128277;</button>
   <span id="radioSong"></span>
-  <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
   <input id="radioVol" type="range" min="0" max="100" value="100" title="Volume">
   <audio id="radioAudio" preload="none"></audio>
 </div>
