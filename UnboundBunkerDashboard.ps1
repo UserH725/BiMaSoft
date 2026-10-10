@@ -3620,7 +3620,7 @@ $HtmlShell = @'
 
   // === NOTIFICA DEL BROWSER con il titolo della canzone: campanella nella barra; parte ad ogni cambio di brano ===
   // Titolo della notifica = canzone, testo = nome della radio. Le notifiche vanno consentite dal browser (la richiesta parte dal clic sulla campanella).
-  var nBtn = document.getElementById('radioNotifBtn'), nOn = false, nLast = '';
+  var nBtn = document.getElementById('radioNotifBtn'), nOn = false, nLast = '', nWait = '', nFallback = null;
   function nUi() {
     nBtn.classList.toggle('on', nOn);
     nBtn.innerHTML = nOn ? '&#128276;' : '&#128277;';
@@ -3630,12 +3630,29 @@ $HtmlShell = @'
     if (!nOn || !s || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     var name = (RADIO_STATIONS[cur] && RADIO_STATIONS[cur].name) || 'Radio', key = name + '|' + s;
     if (key === nLast) return;
-    nLast = key;
+    nLast = key; nWait = ''; clearTimeout(nFallback);
     try {
       var n = new Notification('\u266A ' + s, { body: name, tag: 'radioSong', silent: true });
       n.onclick = function () { try { window.focus(); } catch (e) {} n.close(); };
       setTimeout(function () { try { n.close(); } catch (e) {} }, 10000);
     } catch (e) {}
+  }
+  // Cambio radio: la notifica con il brano parte appena il server della nuova radio ne comunica il titolo; se entro 12 s non arriva
+  // (radio senza titolo o server lento) si avvisa comunque del cambio, cosi' la notifica del cambio c'e' sempre.
+  function nStationChanged() {
+    clearTimeout(nFallback);
+    if (!nOn) return;
+    var name = (RADIO_STATIONS[cur] && RADIO_STATIONS[cur].name) || 'Radio';
+    nWait = name; nLast = '';
+    nFallback = setTimeout(function () {
+      if (!nOn || nWait !== name || au.paused || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      nWait = '';
+      try {
+        var n = new Notification('\uD83D\uDCFB ' + name, { body: 'In onda (titolo del brano non disponibile)', tag: 'radioSong', silent: true });
+        n.onclick = function () { try { window.focus(); } catch (e) {} n.close(); };
+        setTimeout(function () { try { n.close(); } catch (e) {} }, 10000);
+      } catch (e) {}
+    }, 12000);
   }
   try { nOn = (localStorage.getItem('radioNotif') === '1') && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) {}
   nUi();
@@ -3709,6 +3726,7 @@ $HtmlShell = @'
     cur = +sel.value; STREAMS = RADIO_STATIONS[cur].urls; sIdx = 0;
     try { localStorage.setItem('radioStation', RADIO_STATIONS[cur].name); } catch (e) {}
     songEl.textContent = ''; songEl.title = '';
+    nStationChanged();
     wantPlay = true; clearTimeout(retryTimer); startRadio(true);
   });
 
@@ -3721,7 +3739,7 @@ $HtmlShell = @'
     cur = i; sel.value = i; STREAMS = RADIO_STATIONS[i].urls; sIdx = 0;
     try { localStorage.setItem('radioStation', RADIO_STATIONS[i].name); } catch (e) {}
     songEl.textContent = ''; songEl.title = '';
-    if (play) { wantPlay = true; clearTimeout(retryTimer); startRadio(true); }
+    if (play) { nStationChanged(); wantPlay = true; clearTimeout(retryTimer); startRadio(true); }
   }
 
   // === PULSANTE +: aggiunge una radio all'elenco scritto nello script e riavvia la dashboard ===
