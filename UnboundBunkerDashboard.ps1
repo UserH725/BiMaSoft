@@ -3642,7 +3642,12 @@ $HtmlShell = @'
   }
   au.addEventListener('playing', function () { setTimeout(pollSong, 1500); });
   au.addEventListener('pause', pollSong);
-  setInterval(pollSong, 10000);
+  // Radio con pagina "now playing" dedicata (campo info): titolo riletto ogni 3 s; le altre (stato Icecast/Shoutcast o metadati dello stream) ogni 10 s
+  var lastPoll = 0;
+  setInterval(function () {
+    var stn = RADIO_STATIONS[cur], gap = (stn && stn.info) ? 3000 : 10000;
+    if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
+  }, 1000);
 
   // === NOTIFICA DEL BROWSER con il titolo della canzone: campanella nella barra; parte ad ogni cambio di brano ===
   // Titolo della notifica = canzone, testo = nome della radio. Le notifiche vanno consentite dal browser (la richiesta parte dal clic sulla campanella).
@@ -4056,7 +4061,8 @@ function Get-RadioMetaTitle {
         }
     }
     $c = $script:RadioMetaCache[$Url]
-    if (-not $script:RadioMetaJobs.ContainsKey($Url) -and ((-not $c) -or (($now - $c.ts).TotalSeconds -ge 8))) {
+    $ttl = if ($Kind -eq 'info') { 2 } else { 8 }   # pagina "now playing": si rilegge piu' spesso (e' una richiesta leggera, non apre lo stream)
+    if (-not $script:RadioMetaJobs.ContainsKey($Url) -and ((-not $c) -or (($now - $c.ts).TotalSeconds -ge $ttl))) {
         try {
             $ps = [powershell]::Create()
             [void]$ps.AddScript($script:RadioMetaScript.ToString()).AddArgument($Url).AddArgument($Kind)
