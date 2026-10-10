@@ -3373,6 +3373,12 @@ $HtmlShell = @'
   #radioBtn:hover { background: #222; border-color: #888; }
   #radioViz { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 2px; width: 110px; height: 30px; opacity: 0; transition: opacity .25s; }
   #radioViz.on { opacity: 1; }
+  #radioBuf { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 92px; height: 30px; opacity: 0; transition: opacity .25s; }
+  #radioBuf.on { opacity: 1; }
+  #radioBufTxt { font: 600 12px Consolas, "Cascadia Mono", monospace; line-height: 1; white-space: nowrap; color: #ff2d2d; font-variant-numeric: tabular-nums; }
+  #radioBufBar { position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: #1a1a1a; box-shadow: inset 0 0 0 1px #2c2c2c; }
+  #radioBufBar i { position: absolute; inset: 0; background: linear-gradient(90deg, hsl(0,85%,52%), hsl(60,85%,52%) 50%, hsl(120,80%,46%)); }
+  #radioBufBar b { position: absolute; top: 0; bottom: 0; right: 0; width: 100%; background: #1a1a1a; transition: width .35s ease-out; }
   #radioViz .vb { flex: 0 0 5px; width: 5px; height: 2px; border-radius: 1px; }
   #radioIcon { flex: 0 0 auto; font-size: 18px; }
   #radioSel { flex: 0 0 auto; max-width: 220px; height: 30px; padding: 0 8px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
@@ -3380,6 +3386,9 @@ $HtmlShell = @'
   #radioAddBtn, #radioDelBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; font-size: 20px; line-height: 1; padding: 0; cursor: pointer; }
   #radioAddBtn:hover, #radioDelBtn:hover { background: #222; border-color: #888; }
   #radioDelBtn { color: #ff7b7b; }
+  #radioNotifBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; font-size: 15px; line-height: 1; padding: 0; cursor: pointer; opacity: 0.6; }
+  #radioNotifBtn:hover { background: #222; border-color: #888; opacity: 1; }
+  #radioNotifBtn.on { opacity: 1; border-color: #4fb3ff; background: #0d2234; }
   #radioAdd { position: absolute; top: 53px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #444; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
   #radioAdd[hidden] { display: none; }
   #radioAdd .ra-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -3424,10 +3433,12 @@ $HtmlShell = @'
 <div id="radioBar">
   <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
   <div id="radioViz" aria-hidden="true"></div>
+  <div id="radioBuf" title="Buffer audio: secondi gia' scaricati davanti al punto in ascolto e percentuale di riempimento" aria-hidden="true"><span id="radioBufTxt">0% &middot; 0,0 s</span><div id="radioBufBar"><i id="radioBufG"></i><b id="radioBufM"></b></div></div>
   <span id="radioIcon">&#128251;</span>
   <select id="radioSel" title="Scegli la radio"></select>
   <button id="radioAddBtn" type="button" title="Aggiungi una radio all'elenco">+</button>
   <button id="radioDelBtn" type="button" title="Rimuovi la radio selezionata dall'elenco">&#8722;</button>
+  <button id="radioNotifBtn" type="button" title="Notifica del browser con il titolo della canzone (spenta)">&#128277;</button>
   <span id="radioSong"></span>
   <span id="radioState">connessione...</span>
   <input id="radioVol" type="range" min="0" max="100" value="100" title="Volume">
@@ -3607,6 +3618,41 @@ $HtmlShell = @'
   au.addEventListener('pause', pollSong);
   setInterval(pollSong, 10000);
 
+  // === NOTIFICA DEL BROWSER con il titolo della canzone: campanella nella barra; parte ad ogni cambio di brano ===
+  // Titolo della notifica = canzone, testo = nome della radio. Le notifiche vanno consentite dal browser (la richiesta parte dal clic sulla campanella).
+  var nBtn = document.getElementById('radioNotifBtn'), nOn = false, nLast = '';
+  function nUi() {
+    nBtn.classList.toggle('on', nOn);
+    nBtn.innerHTML = nOn ? '&#128276;' : '&#128277;';
+    nBtn.title = 'Notifica del browser con il titolo della canzone (' + (nOn ? 'accesa' : 'spenta') + ')';
+  }
+  function notifySong(s) {
+    if (!nOn || !s || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    var name = (RADIO_STATIONS[cur] && RADIO_STATIONS[cur].name) || 'Radio', key = name + '|' + s;
+    if (key === nLast) return;
+    nLast = key;
+    try {
+      var n = new Notification('\u266A ' + s, { body: name, tag: 'radioSong', silent: true });
+      n.onclick = function () { try { window.focus(); } catch (e) {} n.close(); };
+      setTimeout(function () { try { n.close(); } catch (e) {} }, 10000);
+    } catch (e) {}
+  }
+  try { nOn = (localStorage.getItem('radioNotif') === '1') && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (e) {}
+  nUi();
+  nBtn.addEventListener('click', function () {
+    if (typeof Notification === 'undefined') { nBtn.title = 'Questo browser non supporta le notifiche'; return; }
+    if (nOn) { nOn = false; try { localStorage.setItem('radioNotif', '0'); } catch (e) {} nUi(); return; }
+    var go = function (p) {
+      if (p === 'granted') { nOn = true; try { localStorage.setItem('radioNotif', '1'); } catch (e) {} nUi(); nLast = ''; notifySong(songEl.title); }
+      else { nOn = false; nUi(); nBtn.title = 'Notifiche bloccate: consentile dalle impostazioni del sito nel browser'; }
+    };
+    if (Notification.permission === 'granted') go('granted');
+    else if (Notification.permission === 'denied') go('denied');
+    else { var rp = Notification.requestPermission(function (p) { go(p); }); if (rp && rp.then) rp.then(go); }
+  });
+  // Il titolo viene scritto in piu' punti (pagina di stato del server o proxy): basta osservare l'attributo title del brano
+  new MutationObserver(function () { notifySong(songEl.title); }).observe(songEl, { attributes: true, attributeFilter: ['title'] });
+
   // === ISTOGRAMMA COLORATO (stile B): barre piene, un colore per banda; si muove solo se dalla radio arriva audio davvero ===
   // 'Arriva audio' = in riproduzione, dati sufficienti nel buffer e orologio dello stream che avanza. Senza dati le barre scendono e spariscono.
   var viz = document.getElementById('radioViz'), vBars = [], vLv = [], vTimer = null, vLastT = -1, VN = 16;
@@ -3631,6 +3677,28 @@ $HtmlShell = @'
   function vizStart() { if (!vTimer) vTimer = setInterval(vizTick, 90); }
   au.addEventListener('play', vizStart);
   au.addEventListener('playing', vizStart);
+
+  // === BUFFER AUDIO accanto all'istogramma: secondi gia' scaricati davanti al punto in ascolto + % di riempimento ===
+  // 100% = BUF_FULL_S secondi di audio in anticipo (modificabile); colore dal rosso (0%, vuoto) al verde (100%, pieno).
+  var BUF_FULL_S = 10;
+  var bufBox = document.getElementById('radioBuf'), bufTxt = document.getElementById('radioBufTxt'), bufMask = document.getElementById('radioBufM');
+  function bufAhead() {
+    var ct = au.currentTime, b = au.buffered, i;
+    for (i = 0; i < b.length; i++) { if (ct >= b.start(i) - 0.2 && ct <= b.end(i) + 0.1) return Math.max(0, b.end(i) - ct); }
+    return 0;
+  }
+  function bufTick() {
+    if (document.hidden) return;
+    var show = wantPlay && !!au.getAttribute('src');
+    bufBox.classList.toggle('on', show);
+    if (!show) return;
+    var ahead = bufAhead(), pct = Math.max(0, Math.min(100, ahead / BUF_FULL_S * 100));
+    bufTxt.textContent = Math.round(pct) + '% \u00B7 ' + ahead.toFixed(1).replace('.', ',') + ' s';
+    bufTxt.style.color = 'hsl(' + Math.round(pct * 1.2) + ',85%,55%)';
+    bufMask.style.width = (100 - pct) + '%';
+  }
+  setInterval(bufTick, 500);
+  au.addEventListener('progress', bufTick);
 
   // === TENDINA RADIO: sceglie la radio, ricorda l'ultima scelta e fa ripartire l'audio ===
   var sel = document.getElementById('radioSel'), cur = 0;
