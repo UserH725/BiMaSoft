@@ -3383,6 +3383,27 @@ $HtmlShell = @'
   #radioIcon { flex: 0 0 auto; font-size: 18px; }
   #radioSel { flex: 0 0 auto; max-width: 220px; height: 30px; padding: 0 8px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
   #radioSel:hover { border-color: #888; }
+  #radioSel[hidden] { display: none; }
+  #radioDD { position: relative; flex: 0 0 auto; }
+  #radioDDBtn { display: flex; align-items: center; gap: 6px; max-width: 260px; height: 30px; padding: 0 10px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #radioDDBtn:hover, #radioDDBtn.open { border-color: #4fb3ff; }
+  #radioDDName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #radioDDSrc { flex: 0 0 auto; font-size: 12px; font-weight: 600; color: #4fb3ff; }
+  #radioDDBtn i { flex: 0 0 auto; font-style: normal; font-size: 10px; color: #9a9a9a; }
+  #radioDDPop { position: absolute; top: 36px; left: 0; z-index: 30; width: 340px; max-width: 94vw; box-sizing: border-box; padding: 8px; background: #0b0b0b; border: 1px solid #444; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  #radioDDPop[hidden] { display: none; }
+  #radioDDFind { display: block; width: 100%; box-sizing: border-box; height: 30px; padding: 0 10px; margin-bottom: 6px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font: inherit; }
+  #radioDDFind:focus { outline: none; border-color: #4fb3ff; }
+  #radioDDList { max-height: min(55vh, 440px); overflow-y: auto; }
+  .dd-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; color: #e8e8e8; cursor: pointer; }
+  .dd-row:hover, .dd-row.kb { background: #1a1a1a; }
+  .dd-row.cur { background: #0d2234; color: #fff; }
+  .dd-row .dd-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .dd-row .dd-src { flex: 0 0 auto; display: flex; gap: 4px; }
+  .dd-row .dd-src button { height: 22px; padding: 0 6px; border-radius: 5px; border: 1px solid #555; background: #151515; color: #cfcfcf; font: 600 12px Consolas, "Cascadia Mono", monospace; cursor: pointer; }
+  .dd-row .dd-src button:hover { border-color: #4fb3ff; color: #fff; }
+  .dd-row .dd-src button.act { background: #0d4a7a; border-color: #4fb3ff; color: #fff; }
+  .dd-empty { padding: 8px; color: #8a8a8a; font-size: 12px; }
   #radioAddBtn, #radioEditBtn, #radioDelBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; font-size: 20px; line-height: 1; padding: 0; cursor: pointer; }
   #radioAddBtn:hover, #radioEditBtn:hover, #radioDelBtn:hover { background: #222; border-color: #888; }
   #radioDelBtn { color: #ff7b7b; }
@@ -3390,7 +3411,7 @@ $HtmlShell = @'
   #radioNotifBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; font-size: 15px; line-height: 1; padding: 0; cursor: pointer; opacity: 0.6; }
   #radioNotifBtn:hover { background: #222; border-color: #888; opacity: 1; }
   #radioNotifBtn.on { opacity: 1; border-color: #4fb3ff; background: #0d2234; }
-  #radioAdd { position: absolute; top: 53px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #444; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  #radioAdd { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #444; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
   #radioAdd[hidden] { display: none; }
   #radioAdd .ra-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   #radioAdd .ra-row:last-child { margin-bottom: 0; }
@@ -3408,7 +3429,7 @@ $HtmlShell = @'
   #radioAdd #raSave.final { background: #0d4a7a; border-color: #4fb3ff; color: #fff; font-weight: 700; box-shadow: 0 0 12px rgba(79,179,255,0.5); }
   #radioAdd #raSave.final:hover:not(:disabled) { background: #1066a8; border-color: #7cc7ff; }
   #raHint { margin: 0 0 10px 0; font-size: 12px; color: #8a8a8a; line-height: 1.4; }
-  #radioDel { position: absolute; top: 53px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #5a2a2a; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  #radioDel { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #5a2a2a; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
   #radioDel[hidden] { display: none; }
   #radioDel .ra-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
   #radioDel .ra-row:last-child { margin-bottom: 0; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
@@ -3428,7 +3449,9 @@ $HtmlShell = @'
   #rdMsg.warn { color: #ffb347; font-weight: 600; }
   #rdHint { margin: 0 0 10px 0; font-size: 12px; color: #8a8a8a; line-height: 1.4; }
   #radioSel option { background: #111; color: #fff; }
-  #radioSong { flex: 0 1 auto; min-width: 0; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4fb3ff; font-weight: 600; }
+  /* Riga del brano in onda: subito sotto la barra radio, centrata, altezza fissa (la dashboard non salta quando il titolo compare o sparisce) */
+  #radioSongRow { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; height: 26px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; font-family: Segoe UI, Arial, sans-serif; font-size: 15px; user-select: none; }
+  #radioSong { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; color: #4fb3ff; font-weight: 600; }
   /* Stato della radio: in onda = verde lampeggiante con onde; buffering/connessione = giallo lampeggiante; off line = pallino rosso fisso */
   #radioState { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 104px; font-size: 12px; font-weight: 600; color: #ff4d4d; }
   #radioState .rs-led { position: relative; width: 12px; height: 12px; flex: 0 0 12px; }
@@ -3456,15 +3479,22 @@ $HtmlShell = @'
   <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
   <div id="radioBuf" title="Buffer audio: secondi gia' scaricati davanti al punto in ascolto e percentuale di riempimento" aria-hidden="true"><span id="radioBufTxt">0% &middot; 0,0 s</span><div id="radioBufBar"><i id="radioBufG"></i><b id="radioBufM"></b></div></div>
   <span id="radioIcon">&#128251;</span>
-  <select id="radioSel" title="Scegli la radio"></select>
+  <select id="radioSel" title="Scegli la radio" hidden></select>
+  <div id="radioDD">
+    <button id="radioDDBtn" type="button" title="Scegli la radio"><span id="radioDDName"></span><span id="radioDDSrc"></span><i>&#9662;</i></button>
+    <div id="radioDDPop" hidden>
+      <input id="radioDDFind" type="text" placeholder="Cerca radio..." autocomplete="off" spellcheck="false">
+      <div id="radioDDList"></div>
+    </div>
+  </div>
   <button id="radioAddBtn" type="button" title="Aggiungi una radio all'elenco">+</button>
   <button id="radioEditBtn" type="button" title="Modifica nome, stream e info della radio selezionata">&#9998;</button>
   <button id="radioDelBtn" type="button" title="Rimuovi la radio selezionata dall'elenco">&#8722;</button>
   <button id="radioNotifBtn" type="button" title="Notifica del browser con il titolo della canzone (spenta)">&#128277;</button>
-  <span id="radioSong"></span>
   <input id="radioVol" type="range" min="0" max="100" value="100" title="Volume">
   <audio id="radioAudio" preload="none"></audio>
 </div>
+<div id="radioSongRow"><span id="radioSong"></span></div>
 <div id="radioAdd" hidden>
   <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva.</p>
   <div class="ra-row"><label for="raName">Nome</label><input id="raName" type="text" maxlength="40" placeholder="Nome della radio" autocomplete="off"></div>
@@ -3502,7 +3532,7 @@ $HtmlShell = @'
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json' },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
     { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac' },
-    { name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/stream01/streamPlaylist.m3u8'] },
+    { name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir' },
     { name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'] },
     { name: 'Radio Country Live', urls: ['https://streaming.radiostreamlive.com/radiocountrylive_devices'] },
     { name: 'Radio Love Live', urls: ['https://streaming.radiostreamlive.com/radiolovelive_devices'] },
@@ -3511,8 +3541,7 @@ $HtmlShell = @'
     { name: 'Back to the 80s', urls: ['http://s1.nexuscast.com:8135/;;audio.mp3'] },
     { name: 'Radio North Pole', urls: ['https://streaming.radiostreamlive.com/radionorthpole_devices'] },
     { name: 'Radio Santa Claus', urls: ['https://streaming.radiostreamlive.com/radiosantaclaus_devices'] },
-    { name: 'Radio Fantastica', urls: ['https://streaming.radiosa.biz/babboleo_lab/fantastica.stream/playlist.m3u8'] },
-    { name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac/chunklist.m3u8'] },
+    { name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8'] },
     { name: 'Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8'] },
     { name: 'Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8'] },
     { name: 'Radio Cuore', urls: ['https://stream10.xdevel.com/audio32s975552-1839/stream/icecast.audio'] },
@@ -3757,29 +3786,101 @@ $HtmlShell = @'
   au.addEventListener('progress', bufTick);
 
   // === TENDINA RADIO: sceglie la radio, ricorda l'ultima scelta e fa ripartire l'audio ===
-  var sel = document.getElementById('radioSel'), cur = 0;
+  var sel = document.getElementById('radioSel'), cur = 0, ddSrc = 0;
   RADIO_STATIONS.forEach(function (s, i) { var o = document.createElement('option'); o.value = i; o.textContent = s.name; sel.appendChild(o); });
   try { var sn = localStorage.getItem('radioStation'); RADIO_STATIONS.forEach(function (s, i) { if (s.name === sn) cur = i; }); } catch (e) {}
   sel.value = cur; STREAMS = RADIO_STATIONS[cur].urls; sIdx = 0;
   sel.addEventListener('change', function () {
-    cur = +sel.value; STREAMS = RADIO_STATIONS[cur].urls; sIdx = 0;
+    var nc = +sel.value, same = (nc === cur);   // same = stessa radio, scelta un'altra sorgente dalla tendina
+    cur = nc; STREAMS = RADIO_STATIONS[cur].urls; sIdx = ddSrc; ddSrc = 0;
     try { localStorage.setItem('radioStation', RADIO_STATIONS[cur].name); } catch (e) {}
-    songEl.textContent = ''; songEl.title = '';
-    nStationChanged();
+    if (!same) { songEl.textContent = ''; songEl.title = ''; nStationChanged(); }
     wantPlay = true; clearTimeout(retryTimer); startRadio(true);
+    ddRefresh();
   });
 
   // Aggiorna la tendina e la radio in uso SENZA ricaricare la pagina: l'audio in onda non si interrompe se la radio non cambia
   function rebuildSel() {
     while (sel.firstChild) sel.removeChild(sel.firstChild);
     RADIO_STATIONS.forEach(function (s, i) { var o = document.createElement('option'); o.value = i; o.textContent = s.name; sel.appendChild(o); });
+    ddRefresh();
   }
   function useStation(i, play) {
     cur = i; sel.value = i; STREAMS = RADIO_STATIONS[i].urls; sIdx = 0;
     try { localStorage.setItem('radioStation', RADIO_STATIONS[i].name); } catch (e) {}
     songEl.textContent = ''; songEl.title = '';
     if (play) { nStationChanged(); wantPlay = true; clearTimeout(retryTimer); startRadio(true); }
+    ddRefresh();
   }
+
+  // === TENDINA RADIO MIGLIORATA: elenco con ricerca, radio in uso evidenziata e, per le radio con piu' sorgenti, i pulsanti (1) (2) (3) cliccabili ===
+  // La vera <select> resta nascosta e continua a tenere lo stato (sel.value + evento change): tutto il resto del codice (+, matita, -, ricordo dell'ultima radio) funziona come prima.
+  var ddBox = document.getElementById('radioDD'), ddBtn = document.getElementById('radioDDBtn'), ddName = document.getElementById('radioDDName'), ddSrcEl = document.getElementById('radioDDSrc');
+  var ddPop = document.getElementById('radioDDPop'), ddFind = document.getElementById('radioDDFind'), ddList = document.getElementById('radioDDList'), ddKb = -1;
+  function srcTip(u, n) { var h = u; try { h = new URL(u).host; } catch (e) {} return 'Sorgente ' + n + ': ' + h; }
+  function ddRefresh() {
+    if (!ddName) return;
+    var s = RADIO_STATIONS[cur]; if (!s) return;
+    ddName.textContent = s.name;
+    ddSrcEl.textContent = (s.urls.length > 1) ? '(' + (sIdx + 1) + ')' : '';
+    ddBtn.title = 'Scegli la radio' + (s.urls.length > 1 ? ' o la sorgente (in uso: ' + (sIdx + 1) + ' di ' + s.urls.length + ')' : '');
+  }
+  function ddRows() { return ddList.querySelectorAll('.dd-row'); }
+  function ddSetKb(n) {
+    var r = ddRows(), i;
+    if (!r.length) { ddKb = -1; return; }
+    ddKb = (n + r.length) % r.length;
+    for (i = 0; i < r.length; i++) { r[i].classList.toggle('kb', i === ddKb); }
+    r[ddKb].scrollIntoView({ block: 'nearest' });
+  }
+  function ddBuild() {
+    var q = ddFind.value.trim().toLowerCase(), k = 0, curRow = -1;
+    while (ddList.firstChild) { ddList.removeChild(ddList.firstChild); }
+    RADIO_STATIONS.forEach(function (s, i) {
+      if (q && s.name.toLowerCase().indexOf(q) < 0) return;
+      var row = document.createElement('div'), nm = document.createElement('span');
+      row.className = 'dd-row' + (i === cur ? ' cur' : ''); row.setAttribute('data-i', i);
+      nm.className = 'dd-name'; nm.textContent = s.name; row.appendChild(nm);
+      if (s.urls.length > 1) {
+        var box = document.createElement('span'); box.className = 'dd-src';
+        s.urls.forEach(function (u, n) {
+          var b = document.createElement('button'); b.type = 'button'; b.textContent = '(' + (n + 1) + ')'; b.title = srcTip(u, n + 1);
+          if (i === cur && n === sIdx) { b.className = 'act'; }
+          b.addEventListener('click', function (e) { e.stopPropagation(); ddPick(i, n); });
+          box.appendChild(b);
+        });
+        row.appendChild(box);
+      }
+      row.addEventListener('click', function () { ddPick(i, -1); });
+      if (i === cur) { curRow = k; }
+      k++;
+      ddList.appendChild(row);
+    });
+    if (!k) { var em = document.createElement('div'); em.className = 'dd-empty'; em.textContent = 'Nessuna radio trovata'; ddList.appendChild(em); }
+    return curRow;
+  }
+  function ddOpen() { ddFind.value = ''; var c = ddBuild(); ddPop.hidden = false; ddBtn.classList.add('open'); ddSetKb(c >= 0 ? c : 0); ddFind.focus(); }
+  function ddClose() { ddPop.hidden = true; ddBtn.classList.remove('open'); }
+  // n = -1: clic sul nome della radio (parte dalla prima sorgente; se e' gia' la radio in uso non cambia nulla); n >= 0: clic su (n+1), riparte da quella sorgente
+  function ddPick(i, n) {
+    ddClose();
+    if (i === cur && (n < 0 || (n === sIdx && !au.paused))) return;
+    ddSrc = Math.max(0, n);
+    sel.value = i;
+    sel.dispatchEvent(new Event('change'));
+  }
+  ddBtn.addEventListener('click', function () { if (ddPop.hidden) { ddOpen(); } else { ddClose(); } });
+  ddFind.addEventListener('input', function () { ddBuild(); ddSetKb(0); });
+  ddPop.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { ddClose(); ddBtn.focus(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); ddSetKb(ddKb + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); ddSetKb(ddKb - 1); }
+    else if (e.key === 'Enter') { e.preventDefault(); var r = ddRows(); if (ddKb >= 0 && r[ddKb]) { ddPick(+r[ddKb].getAttribute('data-i'), -1); } }
+  });
+  document.addEventListener('pointerdown', function (e) { if (!ddPop.hidden && !ddBox.contains(e.target)) { ddClose(); } }, true);
+  window.addEventListener('blur', ddClose);   // un clic dentro la dashboard (iframe) sposta il focus fuori da questa pagina
+  au.addEventListener('playing', ddRefresh);
+  ddRefresh();
 
   // === PULSANTI + e matita: aggiungono una radio all'elenco scritto nello script (nome, stream, info) o modificano quella selezionata ===
   // La modifica chiede SEMPRE conferma, con il riepilogo di cio' che cambia (nome, stream, info). Toccando un campo la conferma riparte da zero.
@@ -3868,6 +3969,7 @@ $HtmlShell = @'
       rebuildSel(); sel.value = ix;
       STREAMS = ns.urls;
       if (!sameUrls) { sIdx = 0; if (wantPlay) { clearTimeout(retryTimer); startRadio(true); } }
+      ddRefresh();
       if (inf !== oldInf) { songEl.textContent = ''; songEl.title = ''; if (!au.paused) { lastPoll = Date.now(); pollSong(); } }
       raOpen(false);
     }, function () { raSay('Server non raggiungibile.', true); raReset(); });
@@ -3923,7 +4025,7 @@ $HtmlShell = @'
   rdCancel.addEventListener('click', function () { rdOpen(false); });
   delPanel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { rdOpen(false); } });
   // Se si cambia radio nella tendina mentre il pannello e' aperto, le info si aggiornano e le conferme ripartono da zero
-  sel.addEventListener('change', function () { if (!delPanel.hidden) { rdFill(); } if (!addPanel.hidden && raMode === 'edit') { raOpen(true, 'edit'); } });
+  sel.addEventListener('change', function () { if (!delPanel.hidden) { rdFill(); } if (!addPanel.hidden && raMode === 'edit' && raEditIx !== cur) { raOpen(true, 'edit'); } });
   rdGo.addEventListener('click', function () {
     var nm = RADIO_STATIONS[cur].name, ix = cur;
     if (rdStep === 0) {
