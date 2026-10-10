@@ -3383,9 +3383,10 @@ $HtmlShell = @'
   #radioIcon { flex: 0 0 auto; font-size: 18px; }
   #radioSel { flex: 0 0 auto; max-width: 220px; height: 30px; padding: 0 8px; background: #111; color: #fff; border: 1px solid #555; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
   #radioSel:hover { border-color: #888; }
-  #radioAddBtn, #radioDelBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; font-size: 20px; line-height: 1; padding: 0; cursor: pointer; }
-  #radioAddBtn:hover, #radioDelBtn:hover { background: #222; border-color: #888; }
+  #radioAddBtn, #radioEditBtn, #radioDelBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; font-size: 20px; line-height: 1; padding: 0; cursor: pointer; }
+  #radioAddBtn:hover, #radioEditBtn:hover, #radioDelBtn:hover { background: #222; border-color: #888; }
   #radioDelBtn { color: #ff7b7b; }
+  #radioEditBtn { color: #ffd24d; font-size: 16px; }
   #radioNotifBtn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #555; background: #111; font-size: 15px; line-height: 1; padding: 0; cursor: pointer; opacity: 0.6; }
   #radioNotifBtn:hover { background: #222; border-color: #888; opacity: 1; }
   #radioNotifBtn.on { opacity: 1; border-color: #4fb3ff; background: #0d2234; }
@@ -3401,7 +3402,11 @@ $HtmlShell = @'
   #radioAdd button:disabled { opacity: 0.5; cursor: default; }
   #raSave { border-color: #4fb3ff; }
   #raMsg { flex: 1 1 auto; font-size: 12px; color: #9a9a9a; }
-  #raMsg.err { color: #ff7b7b; }
+  #raMsg.err { flex: 1 1 100%; color: #ff7b7b; }
+  #raMsg.warn { flex: 1 1 100%; color: #ffb347; font-weight: 600; white-space: pre-line; line-height: 1.4; }
+  #radioAdd .ra-row:last-child { flex-wrap: wrap; justify-content: flex-end; }
+  #radioAdd #raSave.final { background: #0d4a7a; border-color: #4fb3ff; color: #fff; font-weight: 700; box-shadow: 0 0 12px rgba(79,179,255,0.5); }
+  #radioAdd #raSave.final:hover:not(:disabled) { background: #1066a8; border-color: #7cc7ff; }
   #raHint { margin: 0 0 10px 0; font-size: 12px; color: #8a8a8a; line-height: 1.4; }
   #radioDel { position: absolute; top: 53px; left: 50%; transform: translateX(-50%); z-index: 20; width: min(600px, 94vw); box-sizing: border-box; padding: 14px; background: #0b0b0b; border: 1px solid #5a2a2a; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.7); color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
   #radioDel[hidden] { display: none; }
@@ -3453,6 +3458,7 @@ $HtmlShell = @'
   <span id="radioIcon">&#128251;</span>
   <select id="radioSel" title="Scegli la radio"></select>
   <button id="radioAddBtn" type="button" title="Aggiungi una radio all'elenco">+</button>
+  <button id="radioEditBtn" type="button" title="Modifica nome, stream e info della radio selezionata">&#9998;</button>
   <button id="radioDelBtn" type="button" title="Rimuovi la radio selezionata dall'elenco">&#8722;</button>
   <button id="radioNotifBtn" type="button" title="Notifica del browser con il titolo della canzone (spenta)">&#128277;</button>
   <span id="radioSong"></span>
@@ -3463,12 +3469,14 @@ $HtmlShell = @'
   <p id="raHint">La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva.</p>
   <div class="ra-row"><label for="raName">Nome</label><input id="raName" type="text" maxlength="40" placeholder="Nome della radio" autocomplete="off"></div>
   <div class="ra-row"><label for="raUrl">URL</label><input id="raUrl" type="text" placeholder="https://server:porta/stream.mp3" autocomplete="off" spellcheck="false"></div>
+  <div class="ra-row"><label for="raInfo">Info</label><input id="raInfo" type="text" placeholder="(facoltativo) https://.../playerInfo - pagina con il brano in onda" autocomplete="off" spellcheck="false"></div>
   <div class="ra-row"><span id="raMsg"></span><button id="raCancel" type="button">Annulla</button><button id="raSave" type="button">Salva</button></div>
 </div>
 <div id="radioDel" hidden>
   <p id="rdHint">Stai per rimuovere questa radio dall'elenco dentro lo script UnboundBunkerDashboard.ps1: serviranno due conferme e alla fine sparisce subito dalla tendina, senza riavviare la dashboard.</p>
   <div class="ra-row"><label for="rdName">Nome</label><input id="rdName" type="text" readonly tabindex="-1"></div>
   <div class="ra-row"><label for="rdUrl">URL</label><textarea id="rdUrl" readonly rows="2" spellcheck="false" tabindex="-1"></textarea></div>
+  <div class="ra-row"><label for="rdInfo">Info</label><input id="rdInfo" type="text" readonly tabindex="-1"></div>
   <div class="ra-row"><span id="rdMsg"></span><button id="rdCancel" type="button">Annulla</button><button id="rdGo" type="button">Rimuovi</button></div>
 </div>
 <iframe id="mainFrame" title="Unbound Bunker Dashboard"></iframe>
@@ -3773,20 +3781,44 @@ $HtmlShell = @'
     if (play) { nStationChanged(); wantPlay = true; clearTimeout(retryTimer); startRadio(true); }
   }
 
-  // === PULSANTE +: aggiunge una radio all'elenco scritto nello script e riavvia la dashboard ===
-  var addBtn = document.getElementById('radioAddBtn'), addPanel = document.getElementById('radioAdd');
-  var raName = document.getElementById('raName'), raUrl = document.getElementById('raUrl');
-  var raMsg = document.getElementById('raMsg'), raSave = document.getElementById('raSave'), raCancel = document.getElementById('raCancel');
-  function raSay(s, isErr) { raMsg.textContent = s || ''; raMsg.className = isErr ? 'err' : ''; }
-  function raOpen(show) {
+  // === PULSANTI + e matita: aggiungono una radio all'elenco scritto nello script (nome, stream, info) o modificano quella selezionata ===
+  // La modifica chiede SEMPRE conferma, con il riepilogo di cio' che cambia (nome, stream, info). Toccando un campo la conferma riparte da zero.
+  var addBtn = document.getElementById('radioAddBtn'), editBtn = document.getElementById('radioEditBtn'), addPanel = document.getElementById('radioAdd');
+  var raName = document.getElementById('raName'), raUrl = document.getElementById('raUrl'), raInfo = document.getElementById('raInfo');
+  var raMsg = document.getElementById('raMsg'), raSave = document.getElementById('raSave'), raCancel = document.getElementById('raCancel'), raHint = document.getElementById('raHint');
+  var RA_HINT_ADD = "La radio viene scritta nell'elenco dentro lo script UnboundBunkerDashboard.ps1 e compare subito nella tendina, senza riavviare la dashboard. Se piu' stream, separali con uno spazio: il primo e' il principale, gli altri di riserva. Info (facoltativo): pagina della radio che pubblica il brano in onda, come per Radio Toscana e Radio Subasio; se vuoto il titolo si legge dai metadati dello stream.";
+  var RA_HINT_EDIT = "Stai modificando la radio selezionata: cambia nome, stream (piu' stream separati da uno spazio, il primo e' il principale) o Info (pagina con il brano in onda; vuoto = titolo letto dai metadati dello stream). Prima di scrivere nello script ti viene mostrato il riepilogo da confermare.";
+  var raMode = 'add', raStep = 0, raEditIx = -1, raEditName = '';
+  function raSay(s, cls) { raMsg.textContent = s || ''; raMsg.className = (cls === true) ? 'err' : (cls || ''); }
+  function raReset() { raStep = 0; raSave.className = ''; raSave.textContent = (raMode === 'edit') ? 'Salva modifiche' : 'Salva'; raSave.disabled = false; raCancel.disabled = false; }
+  function raOpen(show, mode) {
     addPanel.hidden = !show;
-    if (show) { raSay(''); raName.focus(); }
+    if (!show) { raReset(); return; }
+    var prev = raMode;
+    raMode = mode || 'add';
+    if (raMode === 'edit') {
+      var s0 = RADIO_STATIONS[cur];
+      raEditIx = cur; raEditName = s0.name;
+      raName.value = s0.name; raUrl.value = s0.urls.join(' '); raInfo.value = s0.info || '';
+      raHint.textContent = RA_HINT_EDIT;
+    } else {
+      if (prev === 'edit') { raName.value = ''; raUrl.value = ''; raInfo.value = ''; }
+      raHint.textContent = RA_HINT_ADD;
+    }
+    raReset(); raSay('');
+    raName.focus();
   }
-  addBtn.addEventListener('click', function () { rdOpen(false); raOpen(addPanel.hidden); });
+  addBtn.addEventListener('click', function () { rdOpen(false); if (!addPanel.hidden && raMode === 'add') { raOpen(false); } else { raOpen(true, 'add'); } });
+  editBtn.addEventListener('click', function () { rdOpen(false); if (!addPanel.hidden && raMode === 'edit') { raOpen(false); } else { raOpen(true, 'edit'); } });
   raCancel.addEventListener('click', function () { raOpen(false); });
+  [raName, raUrl, raInfo].forEach(function (el) { el.addEventListener('input', function () { if (raStep) { raReset(); raSay(''); } }); });
   addPanel.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { raOpen(false); }
-    else if (e.key === 'Enter') { e.preventDefault(); raSave.click(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (raMode === 'edit' && raStep) { return; }   // nella conferma della modifica si procede solo con il clic sul pulsante
+      raSave.click();
+    }
   });
   // Dopo il riavvio chiesto al server: aspetta che torni su e ricarica la pagina intera
   function waitServerBack() {
@@ -3799,19 +3831,29 @@ $HtmlShell = @'
       if (Date.now() - t0 > 90000) { clearInterval(iv); raSay('Il riavvio sta impiegando troppo: ricarica la pagina a mano.', true); }
     }, 1000);
   }
-  raSave.addEventListener('click', function () {
-    var nm = raName.value.trim(), ur = raUrl.value.trim();
-    if (!nm) { raSay('Scrivi il nome della radio.', true); raName.focus(); return; }
-    if (!/^https?:\/\//i.test(ur)) { raSay("L'URL deve iniziare con http:// o https://", true); raUrl.focus(); return; }
+  function raJson(r) { return r.json().catch(function () { return { ok: false, error: 'Risposta non valida dal server (HTTP ' + r.status + ')' }; }); }
+  function raFail(j) { raSay((j && j.error) || 'Errore nel salvataggio.', true); raReset(); }
+  function raPost(path, payload) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Bunker-Radio': '1' }, body: JSON.stringify(payload) }).then(raJson);
+  }
+  // MODIFICA: 1) riepilogo delle differenze + conferma  2) scrittura nello script  3) aggiornamento di tendina e audio senza ricaricare
+  function raEdit(nm, urs, inf) {
+    var s = RADIO_STATIONS[raEditIx];
+    if (!s || s.name !== raEditName) { raSay("La radio selezionata e' cambiata: riapri la modifica.", true); return; }
+    var oldInf = s.info || '', sameUrls = (urs.join(' ') === s.urls.join(' ')), ch = [];
+    if (nm !== s.name) { ch.push('- Nome: "' + s.name + '" -> "' + nm + '"'); }
+    if (!sameUrls) { ch.push('- Stream: ' + s.urls.length + (s.urls.length === 1 ? ' indirizzo' : ' indirizzi') + ' -> ' + urs.length + (urs.length === 1 ? ' indirizzo' : ' indirizzi') + ((wantPlay && !au.paused) ? ' (la radio in onda riparte)' : '')); }
+    if (inf !== oldInf) { ch.push('- Info: ' + (!oldInf ? 'aggiunta' : (!inf ? "RIMOSSA (il titolo del brano tornera' letto dai metadati dello stream)" : 'cambiata'))); }
+    if (!ch.length) { raSay('Nessuna modifica da salvare.', true); return; }
+    if (raStep === 0) {
+      raStep = 1; raSave.className = 'final'; raSave.textContent = 'Si, salva le modifiche';
+      raSay('Conferma la modifica di "' + s.name + '":\n' + ch.join('\n'), 'warn');
+      return;
+    }
+    var ix = raEditIx, oldName = s.name;
     raSave.disabled = true; raCancel.disabled = true; raSay('Salvataggio nello script...');
-    fetch('/api/radio-add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Bunker-Radio': '1' },
-      body: JSON.stringify({ name: nm, url: ur })
-    }).then(function (r) {
-      return r.json().catch(function () { return { ok: false, error: 'Risposta non valida dal server (HTTP ' + r.status + ')' }; });
-    }).then(function (j) {
-      if (!j || !j.ok) { raSay((j && j.error) || 'Errore nel salvataggio.', true); raSave.disabled = false; raCancel.disabled = false; return; }
+    raPost('/api/radio-update', { index: ix, oldName: oldName, name: nm, url: urs.join(' '), info: inf }).then(function (j) {
+      if (!j || !j.ok) { raFail(j); return; }
       if (j.restart) {
         // Il server non e' riuscito ad aggiornare la pagina in memoria: ripiego sul riavvio completo
         try { localStorage.setItem('radioStation', nm); } catch (e) {}
@@ -3820,17 +3862,44 @@ $HtmlShell = @'
         waitServerBack();
         return;
       }
-      RADIO_STATIONS.push({ name: nm, urls: ur.split(/\s+/).filter(Boolean) });
+      var ns = { name: nm, urls: urs }; if (inf) { ns.info = inf; }
+      RADIO_STATIONS[ix] = ns;
+      try { localStorage.setItem('radioStation', nm); } catch (e) {}
+      rebuildSel(); sel.value = ix;
+      STREAMS = ns.urls;
+      if (!sameUrls) { sIdx = 0; if (wantPlay) { clearTimeout(retryTimer); startRadio(true); } }
+      if (inf !== oldInf) { songEl.textContent = ''; songEl.title = ''; if (!au.paused) { lastPoll = Date.now(); pollSong(); } }
+      raOpen(false);
+    }, function () { raSay('Server non raggiungibile.', true); raReset(); });
+  }
+  raSave.addEventListener('click', function () {
+    var nm = raName.value.trim(), urs = raUrl.value.trim().split(/\s+/).filter(Boolean), inf = raInfo.value.trim(), k;
+    if (!nm) { raSay('Scrivi il nome della radio.', true); raName.focus(); return; }
+    if (!urs.length) { raSay('Scrivi almeno un indirizzo stream (http:// o https://).', true); raUrl.focus(); return; }
+    for (k = 0; k < urs.length; k++) { if (!/^https?:\/\//i.test(urs[k])) { raSay("Ogni indirizzo stream deve iniziare con http:// o https://", true); raUrl.focus(); return; } }
+    if (inf && !/^https?:\/\//i.test(inf)) { raSay("L'indirizzo Info deve iniziare con http:// o https:// (oppure lascialo vuoto)", true); raInfo.focus(); return; }
+    if (raMode === 'edit') { raEdit(nm, urs, inf); return; }
+    raSave.disabled = true; raCancel.disabled = true; raSay('Salvataggio nello script...');
+    raPost('/api/radio-add', { name: nm, url: urs.join(' '), info: inf }).then(function (j) {
+      if (!j || !j.ok) { raFail(j); return; }
+      if (j.restart) {
+        // Il server non e' riuscito ad aggiornare la pagina in memoria: ripiego sul riavvio completo
+        try { localStorage.setItem('radioStation', nm); } catch (e) {}
+        raSay('Salvata. Riavvio completo della dashboard...');
+        fetch('/api/restart', { method: 'POST' }).catch(function () {});
+        waitServerBack();
+        return;
+      }
+      var ns = { name: nm, urls: urs }; if (inf) { ns.info = inf; }
+      RADIO_STATIONS.push(ns);
       rebuildSel(); useStation(RADIO_STATIONS.length - 1, wantPlay);
-      raName.value = ''; raUrl.value = ''; raSave.disabled = false; raCancel.disabled = false; raOpen(false);
-    }, function () {
-      raSay('Server non raggiungibile.', true); raSave.disabled = false; raCancel.disabled = false;
-    });
+      raName.value = ''; raUrl.value = ''; raInfo.value = ''; raReset(); raOpen(false);
+    }, function () { raSay('Server non raggiungibile.', true); raReset(); });
   });
 
   // === PULSANTE -: rimuove dall'elenco la radio selezionata (info complete, 2 conferme) e riavvia la dashboard ===
   var delBtn = document.getElementById('radioDelBtn'), delPanel = document.getElementById('radioDel');
-  var rdName = document.getElementById('rdName'), rdUrl = document.getElementById('rdUrl'), rdMsg = document.getElementById('rdMsg');
+  var rdName = document.getElementById('rdName'), rdUrl = document.getElementById('rdUrl'), rdInfo = document.getElementById('rdInfo'), rdMsg = document.getElementById('rdMsg');
   var rdGo = document.getElementById('rdGo'), rdCancel = document.getElementById('rdCancel');
   var rdStep = 0;
   function rdSay(s, cls) { rdMsg.textContent = s || ''; rdMsg.className = cls || ''; }
@@ -3840,9 +3909,10 @@ $HtmlShell = @'
     rdName.value = s.name;
     rdUrl.value = s.urls.join('\n');
     rdUrl.rows = Math.max(2, Math.min(5, s.urls.length));
+    rdInfo.value = s.info ? s.info : '(nessuna: il titolo si legge dai metadati dello stream)';
     rdReset();
     if (RADIO_STATIONS.length <= 1) { rdSay("E' l'ultima radio dell'elenco: non si puo' rimuovere.", 'err'); rdGo.disabled = true; }
-    else { rdSay(s.urls.length + (s.urls.length === 1 ? ' indirizzo stream' : ' indirizzi stream')); }
+    else { rdSay(s.urls.length + (s.urls.length === 1 ? ' indirizzo stream' : ' indirizzi stream') + (s.info ? ' + pagina info' : '')); }
   }
   function rdOpen(show) {
     if (show) { raOpen(false); rdFill(); }
@@ -3853,7 +3923,7 @@ $HtmlShell = @'
   rdCancel.addEventListener('click', function () { rdOpen(false); });
   delPanel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { rdOpen(false); } });
   // Se si cambia radio nella tendina mentre il pannello e' aperto, le info si aggiornano e le conferme ripartono da zero
-  sel.addEventListener('change', function () { if (!delPanel.hidden) { rdFill(); } });
+  sel.addEventListener('change', function () { if (!delPanel.hidden) { rdFill(); } if (!addPanel.hidden && raMode === 'edit') { raOpen(true, 'edit'); } });
   rdGo.addEventListener('click', function () {
     var nm = RADIO_STATIONS[cur].name, ix = cur;
     if (rdStep === 0) {
@@ -9484,7 +9554,7 @@ try {
                     if (-not ($hdrOk -and $hostOk -and $origOk)) {
                         $raStatus = 403
                         $raBody   = '{"ok":false,"error":"Accesso negato"}'
-                    } elseif ($request.ContentLength64 -gt 2048) {
+                    } elseif ($request.ContentLength64 -gt 4096) {
                         $raStatus = 413
                         $raBody   = '{"ok":false,"error":"Richiesta troppo grande"}'
                     } else {
@@ -9493,6 +9563,7 @@ try {
                         $o = $raw | ConvertFrom-Json
                         $raName = ([string]$o.name).Trim()
                         $raUrls = @(([string]$o.url).Trim() -split '\s+' | Where-Object { $_ })
+                        $raInfo = ([string]$o.info).Trim()
                         $raErr  = ''
                         if ($raName -notmatch '^[\p{L}\p{N}][\p{L}\p{N} .&+_()\-]{0,39}$') {
                             $raErr = 'Nome non valido (max 40 caratteri: lettere, numeri, spazio e . & + _ ( ) -)'
@@ -9505,6 +9576,9 @@ try {
                                     break
                                 }
                             }
+                        }
+                        if (-not $raErr -and $raInfo -and ($raInfo.Length -gt 300 -or $raInfo -notmatch '^https?://[A-Za-z0-9._~:/?#@!$&()*+,;=%\[\]\-]+$')) {
+                            $raErr = 'Indirizzo Info non valido (deve iniziare con http:// o https://, senza apici ne caratteri speciali)'
                         }
                         if ($raErr) {
                             $raBody = (@{ ok = $false; error = $raErr } | ConvertTo-Json -Compress)
@@ -9528,7 +9602,8 @@ try {
                                     $raLineStart = $raText.LastIndexOf([char]10, $iE) + 1
                                     $raNl = if ($raText.Contains("`r`n")) { "`r`n" } else { "`n" }
                                     $raUrlJs = (($raUrls | ForEach-Object { "'" + $_ + "'" }) -join ', ')
-                                    $raLine = "    { name: '" + $raName + "', urls: [" + $raUrlJs + "] }," + $raNl
+                                    $raInfoJs = if ($raInfo) { ", info: '" + $raInfo + "'" } else { '' }
+                                    $raLine = "    { name: '" + $raName + "', urls: [" + $raUrlJs + "]" + $raInfoJs + " }," + $raNl
                                     $raNew = $raText.Insert($raLineStart, $raLine)
                                     Copy-Item -LiteralPath $raTarget -Destination ($raTarget + ".bak") -Force
                                     $raTmp = $raTarget + ".radio.tmp"
@@ -9614,6 +9689,105 @@ try {
                 $response.ContentType = "application/json; charset=utf-8"
                 $response.Headers.Add("Cache-Control", "no-store")
                 $response.StatusCode = $rrStatus
+                $response.ContentLength64 = $buffer.Length
+                Write-HttpResponseSafe $response $buffer
+            } elseif ($request.Url.AbsolutePath -eq "/api/radio-update" -and $request.HttpMethod -eq "POST") {
+                # Modifica una radio dell'elenco scritto dentro questo stesso script (nome, stream, info): viene riscritta la sola riga
+                # della radio tra i due marcatori RADIO_LIST. Stesse difese di /api/radio-add e /api/radio-remove (header custom,
+                # controllo Host/Origin, caratteri ammessi, copia di sicurezza .bak). La radio e' identificata da posizione + vecchio nome:
+                # se non coincidono (elenco modificato nel frattempo) non si scrive nulla. Il riavvio, se serve, lo chiede la pagina.
+                $ruStatus = 400
+                $ruBody   = '{"ok":false,"error":"Richiesta non valida"}'
+                try {
+                    $hdrOk  = ([string]$request.Headers["X-Bunker-Radio"] -eq "1")
+                    $hostOk = (@("127.0.0.1:$Port", "localhost:$Port") -contains [string]$request.UserHostName)
+                    $origHdr = [string]$request.Headers["Origin"]
+                    $origOk = ([string]::IsNullOrEmpty($origHdr) -or (@("http://127.0.0.1:$Port", "http://localhost:$Port") -contains $origHdr))
+                    if (-not ($hdrOk -and $hostOk -and $origOk)) {
+                        $ruStatus = 403
+                        $ruBody   = '{"ok":false,"error":"Accesso negato"}'
+                    } elseif ($request.ContentLength64 -gt 4096) {
+                        $ruStatus = 413
+                        $ruBody   = '{"ok":false,"error":"Richiesta troppo grande"}'
+                    } else {
+                        $rdr = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                        $raw = $rdr.ReadToEnd(); $rdr.Close()
+                        $o = $raw | ConvertFrom-Json
+                        $ruOld  = [string]$o.oldName
+                        $ruName = ([string]$o.name).Trim()
+                        $ruUrls = @(([string]$o.url).Trim() -split '\s+' | Where-Object { $_ })
+                        $ruInfo = ([string]$o.info).Trim()
+                        $ruIdx  = -1
+                        if (-not [int]::TryParse([string]$o.index, [ref]$ruIdx)) { $ruIdx = -1 }
+                        $ruUrlRe = '^https?://[A-Za-z0-9._~:/?#@!$&()*+,;=%\[\]\-]+$'
+                        $ruErr  = ''
+                        if ($ruName -cne $ruOld -and $ruName -notmatch '^[\p{L}\p{N}][\p{L}\p{N} .&+_()\-]{0,39}$') {
+                            $ruErr = 'Nome non valido (max 40 caratteri: lettere, numeri, spazio e . & + _ ( ) -)'
+                        } elseif ($ruUrls.Count -lt 1 -or $ruUrls.Count -gt 5) {
+                            $ruErr = 'Indica da 1 a 5 indirizzi, separati da uno spazio'
+                        } else {
+                            foreach ($ruU in $ruUrls) {
+                                if ($ruU.Length -gt 300 -or $ruU -notmatch $ruUrlRe) {
+                                    $ruErr = 'Indirizzo non valido (deve iniziare con http:// o https://, senza apici ne caratteri speciali)'
+                                    break
+                                }
+                            }
+                        }
+                        if (-not $ruErr -and $ruInfo -and ($ruInfo.Length -gt 300 -or $ruInfo -notmatch $ruUrlRe)) {
+                            $ruErr = 'Indirizzo Info non valido (deve iniziare con http:// o https://, senza apici ne caratteri speciali)'
+                        }
+                        if ($ruErr) {
+                            $ruBody = (@{ ok = $false; error = $ruErr } | ConvertTo-Json -Compress)
+                        } else {
+                            $ruTarget = if ($script:CurrentScriptPath) { $script:CurrentScriptPath } else { Join-Path $UbDir "UnboundBunkerDashboard.ps1" }
+                            $ruText = [System.IO.File]::ReadAllText($ruTarget, [System.Text.Encoding]::UTF8)
+                            $mB = '// RADIO_LIST_' + 'BEGIN'
+                            $mE = '// RADIO_LIST_' + 'END'
+                            $iB = $ruText.IndexOf($mB, [System.StringComparison]::Ordinal)
+                            $iE = if ($iB -ge 0) { $ruText.IndexOf($mE, $iB, [System.StringComparison]::Ordinal) } else { -1 }
+                            if ($iB -lt 0 -or $iE -lt 0) {
+                                $ruBody = '{"ok":false,"error":"Elenco radio non trovato nello script"}'
+                            } else {
+                                $ruBlock = $ruText.Substring($iB, $iE - $iB)
+                                $ruRows  = @([regex]::Matches($ruBlock, "(?m)^[ \t]*\{\s*name:\s*'([^'\r\n]*)'[^\r\n]*(?:\r?\n|$)"))
+                                $ruDup = $false
+                                for ($ruK = 0; $ruK -lt $ruRows.Count; $ruK++) {
+                                    if ($ruK -ne $ruIdx -and $ruRows[$ruK].Groups[1].Value -ieq $ruName) { $ruDup = $true }
+                                }
+                                if ($ruIdx -lt 0 -or $ruIdx -ge $ruRows.Count -or $ruRows[$ruIdx].Groups[1].Value -cne $ruOld) {
+                                    $ruBody = '{"ok":false,"error":"La radio non corrisponde piu'' all''elenco nello script: ricarica la pagina e riprova"}'
+                                } elseif ($ruDup) {
+                                    $ruBody = '{"ok":false,"error":"Esiste gia una radio con questo nome"}'
+                                } else {
+                                    $ruM = $ruRows[$ruIdx]
+                                    $ruNl = if ($ruM.Value.EndsWith("`r`n")) { "`r`n" } elseif ($ruM.Value.EndsWith("`n")) { "`n" } else { '' }
+                                    $ruCm = [regex]::Match($ruM.Value, '\}\s*,\s*(//[^\r\n]*?)\s*$')
+                                    $ruTail = if ($ruCm.Success) { ' ' + $ruCm.Groups[1].Value } else { '' }
+                                    $ruIndent = [regex]::Match($ruM.Value, '^[ \t]*').Value
+                                    $ruUrlJs = (($ruUrls | ForEach-Object { "'" + $_ + "'" }) -join ', ')
+                                    $ruInfoJs = if ($ruInfo) { ", info: '" + $ruInfo + "'" } else { '' }
+                                    $ruLine = $ruIndent + "{ name: '" + $ruName + "', urls: [" + $ruUrlJs + "]" + $ruInfoJs + " }," + $ruTail + $ruNl
+                                    $ruNew = $ruText.Remove($iB + $ruM.Index, $ruM.Length).Insert($iB + $ruM.Index, $ruLine)
+                                    Copy-Item -LiteralPath $ruTarget -Destination ($ruTarget + ".bak") -Force
+                                    $ruTmp = $ruTarget + ".radio.tmp"
+                                    [System.IO.File]::WriteAllText($ruTmp, $ruNew, (New-Object System.Text.UTF8Encoding($true)))
+                                    Move-Item -LiteralPath $ruTmp -Destination $ruTarget -Force
+                                    Write-DashLog "Radio modificata nell'elenco dello script: $ruOld -> $ruName"
+                                    $ruStatus = 200
+                                    $ruBody   = if (Update-RadioShellMemory $ruNew) { '{"ok":true}' } else { '{"ok":true,"restart":true}' }
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    Write-DashLog "Errore in /api/radio-update: $($_.Exception.Message)"
+                    $ruStatus = 500
+                    $ruBody   = '{"ok":false,"error":"Impossibile scrivere nello script (vedi il log della dashboard)"}'
+                }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($ruBody)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.Headers.Add("Cache-Control", "no-store")
+                $response.StatusCode = $ruStatus
                 $response.ContentLength64 = $buffer.Length
                 Write-HttpResponseSafe $response $buffer
             } elseif ($request.Url.AbsolutePath -eq "/api/restart") {
