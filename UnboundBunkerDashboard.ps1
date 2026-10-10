@@ -3499,9 +3499,9 @@ $HtmlShell = @'
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
     { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio' },
-    { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'] },
+    { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json' },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
-    { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'] },
+    { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac' },
     { name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/stream01/streamPlaylist.m3u8'] },
     { name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'] },
     { name: 'Radio Country Live', urls: ['https://streaming.radiostreamlive.com/radiocountrylive_devices'] },
@@ -4063,6 +4063,15 @@ $script:RadioMetaScript = {
             if ($itxt.StartsWith('{') -or $itxt.StartsWith('[')) {
                 $ij = $itxt | ConvertFrom-Json
                 if ($ij -is [array]) { $ij = $ij[0] }
+                # Formato Mediaset (es. radiomontecarlo.net): i campi title e artist sono scambiati; il campo raw e' ARTISTA~BRANO~album~anno~...
+                try {
+                    $irw = $ij.PSObject.Properties['raw']
+                    if ($irw -and ($irw.Value -is [string]) -and $irw.Value.Contains('~')) {
+                        $irp = $irw.Value -split '~'
+                        if ($irp.Count -ge 2 -and $irp[0].Trim() -and $irp[1].Trim()) { return ($irp[0].Trim() + ' - ' + $irp[1].Trim()) }
+                        if ($irp[0].Trim()) { return $irp[0].Trim() }
+                    }
+                } catch {}
                 foreach ($ik in @('nowplaying', 'now_playing', 'nowPlaying', 'songtitle', 'song', 'title', 'current_song', 'currentSong', 'currenttrack', 'track')) {
                     $ip = $ij.PSObject.Properties[$ik]
                     if ($ip -and ($ip.Value -is [string]) -and $ip.Value.Trim()) { return $ip.Value.Trim() }
