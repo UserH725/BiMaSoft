@@ -3490,7 +3490,7 @@ $HtmlShell = @'
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
-    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] },
+    { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'] }, info: 'https://meta1.xdevel.com/song/current/radio-subasio'
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'] },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
     { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'] },
