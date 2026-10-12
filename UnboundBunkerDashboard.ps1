@@ -5179,7 +5179,7 @@ $HtmlPageLight = @'
         var rowsN = Math.ceil(list.length / COLS), col = Math.floor(j / rowsN), row = j % rowsN;
         r.style.top = (row * H) + 'px';
         r.style.left = (col * 96) + 'px';
-        var b = r.firstChild, txt = Number(it.n).toLocaleString('it-IT');
+        var b = r.firstChild, txt = String(Math.round(Number(it.n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // punto delle migliaia gia' da 1.000 (toLocaleString('it-IT') lo omette sotto le 5 cifre)
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
           b.textContent = txt;
