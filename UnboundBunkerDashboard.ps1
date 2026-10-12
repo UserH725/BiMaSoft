@@ -3559,6 +3559,7 @@ $HtmlShell = @'
     { name: 'RMC Love Song', urls: ['http://edge.radiomontecarlo.net/rmcweb006'] },
     { name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023'] },
     { name: 'RMC Greatest Artists', urls: ['http://edge.radiomontecarlo.net/rmcweb007'] },
+    { name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds' },
     // RADIO_LIST_END
   ];
   var STREAMS = RADIO_STATIONS[0].urls;
@@ -3846,7 +3847,14 @@ $HtmlShell = @'
   function ddBuild() {
     var q = ddFind.value.trim().toLowerCase(), k = 0, curRow = -1;
     while (ddList.firstChild) { ddList.removeChild(ddList.firstChild); }
-    RADIO_STATIONS.forEach(function (s, i) {
+    // Ordine alfabetico SOLO in visualizzazione: RADIO_STATIONS (e gli indici usati da +, matita, - e dal ricordo dell'ultima radio) restano com'e' nel file
+    var ddOrder = RADIO_STATIONS.map(function (s, i) { return i; });
+    ddOrder.sort(function (a, b) {
+      var na = String(RADIO_STATIONS[a].name).replace(/\s+/g, ' ').trim(), nb = String(RADIO_STATIONS[b].name).replace(/\s+/g, ' ').trim();
+      return na.localeCompare(nb, 'it', { sensitivity: 'base', numeric: true }) || (a - b);
+    });
+    ddOrder.forEach(function (i) {
+      var s = RADIO_STATIONS[i];
       if (q && s.name.toLowerCase().indexOf(q) < 0) return;
       var row = document.createElement('div'), nm = document.createElement('span');
       row.className = 'dd-row' + (i === cur ? ' cur' : ''); row.setAttribute('data-i', i);
@@ -4272,8 +4280,13 @@ $script:RadioMetaScript = {
                 # Formato con involucro (es. meta1.xdevel.com): {"success":true,"result":{"meta":"ARTISTA - Titolo","artist":..,"title":..}}
                 try {
                     $ir = $ij.result
+                    # Formato instant.audio (es. RDS): result e' la lista degli ultimi brani, quello in onda ha track_played piu' alto
+                    if ($ir -is [array] -and $ir.Count -gt 0 -and $ir[0].PSObject.Properties['track_played']) { $ir = @($ir | Sort-Object { [double]$_.track_played } -Descending)[0] }
                     if ($ir -is [array]) { $ir = $ir[0] }
                     if ($ir -and ($ir -isnot [string])) {
+                        $ta = [string]$ir.track_artist; $tt = [string]$ir.track_title
+                        if ($ta.Trim() -and $tt.Trim()) { return ($ta.Trim() + ' - ' + $tt.Trim()) }
+                        if ($tt.Trim()) { return $tt.Trim() }
                         $im = [string]$ir.meta
                         if ($im.Trim()) { return $im.Trim() }
                         $ia = [string]$ir.artist; $it = [string]$ir.title
