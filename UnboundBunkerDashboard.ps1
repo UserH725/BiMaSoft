@@ -5246,12 +5246,13 @@ $HtmlPageLight = @'
       s.title = (est ? 'Paese stimato dall\'indirizzo (anycast/CDN: pu\u00f2 differire dalla posizione reale): ' : 'Paese: ') + c;
       return true;
     }
-    if (c === '-') { s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile'; return true; }
-    return false;
+    s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile';
+    return c === '-';
   }
   function ipgHtml(ip, cc, est) {
     var s = document.createElement('span');
-    if (!ipgSet(s, ip, cc, est)) return '';
+    if (!ip) return '';
+    ipgSet(s, ip, cc, est);
     return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
   }
   function ipgFlush() {
@@ -8791,12 +8792,13 @@ function ipgSet(s, ip, cc, est) {
     s.title = (est ? 'Paese stimato dall\'indirizzo (anycast/CDN: pu\u00f2 differire dalla posizione reale): ' : 'Paese: ') + c;
     return true;
   }
-  if (c === '-') { s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile'; return true; }
-  return false;
+  s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile';
+  return c === '-';
 }
 function ipgHtml(ip, cc, est) {
   var s = document.createElement('span');
-  if (!ipgSet(s, ip, cc, est)) return '';
+  if (!ip) return '';
+  ipgSet(s, ip, cc, est);
   return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
 }
 function ipgFlush() {
