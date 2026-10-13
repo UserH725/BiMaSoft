@@ -762,10 +762,12 @@ $script:WanCacheData = @{
     ipv4_wan_ok = $false
     ipv4_loc    = ""
     ipv4_isp    = ""
+    ipv4_cc     = ""
     ipv6_wan    = "N/D"
     ipv6_wan_ok = $false
     ipv6_loc    = ""
     ipv6_isp    = ""
+    ipv6_cc     = ""
 }
 $script:WanAsync     = $null
 $script:WanFailCount = 0
@@ -776,15 +778,16 @@ function Start-WanRefreshAsync {
     $ps = [powershell]::Create()
     [void]$ps.AddScript({
         $ProgressPreference = 'SilentlyContinue'
-        $ip4Wan = "N/D"; $loc4 = ""; $isp4 = ""
-        $ip6Wan = "N/D"; $loc6 = ""; $isp6 = ""
+        $ip4Wan = "N/D"; $loc4 = ""; $isp4 = ""; $cc4 = ""
+        $ip6Wan = "N/D"; $loc6 = ""; $isp6 = ""; $cc6 = ""
 
         try {
-            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,isp,org,query' -TimeoutSec 3 -ErrorAction Stop
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,countryCode,isp,org,query' -TimeoutSec 3 -ErrorAction Stop
             if ($r4.status -eq 'success') {
                 $ip4Wan = $r4.query
                 $isp4   = if ($r4.isp) { [string]$r4.isp } elseif ($r4.org) { [string]$r4.org } else { "" }
                 $loc4   = (@($r4.city, $r4.country) | Where-Object { $_ }) -join ', '
+                if ($r4.countryCode) { $cc4 = ([string]$r4.countryCode).ToUpper() }
             }
         } catch {
             try {
@@ -792,6 +795,7 @@ function Start-WanRefreshAsync {
                 if ($r4.ip) {
                     $ip4Wan = $r4.ip
                     $loc4   = (@($r4.city, $r4.country) | Where-Object { $_ }) -join ', '
+                    if ($r4.country -match '^[A-Za-z]{2}$') { $cc4 = ([string]$r4.country).ToUpper() }
                     # ipinfo restituisce "AS3269 Nome Provider": si toglie il prefisso ASN
                     $isp4   = if ($r4.org) { ([string]$r4.org) -replace '^AS\d+\s+', '' } else { "" }
                 }
@@ -804,6 +808,7 @@ function Start-WanRefreshAsync {
                 $ip6Wan = $r6.ip
                 $isp6   = if ($r6.org) { ([string]$r6.org) -replace '^AS\d+\s+', '' } else { "" }
                 $loc6   = (@($r6.city, $r6.country_code) | Where-Object { $_ }) -join ', '
+                if ($r6.country_code) { $cc6 = ([string]$r6.country_code).ToUpper() }
             }
         } catch {
             try {
@@ -815,7 +820,7 @@ function Start-WanRefreshAsync {
             } catch {}
         }
 
-        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; isp4 = $isp4; ip6 = $ip6Wan; loc6 = $loc6; isp6 = $isp6 }
+        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; isp4 = $isp4; ip6 = $ip6Wan; loc6 = $loc6; isp6 = $isp6; cc4 = $cc4; cc6 = $cc6 }
     })
     $script:WanAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke(); Started = (Get-Date) }
 }
@@ -835,18 +840,20 @@ function Update-WanCacheState {
                     ipv4_wan_ok = ($res.ip4 -ne "N/D")
                     ipv4_loc    = $res.loc4
                     ipv4_isp    = $res.isp4
+                    ipv4_cc     = $res.cc4
                     ipv6_wan    = $res.ip6
                     ipv6_wan_ok = ($res.ip6 -ne "N/D")
                     ipv6_loc    = $res.loc6
                     ipv6_isp    = $res.isp6
+                    ipv6_cc     = $res.cc6
                 }
             } else {
                 # Un solo giro a vuoto puo' essere un timeout isolato: si tiene l'ultimo valore; al secondo consecutivo si passa a N/D
                 $script:WanFailCount++
                 if ($script:WanFailCount -ge 2) {
                     $script:WanCacheData = @{
-                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""; ipv4_isp = ""
-                        ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""; ipv6_isp = ""
+                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""; ipv4_isp = ""; ipv4_cc = ""
+                        ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""; ipv6_isp = ""; ipv6_cc = ""
                     }
                 }
             }
@@ -904,10 +911,12 @@ function Get-IpConnectivityStatus {
         ipv4_wan_ok = $script:WanCacheData.ipv4_wan_ok
         ipv4_loc    = $script:WanCacheData.ipv4_loc
         ipv4_isp    = $script:WanCacheData.ipv4_isp
+        ipv4_cc     = $script:WanCacheData.ipv4_cc
         ipv6_wan    = $script:WanCacheData.ipv6_wan
         ipv6_wan_ok = $script:WanCacheData.ipv6_wan_ok
         ipv6_loc    = $script:WanCacheData.ipv6_loc
         ipv6_isp    = $script:WanCacheData.ipv6_isp
+        ipv6_cc     = $script:WanCacheData.ipv6_cc
     }
 }
 
@@ -2793,6 +2802,74 @@ function Request-GeoCountry {
     } catch {}
 }
 
+# === BANDIERA PER OGNI IP MOSTRATO (v1107.10) ===
+# Riusa il database DB-IP gia' in memoria del worker bandiere (solo IPv4): l'IP viene accodato come nome PTR
+# (d.c.b.a.in-addr.arpa), che il worker risolve SENZA query DNS. Risultato: codice paese di 2 lettere, '-' se non
+# determinabile, '' se ancora in lavorazione o se l'indirizzo e' locale (la pagina mette la casetta).
+# Per gli IPv6 dei root server si usa il paese dell'IPv4 dello stesso server (stessa etichetta, stesso operatore).
+function Get-IpGeoCc {
+    param([string]$Ip)
+    try {
+        if ($Ip -notmatch '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') { return '' }
+        $a = [int]$matches[1]; $b = [int]$matches[2]
+        $ptr = $matches[4] + '.' + $matches[3] + '.' + $matches[2] + '.' + $matches[1] + '.in-addr.arpa'
+        if ($a -eq 10 -or $a -eq 127 -or $a -eq 0 -or $a -ge 224) { return '' }
+        if (($a -eq 192 -and $b -eq 168) -or ($a -eq 172 -and $b -ge 16 -and $b -le 31) -or ($a -eq 169 -and $b -eq 254) -or ($a -eq 100 -and $b -ge 64 -and $b -le 127)) { return '' }
+        $v = ''
+        if ($script:GeoState.TryGetValue($ptr, [ref]$v)) {
+            if ($v -match '^[A-Z]{2}$' -or $v -eq '-') { return $v }
+            return ''
+        }
+        Request-GeoCountry $ptr
+    } catch {}
+    return ''
+}
+
+function Get-IpGeoMap {
+    param($Radar, $RootRadar, $ConnEvents, $Fallback)
+    $m = [ordered]@{}
+    try {
+        foreach ($r in @($Radar)) {
+            if ($r -and $r.ip) { $k = [string]$r.ip; if (-not $m.Contains($k)) { $c = Get-IpGeoCc $k; if ($c) { $m[$k] = $c } } }
+        }
+        $tagCc = @{}
+        foreach ($r in @($RootRadar)) {
+            if ($r -and $r.ip -and ([string]$r.ip) -notmatch ':') {
+                $k = [string]$r.ip; $c = Get-IpGeoCc $k
+                if ($c) { $m[$k] = $c; $tagCc[[string]$r.tag] = $c }
+            }
+        }
+        foreach ($r in @($RootRadar)) {
+            if ($r -and $r.ip -and ([string]$r.ip) -match ':') {
+                $c = $tagCc[[string]$r.tag]
+                if ($c) { $m[[string]$r.ip] = $c }
+            }
+        }
+        if ($ConnEvents) {
+            $seen = 0
+            foreach ($e in @($ConnEvents)) {
+                if ($seen -ge 200) { break }
+                if ($e -and $e.ip) {
+                    $k = [string]$e.ip
+                    if (-not $m.Contains($k)) { $seen++; $c = Get-IpGeoCc $k; if ($c) { $m[$k] = $c } }
+                }
+            }
+        }
+        if ($Fallback -and $Fallback.eventi) {
+            foreach ($e in @($Fallback.eventi)) {
+                foreach ($k0 in @($e.resolver_tentati)) {
+                    $k = [string]$k0
+                    if ($k -and -not $m.Contains($k)) { $c = Get-IpGeoCc $k; if ($c) { $m[$k] = $c } }
+                }
+            }
+        }
+        # IP pubblico IPv4 della linea: se il servizio web non ha dato il paese, si usa il database locale
+        $w = $script:WanCacheData
+        if ($w -and $w.ipv4_wan_ok -and -not $w.ipv4_cc) { $c = Get-IpGeoCc ([string]$w.ipv4_wan); if ($c) { $m[[string]$w.ipv4_wan] = $c } }
+    } catch {}
+    return $m
+}
+
 # [v1107.9] Il dominio e' eleggibile alla ricerca del paese? (stesse regole di Request-GeoCountry + traffico della dashboard)
 function Test-GeoEligible {
     param([string]$Dom)
@@ -3156,6 +3233,8 @@ function Get-BunkerStatusJson {
     }
     if ($saluteScore -lt 0) { $saluteScore = 0 }
 
+    $ipGeo = Get-IpGeoMap -Radar $radar -RootRadar $rootRadar -ConnEvents $(if ($connLive) { $connLive.ev } else { $null }) -Fallback $dnsFallback
+
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
         host             = $env:COMPUTERNAME
@@ -3178,6 +3257,7 @@ function Get-BunkerStatusJson {
         conn_live        = $connLive
         upstream_radar   = $radar
         root_radar       = $rootRadar
+        ip_geo           = $ipGeo
         dns_fallback_log = $dnsFallback
         blocchi_orari    = $blocchiOrari
         windows_update   = $winUpdate
@@ -3319,6 +3399,8 @@ function Get-BunkerStatusLightJson {
     }
     if ($saluteScore -lt 0) { $saluteScore = 0 }
 
+    $ipGeo = Get-IpGeoMap -Radar $radar -ConnEvents $(if ($connLive) { $connLive.ev } else { $null })
+
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
         ts_ms            = $tsMs
@@ -3331,6 +3413,7 @@ function Get-BunkerStatusLightJson {
         line_potential   = $linePot
         connettivita_ip  = $ipConn
         conn_live        = $connLive
+        ip_geo           = $ipGeo
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -3537,7 +3620,7 @@ $HtmlShell = @'
     // RADIO_LIST_BEGIN
     { name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/'] },
     { name: 'Radio  Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo' },
-    { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac'] },
+    { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025'] },
     { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio' },
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json' },
     { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
@@ -4459,6 +4542,8 @@ $HtmlPageLight = @'
   .ns-lane .ce .cd { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .ns-lane .ce .ct { flex: 0 0 auto; opacity: 0.6; }
   .ns-lane .ce .cn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ipf { font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .ipf:not(:empty) { margin-right: 0.35em; }
   .ns-lane .ce .cv { flex: 0 0 auto; font-size: 0.85em; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.05em; }
   .ns-lane .ce .cq { flex: 0 0 auto; font-size: 0.78em; opacity: 0.8; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 1.35; }
   .ns-lane .ce .cx { flex: 0 0 auto; font-size: 0.85em; opacity: 0.9; font-weight: 700; }
@@ -5142,6 +5227,45 @@ $HtmlPageLight = @'
     document.getElementById('engText').textContent = text;
   }
 
+  /* [v1107.10] Bandierine davanti agli IP: casetta = rete locale, bandiera = paese (stima da DB-IP per gli indirizzi anycast) */
+  var IPG = {}, ipgPend = [];
+  function ipgIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG[k] = m[k]; } }
+  function ipgLan(ip) {
+    ip = String(ip || '').replace(/^\[|\]$/g, '');
+    var m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
+    if (m) { var a = +m[1], b = +m[2]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127); }
+    if (ip.indexOf(':') >= 0) { var l = ip.toLowerCase(); return l === '::1' || l === '::' || /^fe[89ab]/.test(l) || /^f[cd]/.test(l); }
+    return false;
+  }
+  function ipgChar(cc) { try { return String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65); } catch (e) { return ''; } }
+  function ipgSet(s, ip, cc, est) {
+    if (ipgLan(ip)) { s.textContent = '\uD83C\uDFE0'; s.title = 'Indirizzo della rete locale'; return true; }
+    var c = cc || IPG[ip];
+    if (typeof c === 'string' && /^[A-Z]{2}$/.test(c)) {
+      s.textContent = ipgChar(c);
+      s.title = (est ? 'Paese stimato dall\'indirizzo (anycast/CDN: pu\u00f2 differire dalla posizione reale): ' : 'Paese: ') + c;
+      return true;
+    }
+    if (c === '-') { s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile'; return true; }
+    return false;
+  }
+  function ipgHtml(ip, cc, est) {
+    var s = document.createElement('span');
+    if (!ipgSet(s, ip, cc, est)) return '';
+    return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
+  }
+  function ipgFlush() {
+    if (!ipgPend.length) return;
+    var keep = [];
+    for (var i = 0; i < ipgPend.length; i++) {
+      var p = ipgPend[i];
+      if (!p.s.isConnected) continue;
+      if (ipgSet(p.s, p.ip, undefined, true)) continue;
+      if (Date.now() - p.t < 15000) keep.push(p);
+    }
+    ipgPend = keep;
+  }
+
   /* ---------- Riga di rete: banda (autoscala), IP, DNS del vincitore del radar ---------- */
   var NSN = 40, nsPkD = 0, nsPkU = 0, nsRingD = [], nsRingU = [];
   function nsNice(v) { var st = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]; for (var i = 0; i < st.length; i++) { if (v <= st[i]) return st[i]; } return Math.ceil(v / 1000) * 1000; }
@@ -5289,6 +5413,7 @@ $HtmlPageLight = @'
     }
   }
   function nsUpdate(d) {
+    try { ipgIn(d.ip_geo); } catch (e) {}
     nsPotUpdate(d);
     var n = d.net_speed;
     if (n && n.ok) {
@@ -5301,18 +5426,18 @@ $HtmlPageLight = @'
     }
     var ip = d.connettivita_ip;
     if (ip) {
-      nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
+      nsSet('nsPub', ip.ipv4_wan_ok ? ipgHtml(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
       nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
       // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
       var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-      nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
+      nsSet('nsV4', l4.length ? l4.map(function (x) { return ipgHtml(x) + nsEsc(x); }).join('<br>') : 'N/D');
       nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
       var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
       var a6 = [];
       if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
       l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
       if (a6.length) {
-        nsSet('nsV6', a6.map(nsEsc).join('<br>'));
+        nsSet('nsV6', a6.map(function (x) { return ipgHtml(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x); }).join('<br>'));
         nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
       } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
     }
@@ -5323,7 +5448,7 @@ $HtmlPageLight = @'
     var c = document.getElementById('nsDnsC');
     if (win) {
       c.className = 'ns-c win';
-      nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
+      nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + ipgHtml(win.ip, undefined, true) + nsEsc(win.ip));
       nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
     } else {
       c.className = rad.length ? 'ns-c bad' : 'ns-c';
@@ -5426,7 +5551,11 @@ $HtmlPageLight = @'
     if (ev.q) { var qq = document.createElement('span'); qq.className = 'cq'; qq.textContent = ev.q; el.appendChild(qq); }
     if (ev.showVia) {
       var v = document.createElement('span'); v.className = 'cv';
-      v.textContent = ev.vt ? ev.vt : (ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache'));
+      if (ev.vt && /^[0-9a-fA-F:.]+$/.test(ev.vt) && /[.:]/.test(ev.vt)) {
+        var vf = document.createElement('span'); vf.className = 'ipf'; v.appendChild(vf);
+        v.appendChild(document.createTextNode(ev.vt));
+        if (!ipgSet(vf, ev.vt, undefined, true)) ipgPend.push({ s: vf, ip: ev.vt, t: Date.now() });
+      } else v.textContent = ev.vt ? ev.vt : (ev.v === 'r' ? 'rpz' : (ev.v === 'n' ? 'rete' : 'cache'));
       el.appendChild(v);
     }
     this.el.appendChild(el);
@@ -5456,6 +5585,7 @@ $HtmlPageLight = @'
   requestAnimationFrame(ceFrame);
   function connUpdate(d) {
     var cl = d && d.conn_live;
+    try { ipgIn(d && d.ip_geo); ipgFlush(); } catch (e) {}
     if (!cl || cl.ev == null) return;
     try { ceGeoIn(cl.geo); } catch (e) { /* le bandierine non devono mai bloccare il ticker */ }
     var ev = Array.isArray(cl.ev) ? cl.ev : [cl.ev];
@@ -6083,6 +6213,9 @@ $HtmlPage = @'
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   }
 
+  /*FLAGFONT*/
+  .ipf { font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .ipf:not(:empty) { margin-right: 0.35em; }
   /* ---------- Riga di rete: banda, IP, DNS del vincitore del radar ---------- */
   .netstrip { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%); border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px 16px; margin: 0 0 18px; text-align: left; font-family: var(--font-ui); transition: opacity 0.4s; }
   .netstrip.stale { opacity: 0.45; filter: grayscale(0.7); }
@@ -7775,6 +7908,7 @@ function renderBlocchiOrari(d) {
 function renderDnsFallbackLog(d) {
   const cont = document.getElementById('dnsFallbackLog');
   if (!cont) return;
+  ipgIn(d.ip_geo);
   const fb = d.dns_fallback_log;
   let eventi = fb && Array.isArray(fb.eventi) ? fb.eventi : (fb && fb.eventi ? [fb.eventi] : []);
   if (!eventi.length) {
@@ -7784,7 +7918,7 @@ function renderDnsFallbackLog(d) {
   cont.innerHTML = eventi.map(e => `
     <div class="rpz-fresh-row">
       <span class="esito-warn">${e.orario || '--'} &middot; ${e.dominio || '-'}</span>
-      <span>${(e.n_tentativi || 0)} tentativi: ${(e.resolver_tentati || []).join(' &rarr; ')} <span class="muted">(esito: ${e.rcode_finale || '-'})</span></span>
+      <span>${(e.n_tentativi || 0)} tentativi: ${(e.resolver_tentati || []).map(x => ipgHtml(x, undefined, true) + x).join(' &rarr; ')} <span class="muted">(esito: ${e.rcode_finale || '-'})</span></span>
     </div>
   `).join('');
 }
@@ -8638,7 +8772,46 @@ function nsPotUpdate(d) {
     fb.innerHTML = busy ? '&#9203; Test in corso...' : '&#128225; Misura linea ora';
   }
 }
+/* [v1107.10] Bandierine davanti agli IP: casetta = rete locale, bandiera = paese (stima da DB-IP per gli indirizzi anycast) */
+var IPG = {}, ipgPend = [];
+function ipgIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG[k] = m[k]; } }
+function ipgLan(ip) {
+  ip = String(ip || '').replace(/^\[|\]$/g, '');
+  var m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
+  if (m) { var a = +m[1], b = +m[2]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127); }
+  if (ip.indexOf(':') >= 0) { var l = ip.toLowerCase(); return l === '::1' || l === '::' || /^fe[89ab]/.test(l) || /^f[cd]/.test(l); }
+  return false;
+}
+function ipgChar(cc) { try { return String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65); } catch (e) { return ''; } }
+function ipgSet(s, ip, cc, est) {
+  if (ipgLan(ip)) { s.textContent = '\uD83C\uDFE0'; s.title = 'Indirizzo della rete locale'; return true; }
+  var c = cc || IPG[ip];
+  if (typeof c === 'string' && /^[A-Z]{2}$/.test(c)) {
+    s.textContent = ipgChar(c);
+    s.title = (est ? 'Paese stimato dall\'indirizzo (anycast/CDN: pu\u00f2 differire dalla posizione reale): ' : 'Paese: ') + c;
+    return true;
+  }
+  if (c === '-') { s.textContent = '\uD83C\uDF10'; s.title = 'Paese non determinabile'; return true; }
+  return false;
+}
+function ipgHtml(ip, cc, est) {
+  var s = document.createElement('span');
+  if (!ipgSet(s, ip, cc, est)) return '';
+  return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
+}
+function ipgFlush() {
+  if (!ipgPend.length) return;
+  var keep = [];
+  for (var i = 0; i < ipgPend.length; i++) {
+    var p = ipgPend[i];
+    if (!p.s.isConnected) continue;
+    if (ipgSet(p.s, p.ip, undefined, true)) continue;
+    if (Date.now() - p.t < 15000) keep.push(p);
+  }
+  ipgPend = keep;
+}
 function nsUpdate(d) {
+  try { ipgIn(d.ip_geo); } catch (e) {}
   nsPotUpdate(d);
   var n = d.net_speed;
   if (n && n.ok) {
@@ -8651,18 +8824,18 @@ function nsUpdate(d) {
   }
   var ip = d.connettivita_ip;
   if (ip) {
-    nsSet('nsPub', ip.ipv4_wan_ok ? nsEsc(ip.ipv4_wan) : 'N/D');
+    nsSet('nsPub', ip.ipv4_wan_ok ? ipgHtml(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
     nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
     // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
     var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-    nsSet('nsV4', l4.length ? l4.map(nsEsc).join('<br>') : 'N/D');
+    nsSet('nsV4', l4.length ? l4.map(function (x) { return ipgHtml(x) + nsEsc(x); }).join('<br>') : 'N/D');
     nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
     var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
     var a6 = [];
     if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
     l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
     if (a6.length) {
-      nsSet('nsV6', a6.map(nsEsc).join('<br>'));
+      nsSet('nsV6', a6.map(function (x) { return ipgHtml(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x); }).join('<br>'));
       nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
     } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
   }
@@ -8673,7 +8846,7 @@ function nsUpdate(d) {
   var c = document.getElementById('nsDnsC');
   if (win) {
     c.className = 'ns-c win';
-    nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
+    nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + ipgHtml(win.ip, undefined, true) + nsEsc(win.ip));
     nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
   } else {
     c.className = rad.length ? 'ns-c bad' : 'ns-c';
@@ -9249,6 +9422,7 @@ async function refresh(forceVersions) {
 
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
+    ipgIn(d.ip_geo);
     let radar = d.upstream_radar || [];
     if (!Array.isArray(radar)) { radar = [radar]; }
 
@@ -9266,7 +9440,7 @@ async function refresh(forceVersions) {
         const stText = r.ok ? '<span class="esito-ok">PORTA 853 OK</span>' : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
         const msText = r.ok ? r.ms + ' ms' : 'TIMEOUT';
 
-        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="color:${rc}; font-weight:bold;">${msText}</td><td>${stText}</td>`;
+        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${ipgHtml(r.ip, undefined, true)}${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="color:${rc}; font-weight:bold;">${msText}</td><td>${stText}</td>`;
         tbodyRadar.appendChild(tr);
       });
     }
@@ -9293,7 +9467,7 @@ async function refresh(forceVersions) {
             <td>${stIcon}</td>
             <td style="font-weight:bold; color: var(--accent);">${r.tag || '-'}</td>
             <td style="font-size:0.85em;">${r.operator || '-'}</td>
-            <td style="font-size:0.85em;">${r.ip || '-'}</td>
+            <td style="font-size:0.85em;">${ipgHtml(r.ip, undefined, true)}${r.ip || '-'}</td>
             <td>${msText}</td>
           `;
           tbodyRoot.appendChild(tr);
@@ -9456,6 +9630,12 @@ setInterval(() => {
 </body>
 </html>
 '@
+
+# [v1107.10] Font bandiere condiviso: il @font-face vive in UNA sola copia (nella Light) e viene copiato anche nella Pro
+try {
+    $mFont = [regex]::Match($HtmlPageLight, '(?s)@font-face \{ font-family: "TwemojiFlags";.*?\}')
+    if ($mFont.Success) { $HtmlPage = $HtmlPage.Replace('/*FLAGFONT*/', $mFont.Value) }
+} catch {}
 
 # === RACCOLTA DATI IN BACKGROUND (runspace separato, thread indipendente) ===
 function Start-BackgroundCollectorLoop {
