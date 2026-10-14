@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1106.0"
+set "LOCAL_VER=1108.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -574,8 +574,8 @@ call :CREATE_TASK_NOBATTERY "%TASK_NAME_2H%" "--refresh" "REPEAT2H" "00:00:00"
 :: liste (HaGeZi/Spamhaus) restano sul ciclo biorario standard: non serve
 :: aggiornarle piu' spesso e un intervallo piu' stretto per tutto lo stack
 :: sprecherebbe banda/CPU senza benefici reali.
-echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (XML, nessun blocco batteria, abuse.ch URLhaus/ThreatFox)...
-call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT30M" "00:00:00"
+echo [+] Creazione/aggiornamento del task pianificato ogni ora (XML, nessun blocco batteria, abuse.ch URLhaus/ThreatFox)...
+call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT1H" "00:00:00"
 
 :: 2C. PULIZIA TASK WATCHDOG DASHBOARD (RIMOSSO: causava race condition con i
 :: riavvii nativi della dashboard - boot, ciclo biorario, task giornaliero -
@@ -756,7 +756,8 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: FLAG --refresh: aggiorna solo HaGeZi + root hints, poi riavvia
 :: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
 :: FLAG --refreshabusech: aggiorna solo URLhaus + ThreatFox, poi riavvia
-:: se necessario. Viene eseguito ogni 30 minuti dallo scheduler dedicato.
+:: se necessario. Viene eseguito ogni ora dallo scheduler dedicato (v1106.1: era ogni 30 minuti;
+:: ogni riavvio rilegge tutte le RPZ, quindi meno riavvii = meno picchi di CPU/RAM).
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
@@ -3514,7 +3515,7 @@ goto :FINALIZZAZIONE
 :FINALIZZAZIONE
 if defined ONLY_PH goto :FASE_SINGOLA_END
 :: Working set scalato dinamicamente sul profilo hardware rilevato in AUTO_TUNING_HARDWARE (fallback 800MB/2GB se non valorizzato)
-if "!MIN_WS!"=="" set "MIN_WS=838860800"
+if "!MIN_WS!"=="" set "MIN_WS=268435456"
 if "!MAX_WS!"=="" set "MAX_WS=2147483648"
 powershell -Command "$p = Get-Process unbound -ErrorAction SilentlyContinue; if($p) { $p.MinWorkingSet = [IntPtr]!MIN_WS!; $p.MaxWorkingSet = [IntPtr]!MAX_WS! }; [System.GC]::Collect()" >nul 2>&1
 
@@ -4106,21 +4107,24 @@ if !TOTAL_RAM_GB! leq 5 (
 ) else if !TOTAL_RAM_GB! leq 24 (
     :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
     set "PROFILE_NAME=STANDARD"
-    set "MSG_CACHE=128m"
-    set "RRSET_CACHE=256m"
-    set "SO_RCVBUF=8m"
-    set "SO_SNDBUF=8m"
+    :: [v1106.1] Profilo alleggerito per reattivita' del PC, uso singolo utente con AdGuard davanti
+    set "MSG_CACHE=64m"
+    set "RRSET_CACHE=128m"
+    set "SO_RCVBUF=2m"
+    set "SO_SNDBUF=2m"
     set "SLABS_MAX=4"
-    set "OUT_RANGE=8192"
-    set "NUM_Q_THREAD=2048"
+    set "OUT_RANGE=2048"
+    set "NUM_Q_THREAD=512"
     set "KEY_CACHE=16m"
     set "NEG_CACHE=32m"
-    set "INFRA_HOSTS=10000"
-    set "INCOMING_TCP=500"
-    set "OUTGOING_TCP=200"
-    set "STREAM_WAIT=8m"
-    set "MIN_WS=838860800"
+    set "INFRA_HOSTS=5000"
+    set "INCOMING_TCP=50"
+    set "OUTGOING_TCP=100"
+    set "STREAM_WAIT=2m"
+    set "MIN_WS=268435456"
     set "MAX_WS=2147483648"
+    :: [v1106.1] Tetto ai thread di Unbound sul profilo STANDARD
+    if !THREADS! gtr 4 set "THREADS=4"
 ) else (
     :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "PROFILE_NAME=ULTRA"
@@ -4489,7 +4493,7 @@ exit /b
 :: ==================================================================
 :: SUBROUTINE: CREAZIONE TASK PIANIFICATO VIA XML (NO BLOCCO BATTERIA)
 :: Uso: call :CREATE_TASK_NOBATTERY "<NomeTask>" "<FlagArgomento>" "<Modo>" "<OraAvvio HH:MM:SS>"
-:: <Modo> = DAILY | REPEAT2H | REPEAT30M
+:: <Modo> = DAILY | REPEAT2H | REPEAT1H | REPEAT30M
 :: [FIX] schtasks /create in forma semplice (senza /xml) eredita i default di
 :: Windows per il risparmio energia: "Non avviare se a batteria" e "Interrompi
 :: se passa a batteria" (vedi schtasks /query /v su Unbound_Bunker_2h: campo
@@ -4542,6 +4546,9 @@ if /i "!XML_MODE!"=="DAILY" (
 ) else if /i "!XML_MODE!"=="REPEAT2H" (
     echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
     echo       ^<Repetition^>^<Interval^>PT2H^</Interval^>^<StopAtDurationEnd^>false^</StopAtDurationEnd^>^</Repetition^> >> "!XML_PATH!"
+) else if /i "!XML_MODE!"=="REPEAT1H" (
+    echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
+    echo       ^<Repetition^>^<Interval^>PT1H^</Interval^>^<StopAtDurationEnd^>false^</StopAtDurationEnd^>^</Repetition^> >> "!XML_PATH!"
 ) else (
     echo       ^<ScheduleByDay^>^<DaysInterval^>1^</DaysInterval^>^</ScheduleByDay^> >> "!XML_PATH!"
     echo       ^<Repetition^>^<Interval^>PT30M^</Interval^>^<StopAtDurationEnd^>false^</StopAtDurationEnd^>^</Repetition^> >> "!XML_PATH!"
@@ -4601,6 +4608,8 @@ if /i "!XML_MODE!"=="DAILY" (
     schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc daily /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 ) else if /i "!XML_MODE!"=="REPEAT2H" (
     schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc hourly /mo 2 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
+) else if /i "!XML_MODE!"=="REPEAT1H" (
+    schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc hourly /mo 1 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 ) else (
     schtasks /create /tn "!XML_TASKNAME!" /tr "cmd.exe /c \"\"%~f0\" !XML_ARGFLAG! ^& exit 0\"" /sc minute /mo 30 /st !XML_START_HHMM! /ru "SYSTEM" /rl highest /f >nul 2>"!TASK_ERR_XML!"
 )
