@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1108.0"
+set "LOCAL_VER=1109.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -4077,15 +4077,17 @@ if !TOTAL_RAM_GB! leq 5 (
     set "SO_SNDBUF=1m"
     set "SLABS_MAX=1"
     set "OUT_RANGE=512"
-    set "NUM_Q_THREAD=256"
+    set "NUM_Q_THREAD=128"
     set "KEY_CACHE=4m"
     set "NEG_CACHE=8m"
     set "INFRA_HOSTS=2000"
-    set "INCOMING_TCP=100"
+    set "INCOMING_TCP=25"
     set "OUTGOING_TCP=50"
     set "STREAM_WAIT=2m"
     set "MIN_WS=134217728"
     set "MAX_WS=536870912"
+    :: [v1106.2] Tetto ai thread di Unbound sul profilo MICRO
+    if !THREADS! gtr 2 set "THREADS=2"
 ) else if !TOTAL_RAM_GB! leq 9 (
     :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
     set "PROFILE_NAME=LIGHT"
@@ -4094,16 +4096,18 @@ if !TOTAL_RAM_GB! leq 5 (
     set "SO_RCVBUF=2m"
     set "SO_SNDBUF=2m"
     set "SLABS_MAX=2"
-    set "OUT_RANGE=2048"
-    set "NUM_Q_THREAD=768"
+    set "OUT_RANGE=1024"
+    set "NUM_Q_THREAD=256"
     set "KEY_CACHE=8m"
     set "NEG_CACHE=16m"
     set "INFRA_HOSTS=5000"
-    set "INCOMING_TCP=250"
+    set "INCOMING_TCP=50"
     set "OUTGOING_TCP=100"
     set "STREAM_WAIT=4m"
     set "MIN_WS=268435456"
     set "MAX_WS=1073741824"
+    :: [v1106.2] Tetto ai thread di Unbound sul profilo LIGHT
+    if !THREADS! gtr 2 set "THREADS=2"
 ) else if !TOTAL_RAM_GB! leq 24 (
     :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
     set "PROFILE_NAME=STANDARD"
@@ -4128,21 +4132,24 @@ if !TOTAL_RAM_GB! leq 5 (
 ) else (
     :: --- PROFILO ULTRA (>= 32GB RAM) ---
     set "PROFILE_NAME=ULTRA"
-    set "MSG_CACHE=512m"
-    set "RRSET_CACHE=1024m"
+    :: [v1106.2] Profilo alleggerito per reattivita' del PC, uso singolo utente con AdGuard davanti
+    set "MSG_CACHE=128m"
+    set "RRSET_CACHE=256m"
     set "SO_RCVBUF=16m"
     set "SO_SNDBUF=16m"
     set "SLABS_MAX=8"
-    set "OUT_RANGE=12288"
-    set "NUM_Q_THREAD=3072"
+    set "OUT_RANGE=4096"
+    set "NUM_Q_THREAD=1024"
     set "KEY_CACHE=32m"
     set "NEG_CACHE=64m"
     set "INFRA_HOSTS=20000"
-    set "INCOMING_TCP=1000"
-    set "OUTGOING_TCP=400"
+    set "INCOMING_TCP=50"
+    set "OUTGOING_TCP=100"
     set "STREAM_WAIT=16m"
-    set "MIN_WS=1610612736"
-    set "MAX_WS=4294967296"
+    set "MIN_WS=268435456"
+    set "MAX_WS=3221225472"
+    :: [v1106.2] Tetto ai thread di Unbound sul profilo ULTRA
+    if !THREADS! gtr 4 set "THREADS=4"
 )
 
 :: 4. Calcolo dinamico intelligente degli Slabs condizionato dal profilo RAM
