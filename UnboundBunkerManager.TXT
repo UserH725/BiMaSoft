@@ -12,7 +12,7 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
-:: --- CONTROLLO PRIVILEGI DIRETTI (LINEARE) ---
+:: --- CONTROLLO PRIVILEGI DIRETTI (LINEARE) ----
 net session >nul 2>&1
 if %errorLevel% neq 0 goto :ELEVATE_NOW
 goto :ADMIN_VERIFIED
