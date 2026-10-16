@@ -4477,7 +4477,7 @@ $HtmlPageLight = @'
     background: radial-gradient(1200px 600px at 50% -10%, #0f1a27 0%, var(--bg) 60%);
     color: var(--text); font-family: var(--font-ui); padding: 14px 20px 18px;
   }
-  .wrap { max-width: 1360px; margin: 0 auto; }
+  .wrap { max-width: none; width: 100%; margin: 0 auto; }
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
   h1 { margin: 0; font-size: 1.35em; color: var(--accent); letter-spacing: 0.02em; }
   .sub { color: var(--dim); font-size: 0.82em; margin-top: 4px; }
@@ -4580,9 +4580,9 @@ $HtmlPageLight = @'
   .ns-tr { font-size: 0.72em; text-align: center; margin: 2px 0 0; min-height: 1.3em; }
   .ns-row { display: flex; justify-content: center; align-items: flex-start; gap: 14px; }
   .ns-a { flex: 0 1 215px; min-width: 0; }
-  .ns-b { flex: 0 1 250px; min-width: 0; }
+  .ns-b { flex: 1 1 250px; max-width: 340px; min-width: 0; }
   .ns-trs { color: var(--dim); }
-  .ns-hc { display: block; width: 100%; max-width: 250px; margin: 2px auto 0; }
+  .ns-hc { display: block; width: 100%; max-width: 340px; margin: 2px auto 0; }
   .ns-hc .gl { fill: var(--dim); font-size: 9px; }
   .ns-hc .gr { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
   .ns-hc .ar { fill: var(--accent); fill-opacity: 0.16; }
@@ -4606,15 +4606,13 @@ $HtmlPageLight = @'
   .ns-dot.bad { background: #ff5c5c; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
-  /* [v1107.8] Classifica bandierine ai lati dei badge Velocita linea (sinistra = Download, destra = Upload) */
-  .ns-meters.rz-on { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
-  .rz { position: relative; width: calc(var(--rz-cols, 2) * 96px); align-self: start; font-family: var(--font-mono); font-size: 12px; }
-  .rz-i { position: absolute; left: 0; width: 96px; box-sizing: border-box; padding: 0 4px; height: 20px; display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  /* Classifica bandierine: fila orizzontale (a capo su piu' righe) sopra ciascun log - sinistra/sopra Download, destra/sopra Upload */
+  .rz { position: relative; width: 100%; margin: 0 0 4px; font-family: var(--font-mono); font-size: 12px; }
+  .rz-i { position: absolute; left: 0; top: 0; width: var(--rz-w, 88px); box-sizing: border-box; padding: 0 4px; height: 20px; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: top 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), left 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .rz-e { flex: 0 0 20px; text-align: center; font-size: 15px; line-height: 1; font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; }
-  .rz-i b { flex: 0 0 60px; text-align: right; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .rz-i b { flex: 1 1 auto; min-width: 0; text-align: left; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .rz-i.up b { animation: rzUp 1s ease-out; }
   @keyframes rzUp { 0% { color: #ffd600; } 100% { color: var(--text); } }
-  @media (max-width: 560px) { .ns-meters.rz-on { grid-template-columns: 1fr; } .rz { width: auto; height: auto !important; display: flex; flex-wrap: wrap; gap: 4px 14px; } .rz-i { position: static; width: auto; } .rz-l { order: -1; } .rz-r { order: 3; } }
 
   .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
   .card {
@@ -5278,33 +5276,35 @@ $HtmlPageLight = @'
     var SP = { _R: ['\uD83D\uDED1', 'Bloccato dallo scudo RPZ'], _DS: ['\uD83D\uDD10', 'Verifica DNSSEC (DS)'], _DK: ['\uD83D\uDD11', 'Verifica DNSSEC (DNSKEY)'], _SG: ['\uD83D\uDD0F', 'Verifica DNSSEC (RRSIG/NSEC)'], _PT: ['\uD83D\uDD01', 'Ricerca inversa (PTR)'], _NX: ['\u2753', 'Dominio inesistente (NXDOMAIN)'], _ER: ['\u26A0\uFE0F', 'Errore del resolver'], _WW: ['\uD83C\uDF10', 'Paese non determinabile'] };
     var S = nsFlags.S || (nsFlags.S = { rows: { L: {}, R: {} }, prev: { L: {}, R: {} } });
     if (!S.L) {
+      var laneD = document.getElementById('nsLaneD'), laneU = document.getElementById('nsLaneU');
+      if (!laneD || !laneU) return;
       S.L = document.createElement('div'); S.L.className = 'rz rz-l';
       S.R = document.createElement('div'); S.R.className = 'rz rz-r';
-      m.insertBefore(S.L, m.firstChild); m.appendChild(S.R); m.classList.add('rz-on');
+      laneD.parentNode.insertBefore(S.L, laneD); laneU.parentNode.insertBefore(S.R, laneU);
     }
-    var COLS = m.clientWidth >= 1200 ? 3 : 2;   // 3 colonne per lato se la pagina e' larga, altrimenti 2
-    m.style.setProperty('--rz-cols', COLS);
-    var H = 20, sides = [['L', S.L, fl.d], ['R', S.R, fl.u]];
+    var CW = 88, H = 20, sides = [['L', S.L, fl.d], ['R', S.R, fl.u]];
     for (var s = 0; s < sides.length; s++) {
       var side = sides[s][0], box = sides[s][1], rows = S.rows[side], prev = S.prev[side];
       var list = (sides[s][2] || []).filter(function (x) { return x && /^(_[A-Z]{1,2}|[A-Z]{2})$/.test(x.cc) && (x.cc.charAt(0) !== '_' || SP[x.cc]); });
       list.sort(function (a, b) { return (b.n - a.n) || (a.cc < b.cc ? -1 : 1); });
       var seen = {};
+      var bw = box.clientWidth || 600, COLS = Math.max(1, Math.floor(bw / CW)), cwE = Math.floor(bw / COLS);   // colonne dalla larghezza reale del log; celle ripartite su tutta la fila
+      box.style.setProperty('--rz-w', cwE + 'px');
       box.style.height = (Math.ceil(list.length / COLS) * H) + 'px';
       for (var j = 0; j < list.length; j++) {
         var it = list[j], r = rows[it.cc]; seen[it.cc] = 1;
         if (!r) {
           r = rows[it.cc] = document.createElement('div'); r.className = 'rz-i';
-          r.innerHTML = '<b></b><span class="rz-e"></span>';
-          var ico = r.lastChild;
+          r.innerHTML = '<span class="rz-e"></span><b></b>';
+          var ico = r.firstChild;
           if (SP[it.cc]) { ico.textContent = SP[it.cc][0]; r.title = SP[it.cc][1]; }
           else { ico.textContent = String.fromCodePoint(0x1F1E6 + it.cc.charCodeAt(0) - 65, 0x1F1E6 + it.cc.charCodeAt(1) - 65); r.title = it.cc; }
           box.appendChild(r);
         }
-        var rowsN = Math.ceil(list.length / COLS), col = Math.floor(j / rowsN), row = j % rowsN;
+        var col = j % COLS, row = Math.floor(j / COLS);   // ordine di lettura: da sinistra a destra, poi a capo
         r.style.top = (row * H) + 'px';
-        r.style.left = (col * 96) + 'px';
-        var b = r.firstChild, txt = String(Math.round(Number(it.n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // punto delle migliaia gia' da 1.000 (toLocaleString('it-IT') lo omette sotto le 5 cifre)
+        r.style.left = (col * cwE) + 'px';
+        var b = r.lastChild, txt = String(Math.round(Number(it.n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // punto delle migliaia gia' da 1.000 (toLocaleString('it-IT') lo omette sotto le 5 cifre)
         if (b.textContent !== txt) {
           var up = prev[it.cc] != null && it.n > prev[it.cc];
           b.textContent = txt;
