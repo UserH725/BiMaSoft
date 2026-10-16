@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1109.0"
+set "LOCAL_VER=1109.1"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -1524,15 +1524,16 @@ set "CURL_ERR=!errorlevel!"
 
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
 
-:: Se il download fallisce (es. 404), interrompe il ciclo
+:: Fine lista SOLO se il server risponde 404 sulla parte successiva. Qualunque altro
+:: errore (timeout, reset, stallo) annulla l'aggiornamento e mantiene la versione attuale:
+:: prima una parte mancante veniva scambiata per fine lista e TIF veniva installato troncato.
 if !CURL_ERR! NEQ 0 (
-    if !TIF_PARTS! GTR 1 (
+    if "!DL_NOTFOUND!"=="1" if !TIF_PARTS! GTR 1 (
         set /a TIF_PARTS-=1
         goto :TIF_LOOP_END
-    ) else (
-        set "TIF_DL_ERROR=1"
-        goto :TIF_LOOP_END
     )
+    set "TIF_DL_ERROR=1"
+    goto :TIF_LOOP_END
 )
 
 :: Controllo che la singola parte non sia corrotta o vuota (minimo 1KB)
@@ -1562,13 +1563,13 @@ if !TIF_PARTS! LSS 20 goto :TIF_LOOP
 :TIF_LOOP_END
 
 if "!TIF_DL_ERROR!"=="1" (
-    if exist "%HZ_TIF_BAK%" (
+    if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF: download incompleto o fallito, mantengo la versione attuale: !DT_TIF!"
+    ) else if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
         set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
-    ) else if exist "%HZ_TIF%" (
-        call :FILE_DATE "%HZ_TIF%" DT_TIF
-        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF: download fallito, uso esistente: !DT_TIF!"
     ) else (
         set "F10B_RES=[ERR ] NET  >> HaGeZi TIF non scaricabile e nessun backup disponibile!"
     )
@@ -1580,6 +1581,12 @@ if "!TIF_DL_ERROR!"=="1" (
         echo.>> "%HZ_TIF%.tmp"
         move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
     )
+
+    rem Verifica anti-troncamento: i record CNAME del file unificato devono essere almeno
+    rem quanti dichiarati dall intestazione (somma delle parti). Se non torna il file
+    rem viene azzerato e cade nel ramo scartato qui sotto: la versione attuale resta.
+    call :RPZ_ENTRIES_CHECK "%HZ_TIF%.tmp"
+    if errorlevel 1 type nul > "%HZ_TIF%.tmp"
 
     :: Controllo sul file totale assemblato (minimo 10KB)
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
@@ -1601,9 +1608,9 @@ if "!TIF_DL_ERROR!"=="1" (
     ) else (
         if exist "%HZ_TIF%" (
             call :FILE_DATE "%HZ_TIF%" DT_TIF
-            set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF - file unificato piccolo, uso esistente: !DT_TIF!"
+            set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete), mantengo la versione attuale: !DT_TIF!"
         ) else (
-            set "F10B_RES=[    ERRORE    ] NET  >> HaGeZi TIF - file unificato troppo piccolo e nessun backup!"
+            set "F10B_RES=[    ERRORE    ] NET  >> HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete) e nessuna versione precedente!"
         )
     )
 )
@@ -2703,13 +2710,12 @@ set "CURL_ERR=!errorlevel!"
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
 
 if !CURL_ERR! NEQ 0 (
-    if !TIF_PARTS! GTR 1 (
+    if "!DL_NOTFOUND!"=="1" if !TIF_PARTS! GTR 1 (
         set /a TIF_PARTS-=1
         goto :TIF_REFRESH_LOOP_END
-    ) else (
-        set "TIF_DL_ERROR=1"
-        goto :TIF_REFRESH_LOOP_END
     )
+    set "TIF_DL_ERROR=1"
+    goto :TIF_REFRESH_LOOP_END
 )
 
 set "PART_SIZE=0"
@@ -2732,7 +2738,10 @@ if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
 :TIF_REFRESH_LOOP_END
 
 if "!TIF_DL_ERROR!"=="1" (
-    if exist "%HZ_TIF_BAK%" (
+    if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF: download incompleto o fallito, mantengo la versione attuale: !DT_TIF!"
+    ) else if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
         call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
@@ -2746,6 +2755,10 @@ if "!TIF_DL_ERROR!"=="1" (
         echo.>> "%HZ_TIF%.tmp"
         move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
     )
+
+    rem Verifica anti-troncamento come in F10B: record CNAME almeno pari alle voci dichiarate, altrimenti scarta.
+    call :RPZ_ENTRIES_CHECK "%HZ_TIF%.tmp"
+    if errorlevel 1 type nul > "%HZ_TIF%.tmp"
 
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
@@ -2766,7 +2779,7 @@ if "!TIF_DL_ERROR!"=="1" (
         )
     ) else (
         call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF - file unificato piccolo, uso esistente: !DT_TIF!"
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete), mantengo la versione attuale: !DT_TIF!"
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
@@ -3777,113 +3790,285 @@ exit /b
 :: Uso: call :FILE_DATE <percorso_file> <variabile_risultato>
 :: ==================================================================
 :: ==================================================================
-:: SUBROUTINE: esegue un download con curl, con retry automatico.
-:: Fino a 3 tentativi totali, backoff progressivo (3s dopo il 1°
-:: fallimento, 6s dopo il 2°). Errorlevel 0 se un tentativo riesce,
-:: 1 se falliscono tutti e 3.
-:: CURL_TRY_NUM riporta il tentativo che ha avuto successo (1/2/3),
-:: oppure 0 se tutti i tentativi sono falliti. Va letta dal chiamante
-:: SUBITO dopo la call, prima di qualunque altra chiamata a curl.
-:: Uso: call :CURL_RETRY "<url>" "<file_output>" "<argomenti_extra>"
+:: [DOWNLOAD SICURO] CURL_RETRY / CURL_RETRY_Z / CURL_RETRY_Z2
+:: Tre interfacce storiche (firma e codici di ritorno INVARIATI per tutti i
+:: chiamanti) sopra un unico motore: DL_ENGINE.
+:: Errorlevel 0 = download riuscito e VERIFICATO (oppure HTTP 304 = lista invariata,
+:: nessun file tmp creato); errorlevel 1 = fallito. CURL_TRY_NUM: 1-3 sorgente
+:: primaria, 4-6 sorgente secondaria (solo Z2), 0 = fallito. In piu': DL_NOTFOUND=1 se
+:: la sorgente primaria ha risposto HTTP 404 (fine lista vera, usato dal ciclo TIF),
+:: DL_HTTP = ultimo codice HTTP.
+::
+:: Cosa cambia rispetto alla versione precedente:
+:: 1) Niente piu' tetto di tempo totale: --max-time 60 di CURL_CA vinceva su quello da
+::    25 s perche' veniva DOPO nella riga di comando, e 60 s non bastano per i 12 MB di
+::    Pro Plus o gli 82 MB di TIF su una linea lenta. Ora un download si interrompe solo
+::    se si BLOCCA (meno di 10 KB/s per 20 s), con 600 s di sicurezza per tentativo.
+:: 2) Resume (-C -) SOLO tra tentativi della STESSA esecuzione e della STESSA sorgente.
+::    Il parziale viene cancellato all'inizio e al passaggio al mirror: niente piu'
+::    incollaggio di versioni diverse della lista (GitHub + jsDelivr, o file di ieri).
+:: 3) Verifica prima di consegnare il file: dimensione uguale a Content-Length o
+::    Content-Range del server, Content-Type non HTML, prima riga non HTML e, per le
+::    liste con intestazione Number of entries, record CNAME >= voci dichiarate.
+::    Un file che non passa viene scartato e mai installato.
+:: 4) Su fallimento il tmp viene cancellato (mai un file troncato in giro): i chiamanti
+::    ricadono sul file locale invariato. Il motivo va in rpz_download.log (UB_DIR).
+:: 5) ETag condizionale (If-None-Match) sulla sorgente primaria: GitHub raw non invia
+::    Last-Modified, quindi prima -z non produceva mai un 304 e ogni ciclo riscaricava
+::    tutto. L'ETag vale solo se la dimensione del file locale coincide con quella
+::    registrata nel sidecar riferimento.etag, altrimenti scarica per intero.
 :: ==================================================================
-:: [FIX ANTI-BLOCCO] Aggiunti --connect-timeout 8 --max-time 25 a tutte le
-:: chiamate curl di questo blocco (CURL_RETRY / CURL_RETRY_Z / CURL_RETRY_Z2).
-:: Senza timeout espliciti curl attende a tempo indefinito una connessione
-:: che si apre ma non trasferisce dati (es. micro-interruzioni WireGuard/WARP,
-:: CDN che stalla): con 10+ download sequenziali nel ciclo biorario, bastava
-:: una sola fonte "appesa" per tenere in esecuzione l'intero task per molto
-:: piu' tempo del previsto. Ora un download bloccato fallisce in ~25s al
-:: massimo e si passa subito al retry/mirror successivo.
 :CURL_RETRY
 set "CRT_URL=%~1"
 set "CRT_OUT=%~2"
 set "CRT_ARGS=%~3"
-set "CURL_TRY_NUM=1"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 4 127.0.0.1 >nul
-set "CURL_TRY_NUM=2"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 7 127.0.0.1 >nul
-set "CURL_TRY_NUM=3"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRT_ARGS% -o "%CRT_OUT%" "%CRT_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set "CURL_TRY_NUM=0"
-exit /b 1
+call :DL_ENGINE "%CRT_URL%" "" "%CRT_OUT%" "%CRT_ARGS%" "" ""
+exit /b %errorlevel%
 
-:: ==================================================================
-:: SUBROUTINE: come CURL_RETRY, ma con download condizionale (-z)
-::  rispetto al file di riferimento passato come 4 argomento: se il
-::  server risponde "non modificato", curl non trasferisce il corpo
-::  e non crea il file temporaneo (risparmio di banda). In quel caso
-::  il chiamante copia in avanti il file di riferimento come temporaneo,
-::  cosi' la logica di confronto hash esistente a valle funziona invariata.
+:: Come CURL_RETRY ma con riferimento (file locale esistente) per 304 e ETag.
 :: Uso: call :CURL_RETRY_Z "<url>" "<file_output>" "<argomenti_extra>" "<file_riferimento>"
-:: ==================================================================
 :CURL_RETRY_Z
 set "CRZ_URL=%~1"
 set "CRZ_OUT=%~2"
 set "CRZ_ARGS=%~3"
 set "CRZ_REF=%~4"
-set "CURL_TRY_NUM=1"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 4 127.0.0.1 >nul
-set "CURL_TRY_NUM=2"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 7 127.0.0.1 >nul
-set "CURL_TRY_NUM=3"
-curl -s -f --connect-timeout 8 --max-time 25 %CURL_CA% %CRZ_ARGS% -z "%CRZ_REF%" -o "%CRZ_OUT%" "%CRZ_URL%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set "CURL_TRY_NUM=0"
-exit /b 1
+call :DL_ENGINE "%CRZ_URL%" "" "%CRZ_OUT%" "%CRZ_ARGS%" "" "%CRZ_REF%"
+exit /b %errorlevel%
 
-:: ==================================================================
-:: SUBROUTINE: come CURL_RETRY_Z, ma con doppia sorgente. Prova fino a
-::  3 tentativi (stesso backoff 3s/6s) sulla sorgente primaria; se
-::  falliscono tutti, prova altri 3 tentativi sulla sorgente secondaria
-::  prima di arrendersi. Solo a questo punto il chiamante ricade sul
-::  fallback locale (.bak/file esistente). Pensata per avere due mirror
-::  indipendenti della stessa lista RPZ (es. raw.githubusercontent.com
-::  come primaria e cdn.jsdelivr.net come secondaria), cosi' un disservizio
-::  o un blocco su una delle due fonti non impedisce l'aggiornamento.
-:: CURL_TRY_NUM riporta il tentativo che ha avuto successo: 1-3 = sorgente
-::  primaria, 4-6 = sorgente secondaria (fallback), 0 = falliti entrambi.
+:: Come CURL_RETRY_Z ma con doppia sorgente (3 tentativi primaria, poi 3 secondaria).
 :: Uso: call :CURL_RETRY_Z2 "<url_primario>" "<url_secondario>" "<file_output>" "<argomenti_extra_secondario>" "<file_riferimento>"
-:: ==================================================================
 :CURL_RETRY_Z2
 set "CRZ2_URL1=%~1"
 set "CRZ2_URL2=%~2"
 set "CRZ2_OUT=%~3"
 set "CRZ2_ARGS2=%~4"
 set "CRZ2_REF=%~5"
-set "CURL_TRY_NUM=1"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 4 127.0.0.1 >nul
-set "CURL_TRY_NUM=2"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 7 127.0.0.1 >nul
-set "CURL_TRY_NUM=3"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL1%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 4 127.0.0.1 >nul
-set "CURL_TRY_NUM=4"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 4 127.0.0.1 >nul
-set "CURL_TRY_NUM=5"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
-if not errorlevel 1 exit /b 0
-ping -n 7 127.0.0.1 >nul
-set "CURL_TRY_NUM=6"
-curl -s -f --connect-timeout 8 --max-time 25 -C - %CURL_CA% %CRZ2_ARGS2% -z "%CRZ2_REF%" -o "%CRZ2_OUT%" "%CRZ2_URL2%" >nul 2>&1
-if not errorlevel 1 exit /b 0
+call :DL_ENGINE "%CRZ2_URL1%" "%CRZ2_URL2%" "%CRZ2_OUT%" "" "%CRZ2_ARGS2%" "%CRZ2_REF%"
+exit /b %errorlevel%
+
+:: ------------------------------------------------------------------
+:: DL_ENGINE: url_primario url_secondario(vuoto=nessun mirror) file_output
+::            argomenti_primario argomenti_secondario file_riferimento
+:: ------------------------------------------------------------------
+:DL_ENGINE
+set "DLE_URL1=%~1"
+set "DLE_URL2=%~2"
+set "DLE_OUT=%~3"
+set "DLE_XA1=%~4"
+set "DLE_XA2=%~5"
+set "DLE_REF=%~6"
+set "DL_NOTFOUND=0"
+set "DL_HTTP=000"
+set "DL_WHY="
+set "DLE_N=0"
+set "DLE_MAX=3"
+if defined DLE_URL2 set "DLE_MAX=6"
+if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
+:DLE_LOOP
+set /a DLE_N+=1
+set "CURL_TRY_NUM=!DLE_N!"
+set "DL_RESUME=1"
+if !DLE_N! EQU 1 set "DL_RESUME=0"
+if !DLE_N! EQU 4 set "DL_RESUME=0"
+if !DLE_N! LEQ 3 goto :DLE_SRC1
+if !DLE_N! EQU 4 if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
+set "DL_URL=!DLE_URL2!"
+set "DL_XARGS=!DLE_XA2!"
+set "DL_PRIMARY=0"
+goto :DLE_GO
+:DLE_SRC1
+set "DL_URL=!DLE_URL1!"
+set "DL_XARGS=!DLE_XA1!"
+set "DL_PRIMARY=1"
+:DLE_GO
+set "DL_OUT=!DLE_OUT!"
+set "DL_REF=!DLE_REF!"
+call :DL_ONE
+if not errorlevel 1 goto :DLE_OK
+if "!DL_NOTFOUND!"=="1" goto :DLE_FAIL
+if !DLE_N! GEQ !DLE_MAX! goto :DLE_FAIL
+set "DLE_PN=4"
+if !DLE_N! EQU 2 set "DLE_PN=7"
+if !DLE_N! EQU 5 set "DLE_PN=7"
+ping -n !DLE_PN! 127.0.0.1 >nul
+goto :DLE_LOOP
+:DLE_OK
+if "!DL_PRIMARY!"=="0" if defined DLE_REF if exist "!DLE_REF!.etag" del /f /q "!DLE_REF!.etag" >nul 2>&1
+exit /b 0
+:DLE_FAIL
+if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
 set "CURL_TRY_NUM=0"
+if "!DL_NOTFOUND!"=="1" exit /b 1
+if not defined UB_DIR exit /b 1
+if exist "!UB_DIR!\rpz_download.log" for %%L in ("!UB_DIR!\rpz_download.log") do if %%~zL GTR 204800 del /f /q "%%~L" >nul 2>&1
+>>"!UB_DIR!\rpz_download.log" echo %date% %time% FALLITO !DLE_OUT! url=!DLE_URL1! http=!DL_HTTP! motivo=!DL_WHY!
 exit /b 1
+
+:: ------------------------------------------------------------------
+:: DL_ONE: un singolo tentativo. Usa DL_URL DL_XARGS DL_OUT DL_REF DL_RESUME DL_PRIMARY.
+:: ------------------------------------------------------------------
+:DL_ONE
+set "DL_HTTP=000"
+set "DL_RC=0"
+set "DL_TAGID=!RANDOM!!RANDOM!"
+set "DL_HDR=%TEMP%\ub_dlh_!DL_TAGID!.txt"
+set "DL_CODE=%TEMP%\ub_dlc_!DL_TAGID!.txt"
+set "DL_INM=%TEMP%\ub_dli_!DL_TAGID!.txt"
+set "DL_FLAGS=--ipv4 --location --connect-timeout 10 --speed-limit 10240 --speed-time 20 --max-time 600"
+set "DL_INM_OK="
+set "DL_REFZ=!DL_REF!"
+if not defined DL_REFZ set "DL_REFZ=%TEMP%\ub_dl_noref_!DL_TAGID!"
+if not "!DL_PRIMARY!"=="1" set "DL_REFZ=%TEMP%\ub_dl_noref_!DL_TAGID!"
+if "!DL_RESUME!"=="1" goto :DLO_NOINM
+if not "!DL_PRIMARY!"=="1" goto :DLO_NOINM
+if not defined DL_REF goto :DLO_NOINM
+if not exist "!DL_REF!" goto :DLO_NOINM
+if not exist "!DL_REF!.etag" goto :DLO_NOINM
+set "DLO_SZ="
+set "DLO_ET="
+for /f "usebackq tokens=1,2 delims=|" %%A in ("!DL_REF!.etag") do (
+    set "DLO_SZ=%%A"
+    set "DLO_ET=%%B"
+)
+set "DLO_RSZ=0"
+for %%I in ("!DL_REF!") do set "DLO_RSZ=%%~zI"
+if not "!DLO_SZ!"=="!DLO_RSZ!" goto :DLO_NOINM
+if not defined DLO_ET goto :DLO_NOINM
+>"!DL_INM!" echo If-None-Match: "!DLO_ET!"
+set "DL_INM_OK=1"
+:DLO_NOINM
+if "!DL_RESUME!"=="1" goto :DLO_C_RESUME
+if defined DL_INM_OK goto :DLO_C_INM
+curl -s -f !DL_FLAGS! -z "!DL_REFZ!" !DL_XARGS! -D "!DL_HDR!" -w "%%{http_code}" -o "!DL_OUT!" "!DL_URL!" >"!DL_CODE!" 2>nul
+goto :DLO_C_DONE
+:DLO_C_INM
+curl -s -f !DL_FLAGS! -H "@!DL_INM!" -z "!DL_REFZ!" !DL_XARGS! -D "!DL_HDR!" -w "%%{http_code}" -o "!DL_OUT!" "!DL_URL!" >"!DL_CODE!" 2>nul
+goto :DLO_C_DONE
+:DLO_C_RESUME
+curl -s -f !DL_FLAGS! -C - !DL_XARGS! -D "!DL_HDR!" -w "%%{http_code}" -o "!DL_OUT!" "!DL_URL!" >"!DL_CODE!" 2>nul
+:DLO_C_DONE
+set "DL_RC=!errorlevel!"
+if exist "!DL_CODE!" set /p DL_HTTP=<"!DL_CODE!"
+if "!DL_RC!"=="0" goto :DLO_RC_OK
+set "DL_WHY=curl rc=!DL_RC! http=!DL_HTTP!"
+if "!DL_HTTP!"=="404" if "!DL_PRIMARY!"=="1" set "DL_NOTFOUND=1"
+if "!DL_HTTP!"=="416" if exist "!DL_OUT!" del /f /q "!DL_OUT!" >nul 2>&1
+if "!DL_RC!"=="33" if exist "!DL_OUT!" del /f /q "!DL_OUT!" >nul 2>&1
+goto :DLO_FAIL
+:DLO_RC_OK
+if "!DL_HTTP!"=="304" goto :DLO_304
+if exist "!DL_OUT!" goto :DLO_VERIFY
+set "DL_WHY=curl ok ma file assente"
+goto :DLO_FAIL
+:DLO_304
+if exist "!DL_OUT!" del /f /q "!DL_OUT!" >nul 2>&1
+goto :DLO_OK
+:DLO_VERIFY
+call :DL_VERIFY
+if errorlevel 1 goto :DLO_FAIL
+if not "!DL_PRIMARY!"=="1" goto :DLO_OK
+if not defined DL_REF goto :DLO_OK
+if not exist "!DL_HDR!" goto :DLO_OK
+set "DLO_ETRAW="
+for /f "usebackq tokens=1,* delims=: " %%A in (`findstr /i /b "etag:" "!DL_HDR!"`) do set DLO_ETRAW=%%B
+if not defined DLO_ETRAW goto :DLO_OK
+if /i "!DLO_ETRAW:~0,2!"=="W/" goto :DLO_OK
+set "DLO_ETV=!DLO_ETRAW:"=!"
+echo !DLO_ETV!| findstr /r "^[0-9a-fA-F][0-9a-fA-F]*$" >nul
+if errorlevel 1 goto :DLO_OK
+>"!DL_REF!.etag" echo !DLV_SIZE!^|!DLO_ETV!
+:DLO_OK
+del /f /q "!DL_HDR!" "!DL_CODE!" "!DL_INM!" >nul 2>&1
+exit /b 0
+:DLO_FAIL
+del /f /q "!DL_HDR!" "!DL_CODE!" "!DL_INM!" >nul 2>&1
+exit /b 1
+
+:: ------------------------------------------------------------------
+:: DL_VERIFY: controlla il file DL_OUT appena scaricato. Errorlevel 1 = da scartare.
+:: Se e' solo incompleto (piu' corto di quanto dichiarato) il parziale resta per il
+:: resume del tentativo successivo, in tutti gli altri casi viene cancellato.
+:: ------------------------------------------------------------------
+:DL_VERIFY
+set "DLV_SIZE=0"
+for %%I in ("!DL_OUT!") do set "DLV_SIZE=%%~zI"
+if not "!DLV_SIZE!"=="0" goto :DLV_HDRS
+set "DL_WHY=file vuoto"
+del /f /q "!DL_OUT!" >nul 2>&1
+exit /b 1
+:DLV_HDRS
+set "DLV_CL="
+set "DLV_CR="
+set "DLV_CT="
+if not exist "!DL_HDR!" goto :DLV_EXP
+for /f "usebackq tokens=1,* delims=: " %%A in (`findstr /i /b "http/ content-length: content-range: content-type:" "!DL_HDR!"`) do (
+    set "DLV_T=%%A"
+    if /i "!DLV_T:~0,5!"=="HTTP/" (
+        set "DLV_CL="
+        set "DLV_CR="
+        set "DLV_CT="
+    )
+    if /i "%%A"=="content-length" set "DLV_CL=%%B"
+    if /i "%%A"=="content-range" set "DLV_CR=%%B"
+    if /i "%%A"=="content-type" set "DLV_CT=%%B"
+)
+if not defined DLV_CT goto :DLV_EXP
+echo !DLV_CT!| findstr /i "html" >nul
+if errorlevel 1 goto :DLV_EXP
+set "DL_WHY=content-type HTML (portale o pagina di errore)"
+del /f /q "!DL_OUT!" >nul 2>&1
+exit /b 1
+:DLV_EXP
+set "DLV_TOT="
+set "DLV_EXPECT="
+if defined DLV_CR for /f "tokens=2 delims=/" %%R in ("!DLV_CR!") do set "DLV_TOT=%%R"
+if not defined DLV_TOT if defined DLV_CL set "DLV_TOT=!DLV_CL!"
+if not defined DLV_TOT goto :DLV_CONTENT
+for /f "tokens=1" %%T in ("!DLV_TOT!") do set "DLV_TOT=%%T"
+echo !DLV_TOT!| findstr /r "^[0-9][0-9]*$" >nul
+if not errorlevel 1 set "DLV_EXPECT=!DLV_TOT!"
+if not defined DLV_EXPECT goto :DLV_CONTENT
+if "!DLV_SIZE!"=="!DLV_EXPECT!" goto :DLV_CONTENT
+if !DLV_SIZE! LSS !DLV_EXPECT! (
+    set "DL_WHY=incompleto: !DLV_SIZE! byte su !DLV_EXPECT!"
+    exit /b 1
+)
+set "DL_WHY=dimensione !DLV_SIZE! diversa da quella dichiarata !DLV_EXPECT!"
+del /f /q "!DL_OUT!" >nul 2>&1
+exit /b 1
+:DLV_CONTENT
+set "DLV_FIRST="
+set /p DLV_FIRST=<"!DL_OUT!"
+if not defined DLV_FIRST goto :DLV_ENTRIES
+if not "!DLV_FIRST:~0,1!"=="<" goto :DLV_ENTRIES
+set "DL_WHY=contenuto HTML invece della lista"
+del /f /q "!DL_OUT!" >nul 2>&1
+exit /b 1
+:DLV_ENTRIES
+if not "!DL_OUT:.part=!"=="!DL_OUT!" exit /b 0
+call :RPZ_ENTRIES_CHECK "!DL_OUT!"
+if not errorlevel 1 exit /b 0
+set "DL_WHY=voci RPZ inferiori a quelle dichiarate: !REC_CNT! su !REC_ENT!"
+del /f /q "!DL_OUT!" >nul 2>&1
+exit /b 1
+
+:: ------------------------------------------------------------------
+:: RPZ_ENTRIES_CHECK: se il file ha l'intestazione "; Number of entries: N" (liste HaGeZi)
+:: conta i record CNAME e confronta. Errorlevel 1 solo se i record sono MENO di N
+:: (file troncato o corrotto). Senza intestazione: errorlevel 0 (nessun controllo).
+:: Per TIF (diviso in parti) si usa sul file unificato, dove la somma deve tornare.
+:: Uso: call :RPZ_ENTRIES_CHECK "<file>"    Ritorna REC_ENT e REC_CNT.
+:: ------------------------------------------------------------------
+:RPZ_ENTRIES_CHECK
+set "REC_F=%~1"
+set "REC_ENT="
+set "REC_CNT=0"
+for /f "usebackq tokens=2 delims=: eol=~" %%E in (`%SystemRoot%\System32\findstr.exe /b /c:"; Number of entries:" "!REC_F!"`) do set /a REC_ENT=%%E 2>nul
+if not defined REC_ENT exit /b 0
+if !REC_ENT! LEQ 0 exit /b 0
+for /f "usebackq delims=" %%C in (`%SystemRoot%\System32\find.exe /c " CNAME ." ^< "!REC_F!"`) do set "REC_CNT=%%C"
+if !REC_CNT! LSS !REC_ENT! exit /b 1
+exit /b 0
 
 :: ==================================================================
 :: LASTGOOD_AGE_WARN - Controlla l'eta' di un file .raw.lastgood usato
