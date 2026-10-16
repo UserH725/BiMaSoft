@@ -4244,30 +4244,41 @@ $HtmlShell = @'
       rdReset(); rdSay('Server non raggiungibile.', 'err');
     });
   });
-  // === TITOLO SCHEDA A ROTAZIONE (v1107.1): con la radio in onda alterna indicazioni dashboard -> nome radio -> brano ===
+  // === TITOLO SCHEDA A ROTAZIONE (v1107.1; v1110.0: scorrimento piu' veloce e fluido, passo 150 ms) ===
   // Fasi fisse: indicazioni 4 s, radio 3 s, brano 4 s (se piu' lungo dello spazio nella linguetta scorre come un'insegna, un giro intero).
   // Radio ferma/in pausa o dashboard OFFLINE: nessuna rotazione, resta il titolo della dashboard. Brano assente: la fase viene saltata.
-  var baseT = '', rotPhase = 0, rotStep = 0, ROT_W = 24;
+  // v1110.0: la posizione dello scorrimento si calcola dal TEMPO REALE trascorso (non dal conteggio dei tick): se il browser ritarda un tick
+  // il testo non si ferma, recupera. Gli spazi del testo scorrevole sono spazi non separabili (U+00A0): il browser non li toglie ne' li riduce,
+  // quindi la finestra ha sempre la stessa larghezza e il testo avanza di un carattere alla volta, senza salti.
+  var baseT = '', rotPhase = 0, rotT0 = 0, ROT_W = 24, ROT_STEP = 150;   // ROT_STEP = ms per ogni carattere di scorrimento (era 500, poi 300)
+  function rotGo(ph) { rotPhase = ph; rotT0 = Date.now(); }
   function rotCompose() {
     var base = baseT || document.title;
-    if (!base || /OFFLINE/.test(base) || au.paused) { rotPhase = 0; rotStep = 0; return base; }
+    if (!base || /OFFLINE/.test(base) || au.paused) { rotPhase = 0; rotT0 = 0; return base; }
+    var now = Date.now();
+    if (!rotT0) rotT0 = now;
     var name = RADIO_STATIONS[cur] ? String(RADIO_STATIONS[cur].name).replace(/\s+/g, ' ').trim() : '';
     var song = (songEl.title || '').replace(/\s+/g, ' ').trim();
-    if (rotPhase === 1 && !name) { rotPhase = 2; rotStep = 0; }
-    if (rotPhase === 2 && !song) { rotPhase = 0; rotStep = 0; }
-    var out, dur;
-    if (rotPhase === 0) { out = base; dur = 8; }
-    else if (rotPhase === 1) { out = '\uD83D\uDCFB ' + name; dur = 6; }
+    if (rotPhase === 1 && !name) { rotGo(2); now = rotT0; }
+    if (rotPhase === 2 && !song) { rotGo(0); now = rotT0; }
+    var el = now - rotT0, out, dur;
+    if (rotPhase === 0) { out = base; dur = 4000; }
+    else if (rotPhase === 1) { out = '\uD83D\uDCFB ' + name; dur = 3000; }
     else {
-      var txt = '\u266A ' + song;
-      if (txt.length <= ROT_W) { out = txt; dur = 8; }
-      else { var loop = txt + '   \u266A   '; out = (loop + loop).substr(rotStep % loop.length, ROT_W); dur = loop.length; }
+      var txt = ('\u266A ' + song).replace(/ /g, '\u00A0');
+      if (txt.length <= ROT_W) { out = txt; dur = 4000; }
+      else {
+        var gap = '\u00A0\u00A0\u00A0\u266A\u00A0\u00A0\u00A0';
+        var loop = txt + gap;
+        out = (loop + loop).substr(Math.floor(el / ROT_STEP) % loop.length, ROT_W);
+        dur = loop.length * ROT_STEP;
+      }
     }
-    rotStep++;
-    if (rotStep >= dur) { rotStep = 0; rotPhase = (rotPhase + 1) % 3; }
+    if (el >= dur) rotGo((rotPhase + 1) % 3);
     return out;
   }
-  setInterval(function () { var t2 = rotCompose(); if (t2 && t2 !== document.title) document.title = t2; }, 500);
+  // Controllo ogni 25 ms (costa nulla; con passo 150 ms tiene il ritmo regolare): il titolo viene riscritto solo quando il testo cambia davvero, cioe' ogni ROT_STEP ms mentre scorre
+  setInterval(function () { var t2 = rotCompose(); if (t2 && t2 !== document.title) document.title = t2; }, 25);
   startRadio(false);
   f.src = location.pathname + location.search;
   // La dashboard vive nel frame: titolo (pallini colorati), favicon e indirizzo vengono ricopiati sulla scheda del browser
@@ -4728,7 +4739,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1109.0 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -6164,7 +6175,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1109.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7008,7 +7019,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1109.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
