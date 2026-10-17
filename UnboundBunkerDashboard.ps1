@@ -3450,10 +3450,18 @@ $HtmlShell = @'
 <link rel="icon" id="shellIcon" href="data:,">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; color-scheme: dark; overflow: hidden; }
-  body { display: flex; flex-direction: column; position: relative; }
-  #radioBar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 12px; height: 52px; padding: 0 14px; background: #000; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
-  #radioBtn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #555; background: #111; color: #fff; font-size: 14px; cursor: pointer; padding: 0; line-height: 1; }
-  #radioBtn:hover { background: #222; border-color: #888; }
+  body { display: flex; flex-direction: column; position: relative; z-index: 0; }
+  #radioBar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 12px; height: 52px; padding: 0 14px; position: relative; background: transparent; border-bottom: 1px solid #222; color: #e8e8e8; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; user-select: none; }
+  #radioNotes { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  #radioNotes .rn { position: absolute; top: 40px; line-height: 1; will-change: transform, opacity; opacity: 0; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+  @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 15% { opacity: 0.85; } 100% { transform: translateY(-64px) rotate(14deg); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #radioNotes { display: none; } }
+  #radioBtn { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.85); background: linear-gradient(135deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 400% 400%; animation: rbFlow 5s linear infinite, rbGlow 2.4s ease-in-out infinite; color: #fff; font-size: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.65); cursor: pointer; padding: 0; line-height: 1; transition: transform .15s ease; }
+  #radioBtn:hover { transform: scale(1.12); animation-duration: 2s, 1.2s; }
+  #radioBtn:active { transform: scale(0.94); }
+  @keyframes rbFlow { 0% { background-position: 0% 50%; } 100% { background-position: 400% 50%; } }
+  @keyframes rbGlow { 0%, 100% { box-shadow: 0 0 8px 1px rgba(255,45,149,0.55); } 33% { box-shadow: 0 0 14px 3px rgba(255,230,0,0.55); } 66% { box-shadow: 0 0 14px 3px rgba(0,200,255,0.6); } }
+  @media (prefers-reduced-motion: reduce) { #radioBtn { animation: none; } }
   #radioViz { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 2px; width: 110px; height: 30px; opacity: 0; transition: opacity .25s; }
   #radioViz.on { opacity: 1; }
   #radioBuf { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 92px; height: 30px; opacity: 0; transition: opacity .25s; }
@@ -3567,6 +3575,7 @@ $HtmlShell = @'
 </head>
 <body>
 <div id="radioBar">
+  <div id="radioNotes" aria-hidden="true"></div>
   <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
   <div id="radioViz" aria-hidden="true"></div>
   <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
@@ -3643,8 +3652,54 @@ $HtmlShell = @'
     { name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023'] },
     { name: 'RMC Greatest Artists', urls: ['http://edge.radiomontecarlo.net/rmcweb007'] },
     { name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds' },
+    { name: '80s Pop Vibes', urls: ['https://oldies.streeemer.com/listen/oldies/radio.aac'] },
+    { name: '80s 90s Super Pop Hits', urls: ['https://s4.myradiostream.com:7344/listen.mp3?nocache=1792243995', 'https://s4.myradiostream.com/7344/listen.mp3'] },
+    { name: 'Beam FM - Adult Hits', urls: ['https://beamadult.streeemer.com/listen/beamadult/radio.aac'] },
+    { name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac'] },
+    { name: 'Latina Bachata', urls: ['https://latinabachata.ice.infomaniak.ch/latinabachata.mp3'] },
+    { name: 'RMC - Blue Moon', urls: ['https://icy.unitedradio.it/rmcweb017?aw_0_req.userConsentV2=CQLr0EAQLr0EAB7FGBITBZFsAP_gAAAAAAAAKwtX_G__bXlr8X736ftkeY1f99h77sQxBhbJk-4FzLvW_JwX32EzNA36tqYKmRIAu3TBIQNlHJDURVCgaogVrzDMaEyUoTtKJ6BkiFMRY2dYCFxvm4tjeQCY5vr991d52R-t7dr83dzyy4hnv3a9_-S1WJCdA5-'] },
+    { name: 'Radio Musica Latina', urls: ['https://nrf1.newradio.it:9806/stream'] },
+    { name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6'] },
+    { name: 'Latino Mix', urls: ['https://dattavolt.com/8052/stream'] },
+    { name: 'NRJ FIESTA LATINA', urls: ['https://streaming.nrjaudio.fm/ourf5qvukkaq?aw_0_1st.station=NRJ-Fiesta-Latina&origine=mytuner'] },
+    { name: 'Latina Kizomba', urls: ['https://latinakizomba.ice.infomaniak.ch/latinakizomba.mp3'] },
+    { name: 'NOSTALGIE CELINE DION', urls: ['https://streaming.nrjaudio.fm/ou2q4fpw5hs7?origine=mytuner'] },
+    { name: 'Exclusively Celine Dion', urls: ['https://streaming.exclusive.radio/er/celinedion/icecast.audio'] },
+    { name: 'Exclusively George Michael', urls: ['https://streaming.exclusive.radio/er/georgemichael/icecast.audio'] },
+    { name: 'Easy Celine Dion', urls: ['https://streaming.exclusive.radio/uber/easycelinedion/icecast.audio'] },
+    { name: 'Exclusively Whitney Houston - HITS', urls: ['https://streaming.exclusive.radio/er/whitneyhoustonhits/icecast.audio'] },
+    { name: 'Exclusively Phil Collins', urls: ['https://streaming.exclusive.radio/er/philcollins/icecast.audio'] },
+    { name: 'Exclusively Fleetwood Mac', urls: ['https://streaming.exclusive.radio/er/fleetwoodmac/icecast.audio'] },
+    { name: 'Exclusively Elton John', urls: ['https://streaming.exclusive.radio/er/eltonjohn/icecast.audio'] },
+    { name: 'Exclusively Queen', urls: ['https://streaming.exclusive.radio/er/queen/icecast.audio'] },
+    { name: 'Exclusively Supertramp', urls: ['https://streaming.exclusive.radio/er/supertramp/icecast.audio'] },
+    { name: 'Exclusively Santana', urls: ['https://streaming.exclusive.radio/er/santana/icecast.audio'] },
+    { name: 'Exclusively U2', urls: ['https://streaming.exclusive.radio/er/u2/icecast.audio'] },
+    { name: 'Exclusively Scorpions', urls: ['https://streaming.exclusive.radio/er/scorpions/icecast.audio'] },
+    { name: 'Exclusively Dire Straits', urls: ['https://streaming.exclusive.radio/er/direstraits/icecast.audio'] },
+    { name: 'Exclusively Pink Floyd', urls: ['https://streaming.exclusive.radio/er/pinkfloyd/icecast.audio'] },
+    { name: 'Exclusively Rolling Stones', urls: ['https://streaming.exclusive.radio/er/rollingstones/icecast.audio'] },
+    { name: 'Exclusively The Beatles', urls: ['https://streaming.exclusive.radio/er/beatles/icecast.audio'] },
+    { name: 'Exclusively Michael Jackson', urls: ['https://streaming.exclusive.radio/er/michaeljackson/icecast.audio'] },
     // RADIO_LIST_END
   ];
+  // Sfondo animato della barra radio: note musicali colorate che salgono in continuo (numero proporzionale alla larghezza)
+  (function () {
+    var box = document.getElementById('radioNotes');
+    if (!box) return;
+    var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'], rsT = null;
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function build() {
+      var n = Math.max(20, Math.min(90, Math.round(box.clientWidth / 26))), i, e, d, html = [];
+      for (i = 0; i < n; i++) {
+        d = rnd(2.4, 4.2);
+        html.push('<span class="rn" style="left:' + rnd(1, 97).toFixed(1) + '%;font-size:' + Math.round(rnd(15, 24)) + 'px;color:' + COL[Math.floor(Math.random() * COL.length)] + ';animation-duration:' + d.toFixed(2) + 's;animation-delay:-' + rnd(0, d).toFixed(2) + 's">' + GLY[Math.floor(Math.random() * GLY.length)] + '</span>');
+      }
+      box.innerHTML = html.join('');
+    }
+    build();
+    window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
+  })();
   var STREAMS = RADIO_STATIONS[0].urls;
   var sIdx = 0;
   var au = document.getElementById('radioAudio'), btn = document.getElementById('radioBtn');
@@ -10002,8 +10057,8 @@ try {
                             } else {
                                 $raBlock = $raText.Substring($iB, $iE - $iB)
                                 $raNames = @([regex]::Matches($raBlock, "name:\s*'([^']*)'") | ForEach-Object { $_.Groups[1].Value })
-                                if ($raNames.Count -ge 30) {
-                                    $raBody = '{"ok":false,"error":"Elenco pieno (massimo 30 radio)"}'
+                                if ($raNames.Count -ge 100) {
+                                    $raBody = '{"ok":false,"error":"Elenco pieno (massimo 100 radio)"}'
                                 } elseif (@($raNames | Where-Object { $_ -ieq $raName }).Count -gt 0) {
                                     $raBody = '{"ok":false,"error":"Esiste gia una radio con questo nome"}'
                                 } else {
