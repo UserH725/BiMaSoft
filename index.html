@@ -13,7 +13,7 @@
   button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
-  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: rgba(0,0,0,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); border-bottom: 1px solid #222; }
+  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   main { position: relative; z-index: 1; }
   #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
@@ -66,12 +66,52 @@
   #none[hidden] { display: none; }
 
   @media (max-width: 560px) { #vol { display: none; } #player { gap: 12px; } }
-  @media (prefers-reduced-motion: reduce) { #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
+
+  /* === Cornice del player: gradiente pieno, sfumato (sfocato) tra i colori e in movimento. 9 varianti da provare === */
+  @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+  #player::before { content: ""; position: absolute; inset: -34px; z-index: -1; filter: blur(22px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #player.fo::before { opacity: 0; }
+  #player::after  { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
+  #player[data-g="0"]::before, #player[data-g="0"]::after { display: none; }
+  #player[data-g="0"] { background: rgba(0,0,0,.55); }
+  #nowSt { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  @keyframes gx { to { background-position: 200% 0; } }
+  @keyframes gdiag { to { background-position: 200% 200%; } }
+  @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
+  @keyframes gspin { to { --ang: 360deg; } }
+  /* 1 Arcobaleno */
+  #player[data-g="1"]::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  /* 2 Aurora (macchie di luce che si muovono) */
+  #player[data-g="2"]::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
+    background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%);
+    animation: gblob 16s ease-in-out infinite alternate; }
+  /* 3 Tramonto */
+  #player[data-g="3"]::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  /* 4 Oceano */
+  #player[data-g="4"]::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  /* 5 Fuoco */
+  #player[data-g="5"]::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
+  /* 6 Foresta / lime */
+  #player[data-g="6"]::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  /* 7 Caramella */
+  #player[data-g="7"]::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  /* 8 Giostra (gradiente conico che ruota) */
+  #player[data-g="8"]::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
+  /* 9 Lava (macchie calde, piu' veloci) */
+  #player[data-g="9"]::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
+    background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%);
+    animation: gblob 8s ease-in-out infinite alternate; }
+  /* selettore di prova (da togliere dopo la scelta) */
+  #gp { position: fixed; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(0,0,0,.82); border: 1px solid #444; border-radius: 999px; font-size: 13px; max-width: 96vw; }
+  #gp button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #666; background: #1a1a1a; cursor: pointer; padding: 0; }
+  #gp button.on { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
+  #gp span { white-space: nowrap; color: #ccc; min-width: 78px; }
 </style>
 </head>
 <body>
 <div id="notes" aria-hidden="true"></div>
-<header id="player">
+<header id="player" data-g="1">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
     <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
@@ -88,6 +128,8 @@
   <ul id="list"></ul>
   <p id="none" hidden>Nessuna radio trovata. Prova con un altro nome.</p>
 </main>
+
+<div id="gp" role="group" aria-label="Prova gradiente"><span id="gpn">1 Arcobaleno</span></div>
 
 <audio id="au" preload="none" playsinline></audio>
 
@@ -498,6 +540,38 @@
     }
     build();
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
+  })();
+  // Selettore di prova per la cornice del player
+  (function () {
+    var NAMES = ['Nessuno', 'Arcobaleno', 'Aurora', 'Tramonto', 'Oceano', 'Fuoco', 'Foresta', 'Caramella', 'Giostra', 'Lava'];
+    var pl = document.getElementById('player'), gp = document.getElementById('gp'), gpn = document.getElementById('gpn'), i, b;
+    var cur = 1, tm = null, fadeT = null, PERIOD = 60000;
+    function mark(g) {
+      gpn.textContent = g + ' ' + NAMES[g];
+      Array.prototype.forEach.call(gp.querySelectorAll('button'), function (x) { x.classList.toggle('on', x.getAttribute('data-g') === String(g)); });
+      try { store('radioGrad', g); } catch (e) {}
+    }
+    // Cambio con dissolvenza: la cornice sfuma, cambia variante e riappare
+    function set(g, instant) {
+      g = parseInt(g, 10); cur = g; mark(g);
+      clearTimeout(fadeT);
+      if (instant || g === 0 || pl.getAttribute('data-g') === '0') { pl.classList.remove('fo'); pl.setAttribute('data-g', g); return; }
+      pl.classList.add('fo');
+      fadeT = setTimeout(function () { pl.setAttribute('data-g', g); pl.classList.remove('fo'); }, 900);
+    }
+    // Rotazione continua: ogni variante (da 1 a 9) resta 1 minuto, poi passa alla successiva e ricomincia
+    function startRot() {
+      clearInterval(tm);
+      tm = setInterval(function () { set(cur >= 9 || cur < 1 ? 1 : cur + 1); }, PERIOD);
+    }
+    for (i = 0; i < NAMES.length; i++) {
+      b = document.createElement('button'); b.type = 'button'; b.textContent = i; b.title = NAMES[i]; b.setAttribute('data-g', i);
+      b.addEventListener('click', function () { set(this.getAttribute('data-g')); startRot(); });
+      gp.appendChild(b);
+    }
+    var sv = parseInt(load('radioGrad'), 10);
+    set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
+    startRot();
   })();
 </script>
 </body>
