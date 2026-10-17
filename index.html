@@ -13,10 +13,11 @@
   button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
-  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid #222; overflow: hidden; }
-  #notes { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-  #notes .rn { position: absolute; top: 60px; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
-  @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 15% { opacity: .85; } 100% { transform: translateY(-84px) rotate(14deg); opacity: 0; } }
+  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: rgba(0,0,0,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); border-bottom: 1px solid #222; }
+  #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  main { position: relative; z-index: 1; }
+  #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+  @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
   #btn { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); cursor: pointer; padding: 0; font-size: 22px; line-height: 1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.65);
          background: linear-gradient(135deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 400% 400%;
@@ -51,7 +52,7 @@
   #list li { border-bottom: 1px solid #1d1d1d; }
   #list li[hidden] { display: none; }
   .st { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 6px 8px; background: none; border: 0; border-radius: 6px; text-align: left; cursor: pointer; }
-  .st:hover { background: #151515; }
+  .st:hover { background: rgba(255,255,255,.07); }
   .st .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .st .ic { flex: 0 0 22px; width: 22px; text-align: center; color: #6a6a6a; font-size: 14px; }
   .st.cur .nm { color: #fff; }
@@ -69,8 +70,8 @@
 </style>
 </head>
 <body>
+<div id="notes" aria-hidden="true"></div>
 <header id="player">
-  <div id="notes" aria-hidden="true"></div>
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
     <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
@@ -291,11 +292,29 @@
 
   // === Titolo del brano in onda: mostrato subito a destra del pulsante, al posto del nome della radio ===
   // Il browser legge i dati direttamente dal server di ogni radio: funziona solo dove quel server lo permette (CORS). Dove non e' possibile resta il nome della radio.
+  // Titolo della scheda del browser: il brano scorre (se e' lungo) e poi compare il nome della radio, a rotazione
+  var tabSong = '', tabName = '', tabI = 0, tabT = null, TAB_W = 26;
+  function tabSet(sg, nm) {
+    if (sg === tabSong && nm === tabName) return;
+    tabSong = sg; tabName = nm; tabI = 0;
+    clearInterval(tabT); tabT = null;
+    if (!sg) { document.title = nm ? nm + ' \u00B7 Radio' : 'Radio'; return; }
+    tabTick(); tabT = setInterval(tabTick, 350);
+  }
+  function tabTick() {
+    var s = '\u266A ' + tabSong + '   \u2022   ', n = s.length, hold = 9, name = tabName || 'Radio';
+    // fasi: [0..hold) brano fermo all'inizio, poi scorrimento di un giro intero (solo se piu' lungo della finestra), poi nome radio fermo
+    var scroll = n - 7 > TAB_W ? n : 0, total = hold + scroll + hold, k = tabI % total, t;
+    if (k < hold) t = (s.length - 7 > TAB_W ? s : tabSong.length ? '\u266A ' + tabSong : s).slice(0, TAB_W + 8);
+    else if (k < hold + scroll) { var o = k - hold; t = (s + s).substr(o, TAB_W + 8); }
+    else t = '\u266B ' + name;
+    document.title = t; tabI++;
+  }
   function updateNow() {
     var name = cur >= 0 ? STATIONS[cur].name : '', txt = song ? '\u266A ' + song : (name || 'Scegli una radio');
     nowName.title = song || name;
     nowTx.textContent = stText + (song && name ? ' \u00B7 ' + name : '');
-    document.title = song ? song + ' \u00B7 Radio' : (name ? name + ' \u00B7 Radio' : 'Radio');
+    tabSet(song, name);
     if (nowTxt.textContent !== txt) { nowTxt.textContent = txt; fit(); }
   }
   // Titolo piu' largo dello spazio disponibile: scorre avanti e indietro, con una pausa a ogni estremo
@@ -470,9 +489,9 @@
     var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'];
     function rnd(a, b) { return a + Math.random() * (b - a); }
     function build() {
-      var n = Math.max(20, Math.min(90, Math.round(box.clientWidth / 26))), i, d, h = [];
+      var n = Math.max(24, Math.min(80, Math.round(box.clientWidth * box.clientHeight / 16000))), i, d, h = [];
       for (i = 0; i < n; i++) {
-        d = rnd(2.4, 4.2);
+        d = rnd(9, 18);
         h.push('<span class="rn" style="left:' + rnd(1, 97).toFixed(1) + '%;font-size:' + Math.round(rnd(15, 24)) + 'px;color:' + COL[Math.floor(Math.random() * COL.length)] + ';animation-duration:' + d.toFixed(2) + 's;animation-delay:-' + rnd(0, d).toFixed(2) + 's">' + GLY[Math.floor(Math.random() * GLY.length)] + '</span>');
       }
       box.innerHTML = h.join('');
