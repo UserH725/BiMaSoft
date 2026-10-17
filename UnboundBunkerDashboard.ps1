@@ -3632,7 +3632,7 @@ $HtmlShell = @'
     { name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025'] },
     { name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio' },
     { name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json' },
-    { name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3'] },
+    { name: '105 Dance 90', urls: ['https://icy.unitedradio.it/105Dance90.mp3'] },
     { name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac' },
     { name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir' },
     { name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'] },
