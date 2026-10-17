@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>Radio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='78' font-size='84' text-anchor='middle' fill='%23ff2d95'%3E%E2%99%AB%3C/text%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; color: #e8e8e8; font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; font-size: 15px; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
+
+  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid #222; overflow: hidden; }
+  #notes { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  #notes .rn { position: absolute; top: 60px; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+  @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 15% { opacity: .85; } 100% { transform: translateY(-84px) rotate(14deg); opacity: 0; } }
+
+  #btn { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); cursor: pointer; padding: 0; font-size: 22px; line-height: 1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.65);
+         background: linear-gradient(135deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 400% 400%;
+         animation: rbFlow 5s linear infinite, rbGlow 2.4s ease-in-out infinite; transition: transform .15s ease; }
+  #btn:hover { transform: scale(1.1); animation-duration: 2s, 1.2s; }
+  #btn:active { transform: scale(.94); }
+  @keyframes rbFlow { to { background-position: 400% 50%; } }
+  @keyframes rbGlow { 0%, 100% { box-shadow: 0 0 8px 1px rgba(255,45,149,.55); } 33% { box-shadow: 0 0 14px 3px rgba(255,230,0,.55); } 66% { box-shadow: 0 0 14px 3px rgba(0,200,255,.6); } }
+
+  #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #nowName { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+  #nowName span { display: inline-block; }
+  #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
+  @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
+  #nowSt { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 13px; color: #9a9a9a; }
+  .led { width: 9px; height: 9px; border-radius: 50%; background: #666; flex: 0 0 auto; }
+  #nowSt.on { color: #3ddc84; } #nowSt.on .led { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
+  #nowSt.buf { color: #ffd24d; } #nowSt.buf .led { background: #ffd24d; animation: blink 1s ease-in-out infinite; }
+  #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  #vol { flex: 0 0 auto; width: 110px; accent-color: #4fb3ff; }
+
+  main { max-width: 980px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom, 0px)); }
+  .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; }
+  #count { color: #9a9a9a; font-size: 14px; }
+  #find { flex: 1 1 200px; max-width: 360px; margin-left: auto; height: 38px; padding: 0 12px; background: #111; border: 1px solid #555; border-radius: 6px; }
+  #find:focus { outline: none; border-color: #4fb3ff; }
+
+  #list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 18px; }
+  #list li { border-bottom: 1px solid #1d1d1d; }
+  #list li[hidden] { display: none; }
+  .st { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 6px 8px; background: none; border: 0; border-radius: 6px; text-align: left; cursor: pointer; }
+  .st:hover { background: #151515; }
+  .st .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .st .ic { flex: 0 0 22px; width: 22px; text-align: center; color: #6a6a6a; font-size: 14px; }
+  .st.cur .nm { color: #fff; }
+  .st.cur .ic { color: #4fb3ff; }
+  .eq { flex: 0 0 22px; width: 22px; height: 18px; display: none; align-items: flex-end; justify-content: center; gap: 3px; }
+  .eq i { width: 4px; height: 100%; border-radius: 1px; transform-origin: bottom; animation: eq .9s ease-in-out infinite; }
+  .eq i:nth-child(1) { background: #ff2d95; animation-delay: -.2s; } .eq i:nth-child(2) { background: #ffe600; animation-delay: -.5s; } .eq i:nth-child(3) { background: #00c8ff; animation-delay: -.8s; }
+  @keyframes eq { 0%, 100% { transform: scaleY(.2); } 50% { transform: scaleY(1); } }
+  .st.cur.live .eq { display: flex; } .st.cur.live .ic { display: none; }
+  #none { color: #9a9a9a; padding: 18px 8px; }
+  #none[hidden] { display: none; }
+
+  @media (max-width: 560px) { #vol { display: none; } #player { gap: 12px; } }
+  @media (prefers-reduced-motion: reduce) { #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
+</style>
+</head>
+<body>
+<header id="player">
+  <div id="notes" aria-hidden="true"></div>
+  <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
+  <div id="now">
+    <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
+    <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
+  </div>
+  <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
+</header>
+
+<main>
+  <div class="head">
+    <h1>Radio</h1><span id="count"></span>
+    <input id="find" type="search" placeholder="Cerca una radio" aria-label="Cerca una radio" autocomplete="off">
+  </div>
+  <ul id="list"></ul>
+  <p id="none" hidden>Nessuna radio trovata. Prova con un altro nome.</p>
+</main>
+
+<audio id="au" preload="none" playsinline></audio>
+
+<script>
+  // Elenco delle radio: per aggiungerne una basta una riga nuova { name: 'Nome', urls: ['https://...'] }.
+  // Con piu' indirizzi in urls, se il primo non risponde la pagina prova automaticamente il successivo.
+  // info (facoltativo) = pagina della radio che pubblica il brano in onda.
+  var STATIONS = [
+    {name: '105 Dance 90', urls: ['http://icy.unitedradio.it/105Dance90.mp3']},
+    {name: '80s 90s Super Pop Hits', urls: ['https://s4.myradiostream.com:7344/listen.mp3?nocache=1792243995', 'https://s4.myradiostream.com/7344/listen.mp3']},
+    {name: '80s Pop Vibes', urls: ['https://oldies.streeemer.com/listen/oldies/radio.aac']},
+    {name: 'Back to the 80s', urls: ['http://s1.nexuscast.com:8135/;;audio.mp3']},
+    {name: 'Beam FM - Adult Hits', urls: ['https://beamadult.streeemer.com/listen/beamadult/radio.aac']},
+    {name: 'Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8']},
+    {name: 'Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8']},
+    {name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8']},
+    {name: 'Easy Celine Dion', urls: ['https://streaming.exclusive.radio/uber/easycelinedion/icecast.audio']},
+    {name: 'Exclusively Celine Dion', urls: ['https://streaming.exclusive.radio/er/celinedion/icecast.audio']},
+    {name: 'Exclusively Dire Straits', urls: ['https://streaming.exclusive.radio/er/direstraits/icecast.audio']},
+    {name: 'Exclusively Elton John', urls: ['https://streaming.exclusive.radio/er/eltonjohn/icecast.audio']},
+    {name: 'Exclusively Fleetwood Mac', urls: ['https://streaming.exclusive.radio/er/fleetwoodmac/icecast.audio']},
+    {name: 'Exclusively George Michael', urls: ['https://streaming.exclusive.radio/er/georgemichael/icecast.audio']},
+    {name: 'Exclusively Michael Jackson', urls: ['https://streaming.exclusive.radio/er/michaeljackson/icecast.audio']},
+    {name: 'Exclusively Phil Collins', urls: ['https://streaming.exclusive.radio/er/philcollins/icecast.audio']},
+    {name: 'Exclusively Pink Floyd', urls: ['https://streaming.exclusive.radio/er/pinkfloyd/icecast.audio']},
+    {name: 'Exclusively Queen', urls: ['https://streaming.exclusive.radio/er/queen/icecast.audio']},
+    {name: 'Exclusively Rolling Stones', urls: ['https://streaming.exclusive.radio/er/rollingstones/icecast.audio']},
+    {name: 'Exclusively Santana', urls: ['https://streaming.exclusive.radio/er/santana/icecast.audio']},
+    {name: 'Exclusively Scorpions', urls: ['https://streaming.exclusive.radio/er/scorpions/icecast.audio']},
+    {name: 'Exclusively Supertramp', urls: ['https://streaming.exclusive.radio/er/supertramp/icecast.audio']},
+    {name: 'Exclusively The Beatles', urls: ['https://streaming.exclusive.radio/er/beatles/icecast.audio']},
+    {name: 'Exclusively U2', urls: ['https://streaming.exclusive.radio/er/u2/icecast.audio']},
+    {name: 'Exclusively Whitney Houston - HITS', urls: ['https://streaming.exclusive.radio/er/whitneyhoustonhits/icecast.audio']},
+    {name: 'Latina Bachata', urls: ['https://latinabachata.ice.infomaniak.ch/latinabachata.mp3']},
+    {name: 'Latina Kizomba', urls: ['https://latinakizomba.ice.infomaniak.ch/latinakizomba.mp3']},
+    {name: 'Latino Mix', urls: ['https://dattavolt.com/8052/stream']},
+    {name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json'},
+    {name: 'NOSTALGIE CELINE DION', urls: ['https://streaming.nrjaudio.fm/ou2q4fpw5hs7?origine=mytuner']},
+    {name: 'NRJ FIESTA LATINA', urls: ['https://streaming.nrjaudio.fm/ourf5qvukkaq?aw_0_1st.station=NRJ-Fiesta-Latina&origine=mytuner']},
+    {name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/']},
+    {name: 'Radio Country Live', urls: ['https://streaming.radiostreamlive.com/radiocountrylive_devices']},
+    {name: 'Radio Cuore', urls: ['https://stream10.xdevel.com/audio32s975552-1839/stream/icecast.audio']},
+    {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir'},
+    {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices']},
+    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac']},
+    {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6']},
+    {name: 'Radio Love Live', urls: ['https://streaming.radiostreamlive.com/radiolovelive_devices']},
+    {name: 'Radio Miami Beach Live', urls: ['https://streaming.radiostreamlive.com/miamibeachradio_devices']},
+    {name: 'Radio Musica Latina', urls: ['https://nrf1.newradio.it:9806/stream']},
+    {name: 'Radio New York Live', urls: ['https://streaming.radiostreamlive.com/radionylive_devices']},
+    {name: 'Radio North Pole', urls: ['https://streaming.radiostreamlive.com/radionorthpole_devices']},
+    {name: 'Radio Santa Claus', urls: ['https://streaming.radiostreamlive.com/radiosantaclaus_devices']},
+    {name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio'},
+    {name: 'Radio Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo'},
+    {name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds'},
+    {name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac'},
+    {name: 'RMC - Blue Moon', urls: ['https://icy.unitedradio.it/rmcweb017?aw_0_req.userConsentV2=CQLr0EAQLr0EAB7FGBITBZFsAP_gAAAAAAAAKwtX_G__bXlr8X736ftkeY1f99h77sQxBhbJk-4FzLvW_JwX32EzNA36tqYKmRIAu3TBIQNlHJDURVCgaogVrzDMaEyUoTtKJ6BkiFMRY2dYCFxvm4tjeQCY5vr991d52R-t7dr83dzyy4hnv3a9_-S1WJCdA5-']},
+    {name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023']},
+    {name: 'RMC Greatest Artists', urls: ['http://edge.radiomontecarlo.net/rmcweb007']},
+    {name: 'RMC Love Song', urls: ['http://edge.radiomontecarlo.net/rmcweb006']},
+    {name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025']},
+    {name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac']}
+  ];
+
+  // Ordine alfabetico automatico (anche per le radio aggiunte in futuro), numeri in ordine naturale
+  STATIONS.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true }); });
+
+  var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
+  var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
+  var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
+  var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
+  var nowTxt = document.getElementById('nowTxt');
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  // Su una pagina https il browser blocca gli stream http: si prova la versione https (gli indirizzi IP numerici si saltano, il certificato non combacerebbe)
+  function candidates(st) {
+    var out = [], secure = location.protocol === 'https:';
+    st.urls.forEach(function (u) {
+      if (secure && /^http:\/\//i.test(u)) {
+        if (/^http:\/\/\d+\.\d+\.\d+\.\d+/i.test(u)) return;
+        u = u.replace(/^http:/i, 'https:');
+      }
+      if (out.indexOf(u) < 0) out.push(u);
+    });
+    return out;
+  }
+
+  function setSt(cls, txt) { nowSt.className = cls; stText = txt; updateNow(); render(); }
+  function render() {
+    var live = nowSt.className === 'on';
+    btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;';
+    items.forEach(function (b, i) {
+      var on = i === cur;
+      b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function teardown() {
+    clearTimeout(retryT); clearTimeout(stalledT);
+    if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+  }
+  function haltAudio() { au.pause(); au.removeAttribute('src'); au.load(); }
+
+  function loadHls(cb) {
+    if (window.Hls) { cb(true); return; }
+    if (hlsLoading) { hlsLoading.push(cb); return; }
+    hlsLoading = [cb];
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js';
+    s.onload = function () { var q = hlsLoading; hlsLoading = null; q.forEach(function (f) { f(true); }); };
+    s.onerror = function () { var q = hlsLoading; hlsLoading = null; q.forEach(function (f) { f(false); }); };
+    document.head.appendChild(s);
+  }
+
+  function onPlayErr(g) {
+    return function (err) {
+      if (g !== gen) return;
+      if (err && err.name === 'NotAllowedError') { setSt('off', 'tocca play per avviare'); wantPlay = false; render(); return; }
+      if (err && err.name === 'AbortError') return;
+      next(g);
+    };
+  }
+
+  function start() {
+    teardown();
+    var g = ++gen, u = cands[uIdx];
+    song = '';
+    if (!u) { setSt('err', 'nessun indirizzo disponibile'); return; }
+    setSt('buf', tries ? 'riconnessione...' : 'connessione...');
+    if (/\.m3u8(\?|$)/i.test(u)) {
+      loadHls(function (ok) {
+        if (g !== gen) return;
+        if (ok && window.Hls && Hls.isSupported()) {
+          hls = new Hls({ lowLatencyMode: false });
+          hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
+          hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
+          hls.loadSource(u); hls.attachMedia(au);
+        } else if (au.canPlayType('application/vnd.apple.mpegurl')) {
+          au.src = u; au.play().catch(onPlayErr(g));
+        } else { next(g); }
+      });
+    } else {
+      au.src = (u.indexOf('?') < 0) ? u : u + '&_=' + Date.now();
+      au.play().catch(onPlayErr(g));
+    }
+  }
+
+  // Prova l'indirizzo successivo; dopo due giri completi senza successo si ferma e lo dice
+  function next(g) {
+    if (g !== gen || !wantPlay) return;
+    tries++;
+    if (tries >= cands.length * 2) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
+    uIdx = (uIdx + 1) % cands.length;
+    setSt('buf', 'riconnessione...');
+    clearTimeout(retryT);
+    retryT = setTimeout(start, uIdx === 0 ? 2500 : 600);
+  }
+
+  function select(i, autoplay) {
+    cur = i; uIdx = 0; tries = 0;
+    cands = candidates(STATIONS[i]);
+    song = '';
+    store('radioLast', STATIONS[i].name);
+    setMedia();
+    if (autoplay) { wantPlay = true; start(); } else { setSt('off', 'pronta'); }
+  }
+  function stop() { wantPlay = false; song = ''; ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
+  function step(d) { if (!STATIONS.length) return; select(((cur < 0 ? 0 : cur) + d + STATIONS.length) % STATIONS.length, true); }
+
+  function setMedia() {
+    if (!('mediaSession' in navigator) || cur < 0 || !window.MediaMetadata) return;
+    navigator.mediaSession.metadata = new MediaMetadata({ title: song || STATIONS[cur].name, artist: song ? STATIONS[cur].name : 'Radio' });
+  }
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setActionHandler('play', function () { if (cur >= 0) select(cur, true); });
+      navigator.mediaSession.setActionHandler('pause', stop);
+      navigator.mediaSession.setActionHandler('previoustrack', function () { step(-1); });
+      navigator.mediaSession.setActionHandler('nexttrack', function () { step(1); });
+    } catch (e) {}
+  }
+
+  au.addEventListener('playing', function () { clearTimeout(stalledT); tries = 0; setSt('on', 'in onda'); });
+  au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
+  au.addEventListener('error', function () { if (wantPlay && !hls) next(gen); });
+  au.addEventListener('ended', function () { if (wantPlay) next(gen); });
+  au.addEventListener('stalled', function () {
+    if (!wantPlay) return;
+    var g = gen; clearTimeout(stalledT);
+    stalledT = setTimeout(function () { if (g === gen && wantPlay && !au.paused && au.readyState < 3) start(); }, 8000);
+  });
+
+  btn.addEventListener('click', function () {
+    if (wantPlay) { stop(); return; }
+    if (cur < 0) { select(0, true); return; }
+    select(cur, true);
+  });
+  vol.addEventListener('input', function () { au.volume = vol.value / 100; store('radioVol', vol.value); });
+
+  // === Titolo del brano in onda: mostrato subito a destra del pulsante, al posto del nome della radio ===
+  // Il browser legge i dati direttamente dal server di ogni radio: funziona solo dove quel server lo permette (CORS). Dove non e' possibile resta il nome della radio.
+  function updateNow() {
+    var name = cur >= 0 ? STATIONS[cur].name : '', txt = song ? '\u266A ' + song : (name || 'Scegli una radio');
+    nowName.title = song || name;
+    nowTx.textContent = stText + (song && name ? ' \u00B7 ' + name : '');
+    document.title = song ? song + ' \u00B7 Radio' : (name ? name + ' \u00B7 Radio' : 'Radio');
+    if (nowTxt.textContent !== txt) { nowTxt.textContent = txt; fit(); }
+  }
+  // Titolo piu' largo dello spazio disponibile: scorre avanti e indietro, con una pausa a ogni estremo
+  function fit() {
+    nowName.classList.remove('mq'); nowName.style.removeProperty('--d');
+    var ov = nowTxt.offsetWidth - nowName.clientWidth;
+    if (ov > 2) { nowName.style.setProperty('--d', ov + 'px'); nowName.style.setProperty('--t', Math.max(6, ov / 30 + 4).toFixed(1) + 's'); nowName.classList.add('mq'); }
+  }
+  window.addEventListener('resize', function () { clearTimeout(fitT); fitT = setTimeout(fit, 200); });
+
+  function secure(u) { return location.protocol === 'https:' ? u.replace(/^http:/i, 'https:') : u; }
+  function cleanSong(s) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    return (!s || /^(no live title|n\/a|unknown|-)$/i.test(s)) ? '' : s;
+  }
+  function fetchText(u) {
+    var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); }, 6000);
+    return fetch(secure(u), { cache: 'no-store', signal: ac ? ac.signal : undefined }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (x) { clearTimeout(to); return x; }, function (e) { clearTimeout(to); throw e; });
+  }
+  function S(v) { return (typeof v === 'string' && v.trim()) ? v.trim() : ''; }
+  function artTitle(a, t) { a = S(a); t = S(t); return (a && t) ? a + ' - ' + t : t; }
+
+  // Pagina "now playing" della radio (campo info) o API AzuraCast: JSON con il titolo in uno dei campi piu' comuni, oppure testo semplice
+  function parseInfo(txt) {
+    txt = String(txt || '').trim();
+    var j, k, keys, v, r, az, p;
+    if (txt.charAt(0) !== '{' && txt.charAt(0) !== '[') return cleanSong(txt.split(/\r?\n/)[0]);
+    j = JSON.parse(txt);
+    if (Array.isArray(j)) j = j[0];
+    if (!j || typeof j !== 'object') return '';
+    // Formato Mediaset (RMC): il campo raw e' ARTISTA~BRANO~album~anno~...
+    if (typeof j.raw === 'string' && j.raw.indexOf('~') >= 0) {
+      p = j.raw.split('~');
+      if (S(p[0]) && S(p[1])) return cleanSong(S(p[0]) + ' - ' + S(p[1]));
+      if (S(p[0])) return cleanSong(S(p[0]));
+    }
+    keys = ['nowplaying', 'now_playing', 'nowPlaying', 'songtitle', 'song', 'title', 'current_song', 'currentSong', 'currenttrack', 'track'];
+    for (k = 0; k < keys.length; k++) { v = S(j[keys[k]]); if (v) return cleanSong(v); }
+    // Formato con involucro (xdevel): {"result":{"meta":"ARTISTA - Titolo","artist":..,"title":..}}; instant.audio (RDS): lista, in onda = track_played piu' alto
+    r = j.result;
+    if (Array.isArray(r) && r.length && r[0] && r[0].track_played !== undefined) {
+      r = r.slice().sort(function (a, b) { return Number(b.track_played) - Number(a.track_played); })[0];
+    }
+    if (Array.isArray(r)) r = r[0];
+    if (r && typeof r === 'object') {
+      v = artTitle(r.track_artist, r.track_title); if (v) return cleanSong(v);
+      v = S(r.meta); if (v) return cleanSong(v);
+      v = artTitle(r.artist, r.title); if (v) return cleanSong(v);
+    }
+    az = j.now_playing && j.now_playing.song;   // AzuraCast
+    if (az) { v = S(az.text) || artTitle(az.artist, az.title); if (v) return cleanSong(v); }
+    return cleanSong(artTitle(j.artist, j.title));
+  }
+  // Pagine di stato dei server: Icecast (status-json.xsl), Shoutcast v2 (stats) e v1 (7.html)
+  function parseStatus(kind, txt) {
+    var j, src, arr, pick = null, i, ti, ar, f7;
+    if (kind === 'ice') {
+      j = JSON.parse(txt); src = j.icestats && j.icestats.source;
+      arr = Array.isArray(src) ? src : (src ? [src] : []);
+      for (i = 0; i < arr.length; i++) { if (/\/stream$/.test(String(arr[i].listenurl || '').split('?')[0])) { pick = arr[i]; break; } }
+      if (!pick) pick = arr[0];
+      if (!pick) return '';
+      ti = String(pick.title || ''); ar = String(pick.artist || '');
+      return cleanSong(ar && ti && ti.toLowerCase().indexOf(ar.toLowerCase()) < 0 ? ar + ' - ' + ti : ti);
+    }
+    if (kind === 'sc2') return cleanSong(JSON.parse(txt).songtitle);
+    f7 = txt.replace(/<[^>]*>/g, '').trim().split(',');
+    return f7.length > 6 ? cleanSong(f7.slice(6).join(',')) : '';
+  }
+  // Metadati dentro lo stream (ICY): serve un server che ammetta l'intestazione Icy-MetaData e la esponga; si legge un solo blocco e si chiude
+  function icyTitle(url) {
+    return new Promise(function (resolve, reject) {
+      var ac = new AbortController(), done = false, to = setTimeout(function () { fin(null, new Error('timeout')); }, 8000);
+      function fin(v, err) { if (done) return; done = true; clearTimeout(to); try { ac.abort(); } catch (e) {} if (err) reject(err); else resolve(v); }
+      fetch(secure(url), { headers: { 'Icy-MetaData': '1' }, cache: 'no-store', signal: ac.signal }).then(function (r) {
+        var mi = parseInt(r.headers.get('icy-metaint'), 10);
+        if (!r.ok || !r.body || !(mi > 0 && mi <= 65536)) throw new Error('no icy');
+        var rd = r.body.getReader(), acc = new Uint8Array(0);
+        (function pump() {
+          rd.read().then(function (x) {
+            if (x.done) { fin(null, new Error('end')); return; }
+            var c = new Uint8Array(acc.length + x.value.length); c.set(acc); c.set(x.value, acc.length); acc = c;
+            if (acc.length > mi) {
+              var L = acc[mi] * 16;
+              if (L === 0) { fin(null); return; }   // blocco vuoto: titolo invariato
+              if (acc.length >= mi + 1 + L) {
+                var b = acc.subarray(mi + 1, mi + 1 + L), tx = new TextDecoder('utf-8').decode(b), mm;
+                if (tx.indexOf('\uFFFD') >= 0) tx = new TextDecoder('windows-1252').decode(b);
+                mm = /StreamTitle='(.*?)';/.exec(tx);
+                fin(mm ? cleanSong(mm[1]) : '');
+                return;
+              }
+            }
+            pump();
+          }, function (e) { fin(null, e); });
+        })();
+      }).catch(function (e) { fin(null, e); });
+    });
+  }
+
+  function setSong(s) {
+    if (s === song) return;
+    song = s; updateNow(); setMedia();
+  }
+  function pollSong() {
+    if (!wantPlay || nowSt.className !== 'on' || cur < 0 || polling) return;
+    var st = STATIONS[cur], u = cands[uIdx] || '', g = gen, om = u.match(/^(https?:\/\/[^\/]+)/i), o = om ? om[1] : '', key = o + '|' + cur, tasks = [], m;
+    if (meta.o !== key) meta = { o: key, kind: '', fails: 0, t: 0 };
+    if (st.info) tasks.push({ k: 'info', f: function () { return fetchText(st.info).then(parseInfo); } });
+    if (o && !/\.m3u8(\?|$)/i.test(u)) {
+      m = u.match(/^(https?:\/\/[^\/]+)\/listen\/([^\/?#]+)\//i);
+      if (m) tasks.push({ k: 'azura', f: function () { return fetchText(m[1] + '/api/nowplaying/' + m[2]).then(parseInfo); } });
+      tasks.push({ k: 'ice', f: function () { return fetchText(o + '/status-json.xsl').then(function (x) { return parseStatus('ice', x); }); } });
+      tasks.push({ k: 'sc2', f: function () { return fetchText(o + '/stats?sid=1&json=1').then(function (x) { return parseStatus('sc2', x); }); } });
+      tasks.push({ k: 'sc1', f: function () { return fetchText(o + '/7.html').then(function (x) { return parseStatus('sc1', x); }); } });
+      tasks.push({ k: 'icy', f: function () { return icyTitle(u); } });
+    }
+    if (meta.kind) tasks = tasks.filter(function (x) { return x.k === meta.kind; });
+    else if (meta.fails >= 3 && Date.now() - meta.t < 60000) return;   // nessun metodo ha funzionato: si riprova solo ogni minuto
+    if (!tasks.length) return;
+    polling = true;
+    (function run(i) {
+      if (i >= tasks.length) { meta.kind = ''; meta.fails++; meta.t = Date.now(); polling = false; return; }
+      tasks[i].f().then(function (s) {
+        polling = false;
+        if (g !== gen) return;
+        meta.kind = tasks[i].k; meta.fails = 0;
+        if (s !== null && s !== undefined) setSong(s);
+      }, function () { run(i + 1); });
+    })(0);
+  }
+  au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
+  // Radio con pagina dedicata: titolo riletto ogni 3 s; le altre ogni 10 s (ICY ogni 20 s)
+  setInterval(function () {
+    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.info) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
+    if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
+  }, 1000);
+
+  // Elenco e ricerca
+  STATIONS.forEach(function (s, i) {
+    var li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button'; b.className = 'st'; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = '<span class="ic" aria-hidden="true">&#9654;</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="nm"></span>';
+    b.querySelector('.nm').textContent = s.name;
+    b.addEventListener('click', function () { select(i, true); });
+    li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase());
+    listEl.appendChild(li); items.push(b);
+  });
+  document.getElementById('count').textContent = STATIONS.length + ' stazioni';
+  document.getElementById('find').addEventListener('input', function () {
+    var q = this.value.trim().toLowerCase(), shown = 0;
+    Array.prototype.forEach.call(listEl.children, function (li) {
+      var ok = !q || li.getAttribute('data-n').indexOf(q) >= 0;
+      li.hidden = !ok; if (ok) shown++;
+    });
+    document.getElementById('none').hidden = shown > 0;
+  });
+
+  var v = parseInt(load('radioVol'), 10);
+  if (!isNaN(v) && v >= 0 && v <= 100) vol.value = v;
+  au.volume = vol.value / 100;
+  var last = load('radioLast'), li0 = -1;
+  STATIONS.forEach(function (s, i) { if (s.name === last) li0 = i; });
+  if (li0 >= 0) select(li0, false); else { render(); updateNow(); }
+
+  // Sfondo animato: note musicali colorate che salgono, in numero proporzionale alla larghezza
+  (function () {
+    var box = document.getElementById('notes'), rsT = null;
+    var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'];
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function build() {
+      var n = Math.max(20, Math.min(90, Math.round(box.clientWidth / 26))), i, d, h = [];
+      for (i = 0; i < n; i++) {
+        d = rnd(2.4, 4.2);
+        h.push('<span class="rn" style="left:' + rnd(1, 97).toFixed(1) + '%;font-size:' + Math.round(rnd(15, 24)) + 'px;color:' + COL[Math.floor(Math.random() * COL.length)] + ';animation-duration:' + d.toFixed(2) + 's;animation-delay:-' + rnd(0, d).toFixed(2) + 's">' + GLY[Math.floor(Math.random() * GLY.length)] + '</span>');
+      }
+      box.innerHTML = h.join('');
+    }
+    build();
+    window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
+  })();
+</script>
+</body>
+</html>
