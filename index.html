@@ -34,7 +34,24 @@
   #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
   @keyframes blink { 50% { opacity: .25; } }
 
-  #vol { flex: 0 0 auto; width: 110px; accent-color: #4fb3ff; }
+  /* === Selettore volume: icona che cambia col livello, barra con gradiente (stessi colori del disco), cursore tondo, valore in % === */
+  #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+  #volIc .w, #volIc .mx { opacity: 0; transition: opacity .15s ease; }
+  #volIc[data-l="1"] .w1, #volIc[data-l="2"] .w1, #volIc[data-l="2"] .w2, #volIc[data-l="3"] .w { opacity: 1; }
+  #volIc[data-l="0"] .mx { opacity: 1; }
+  #volVal { flex: 0 0 auto; min-width: 4ch; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #e8e8e8; }
+  #vol { --p: 100%; -webkit-appearance: none; appearance: none; flex: 0 0 auto; width: 130px; height: 24px; margin: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 12px; }
+  #vol::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6);
+    background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
+  #vol::-moz-range-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6);
+    background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
+  #vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%; border: 0; background: #fff;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
+  #vol::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 0; background: #fff;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
+  #vol:hover::-webkit-slider-thumb, #vol:active::-webkit-slider-thumb { transform: scale(1.18); }
+  #vol:hover::-moz-range-thumb, #vol:active::-moz-range-thumb { transform: scale(1.18); }
 
   main { max-width: 980px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom, 0px)); }
   .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -60,7 +77,7 @@
   #none { color: #9a9a9a; padding: 18px 8px; }
   #none[hidden] { display: none; }
 
-  @media (max-width: 560px) { #vol { display: none; } #player { gap: 12px; } }
+  @media (max-width: 560px) { #volbox { display: none; } #player { gap: 12px; } }
   @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
 
   /* === Cornice del player: gradiente pieno, sfumato (sfocato) tra i colori e in movimento. 9 varianti da provare === */
@@ -103,7 +120,14 @@
   #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
+  #ck .dg { position: relative; display: inline-block; width: 1ch; height: 1.15em; overflow: hidden; vertical-align: top; }
+  #ck .dg > span { position: absolute; left: 0; top: 0; width: 100%; text-align: center; }
   #clock #cd { display: block; font-size: 11px; color: #cfcfcf; white-space: nowrap; }
+  #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  #rc #clock b { font-size: 20px; }
+  #ana { flex: 0 0 auto; width: 64px; height: 64px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
+  #ana svg { display: block; width: 100%; height: 100%; }
+  @media (max-width: 560px) { #ana { display: none; } }
   /* Riga della radio in ascolto: riempimento con lo stesso gradiente (e la stessa variante) della cornice del player */
   #list .st { border: 1.5px solid transparent; }
   #list .st.cur { position: relative; z-index: 0; overflow: hidden; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); box-shadow: 0 0 14px rgba(0,0,0,.4); }
@@ -150,9 +174,31 @@
     <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
   </div>
 </div>
+<div id="ana" aria-hidden="true">
+  <svg viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="48" fill="#0b0b0b" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
+    <g id="anaDots"></g>
+    <line id="anaH" x1="50" y1="50" x2="50" y2="27" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <line id="anaM" x1="50" y1="50" x2="50" y2="16" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <line id="anaS" x1="50" y1="58" x2="50" y2="12" stroke="#ffe600" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="3" fill="#ffe600"/>
+  </svg>
+</div>
 <div class="pr">
+ <div id="rc">
   <div id="clock"><b id="ck"></b><span id="cd"></span></div>
-  <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
+  <div id="volbox" title="Volume">
+    <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
+      <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>
+      <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <input id="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume">
+    <span id="volVal" aria-hidden="true">100%</span>
+  </div>
+ </div>
 </div>
 </header>
 <div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
@@ -182,7 +228,7 @@
     {name: 'Beam FM - Adult Hits', urls: ['https://beamadult.streeemer.com/listen/beamadult/radio.aac']},
     {name: 'Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8']},
     {name: 'Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8']},
-    {name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8']},
+    {name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8'], info: 'https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8'},
     {name: 'Easy Celine Dion', urls: ['https://streaming.exclusive.radio/uber/easycelinedion/icecast.audio']},
     {name: 'Exclusively Celine Dion', urls: ['https://streaming.exclusive.radio/er/celinedion/icecast.audio']},
     {name: 'Exclusively Dire Straits', urls: ['https://streaming.exclusive.radio/er/direstraits/icecast.audio']},
@@ -296,7 +342,7 @@
   function start() {
     teardown();
     var g = ++gen, u = cands[uIdx];
-    song = '';
+    song = ''; segSong = {};
     if (!u) { setSt('err', 'nessun indirizzo disponibile'); return; }
     setSt('buf', tries ? 'riconnessione...' : 'connessione...');
     if (/\.m3u8(\?|$)/i.test(u)) {
@@ -306,6 +352,17 @@
           hls = new Hls({ lowLatencyMode: false, maxBufferLength: 90, maxMaxBufferLength: 180, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
           hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
+          hls.on(Hls.Events.FRAG_PARSING_METADATA, function (e, d) {
+            if (g !== gen || !d || !d.frag || !d.samples) return;
+            d.samples.forEach(function (sm) {
+              var t = id3Song(sm && sm.data), k;
+              if (!t) return;
+              try { console.log('[titolo] ID3 nel segmento ' + d.frag.sn + ' = ' + t); } catch (x) {}
+              segSong[d.frag.sn] = t;
+              for (k in segSong) { if (Number(k) < d.frag.sn - 100) delete segSong[k]; }
+            });
+          });
+          hls.on(Hls.Events.FRAG_CHANGED, function (e, d) { var s = d && d.frag && segSong[d.frag.sn]; if (g === gen && s) { try { console.log('[titolo] in riproduzione:', s); } catch (x) {} setSong(s); } });
           hls.loadSource(u); hls.attachMedia(au);
         } else if (au.canPlayType('application/vnd.apple.mpegurl')) {
           au.src = u; au.play().catch(onPlayErr(g));
@@ -367,7 +424,15 @@
     if (cur < 0) { select(0, true); return; }
     select(cur, true);
   });
-  vol.addEventListener('input', function () { au.volume = vol.value / 100; store('radioVol', vol.value); });
+  var volIc = document.getElementById('volIc'), volVal = document.getElementById('volVal');
+  // Aggiorna icona, percentuale e riempimento della barra (il bordo del riempimento segue il centro del cursore, largo 16 px)
+  function volUI() {
+    var n = parseInt(vol.value, 10) || 0;
+    vol.style.setProperty('--p', 'calc(8px + (100% - 16px) * ' + (n / 100) + ')');
+    volVal.textContent = n + '%';
+    volIc.setAttribute('data-l', n === 0 ? '0' : n < 34 ? '1' : n < 67 ? '2' : '3');
+  }
+  vol.addEventListener('input', function () { au.volume = vol.value / 100; volUI(); });
 
   // === Titolo del brano in onda: mostrato subito a destra del pulsante, al posto del nome della radio ===
   // Il browser legge i dati direttamente dal server di ogni radio: funziona solo dove quel server lo permette (CORS). Dove non e' possibile resta il nome della radio.
@@ -389,12 +454,44 @@
     else t = '\u266B ' + name;
     document.title = t; tabI++;
   }
+  // Effetto "lettere che scorrono": ogni lettera scorre dalla A alla lettera giusta (A, B, C, ...) e si ferma; le lettere partono una dopo l'altra
+  // da sinistra e cosi' la scritta si compone. Spazi, numeri e simboli compaiono subito. Lettere accentate: scorre la lettera base e poi compare quella accentata.
+  var scrT = null, shownTxt = '', SCR_STEP = 30;
+  function scramble(el, text, done) {
+    clearInterval(scrT);
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; if (done) done(); return; }
+    var chars = Array.from(text), n = chars.length, st = [], i, b, lt, tick = 0;
+    var gap = Math.max(1, Math.min(3, Math.round(900 / Math.max(1, n) / SCR_STEP)));   // pause tra la partenza di una lettera e la successiva (durata totale ~2 s al massimo)
+    for (i = 0; i < n; i++) {
+      b = chars[i].normalize('NFD').charAt(0); lt = /[A-Za-z]/.test(b);
+      st.push({ ch: chars[i], up: lt && b === b.toUpperCase(), t: lt ? b.toLowerCase().charCodeAt(0) - 97 : -1, at: i * gap });
+    }
+    el.textContent = '';
+    scrT = setInterval(function () {
+      var out = '', fin = true, k, x, c;
+      tick++;
+      for (k = 0; k < n; k++) {
+        x = st[k];
+        if (x.t < 0) { out += x.ch; continue; }                           // non e' una lettera: subito
+        if (tick < x.at) { out += ' '; fin = false; continue; }           // non ancora partita
+        c = tick - x.at;
+        if (c >= x.t) { out += x.ch; continue; }                          // arrivata: lettera definitiva
+        out += String.fromCharCode((x.up ? 65 : 97) + c); fin = false;    // in corsa: A, B, C, ...
+      }
+      el.textContent = out;
+      if (fin) { clearInterval(scrT); scrT = null; if (done) done(); }
+    }, SCR_STEP);
+  }
   function updateNow() {
     var name = cur >= 0 ? STATIONS[cur].name : '', txt = song ? '\u266A ' + song : (name || 'Scegli una radio');
     nowName.title = song || name;
     nowTx.textContent = stText + (song && name ? ' \u00B7 ' + name : '');
     tabSet(song, name);
-    if (nowTxt.textContent !== txt) { nowTxt.textContent = txt; fit(); }
+    if (shownTxt !== txt) {
+      shownTxt = txt;
+      nowName.classList.remove('mq'); nowName.style.removeProperty('--d');   // durante l'effetto niente scorrimento; si ricalcola a scritta completa
+      scramble(nowTxt, txt, fit);
+    }
   }
   // Titolo piu' largo dello spazio disponibile: scorre avanti e indietro, con una pausa a ogni estremo
   function fit() {
@@ -409,9 +506,11 @@
     s = String(s || '').replace(/\s+/g, ' ').trim();
     return (!s || /^(no live title|n\/a|unknown|-)$/i.test(s)) ? '' : s;
   }
-  function fetchText(u) {
+  function fetchText(u, plain) {
     var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); }, 6000);
-    return fetch(secure(u), { cache: 'no-store', signal: ac ? ac.signal : undefined }).then(function (r) {
+    // plain = GET semplice senza cache:'no-store' (che aggiunge Cache-Control/Pragma e fa scattare il preflight CORS): come fa hls.js
+    var opt = plain ? { signal: ac ? ac.signal : undefined } : { cache: 'no-store', signal: ac ? ac.signal : undefined };
+    return fetch(secure(u), opt).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
     }).then(function (x) { clearTimeout(to); return x; }, function (e) { clearTimeout(to); throw e; });
@@ -419,9 +518,65 @@
   function S(v) { return (typeof v === 'string' && v.trim()) ? v.trim() : ''; }
   function artTitle(a, t) { a = S(a); t = S(t); return (a && t) ? a + ' - ' + t : t; }
 
+  // Chunklist HLS con metadati nei tag #MY-USER-CHUNK-DATA-1:ON-TEXT-DATA="Song*TITOLO*ARTISTA*ANNO*id" (Discoradio).
+  // Il tag precede il segmento a cui si riferisce: si memorizza numero segmento -> brano, e il titolo compare quando quel segmento
+  // viene davvero riprodotto (evento FRAG_CHANGED di hls.js), cosi' non anticipa l'audio. Le righe "Link*..." (jingle) si ignorano.
+  var segSong = {};
+  function parseChunklist(txt) {
+    var seq = 0, idx = 0, pend = '', last = '', m, k;
+    m = txt.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/); if (m) seq = parseInt(m[1], 10);
+    txt.split(/\r?\n/).forEach(function (l) {
+      l = l.trim();
+      if (!l) return;
+      if (l.charAt(0) === '#') {
+        m = l.match(/ON-TEXT-DATA="Song\*([^*]*)\*([^*]*)\*/);
+        if (m) pend = cleanSong(artTitle(m[2], m[1]));   // campi: titolo * artista
+        return;
+      }
+      var sn = seq + idx++;
+      if (pend) { if (!segSong[sn]) { try { console.log('[titolo] segmento ' + sn + ' = ' + pend); } catch (x) {} } segSong[sn] = pend; last = pend; pend = ''; }
+    });
+    for (k in segSong) { if (Number(k) < seq - 60) delete segSong[k]; }
+    if (!hls && last) setSong(last);   // senza hls.js (HLS nativo, es. Safari) non c'e' FRAG_CHANGED: si usa l'ultimo titolo visto
+    return null;                        // null = nessuna modifica diretta al titolo mostrato
+  }
+
+  // Metadati ID3v2 dentro i segmenti .aac (Discoradio): frame TXXX "JSI3" con un JSON {type:"song", traccia, artista, ...} e frame TIT2 "TITOLO - ARTISTA".
+  // hls.js li passa in FRAG_PARSING_METADATA (sample.data = i tag ID3 grezzi, anche piu' tag di seguito).
+  function id3Song(d) {
+    var pos = 0, title = '', json = null, ver, size, end, p, id, fs, body, enc, str, i, j, jj;
+    function ss(o) { return (d[o] << 21) | (d[o + 1] << 14) | (d[o + 2] << 7) | d[o + 3]; }
+    function txt(a, e) {
+      try { return new TextDecoder(e === 1 ? 'utf-16' : e === 2 ? 'utf-16be' : e === 3 ? 'utf-8' : 'iso-8859-1').decode(a); } catch (x) { return ''; }
+    }
+    if (!d || !d.length) return '';
+    while (pos + 10 <= d.length && d[pos] === 0x49 && d[pos + 1] === 0x44 && d[pos + 2] === 0x33) {   // "ID3"
+      ver = d[pos + 3]; size = ss(pos + 6); end = Math.min(d.length, pos + 10 + size); p = pos + 10;
+      while (p + 10 <= end && d[p] !== 0) {
+        id = String.fromCharCode(d[p], d[p + 1], d[p + 2], d[p + 3]);
+        fs = ver === 4 ? ss(p + 4) : ((d[p + 4] << 24) | (d[p + 5] << 16) | (d[p + 6] << 8) | d[p + 7]);
+        if (fs < 0 || p + 10 + fs > end) break;
+        body = d.subarray(p + 10, p + 10 + fs); enc = body[0];
+        if (id === 'TIT2' && body.length > 1) title = txt(body.subarray(1), enc).replace(/\0+$/, '').trim();
+        else if (id === 'TXXX' && body.length > 1) {
+          str = txt(body.subarray(1), enc); i = str.indexOf('{'); j = str.lastIndexOf('}');
+          if (i >= 0 && j > i) { try { jj = JSON.parse(str.slice(i, j + 1)); if (jj && typeof jj === 'object') json = jj; } catch (x) {} }
+        }
+        p += 10 + fs;
+      }
+      pos = end;
+    }
+    if (json) {
+      if (String(json.type || '').toLowerCase() !== 'song') return '';   // altri tipi (jingle, ecc.): non sono un brano
+      return cleanSong(artTitle(json.artista || json.sottotitolo, json.titolo || json.traccia)) || cleanSong(title);
+    }
+    return cleanSong(title);
+  }
+
   // Pagina "now playing" della radio (campo info) o API AzuraCast: JSON con il titolo in uno dei campi piu' comuni, oppure testo semplice
   function parseInfo(txt) {
     txt = String(txt || '').trim();
+    if (txt.indexOf('#EXTM3U') === 0) return parseChunklist(txt);
     var j, k, keys, v, r, az, p;
     if (txt.charAt(0) !== '{' && txt.charAt(0) !== '[') return cleanSong(txt.split(/\r?\n/)[0]);
     j = JSON.parse(txt);
@@ -505,7 +660,7 @@
     if (!wantPlay || nowSt.className !== 'on' || cur < 0 || polling) return;
     var st = STATIONS[cur], u = cands[uIdx] || '', g = gen, om = u.match(/^(https?:\/\/[^\/]+)/i), o = om ? om[1] : '', key = o + '|' + cur, tasks = [], m;
     if (meta.o !== key) meta = { o: key, kind: '', fails: 0, t: 0 };
-    if (st.info) tasks.push({ k: 'info', f: function () { return fetchText(st.info).then(parseInfo); } });
+    if (st.info) tasks.push({ k: 'info', f: function () { return fetchText(st.info, /\.m3u8(\?|$)/i.test(st.info)).then(parseInfo); } });
     if (o && !/\.m3u8(\?|$)/i.test(u)) {
       m = u.match(/^(https?:\/\/[^\/]+)\/listen\/([^\/?#]+)\//i);
       if (m) tasks.push({ k: 'azura', f: function () { return fetchText(m[1] + '/api/nowplaying/' + m[2]).then(parseInfo); } });
@@ -525,7 +680,7 @@
         if (g !== gen) return;
         meta.kind = tasks[i].k; meta.fails = 0;
         if (s !== null && s !== undefined) setSong(s);
-      }, function () { run(i + 1); });
+      }, function (e) { try { console.warn('[titolo] ' + tasks[i].k + ' non riuscito:', e); } catch (x) {} run(i + 1); });
     })(0);
   }
   au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
@@ -555,9 +710,8 @@
     document.getElementById('none').hidden = shown > 0;
   });
 
-  var v = parseInt(load('radioVol'), 10);
-  if (!isNaN(v) && v >= 0 && v <= 100) vol.value = v;
-  au.volume = vol.value / 100;
+  vol.value = 100;   // a ogni apertura della pagina il volume parte sempre al massimo
+  au.volume = 1; volUI();
   var last = load('radioLast'), li0 = -1;
   STATIONS.forEach(function (s, i) { if (s.name === last) li0 = i; });
   if (li0 >= 0) select(li0, false); else { render(); updateNow(); }
@@ -646,8 +800,57 @@
     var ck = document.getElementById('ck'), cd = document.getElementById('cd');
     var tf = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     var df = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    function tick() { var d = new Date(); ck.textContent = tf.format(d); cd.textContent = df.format(d); }
+    // Cifre che scorrono dal basso verso l'alto: la nuova entra da sotto, la vecchia esce verso l'alto
+    var slots = [], reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function build(str) {
+      var i, ch, el, sp;
+      ck.textContent = ''; slots = [];
+      for (i = 0; i < str.length; i++) {
+        ch = str.charAt(i);
+        if (/[0-9]/.test(ch)) {
+          el = document.createElement('span'); el.className = 'dg'; el.setAttribute('aria-hidden', 'true');
+          sp = document.createElement('span'); sp.textContent = ch; el.appendChild(sp);
+          ck.appendChild(el); slots.push({ el: el, v: ch });
+        } else {
+          el = document.createElement('span'); el.textContent = ch; el.setAttribute('aria-hidden', 'true'); ck.appendChild(el); slots.push(null);
+        }
+      }
+    }
+    function roll(s, ch) {
+      var old = s.el.lastElementChild, nw = document.createElement('span'), o = { duration: 380, easing: 'cubic-bezier(.3,.9,.3,1)', fill: 'forwards' };
+      s.v = ch; nw.textContent = ch; s.el.appendChild(nw);
+      if (reduce || !nw.animate) { s.el.removeChild(old); return; }
+      nw.animate([{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }], o);
+      old.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-100%)' }], o).onfinish = function () { if (old.parentNode) old.parentNode.removeChild(old); };
+    }
+    function setTime(str) {
+      var i;
+      if (slots.length !== str.length) build(str);
+      else for (i = 0; i < str.length; i++) if (slots[i] && slots[i].v !== str.charAt(i)) roll(slots[i], str.charAt(i));
+      ck.setAttribute('aria-label', str);
+    }
+    function tick() { var d = new Date(); setTime(tf.format(d)); cd.textContent = df.format(d); }
     tick(); setInterval(tick, 1000);
+  })();
+
+  // Orologio analogico "punti arcobaleno" al centro del player
+  (function () {
+    var NS = 'http://www.w3.org/2000/svg', g = document.getElementById('anaDots'), i, a, c;
+    var hh = document.getElementById('anaH'), hm = document.getElementById('anaM'), hs = document.getElementById('anaS');
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for (i = 0; i < 12; i++) {
+      a = i * Math.PI / 6; c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', 50 + 38 * Math.sin(a)); c.setAttribute('cy', 50 - 38 * Math.cos(a));
+      c.setAttribute('r', i % 3 ? 2.6 : 3.8); c.setAttribute('fill', 'hsl(' + ((i * 30 + 330) % 360) + ',95%,60%)');
+      g.appendChild(c);
+    }
+    function rot(e, d) { e.setAttribute('transform', 'rotate(' + d + ' 50 50)'); }
+    function frame() {
+      var d = new Date(), s = d.getSeconds() + (reduce ? 0 : d.getMilliseconds() / 1000), m = d.getMinutes() + s / 60, h = d.getHours() % 12 + m / 60;
+      rot(hh, h * 30); rot(hm, m * 6); rot(hs, s * 6);
+      if (reduce) setTimeout(frame, 1000); else requestAnimationFrame(frame);
+    }
+    frame();
   })();
 
   // Meter dell'onda sonora a istogramma (centro del player): colonne arcobaleno con cappelli di picco.
@@ -685,7 +888,7 @@
       tPrev = t; if (dt <= 0) return;
       playing = wantPlay && !au.paused && nowSt.className === 'on';
       buf = wantPlay && nowSt.className === 'buf';
-      tg = playing ? (0.35 + 0.65 * au.volume) : (buf ? 0.1 : 0);
+      tg = playing ? 1 : (buf ? 0.1 : 0);   // meter fisso come a volume massimo, indipendente dallo slider
       act += (tg - act) * (1 - Math.pow(0.92, dt * 60));
       if (t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
