@@ -548,7 +548,7 @@
     var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'];
     function rnd(a, b) { return a + Math.random() * (b - a); }
     function build() {
-      var n = Math.max(24, Math.min(80, Math.round(box.clientWidth * box.clientHeight / 16000))), i, d, h = [];
+      var n = Math.max(60, Math.min(160, Math.round(box.clientWidth * box.clientHeight / 6000))), i, d, h = [];
       for (i = 0; i < n; i++) {
         d = rnd(9, 18);
         h.push('<span class="rn" style="left:' + rnd(1, 97).toFixed(1) + '%;font-size:' + Math.round(rnd(15, 24)) + 'px;color:' + COL[Math.floor(Math.random() * COL.length)] + ';animation-duration:' + d.toFixed(2) + 's;animation-delay:-' + rnd(0, d).toFixed(2) + 's">' + GLY[Math.floor(Math.random() * GLY.length)] + '</span>');
