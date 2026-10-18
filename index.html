@@ -107,6 +107,22 @@
   #gp button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #666; background: #1a1a1a; cursor: pointer; padding: 0; }
   #gp button.on { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
   #gp span { white-space: nowrap; color: #ccc; min-width: 78px; }
+  /* Buffer a colonne, al centro del player sotto la data */
+  #bufv { display: flex; align-items: center; justify-content: center; gap: 8px; height: 16px; margin-top: 3px; font-size: 11px; color: #cfcfcf; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 8px #000; --c: #3ddc84; }
+  #bufv.lo { --c: #ff5c5c; } #bufv.mi { --c: #ffd24d; } #bufv.hi { --c: #3ddc84; }
+  #bufv .bc { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+  #bufv .bc i { width: 4px; border-radius: 1px; background: rgba(255,255,255,.18); transition: background .3s; }
+  #bufv .bc i.on { background: var(--c); }
+  #bufv .bt { font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { #bufv { flex-direction: column; gap: 2px; height: auto; } #player { height: auto; min-height: 76px; padding-bottom: 6px; } }
+  #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
+  #clock #cd { display: block; font-size: 11px; color: #cfcfcf; white-space: nowrap; }
+  /* Riga della radio in ascolto: contorno neon colorato che scorre */
+  @keyframes hl3 { to { background-position: 0 0, 200% 0; } }
+  #list .st { border: 1.5px solid transparent; }
+  #list .st.cur { background: linear-gradient(rgba(12,12,16,.92), rgba(12,12,16,.92)) padding-box, linear-gradient(90deg, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95) border-box; background-size: 100% 100%, 200% 100%; animation: hl3 6s linear infinite; box-shadow: 0 0 14px rgba(0,200,255,.2); }
+  @media (prefers-reduced-motion: reduce) { #list .st.cur { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -117,6 +133,7 @@
     <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
   </div>
+  <div id="clock"><b id="ck"></b><span id="cd"></span><div id="bufv" style="visibility:hidden"><span class="bc"></span><span class="bt"></span></div></div>
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
 </header>
 
@@ -201,7 +218,7 @@
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
-  var nowTxt = document.getElementById('nowTxt');
+  var nowTxt = document.getElementById('nowTxt'), cushFresh = false;
 
   function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -266,7 +283,7 @@
       loadHls(function (ok) {
         if (g !== gen) return;
         if (ok && window.Hls && Hls.isSupported()) {
-          hls = new Hls({ lowLatencyMode: false });
+          hls = new Hls({ lowLatencyMode: false, maxBufferLength: 90, maxMaxBufferLength: 180, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
           hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
           hls.loadSource(u); hls.attachMedia(au);
@@ -284,18 +301,18 @@
   function next(g) {
     if (g !== gen || !wantPlay) return;
     tries++;
-    if (tries >= cands.length * 2) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
+    if (tries >= 40) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }   // in auto la rete torna dopo qualche secondo: si insiste a lungo
     uIdx = (uIdx + 1) % cands.length;
-    setSt('buf', 'riconnessione...');
+    setSt('buf', navigator.onLine === false ? 'senza rete, attendo...' : 'riconnessione...');
     clearTimeout(retryT);
-    retryT = setTimeout(start, uIdx === 0 ? 2500 : 600);
+    retryT = setTimeout(start, uIdx === 0 ? Math.min(6000, 1500 + tries * 300) : 600);
   }
 
   function select(i, autoplay) {
     cur = i; uIdx = 0; tries = 0;
     cands = candidates(STATIONS[i]);
     song = '';
-    store('radioLast', STATIONS[i].name);
+    store('radioLast', STATIONS[i].name); cushFresh = true;
     setMedia();
     if (autoplay) { wantPlay = true; start(); } else { setSt('off', 'pronta'); }
   }
@@ -572,6 +589,64 @@
     var sv = parseInt(load('radioGrad'), 10);
     set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
     startRot();
+  })();
+  // Indicatore del buffer (colonne): secondi in coda, % rispetto al cuscinetto di 45 s, dimensione STIMATA (secondi x bitrate: livelli HLS se noti, altrimenti 128 kbps)
+  (function () {
+    var N = 12, T = 45, box = document.getElementById('bufv'), bt = box.querySelector('.bt'), col = box.querySelector('.bc'), i, e;
+    for (i = 0; i < N; i++) { e = document.createElement('i'); e.style.height = (3 + i) + 'px'; col.appendChild(e); }
+    function upd() {
+      if (!(wantPlay && cur >= 0)) { box.style.visibility = 'hidden'; return; }
+      box.style.visibility = 'visible';
+      var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, n, sz;
+      for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) { s = Math.max(0, r.end(k) - t); break; } }
+      lv = hls && hls.levels && hls.levels[hls.currentLevel >= 0 ? hls.currentLevel : 0];
+      kbps = lv && lv.bitrate ? lv.bitrate / 1000 : 128;
+      kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); n = Math.round(p / 100 * N);
+      sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
+      box.className = p < 25 ? 'lo' : (p < 60 ? 'mi' : 'hi');
+      bt.textContent = p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
+      box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
+      for (k = 0; k < N; k++) col.children[k].classList.toggle('on', k < n);
+    }
+    au.addEventListener('playing', upd); au.addEventListener('waiting', upd); au.addEventListener('progress', upd);
+    setInterval(upd, 500);
+  })();
+  // Mobilita': al ritorno della rete si riparte subito; cuscinetto iniziale per gli stream non HLS (l'avvio attende che siano in coda N secondi: fa da riserva nei vuoti di copertura)
+  window.addEventListener('online', function () { if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) { tries = 0; clearTimeout(retryT); start(); } });
+  window.addEventListener('offline', function () { if (wantPlay) setSt('buf', 'senza rete, attendo...'); });
+  (function () {
+    var CU = 45, holding = false, doneGen = -1;   // cuscinetto fisso
+    function ahead() {
+      var r = au.buffered, t = au.currentTime, k;
+      for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) return Math.max(0, r.end(k) - t); }
+      return 0;
+    }
+    au.addEventListener('playing', function () {
+      if (doneGen === gen) return;
+      doneGen = gen;
+      var need = cushFresh ? CU : Math.min(CU, 10);   // avvio da utente: cuscinetto pieno; riconnessione automatica: riserva ridotta per tornare presto a suonare
+      cushFresh = false;
+      if (hls || !need || ahead() >= need) return;
+      var g = gen, last = ahead(), lastT = Date.now(), a;
+      holding = true; au.pause();
+      (function w() {
+        if (g !== gen || !wantPlay) { holding = false; return; }
+        a = ahead();
+        if (a > last + 0.5) { last = a; lastT = Date.now(); }
+        // si parte a cuscinetto pieno, oppure se il browser non accumula piu' (4 s senza crescita) o dopo 30 s
+        if (a >= need || Date.now() - lastT > 4000 || Date.now() - lastT < 0) { holding = false; au.play().catch(onPlayErr(g)); return; }
+        setSt('buf', 'preparo il buffer ' + Math.round(a) + '/' + need + ' s');
+        setTimeout(w, 400);
+      })();
+    });
+  })();
+  // Data e ora (fuso del dispositivo)
+  (function () {
+    var ck = document.getElementById('ck'), cd = document.getElementById('cd');
+    var tf = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    var df = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    function tick() { var d = new Date(); ck.textContent = tf.format(d); cd.textContent = df.format(d); }
+    tick(); setInterval(tick, 1000);
   })();
 </script>
 </body>
