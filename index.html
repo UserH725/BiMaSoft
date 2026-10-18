@@ -19,13 +19,7 @@
   #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
-  #btn { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); cursor: pointer; padding: 0; font-size: 22px; line-height: 1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.65);
-         background: linear-gradient(135deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 400% 400%;
-         animation: rbFlow 5s linear infinite, rbGlow 2.4s ease-in-out infinite; transition: transform .15s ease; }
-  #btn:hover { transform: scale(1.1); animation-duration: 2s, 1.2s; }
-  #btn:active { transform: scale(.94); }
-  @keyframes rbFlow { to { background-position: 400% 50%; } }
-  @keyframes rbGlow { 0%, 100% { box-shadow: 0 0 8px 1px rgba(255,45,149,.55); } 33% { box-shadow: 0 0 14px 3px rgba(255,230,0,.55); } 66% { box-shadow: 0 0 14px 3px rgba(0,200,255,.6); } }
+  /* Pulsante play/pausa: disco (vinile/CD) che gira in ascolto e si ferma in pausa. Vedi blocco "Disco" in fondo. */
 
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #nowName { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; }
@@ -123,18 +117,50 @@
   #list .st { border: 1.5px solid transparent; }
   #list .st.cur { background: linear-gradient(rgba(12,12,16,.92), rgba(12,12,16,.92)) padding-box, linear-gradient(90deg, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95) border-box; background-size: 100% 100%, 200% 100%; animation: hl3 6s linear infinite; box-shadow: 0 0 14px rgba(0,200,255,.2); }
   @media (prefers-reduced-motion: reduce) { #list .st.cur { animation: none !important; } }
+
+  /* === Meter dell'onda sonora (istogramma) al centro del player === */
+  #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
+  #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+  #meter { flex: 0 0 auto; width: 270px; height: 40px; display: block; pointer-events: none; }
+  @media (max-width: 560px) {
+    #player { padding-bottom: 22px; }
+    #meter { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); width: 210px; height: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #meter { display: none; } }
+
+  /* === Disco: il pulsante e' un vinile/CD. Gira mentre la radio suona, si ferma (nella posizione in cui e') in pausa === */
+  #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
+  #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
+  #btn:hover { transform: scale(1.08); }
+  #btn:active { transform: scale(.94); }
+  #btn::before { content: ""; position: absolute; inset: 0; border-radius: 50%; animation: discSpin 2.4s linear infinite; animation-play-state: paused;
+    background:
+      radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
+      radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
+      conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
+      repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px); }
+  #btn.is-on::before { animation-play-state: running; }
+  #btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
+  #btn.is-on::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5h4v14H7zM13 5h4v14h-4z' fill='white'/%3E%3C/svg%3E"); }
+  @keyframes discSpin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #btn::before { animation: none; } }
 </style>
 </head>
 <body>
 <div id="notes" aria-hidden="true"></div>
 <header id="player" data-g="1">
+<div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
     <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
   </div>
+</div>
+  <canvas id="meter" width="270" height="40" aria-hidden="true"></canvas>
+<div class="pr">
   <div id="clock"><b id="ck"></b><span id="cd"></span><div id="bufv" style="visibility:hidden"><span class="bc"></span><span class="bt"></span></div></div>
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
+</div>
 </header>
 
 <main>
@@ -147,6 +173,7 @@
 </main>
 
 <div id="gp" role="group" aria-label="Prova gradiente"><span id="gpn">1 Arcobaleno</span></div>
+
 
 <audio id="au" preload="none" playsinline></audio>
 
@@ -239,7 +266,7 @@
   function setSt(cls, txt) { nowSt.className = cls; stText = txt; updateNow(); render(); }
   function render() {
     var live = nowSt.className === 'on';
-    btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;';
+    btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;'; btn.classList.toggle('is-on', !!(wantPlay && cur >= 0));
     items.forEach(function (b, i) {
       var on = i === cur;
       b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '');
@@ -647,6 +674,83 @@
     var df = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     function tick() { var d = new Date(); ck.textContent = tf.format(d); cd.textContent = df.format(d); }
     tick(); setInterval(tick, 1000);
+  })();
+
+  // Meter dell'onda sonora a istogramma (centro del player): colonne arcobaleno con cappelli di picco.
+  // NOTA: e' una SIMULAZIONE animata, legata allo stato di riproduzione e al volume: i flussi delle radio arrivano da server esterni
+  // senza permesso CORS, quindi il browser non consente di analizzare davvero l'audio (e tentarlo metterebbe in muto la radio).
+  (function () {
+    var cv = document.getElementById('meter'), cx = cv.getContext('2d');
+    var N = 32, M = 30, lv = [], pk = [], ph = [], k;
+    var W = 0, H = 0, dpr = 1, act = 0, beat = 0, nextK = 0, tPrev = 0, lastD = 0;
+    for (k = 0; k < N; k++) { lv[k] = 0; pk[k] = 0; ph[k] = 0; }
+
+    function size() {
+      var r = cv.getBoundingClientRect();
+      dpr = window.devicePixelRatio || 1;
+      W = Math.round(r.width); H = Math.round(r.height);
+      if (W < 2 || H < 2) return;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    function clamp(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+    function hue(x) { return (330 + x * 300) % 360; }
+    function band(a, i) {
+      var s = Math.floor(i * N / M), e = Math.max(s + 1, Math.floor((i + 1) * N / M)), t = 0, j;
+      for (j = s; j < e; j++) t += a[j];
+      return t / (e - s);
+    }
+    function rr(x, y, w, h, r) {
+      r = Math.max(0, Math.min(r, w / 2, h / 2));
+      cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r);
+      cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath();
+    }
+
+    // Simulazione dei livelli: bande con inclinazione verso i bassi, "cassa" ritmica, attacco veloce e rilascio lento
+    function step(t) {
+      var dt = Math.min(0.1, t - tPrev), x, a, b, v, tg, up, dn, playing, buf, i;
+      tPrev = t; if (dt <= 0) return;
+      playing = wantPlay && !au.paused && nowSt.className === 'on';
+      buf = wantPlay && nowSt.className === 'buf';
+      tg = playing ? (0.35 + 0.65 * au.volume) : (buf ? 0.1 : 0);
+      act += (tg - act) * (1 - Math.pow(0.92, dt * 60));
+      if (t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
+      beat *= Math.pow(0.86, dt * 60);
+      up = 1 - Math.pow(0.45, dt * 60); dn = 1 - Math.pow(0.9, dt * 60);
+      for (i = 0; i < N; i++) {
+        x = i / (N - 1);
+        a = 0.5 + 0.5 * Math.sin(t * (1.7 + i * 0.37) + i * 1.3);
+        b = 0.5 + 0.5 * Math.sin(t * (3.1 + i * 0.21) + i * 0.7);
+        v = (1 - 0.45 * x) * (0.3 + 0.5 * a * b + 0.35 * Math.random()) + beat * (1 - x) * 0.5;
+        v = clamp(v * act * 1.35);
+        lv[i] += (v - lv[i]) * (v > lv[i] ? up : dn);
+        if (lv[i] >= pk[i]) { pk[i] = lv[i]; ph[i] = 0.35; }
+        else if (ph[i] > 0) ph[i] -= dt;
+        else pk[i] = Math.max(lv[i], pk[i] - dt * 0.8);
+      }
+    }
+
+    function draw() {
+      var p = Math.round(Math.min(6, H * 0.14)), x0 = p, y0 = p, w = W - 2 * p, h = H - 2 * p, g = 2, bw = (w - (M - 1) * g) / M, i, bh;
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
+      cx.fillStyle = 'rgba(0,0,0,.4)'; rr(0, 0, W, H, Math.min(8, H / 3)); cx.fill();
+      for (i = 0; i < M; i++) {
+        bh = Math.max(1.5, band(lv, i) * h);
+        cx.fillStyle = 'hsl(' + hue(i / (M - 1)) + ',100%,60%)';
+        rr(x0 + i * (bw + g), y0 + h - bh, bw, bh, 1.5); cx.fill();
+        cx.fillStyle = 'rgba(255,255,255,.9)';
+        cx.fillRect(x0 + i * (bw + g), y0 + h - Math.max(2, band(pk, i) * h) - 1.5, bw, 1.5);
+      }
+    }
+    function loop(ts) {
+      requestAnimationFrame(loop);
+      if (cv.offsetWidth < 2 || ts - lastD < 33) return;
+      lastD = ts;
+      if (!W || Math.round(cv.getBoundingClientRect().width) !== W) size();
+      step(ts / 1000); draw();
+    }
+    window.addEventListener('resize', size);
+    size();
+    requestAnimationFrame(loop);
   })();
 </script>
 </body>
