@@ -13,7 +13,8 @@
   button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
-  #player { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
+  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   main { position: relative; z-index: 1; }
   #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
@@ -75,25 +76,25 @@
   @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
   @keyframes gspin { to { --ang: 360deg; } }
   /* 1 Arcobaleno */
-  #player[data-g="1"]::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
   /* 2 Aurora (macchie di luce che si muovono) */
-  #player[data-g="2"]::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
+  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%);
     animation: gblob 16s ease-in-out infinite alternate; }
   /* 3 Tramonto */
-  #player[data-g="3"]::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 4 Oceano */
-  #player[data-g="4"]::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 5 Fuoco */
-  #player[data-g="5"]::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
+  #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
   /* 6 Foresta / lime */
-  #player[data-g="6"]::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 7 Caramella */
-  #player[data-g="7"]::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
   /* 8 Giostra (gradiente conico che ruota) */
-  #player[data-g="8"]::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
+  #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
   /* 9 Lava (macchie calde, piu' veloci) */
-  #player[data-g="9"]::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
+  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%);
     animation: gblob 8s ease-in-out infinite alternate; }
   /* selettore di prova (da togliere dopo la scelta) */
@@ -101,32 +102,29 @@
   #gp button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #666; background: #1a1a1a; cursor: pointer; padding: 0; }
   #gp button.on { background: #fff; color: #000; border-color: #fff; font-weight: 700; }
   #gp span { white-space: nowrap; color: #ccc; min-width: 78px; }
-  /* Buffer a colonne, al centro del player sotto la data */
-  #bufv { display: flex; align-items: center; justify-content: center; gap: 8px; height: 16px; margin-top: 3px; font-size: 11px; color: #cfcfcf; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 8px #000; --c: #3ddc84; }
-  #bufv.lo { --c: #ff5c5c; } #bufv.mi { --c: #ffd24d; } #bufv.hi { --c: #3ddc84; }
-  #bufv .bc { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
-  #bufv .bc i { width: 4px; border-radius: 1px; background: rgba(255,255,255,.18); transition: background .3s; }
-  #bufv .bc i.on { background: var(--c); }
-  #bufv .bt { font-variant-numeric: tabular-nums; }
-  @media (max-width: 560px) { #bufv { flex-direction: column; gap: 2px; height: auto; } #player { height: auto; min-height: 76px; padding-bottom: 6px; } }
+  /* Riga 2: buffer = linea spessa a tutta larghezza, valori scritti a destra */
+  #bufrow { position: relative; height: 20px; background: #111; overflow: hidden; --c: #3ddc84; }
+    #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
+  #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
   #clock #cd { display: block; font-size: 11px; color: #cfcfcf; white-space: nowrap; }
-  /* Riga della radio in ascolto: contorno neon colorato che scorre */
-  @keyframes hl3 { to { background-position: 0 0, 200% 0; } }
+  /* Riga della radio in ascolto: riempimento con lo stesso gradiente (e la stessa variante) della cornice del player */
   #list .st { border: 1.5px solid transparent; }
-  #list .st.cur { background: linear-gradient(rgba(12,12,16,.92), rgba(12,12,16,.92)) padding-box, linear-gradient(90deg, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95) border-box; background-size: 100% 100%, 200% 100%; animation: hl3 6s linear infinite; box-shadow: 0 0 14px rgba(0,200,255,.2); }
-  @media (prefers-reduced-motion: reduce) { #list .st.cur { animation: none !important; } }
+  #list .st.cur { position: relative; z-index: 0; overflow: hidden; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); box-shadow: 0 0 14px rgba(0,0,0,.4); }
+  #list .st.cur .nm, #list .st.cur .ic { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #list .st.cur::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #list .st.cur::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
+  html[data-g="0"] #list .st.cur::before, html[data-g="0"] #list .st.cur::after { display: none; }
+  html.fo #list .st.cur::before { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { #list .st.cur::before { animation: none !important; } }
 
   /* === Meter dell'onda sonora (istogramma) al centro del player === */
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
   #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
-  #meter { flex: 0 0 auto; width: 270px; height: 40px; display: block; pointer-events: none; }
-  @media (max-width: 560px) {
-    #player { padding-bottom: 22px; }
-    #meter { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); width: 210px; height: 14px; }
-  }
-  @media (prefers-reduced-motion: reduce) { #meter { display: none; } }
+  #mtr { display: block; height: 40px; background: #000; }
+  #meter { display: block; width: 100%; height: 40px; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { #mtr { display: none; } }
 
   /* === Disco: il pulsante e' un vinile/CD. Gira mentre la radio suona, si ferma (nella posizione in cui e') in pausa === */
   #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
@@ -148,6 +146,7 @@
 </head>
 <body>
 <div id="notes" aria-hidden="true"></div>
+<div id="hdr">
 <header id="player" data-g="1">
 <div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
@@ -156,12 +155,14 @@
     <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
   </div>
 </div>
-  <canvas id="meter" width="270" height="40" aria-hidden="true"></canvas>
 <div class="pr">
-  <div id="clock"><b id="ck"></b><span id="cd"></span><div id="bufv" style="visibility:hidden"><span class="bc"></span><span class="bt"></span></div></div>
+  <div id="clock"><b id="ck"></b><span id="cd"></span></div>
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume">
 </div>
 </header>
+<div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
+<div id="mtr"><canvas id="meter" width="1200" height="40" aria-hidden="true"></canvas></div>
+</div>
 
 <main>
   <div class="head">
@@ -588,7 +589,7 @@
   // Selettore di prova per la cornice del player
   (function () {
     var NAMES = ['Nessuno', 'Arcobaleno', 'Aurora', 'Tramonto', 'Oceano', 'Fuoco', 'Foresta', 'Caramella', 'Giostra', 'Lava'];
-    var pl = document.getElementById('player'), gp = document.getElementById('gp'), gpn = document.getElementById('gpn'), i, b;
+    var de = document.documentElement, pl = document.getElementById('player'), gp = document.getElementById('gp'), gpn = document.getElementById('gpn'), i, b;
     var cur = 1, tm = null, fadeT = null, PERIOD = 60000;
     function mark(g) {
       gpn.textContent = g + ' ' + NAMES[g];
@@ -599,9 +600,9 @@
     function set(g, instant) {
       g = parseInt(g, 10); cur = g; mark(g);
       clearTimeout(fadeT);
-      if (instant || g === 0 || pl.getAttribute('data-g') === '0') { pl.classList.remove('fo'); pl.setAttribute('data-g', g); return; }
-      pl.classList.add('fo');
-      fadeT = setTimeout(function () { pl.setAttribute('data-g', g); pl.classList.remove('fo'); }, 900);
+      if (instant || g === 0 || pl.getAttribute('data-g') === '0') { pl.classList.remove('fo'); de.classList.remove('fo'); pl.setAttribute('data-g', g); de.setAttribute('data-g', g); return; }
+      pl.classList.add('fo'); de.classList.add('fo');
+      fadeT = setTimeout(function () { pl.setAttribute('data-g', g); de.setAttribute('data-g', g); pl.classList.remove('fo'); de.classList.remove('fo'); }, 900);
     }
     // Rotazione continua: ogni variante (da 1 a 9) resta 1 minuto, poi passa alla successiva e ricomincia
     function startRot() {
@@ -617,23 +618,20 @@
     set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
     startRot();
   })();
-  // Indicatore del buffer (colonne): secondi in coda, % rispetto al cuscinetto di 45 s, dimensione STIMATA (secondi x bitrate: livelli HLS se noti, altrimenti 128 kbps)
+  // Indicatore del buffer (riga 2, barra a tutta larghezza): barra al 100% quando il buffer reale arriva al 5% (FULL) del cuscinetto, perche' da li' la radio va bene; secondi in coda, % rispetto al cuscinetto di 45 s, dimensione STIMATA (secondi x bitrate: livelli HLS se noti, altrimenti 128 kbps)
   (function () {
-    var N = 12, T = 45, box = document.getElementById('bufv'), bt = box.querySelector('.bt'), col = box.querySelector('.bc'), i, e;
-    for (i = 0; i < N; i++) { e = document.createElement('i'); e.style.height = (3 + i) + 'px'; col.appendChild(e); }
+    var T = 45, FULL = 5, box = document.getElementById('bufrow'), bf = document.getElementById('bfill'), bt = document.getElementById('bftxt');
     function upd() {
-      if (!(wantPlay && cur >= 0)) { box.style.visibility = 'hidden'; return; }
-      box.style.visibility = 'visible';
-      var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, n, sz;
+      if (!(wantPlay && cur >= 0)) { bf.style.clipPath = 'inset(0 100% 0 0)'; bt.textContent = ''; box.title = ''; return; }
+      var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, f, sz;
       for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) { s = Math.max(0, r.end(k) - t); break; } }
       lv = hls && hls.levels && hls.levels[hls.currentLevel >= 0 ? hls.currentLevel : 0];
       kbps = lv && lv.bitrate ? lv.bitrate / 1000 : 128;
-      kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); n = Math.round(p / 100 * N);
+      kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); f = Math.min(1, (s / T * 100) / FULL);
       sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
-      box.className = p < 25 ? 'lo' : (p < 60 ? 'mi' : 'hi');
-      bt.textContent = p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
+      bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';   // sfumatura fissa rosso -> verde scuro, scoperta in base al buffer
+      bt.textContent = 'Buffer ' + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
       box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
-      for (k = 0; k < N; k++) col.children[k].classList.toggle('on', k < n);
     }
     au.addEventListener('playing', upd); au.addEventListener('waiting', upd); au.addEventListener('progress', upd);
     setInterval(upd, 500);
@@ -681,7 +679,7 @@
   // senza permesso CORS, quindi il browser non consente di analizzare davvero l'audio (e tentarlo metterebbe in muto la radio).
   (function () {
     var cv = document.getElementById('meter'), cx = cv.getContext('2d');
-    var N = 32, M = 30, lv = [], pk = [], ph = [], k;
+    var N = 160, M = 30, lv = [], pk = [], ph = [], k;
     var W = 0, H = 0, dpr = 1, act = 0, beat = 0, nextK = 0, tPrev = 0, lastD = 0;
     for (k = 0; k < N; k++) { lv[k] = 0; pk[k] = 0; ph[k] = 0; }
 
@@ -718,8 +716,8 @@
       up = 1 - Math.pow(0.45, dt * 60); dn = 1 - Math.pow(0.9, dt * 60);
       for (i = 0; i < N; i++) {
         x = i / (N - 1);
-        a = 0.5 + 0.5 * Math.sin(t * (1.7 + i * 0.37) + i * 1.3);
-        b = 0.5 + 0.5 * Math.sin(t * (3.1 + i * 0.21) + i * 0.7);
+        a = 0.5 + 0.5 * Math.sin(t * (1.7 + i * 0.37 * 32 / N) + i * 1.3);
+        b = 0.5 + 0.5 * Math.sin(t * (3.1 + i * 0.21 * 32 / N) + i * 0.7);
         v = (1 - 0.45 * x) * (0.3 + 0.5 * a * b + 0.35 * Math.random()) + beat * (1 - x) * 0.5;
         v = clamp(v * act * 1.35);
         lv[i] += (v - lv[i]) * (v > lv[i] ? up : dn);
@@ -730,9 +728,10 @@
     }
 
     function draw() {
-      var p = Math.round(Math.min(6, H * 0.14)), x0 = p, y0 = p, w = W - 2 * p, h = H - 2 * p, g = 2, bw = (w - (M - 1) * g) / M, i, bh;
+      var p = Math.round(Math.min(6, H * 0.14)), x0 = p, y0 = p, w = W - 2 * p, h = H - 2 * p, g = 2, bw, i, bh;
+      M = Math.max(24, Math.min(N, Math.round((w + g) / 10))); bw = (w - (M - 1) * g) / M;
       cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
-      cx.fillStyle = 'rgba(0,0,0,.4)'; rr(0, 0, W, H, Math.min(8, H / 3)); cx.fill();
+      cx.fillStyle = 'rgba(0,0,0,.4)'; cx.fillRect(0, 0, W, H);
       for (i = 0; i < M; i++) {
         bh = Math.max(1.5, band(lv, i) * h);
         cx.fillStyle = 'hsl(' + hue(i / (M - 1)) + ',100%,60%)';
