@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="it">
 <head>
 <meta charset="UTF-8">
@@ -20,8 +20,6 @@
   #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
-  /* Pulsante play/pausa: disco (vinile/CD) che gira in ascolto e si ferma in pausa. Vedi blocco "Disco" in fondo. */
-
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #nowName { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
@@ -34,7 +32,6 @@
   #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
   @keyframes blink { 50% { opacity: .25; } }
 
-  /* === Selettore volume: icona che cambia col livello, barra con gradiente (stessi colori del disco), cursore tondo, valore in % === */
   #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
   #volIc .w, #volIc .mx { opacity: 0; transition: opacity .15s ease; }
@@ -80,7 +77,6 @@
   @media (max-width: 560px) { #volbox { display: none; } #player { gap: 12px; } }
   @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
 
-  /* === Cornice del player: gradiente pieno, sfumato (sfocato) tra i colori e in movimento. 9 varianti da provare === */
   @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
   #player::before { content: ""; position: absolute; inset: -34px; z-index: -1; filter: blur(22px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
   #player.fo::before { opacity: 0; }
@@ -92,43 +88,38 @@
   @keyframes gdiag { to { background-position: 200% 200%; } }
   @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
   @keyframes gspin { to { --ang: 360deg; } }
-  /* 1 Arcobaleno */
   #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before, html[data-g="1"] #ov .ovc::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
-  /* 2 Aurora (macchie di luce che si muovono) */
   #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%);
     animation: gblob 16s ease-in-out infinite alternate; }
-  /* 3 Tramonto */
   #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before, html[data-g="3"] #ov .ovc::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  /* 4 Oceano */
   #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before, html[data-g="4"] #ov .ovc::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  /* 5 Fuoco */
   #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before, html[data-g="5"] #ov .ovc::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
-  /* 6 Foresta / lime */
   #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before, html[data-g="6"] #ov .ovc::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  /* 7 Caramella */
   #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before, html[data-g="7"] #ov .ovc::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
-  /* 8 Giostra (gradiente conico che ruota) */
   #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before, html[data-g="8"] #ov .ovc::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
-  /* 9 Lava (macchie calde, piu' veloci) */
   #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%);
     animation: gblob 8s ease-in-out infinite alternate; }
-  /* Riga 2: buffer = linea spessa a tutta larghezza, valori scritti a destra */
+
   #bufrow { position: relative; height: 20px; background: #111; overflow: hidden; --c: #3ddc84; }
-    #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
+  #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
   #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
   #ck .dg { position: relative; display: inline-block; width: 1ch; height: 1.15em; overflow: hidden; vertical-align: top; }
   #ck .dg > span { position: absolute; left: 0; top: 0; width: 100%; text-align: center; }
   #clock #cd { display: block; font-size: 11px; color: #cfcfcf; white-space: nowrap; }
+  
+  #netStat { display: block; font-size: 10.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
+  #netStat span { font-variant-numeric: tabular-nums; }
+
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 20px; }
   #ana { flex: 0 0 auto; width: 64px; height: 64px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
-  /* Riga della radio in ascolto: riempimento con lo stesso gradiente (e la stessa variante) della cornice del player */
+
   #list .st { border: 1.5px solid transparent; }
   #list .st.cur { position: relative; z-index: 0; overflow: hidden; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); box-shadow: 0 0 14px rgba(0,0,0,.4); }
   #list .st.cur .nm, #list .st.cur .ic { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
@@ -138,7 +129,6 @@
   html.fo #list .st.cur::before, html.fo #ov .ovc::before { opacity: 0; }
   @media (prefers-reduced-motion: reduce) { #list .st.cur::before, #ov .ovc::before { animation: none !important; } }
 
-  /* === Sovraimpressione della radio scelta: scheda grande con lo stesso gradiente della riga attiva; al tocco si riduce e torna nella riga dell'elenco === */
   #ov { position: fixed; left: 0; right: 0; bottom: 0; top: var(--hh, 0px); z-index: 5; background: rgba(0,0,0,0); transition: background .35s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; }
   #ov[hidden] { display: none; }
   #ov.open { background: rgba(0,0,0,.62); }
@@ -163,14 +153,12 @@
   #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
   @media (prefers-reduced-motion: reduce) { #ov, #ov .ovc, #ov .ovi { transition: none !important; } #ovSt.buf .led { animation: none; } }
 
-  /* === Meter dell'onda sonora (istogramma) al centro del player === */
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
   #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
   #mtr { display: block; height: 40px; background: #000; }
   #meter { display: block; width: 100%; height: 40px; pointer-events: none; }
   @media (prefers-reduced-motion: reduce) { #mtr { display: none; } }
 
-  /* === Disco: il pulsante e' un vinile/CD. Gira mentre la radio suona, si ferma (nella posizione in cui e') in pausa === */
   #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
   #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
   #btn:hover { transform: scale(1.08); }
@@ -211,7 +199,11 @@
 </div>
 <div class="pr">
  <div id="rc">
-  <div id="clock"><b id="ck"></b><span id="cd"></span></div>
+  <div id="clock">
+    <b id="ck"></b>
+    <span id="cd"></span>
+    <div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB a 4 cifre decimali dall'apertura della pagina">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
+  </div>
   <div id="volbox" title="Volume">
     <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
       <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>
@@ -253,9 +245,9 @@
 </div>
 
 <script>
-  // Elenco delle radio: per aggiungerne una basta una riga nuova { name: 'Nome', urls: ['https://...'] }.
-  // Con piu' indirizzi in urls, se il primo non risponde la pagina prova automaticamente il successivo.
-  // info (facoltativo) = pagina della radio che pubblica il brano in onda.
+  // TARGET BUFFER INIZIALE IN SECONDI (Attesa di caricamento prima di avviare l'audio)
+  var INIT_BUFFER_TARGET = 5;
+
   var STATIONS = [
     {name: '105 Dance 90', urls: ['https://icy.unitedradio.it/105Dance90.mp3']},
     {name: '80s 90s Super Pop Hits', urls: ['https://s4.myradiostream.com:7344/listen.mp3?nocache=1792243995', 'https://s4.myradiostream.com/7344/listen.mp3']},
@@ -313,19 +305,39 @@
     {name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac']}
   ];
 
-  // Ordine alfabetico automatico (anche per le radio aggiunte in futuro), numeri in ordine naturale
   STATIONS.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true }); });
 
   var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
-  var nowTxt = document.getElementById('nowTxt'), cushFresh = false;
+  var nowTxt = document.getElementById('nowTxt');
+
+  // --- MONITORE DI RETE: Velocità in KB/s e Totale in MB (decamillesimi) ---
+  var totalBytes = 0, bytesInWindow = 0, lastNetTick = Date.now();
+  var dlSpdEl = document.getElementById('dlSpd'), dlTotEl = document.getElementById('dlTot');
+
+  function addDownloadedBytes(b) {
+    if (b <= 0) return;
+    totalBytes += b;
+    bytesInWindow += b;
+  }
+
+  setInterval(function () {
+    var now = Date.now(), dt = (now - lastNetTick) / 1000;
+    lastNetTick = now;
+    var kbs = dt > 0 ? ((bytesInWindow / 1024) / dt) : 0;
+    bytesInWindow = 0;
+    
+    var totalMB = totalBytes / 1048576;
+    
+    dlSpdEl.textContent = kbs.toFixed(1).replace('.', ',') + ' KB/s';
+    dlTotEl.textContent = totalMB.toFixed(4).replace('.', ',') + ' MB';
+  }, 1000);
 
   function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 
-  // Su una pagina https il browser blocca gli stream http: si prova la versione https (gli indirizzi IP numerici si saltano, il certificato non combacerebbe)
   function candidates(st) {
     var out = [], secure = location.protocol === 'https:';
     st.urls.forEach(function (u) {
@@ -385,20 +397,24 @@
       loadHls(function (ok) {
         if (g !== gen) return;
         if (ok && window.Hls && Hls.isSupported()) {
-          hls = new Hls({ lowLatencyMode: false, maxBufferLength: 90, maxMaxBufferLength: 180, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
+          hls = new Hls({ lowLatencyMode: false, maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
           hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
+          
+          hls.on(Hls.Events.FRAG_LOADED, function (e, d) {
+            if (d && d.frag && d.frag.loaded) addDownloadedBytes(d.frag.loaded);
+          });
+
           hls.on(Hls.Events.FRAG_PARSING_METADATA, function (e, d) {
             if (g !== gen || !d || !d.frag || !d.samples) return;
             d.samples.forEach(function (sm) {
               var t = id3Song(sm && sm.data), k;
               if (!t) return;
-              try { console.log('[titolo] ID3 nel segmento ' + d.frag.sn + ' = ' + t); } catch (x) {}
               segSong[d.frag.sn] = t;
               for (k in segSong) { if (Number(k) < d.frag.sn - 100) delete segSong[k]; }
             });
           });
-          hls.on(Hls.Events.FRAG_CHANGED, function (e, d) { var s = d && d.frag && segSong[d.frag.sn]; if (g === gen && s) { try { console.log('[titolo] in riproduzione:', s); } catch (x) {} setSong(s); } });
+          hls.on(Hls.Events.FRAG_CHANGED, function (e, d) { var s = d && d.frag && segSong[d.frag.sn]; if (g === gen && s) { setSong(s); } });
           hls.loadSource(u); hls.attachMedia(au);
         } else if (au.canPlayType('application/vnd.apple.mpegurl')) {
           au.src = u; au.play().catch(onPlayErr(g));
@@ -410,11 +426,10 @@
     }
   }
 
-  // Prova l'indirizzo successivo; dopo due giri completi senza successo si ferma e lo dice
   function next(g) {
     if (g !== gen || !wantPlay) return;
     tries++;
-    if (tries >= 40) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }   // in auto la rete torna dopo qualche secondo: si insiste a lungo
+    if (tries >= 40) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
     uIdx = (uIdx + 1) % cands.length;
     setSt('buf', navigator.onLine === false ? 'senza rete, attendo...' : 'riconnessione...');
     clearTimeout(retryT);
@@ -425,7 +440,7 @@
     cur = i; uIdx = 0; tries = 0;
     cands = candidates(STATIONS[i]);
     song = '';
-    store('radioLast', STATIONS[i].name); cushFresh = true;
+    store('radioLast', STATIONS[i].name);
     setMedia();
     if (autoplay) { wantPlay = true; start(); } else { setSt('off', 'pronta'); }
   }
@@ -461,7 +476,6 @@
     select(cur, true);
   });
   var volIc = document.getElementById('volIc'), volVal = document.getElementById('volVal');
-  // Aggiorna icona, percentuale e riempimento della barra (il bordo del riempimento segue il centro del cursore, largo 16 px)
   function volUI() {
     var n = parseInt(vol.value, 10) || 0;
     vol.style.setProperty('--p', 'calc(8px + (100% - 16px) * ' + (n / 100) + ')');
@@ -470,9 +484,6 @@
   }
   vol.addEventListener('input', function () { au.volume = vol.value / 100; volUI(); });
 
-  // === Titolo del brano in onda: mostrato subito a destra del pulsante, al posto del nome della radio ===
-  // Il browser legge i dati direttamente dal server di ogni radio: funziona solo dove quel server lo permette (CORS). Dove non e' possibile resta il nome della radio.
-  // Titolo della scheda del browser: il brano scorre (se e' lungo) e poi compare il nome della radio, a rotazione
   var tabSong = '', tabName = '', tabI = 0, tabT = null, TAB_W = 26;
   function tabSet(sg, nm) {
     if (sg === tabSong && nm === tabName) return;
@@ -483,21 +494,19 @@
   }
   function tabTick() {
     var s = '\u266A ' + tabSong + '   \u2022   ', n = s.length, hold = 9, name = tabName || 'Radio';
-    // fasi: [0..hold) brano fermo all'inizio, poi scorrimento di un giro intero (solo se piu' lungo della finestra), poi nome radio fermo
     var scroll = n - 7 > TAB_W ? n : 0, total = hold + scroll + hold, k = tabI % total, t;
     if (k < hold) t = (s.length - 7 > TAB_W ? s : tabSong.length ? '\u266A ' + tabSong : s).slice(0, TAB_W + 8);
     else if (k < hold + scroll) { var o = k - hold; t = (s + s).substr(o, TAB_W + 8); }
     else t = '\u266B ' + name;
     document.title = t; tabI++;
   }
-  // Effetto "lettere che scorrono": ogni lettera scorre dalla A alla lettera giusta (A, B, C, ...) e si ferma; le lettere partono una dopo l'altra
-  // da sinistra e cosi' la scritta si compone. Spazi, numeri e simboli compaiono subito. Lettere accentate: scorre la lettera base e poi compare quella accentata.
+
   var shownTxt = '', SCR_STEP = 30;
   function scramble(el, text, done) {
     clearInterval(el._scr);
     if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; if (done) done(); return; }
     var chars = Array.from(text), n = chars.length, st = [], i, b, lt, tick = 0;
-    var gap = Math.max(1, Math.min(3, Math.round(900 / Math.max(1, n) / SCR_STEP)));   // pause tra la partenza di una lettera e la successiva (durata totale ~2 s al massimo)
+    var gap = Math.max(1, Math.min(3, Math.round(900 / Math.max(1, n) / SCR_STEP)));
     for (i = 0; i < n; i++) {
       b = chars[i].normalize('NFD').charAt(0); lt = /[A-Za-z]/.test(b);
       st.push({ ch: chars[i], up: lt && b === b.toUpperCase(), t: lt ? b.toLowerCase().charCodeAt(0) - 97 : -1, at: i * gap });
@@ -508,11 +517,11 @@
       tick++;
       for (k = 0; k < n; k++) {
         x = st[k];
-        if (x.t < 0) { out += x.ch; continue; }                           // non e' una lettera: subito
-        if (tick < x.at) { out += ' '; fin = false; continue; }           // non ancora partita
+        if (x.t < 0) { out += x.ch; continue; }
+        if (tick < x.at) { out += ' '; fin = false; continue; }
         c = tick - x.at;
-        if (c >= x.t) { out += x.ch; continue; }                          // arrivata: lettera definitiva
-        out += String.fromCharCode((x.up ? 65 : 97) + c); fin = false;    // in corsa: A, B, C, ...
+        if (c >= x.t) { out += x.ch; continue; }
+        out += String.fromCharCode((x.up ? 65 : 97) + c); fin = false;
       }
       el.textContent = out;
       if (fin) { clearInterval(el._scr); el._scr = null; if (done) done(); }
@@ -526,11 +535,10 @@
     if (ovOpen) ovFill();
     if (shownTxt !== txt) {
       shownTxt = txt;
-      nowName.classList.remove('mq'); nowName.style.removeProperty('--d');   // durante l'effetto niente scorrimento; si ricalcola a scritta completa
+      nowName.classList.remove('mq'); nowName.style.removeProperty('--d');
       scramble(nowTxt, txt, fit);
     }
   }
-  // Titolo piu' largo dello spazio disponibile: scorre avanti e indietro, con una pausa a ogni estremo
   function fit() {
     nowName.classList.remove('mq'); nowName.style.removeProperty('--d');
     var ov = nowTxt.offsetWidth - nowName.clientWidth;
@@ -545,19 +553,19 @@
   }
   function fetchText(u, plain) {
     var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); }, 6000);
-    // plain = GET semplice senza cache:'no-store' (che aggiunge Cache-Control/Pragma e fa scattare il preflight CORS): come fa hls.js
     var opt = plain ? { signal: ac ? ac.signal : undefined } : { cache: 'no-store', signal: ac ? ac.signal : undefined };
     return fetch(secure(u), opt).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
-    }).then(function (x) { clearTimeout(to); return x; }, function (e) { clearTimeout(to); throw e; });
+    }).then(function (x) {
+      clearTimeout(to);
+      if (x) addDownloadedBytes(x.length);
+      return x;
+    }, function (e) { clearTimeout(to); throw e; });
   }
   function S(v) { return (typeof v === 'string' && v.trim()) ? v.trim() : ''; }
   function artTitle(a, t) { a = S(a); t = S(t); return (a && t) ? a + ' - ' + t : t; }
 
-  // Chunklist HLS con metadati nei tag #MY-USER-CHUNK-DATA-1:ON-TEXT-DATA="Song*TITOLO*ARTISTA*ANNO*id" (Discoradio).
-  // Il tag precede il segmento a cui si riferisce: si memorizza numero segmento -> brano, e il titolo compare quando quel segmento
-  // viene davvero riprodotto (evento FRAG_CHANGED di hls.js), cosi' non anticipa l'audio. Le righe "Link*..." (jingle) si ignorano.
   var segSong = {};
   function parseChunklist(txt) {
     var seq = 0, idx = 0, pend = '', last = '', m, k;
@@ -567,19 +575,17 @@
       if (!l) return;
       if (l.charAt(0) === '#') {
         m = l.match(/ON-TEXT-DATA="Song\*([^*]*)\*([^*]*)\*/);
-        if (m) pend = cleanSong(artTitle(m[2], m[1]));   // campi: titolo * artista
+        if (m) pend = cleanSong(artTitle(m[2], m[1]));
         return;
       }
       var sn = seq + idx++;
-      if (pend) { if (!segSong[sn]) { try { console.log('[titolo] segmento ' + sn + ' = ' + pend); } catch (x) {} } segSong[sn] = pend; last = pend; pend = ''; }
+      if (pend) { segSong[sn] = pend; last = pend; pend = ''; }
     });
     for (k in segSong) { if (Number(k) < seq - 60) delete segSong[k]; }
-    if (!hls && last) setSong(last);   // senza hls.js (HLS nativo, es. Safari) non c'e' FRAG_CHANGED: si usa l'ultimo titolo visto
-    return null;                        // null = nessuna modifica diretta al titolo mostrato
+    if (!hls && last) setSong(last);
+    return null;
   }
 
-  // Metadati ID3v2 dentro i segmenti .aac (Discoradio): frame TXXX "JSI3" con un JSON {type:"song", traccia, artista, ...} e frame TIT2 "TITOLO - ARTISTA".
-  // hls.js li passa in FRAG_PARSING_METADATA (sample.data = i tag ID3 grezzi, anche piu' tag di seguito).
   function id3Song(d) {
     var pos = 0, title = '', json = null, ver, size, end, p, id, fs, body, enc, str, i, j, jj;
     function ss(o) { return (d[o] << 21) | (d[o + 1] << 14) | (d[o + 2] << 7) | d[o + 3]; }
@@ -587,7 +593,7 @@
       try { return new TextDecoder(e === 1 ? 'utf-16' : e === 2 ? 'utf-16be' : e === 3 ? 'utf-8' : 'iso-8859-1').decode(a); } catch (x) { return ''; }
     }
     if (!d || !d.length) return '';
-    while (pos + 10 <= d.length && d[pos] === 0x49 && d[pos + 1] === 0x44 && d[pos + 2] === 0x33) {   // "ID3"
+    while (pos + 10 <= d.length && d[pos] === 0x49 && d[pos + 1] === 0x44 && d[pos + 2] === 0x33) {
       ver = d[pos + 3]; size = ss(pos + 6); end = Math.min(d.length, pos + 10 + size); p = pos + 10;
       while (p + 10 <= end && d[p] !== 0) {
         id = String.fromCharCode(d[p], d[p + 1], d[p + 2], d[p + 3]);
@@ -604,13 +610,12 @@
       pos = end;
     }
     if (json) {
-      if (String(json.type || '').toLowerCase() !== 'song') return '';   // altri tipi (jingle, ecc.): non sono un brano
+      if (String(json.type || '').toLowerCase() !== 'song') return '';
       return cleanSong(artTitle(json.artista || json.sottotitolo, json.titolo || json.traccia)) || cleanSong(title);
     }
     return cleanSong(title);
   }
 
-  // Pagina "now playing" della radio (campo info) o API AzuraCast: JSON con il titolo in uno dei campi piu' comuni, oppure testo semplice
   function parseInfo(txt) {
     txt = String(txt || '').trim();
     if (txt.indexOf('#EXTM3U') === 0) return parseChunklist(txt);
@@ -619,7 +624,6 @@
     j = JSON.parse(txt);
     if (Array.isArray(j)) j = j[0];
     if (!j || typeof j !== 'object') return '';
-    // Formato Mediaset (RMC): il campo raw e' ARTISTA~BRANO~album~anno~...
     if (typeof j.raw === 'string' && j.raw.indexOf('~') >= 0) {
       p = j.raw.split('~');
       if (S(p[0]) && S(p[1])) return cleanSong(S(p[0]) + ' - ' + S(p[1]));
@@ -627,7 +631,6 @@
     }
     keys = ['nowplaying', 'now_playing', 'nowPlaying', 'songtitle', 'song', 'title', 'current_song', 'currentSong', 'currenttrack', 'track'];
     for (k = 0; k < keys.length; k++) { v = S(j[keys[k]]); if (v) return cleanSong(v); }
-    // Formato con involucro (xdevel): {"result":{"meta":"ARTISTA - Titolo","artist":..,"title":..}}; instant.audio (RDS): lista, in onda = track_played piu' alto
     r = j.result;
     if (Array.isArray(r) && r.length && r[0] && r[0].track_played !== undefined) {
       r = r.slice().sort(function (a, b) { return Number(b.track_played) - Number(a.track_played); })[0];
@@ -638,11 +641,11 @@
       v = S(r.meta); if (v) return cleanSong(v);
       v = artTitle(r.artist, r.title); if (v) return cleanSong(v);
     }
-    az = j.now_playing && j.now_playing.song;   // AzuraCast
+    az = j.now_playing && j.now_playing.song;
     if (az) { v = S(az.text) || artTitle(az.artist, az.title); if (v) return cleanSong(v); }
     return cleanSong(artTitle(j.artist, j.title));
   }
-  // Pagine di stato dei server: Icecast (status-json.xsl), Shoutcast v2 (stats) e v1 (7.html)
+
   function parseStatus(kind, txt) {
     var j, src, arr, pick = null, i, ti, ar, f7;
     if (kind === 'ice') {
@@ -658,7 +661,7 @@
     f7 = txt.replace(/<[^>]*>/g, '').trim().split(',');
     return f7.length > 6 ? cleanSong(f7.slice(6).join(',')) : '';
   }
-  // Metadati dentro lo stream (ICY): serve un server che ammetta l'intestazione Icy-MetaData e la esponga; si legge un solo blocco e si chiude
+
   function icyTitle(url) {
     return new Promise(function (resolve, reject) {
       var ac = new AbortController(), done = false, to = setTimeout(function () { fin(null, new Error('timeout')); }, 8000);
@@ -671,9 +674,10 @@
           rd.read().then(function (x) {
             if (x.done) { fin(null, new Error('end')); return; }
             var c = new Uint8Array(acc.length + x.value.length); c.set(acc); c.set(x.value, acc.length); acc = c;
+            addDownloadedBytes(x.value.length);
             if (acc.length > mi) {
               var L = acc[mi] * 16;
-              if (L === 0) { fin(null); return; }   // blocco vuoto: titolo invariato
+              if (L === 0) { fin(null); return; }
               if (acc.length >= mi + 1 + L) {
                 var b = acc.subarray(mi + 1, mi + 1 + L), tx = new TextDecoder('utf-8').decode(b), mm;
                 if (tx.indexOf('\uFFFD') >= 0) tx = new TextDecoder('windows-1252').decode(b);
@@ -707,7 +711,7 @@
       tasks.push({ k: 'icy', f: function () { return icyTitle(u); } });
     }
     if (meta.kind) tasks = tasks.filter(function (x) { return x.k === meta.kind; });
-    else if (meta.fails >= 3 && Date.now() - meta.t < 60000) return;   // nessun metodo ha funzionato: si riprova solo ogni minuto
+    else if (meta.fails >= 3 && Date.now() - meta.t < 60000) return;
     if (!tasks.length) return;
     polling = true;
     (function run(i) {
@@ -717,17 +721,15 @@
         if (g !== gen) return;
         meta.kind = tasks[i].k; meta.fails = 0;
         if (s !== null && s !== undefined) setSong(s);
-      }, function (e) { try { console.warn('[titolo] ' + tasks[i].k + ' non riuscito:', e); } catch (x) {} run(i + 1); });
+      }, function (e) { run(i + 1); });
     })(0);
   }
   au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
-  // Radio con pagina dedicata: titolo riletto ogni 3 s; le altre ogni 10 s (ICY ogni 20 s)
   setInterval(function () {
     var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.info) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
     if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
   }, 1000);
 
-  // Elenco e ricerca
   STATIONS.forEach(function (s, i) {
     var li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.className = 'st'; b.setAttribute('aria-pressed', 'false');
@@ -747,7 +749,6 @@
     document.getElementById('none').hidden = shown > 0;
   });
 
-  // Sovraimpressione: la radio scelta si apre in grande sopra l'elenco, col gradiente della riga attiva; al tocco successivo si riduce e torna nella sua riga, per sceglierne un'altra
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName'), ovSt = document.getElementById('ovSt');
   var ovStTx = document.getElementById('ovStTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
@@ -758,7 +759,7 @@
   function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
   function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
   var ovShown = {};
-  function ovSet(el, key, text, force) {   // la scritta si compone con l'effetto lettere che scorrono, solo se e' cambiata (o se force)
+  function ovSet(el, key, text, force) {
     if (!force && ovShown[key] === text) return;
     ovShown[key] = text; scramble(el, text);
   }
@@ -768,7 +769,7 @@
     ovSet(ovStTx, 's', stText, force);
     ovSet(ovSong, 'g', song ? '\u266A ' + song : '', force);
   }
-  function ovRect(row, t) {   // rettangolo della riga se visibile, altrimenti un punto al centro della scheda
+  function ovRect(row, t) {
     var r = row ? row.getBoundingClientRect() : null, hb = hdrEl.getBoundingClientRect().bottom;
     if (r && r.width > 0 && r.height > 0 && r.bottom > hb && r.top < window.innerHeight) return { top: r.top, left: r.left, width: r.width, height: r.height };
     return { top: t.top + t.height / 2, left: t.left + t.width / 2, width: 0, height: 0 };
@@ -801,13 +802,12 @@
   document.addEventListener('keydown', function (e) { if (ovOpen && e.key === 'Escape') ovHide(); });
   window.addEventListener('resize', function () { if (ovOpen) ovNoAnim(function () { ovPlace(ovTarget()); }); });
 
-  vol.value = 100;   // a ogni apertura della pagina il volume parte sempre al massimo
+  vol.value = 100;
   au.volume = 1; volUI();
   var last = load('radioLast'), li0 = -1;
   STATIONS.forEach(function (s, i) { if (s.name === last) li0 = i; });
   if (li0 >= 0) select(li0, false); else { render(); updateNow(); }
 
-  // Sfondo animato: note musicali colorate che salgono, in numero proporzionale alla larghezza
   (function () {
     var box = document.getElementById('notes'), rsT = null;
     var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'];
@@ -823,7 +823,7 @@
     build();
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
   })();
-  // Cornice del player e riga attiva: rotazione continua tra le varianti 1-9, ognuna resta 1 minuto, con dissolvenza nel passaggio
+
   (function () {
     var de = document.documentElement, pl = document.getElementById('player');
     var cur = 1, tm = null, fadeT = null, PERIOD = 60000;
@@ -839,29 +839,38 @@
     set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
     tm = setInterval(function () { set(cur >= 9 || cur < 1 ? 1 : cur + 1); }, PERIOD);
   })();
-  // Indicatore del buffer (riga 2, barra a tutta larghezza): barra al 100% quando il buffer reale arriva al 5% (FULL) del cuscinetto, perche' da li' la radio va bene; secondi in coda, % rispetto al cuscinetto di 45 s, dimensione STIMATA (secondi x bitrate: livelli HLS se noti, altrimenti 128 kbps)
+
+  // Barra del buffer configurata sul target dei secondi da caricare prima dell'avvio
   (function () {
-    var T = 45, FULL = 5, box = document.getElementById('bufrow'), bf = document.getElementById('bfill'), bt = document.getElementById('bftxt');
+    var T = INIT_BUFFER_TARGET, FULL = 5, box = document.getElementById('bufrow'), bf = document.getElementById('bfill'), bt = document.getElementById('bftxt');
+    var lastBufferedSec = 0;
+
     function upd() {
-      if (!(wantPlay && cur >= 0)) { bf.style.clipPath = 'inset(0 100% 0 0)'; bt.textContent = ''; box.title = ''; return; }
+      if (!(wantPlay && cur >= 0)) { bf.style.clipPath = 'inset(0 100% 0 0)'; bt.textContent = ''; box.title = ''; lastBufferedSec = 0; return; }
       var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, f, sz;
       for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) { s = Math.max(0, r.end(k) - t); break; } }
+      
+      if (!hls && s > lastBufferedSec) {
+        var diffSec = s - lastBufferedSec;
+        addDownloadedBytes(diffSec * (128 * 1024 / 8));
+      }
+      lastBufferedSec = s;
+
       lv = hls && hls.levels && hls.levels[hls.currentLevel >= 0 ? hls.currentLevel : 0];
       kbps = lv && lv.bitrate ? lv.bitrate / 1000 : 128;
       kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); f = Math.min(1, (s / T * 100) / FULL);
       sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
-      bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';   // sfumatura fissa rosso -> verde scuro, scoperta in base al buffer
+      bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';
       bt.textContent = 'Buffer ' + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
-      box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
+      box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s target \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
     }
     au.addEventListener('playing', upd); au.addEventListener('waiting', upd); au.addEventListener('progress', upd);
     setInterval(upd, 500);
   })();
-  // Mobilita': al ritorno della rete si riparte subito; cuscinetto iniziale per gli stream non HLS (l'avvio attende che siano in coda N secondi: fa da riserva nei vuoti di copertura)
-  window.addEventListener('online', function () { if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) { tries = 0; clearTimeout(retryT); start(); } });
-  window.addEventListener('offline', function () { if (wantPlay) setSt('buf', 'senza rete, attendo...'); });
+
+  // --- Pre-buffering: attende in pausa fino a riempire INIT_BUFFER_TARGET secondi ---
   (function () {
-    var CU = 45, holding = false, doneGen = -1;   // cuscinetto fisso
+    var doneGen = -1;
     function ahead() {
       var r = au.buffered, t = au.currentTime, k;
       for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) return Math.max(0, r.end(k) - t); }
@@ -870,28 +879,29 @@
     au.addEventListener('playing', function () {
       if (doneGen === gen) return;
       doneGen = gen;
-      var need = cushFresh ? CU : Math.min(CU, 10);   // avvio da utente: cuscinetto pieno; riconnessione automatica: riserva ridotta per tornare presto a suonare
-      cushFresh = false;
-      if (hls || !need || ahead() >= need) return;
+      var need = INIT_BUFFER_TARGET;
+      if (hls || ahead() >= need) return;
       var g = gen, last = ahead(), lastT = Date.now(), a;
-      holding = true; au.pause();
+      au.pause();
       (function w() {
-        if (g !== gen || !wantPlay) { holding = false; return; }
+        if (g !== gen || !wantPlay) return;
         a = ahead();
         if (a > last + 0.5) { last = a; lastT = Date.now(); }
-        // si parte a cuscinetto pieno, oppure se il browser non accumula piu' (4 s senza crescita) o dopo 30 s
-        if (a >= need || Date.now() - lastT > 4000 || Date.now() - lastT < 0) { holding = false; au.play().catch(onPlayErr(g)); return; }
-        setSt('buf', 'preparo il buffer ' + Math.round(a) + '/' + need + ' s');
-        setTimeout(w, 400);
+        // Se raggiunge la quantità desiderata o se il server rallenta, fa partire la riproduzione
+        if (a >= need || Date.now() - lastT > (need * 1200)) { au.play().catch(onPlayErr(g)); return; }
+        setSt('buf', 'caricamento buffer ' + Math.round(a) + '/' + need + ' s');
+        setTimeout(w, 200);
       })();
     });
   })();
-  // Data e ora (fuso del dispositivo)
+
+  window.addEventListener('online', function () { if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) { tries = 0; clearTimeout(retryT); start(); } });
+  window.addEventListener('offline', function () { if (wantPlay) setSt('buf', 'senza rete, attendo...'); });
+
   (function () {
     var ck = document.getElementById('ck'), cd = document.getElementById('cd');
     var tf = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     var df = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    // Cifre che scorrono dal basso verso l'alto: la nuova entra da sotto, la vecchia esce verso l'alto
     var slots = [], reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     function build(str) {
       var i, ch, el, sp;
@@ -924,7 +934,6 @@
     tick(); setInterval(tick, 1000);
   })();
 
-  // Orologio analogico "punti arcobaleno" al centro del player
   (function () {
     var NS = 'http://www.w3.org/2000/svg', g = document.getElementById('anaDots'), i, a, c;
     var hh = document.getElementById('anaH'), hm = document.getElementById('anaM'), hs = document.getElementById('anaS');
@@ -944,9 +953,6 @@
     frame();
   })();
 
-  // Meter dell'onda sonora a istogramma (centro del player): colonne arcobaleno con cappelli di picco.
-  // NOTA: e' una SIMULAZIONE animata, legata allo stato di riproduzione e al volume: i flussi delle radio arrivano da server esterni
-  // senza permesso CORS, quindi il browser non consente di analizzare davvero l'audio (e tentarlo metterebbe in muto la radio).
   (function () {
     var cv = document.getElementById('meter'), cx = cv.getContext('2d');
     var N = 160, M = 30, lv = [], pk = [], ph = [], k;
@@ -973,13 +979,12 @@
       cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath();
     }
 
-    // Simulazione dei livelli: bande con inclinazione verso i bassi, "cassa" ritmica, attacco veloce e rilascio lento
     function step(t) {
       var dt = Math.min(0.1, t - tPrev), x, a, b, v, tg, up, dn, playing, buf, i;
       tPrev = t; if (dt <= 0) return;
       playing = wantPlay && !au.paused && nowSt.className === 'on';
       buf = wantPlay && nowSt.className === 'buf';
-      tg = playing ? 1 : (buf ? 0.1 : 0);   // meter fisso come a volume massimo, indipendente dallo slider
+      tg = playing ? 1 : (buf ? 0.1 : 0);
       act += (tg - act) * (1 - Math.pow(0.92, dt * 60));
       if (t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
