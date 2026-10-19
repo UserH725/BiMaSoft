@@ -252,8 +252,10 @@
     {name: '105 Dance 90', urls: ['https://icy.unitedradio.it/105Dance90.mp3']},
     {name: '80s 90s Super Pop Hits', urls: ['https://s4.myradiostream.com:7344/listen.mp3?nocache=1792243995', 'https://s4.myradiostream.com/7344/listen.mp3']},
     {name: '80s Pop Vibes', urls: ['https://oldies.streeemer.com/listen/oldies/radio.aac']},
+    {name: 'Absolute Chillout', urls: ['https://ais-edge89-dal02.cdnstream.com/b05055_128mp3']},
     {name: 'Back to the 80s', urls: ['http://s1.nexuscast.com:8135/;;audio.mp3']},
     {name: 'Beam FM - Adult Hits', urls: ['https://beamadult.streeemer.com/listen/beamadult/radio.aac']},
+    {name: 'Chillout Vibes', urls: ['https://chillout.streeemer.com/listen/chillout/radio.mp3']},
     {name: 'Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8']},
     {name: 'Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8']},
     {name: 'Discoradio', urls: ['https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8'], info: 'https://stream.discoradio.radio/audio/disco.stream_aac64/chunklist.m3u8'},
@@ -300,6 +302,8 @@
     {name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio'},
     {name: 'Radio Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo'},
     {name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds'},
+    {name: 'Relax SPA', urls: ['https://edge05.cdn.bitflip.ee:8888/spa?_i=681cc2e2'},
+    {name: 'Romantic Vibes', urls: ['https://romantic.streeemer.com/listen/romantic/radio.aac'},
     {name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac'},
     {name: 'RMC - Blue Moon', urls: ['https://icy.unitedradio.it/rmcweb017']},
     {name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023']},
@@ -309,9 +313,13 @@
     {name: 'RTL102.5 Best', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S76960628/fYNIdrsfP3xC/chunklist_b192000.m3u8']},
     {name: 'RTL102.5 Caliente', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S8448465/TxhFMf45Q7cw/playlist_audio.m3u8']},
     {name: 'RTL102.5 Disco', urls: ['https://streamcdni2-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S51100361/Sz3kCA55PrRh/playlist_audio.m3u8']},
-    {name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac']}
-  ];
+    {name: 'Sleeping Music', urls: ['https://stream-287.surfernetwork.com/30drqrdsyc9uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiIzMGRycXJkc3ljOXV2IiwiaG9zdCI6InN0cmVhbS0yODcuc3VyZmVybmV0d29yay5jb20iLCJ0bSI6ZmFsc2UsInJ0dGwiOjUsImp0aSI6Ik80RngtMnhoUmdlTHVjU1FhRDB3MkEiLCJpYXQiOjE3OTI0MjM4NzQsImV4cCI6MTc5MjQyMzkzNH0.wkAHQqeLfSPJ8rumdHrgUNQuGIPOfE3rNS6d7b6FNFQ']},
+    {name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac']},
+    {name: 'Zen FM', urls: ['https://27793.live.streamtheworld.com/TOPZEN_SC']}
 
+  
+  ];
+  
   STATIONS.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true }); });
 
   var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
