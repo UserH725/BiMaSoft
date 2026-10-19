@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1109.1"
+set "LOCAL_VER=1109.2"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -1521,6 +1521,8 @@ set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
 
 call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
 set "CURL_ERR=!errorlevel!"
+set "TIF_PART_NEW=0"
+if exist "!TIF_PART_TMP!" set "TIF_PART_NEW=1"
 
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
 
@@ -1550,6 +1552,10 @@ if !PART_SIZE! LSS 1024 (
     )
 )
 
+:: [FIX LINEE LENTE] Parte scaricata e verificata: la salvo SUBITO come .partN (l'ETag
+:: e' gia' registrato). Se una parte successiva fallisce il lavoro fatto non va perso:
+:: al ciclo dopo le parti invariate rispondono 304 e si riparte da quella che mancava.
+if "!TIF_PART_NEW!"=="1" copy /y "!TIF_PART_TMP!" "!TIF_PART_REF!" >nul 2>&1
 if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
 if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
 
@@ -1563,9 +1569,10 @@ if !TIF_PARTS! LSS 20 goto :TIF_LOOP
 :TIF_LOOP_END
 
 if "!TIF_DL_ERROR!"=="1" (
+    del /f /q "%HZ_TIF%.part*.tmp" >nul 2>&1
     if exist "%HZ_TIF%" (
         call :FILE_DATE "%HZ_TIF%" DT_TIF
-        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF: download incompleto o fallito, mantengo la versione attuale: !DT_TIF!"
+        set "F10B_RES=[     WARN     ] NET  >> HaGeZi TIF: download incompleto o fallito alla parte !TIF_PARTS!, mantengo la versione attuale: !DT_TIF! - le parti gia' scaricate restano, al prossimo ciclo riparto da li'"
     ) else if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -2706,6 +2713,8 @@ set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
 
 call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
 set "CURL_ERR=!errorlevel!"
+set "TIF_PART_NEW=0"
+if exist "!TIF_PART_TMP!" set "TIF_PART_NEW=1"
 
 if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
 
@@ -2731,6 +2740,10 @@ if !PART_SIZE! LSS 1024 (
     )
 )
 
+:: [FIX LINEE LENTE] Parte scaricata e verificata: la salvo SUBITO come .partN (l'ETag
+:: e' gia' registrato). Se una parte successiva fallisce il lavoro fatto non va perso:
+:: al ciclo dopo le parti invariate rispondono 304 e si riparte da quella che mancava.
+if "!TIF_PART_NEW!"=="1" copy /y "!TIF_PART_TMP!" "!TIF_PART_REF!" >nul 2>&1
 if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
 if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
 if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
@@ -2738,9 +2751,10 @@ if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
 :TIF_REFRESH_LOOP_END
 
 if "!TIF_DL_ERROR!"=="1" (
+    del /f /q "%HZ_TIF%.part*.tmp" >nul 2>&1
     if exist "%HZ_TIF%" (
         call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF: download incompleto o fallito, mantengo la versione attuale: !DT_TIF!"
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF: download incompleto o fallito alla parte !TIF_PARTS!, mantengo la versione attuale: !DT_TIF! - le parti gia' scaricate restano, al prossimo ciclo riparto da li'"
     ) else if exist "%HZ_TIF_BAK%" (
         copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -3860,36 +3874,62 @@ set "DLE_REF=%~6"
 set "DL_NOTFOUND=0"
 set "DL_HTTP=000"
 set "DL_WHY="
-set "DLE_N=0"
-set "DLE_MAX=3"
-if defined DLE_URL2 set "DLE_MAX=6"
+:: [FIX LINEE LENTE] I tentativi non sono piu' un numero fisso: finche' il file parziale
+:: CRESCE (la linea e' lenta ma viva) si continua con il resume, fino a DLE_CAP tentativi
+:: per sorgente. Si passa al mirror / si rinuncia solo dopo 3 tentativi di fila senza
+:: nessun byte in piu'. Con linea ferma il comportamento e' quello di prima (3+3).
+set "DLE_SRC=1"
+set "DLE_K=0"
+set "DLE_NOPROG=0"
+set "DLE_CAP=10"
 if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
 :DLE_LOOP
-set /a DLE_N+=1
-set "CURL_TRY_NUM=!DLE_N!"
+set /a DLE_K+=1
+:: CURL_TRY_NUM mantiene il significato storico: 1-3 sorgente primaria, 4-6 secondaria
+set /a DLE_TN=DLE_K
+if !DLE_TN! GTR 3 set "DLE_TN=3"
+if "!DLE_SRC!"=="2" set /a DLE_TN+=3
+set "CURL_TRY_NUM=!DLE_TN!"
 set "DL_RESUME=1"
-if !DLE_N! EQU 1 set "DL_RESUME=0"
-if !DLE_N! EQU 4 set "DL_RESUME=0"
-if !DLE_N! LEQ 3 goto :DLE_SRC1
-if !DLE_N! EQU 4 if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
-set "DL_URL=!DLE_URL2!"
-set "DL_XARGS=!DLE_XA2!"
-set "DL_PRIMARY=0"
-goto :DLE_GO
-:DLE_SRC1
+if !DLE_K! EQU 1 set "DL_RESUME=0"
+if "!DLE_SRC!"=="2" goto :DLE_SRC2
 set "DL_URL=!DLE_URL1!"
 set "DL_XARGS=!DLE_XA1!"
 set "DL_PRIMARY=1"
+goto :DLE_GO
+:DLE_SRC2
+set "DL_URL=!DLE_URL2!"
+set "DL_XARGS=!DLE_XA2!"
+set "DL_PRIMARY=0"
 :DLE_GO
 set "DL_OUT=!DLE_OUT!"
 set "DL_REF=!DLE_REF!"
+set "DLE_SZ0=0"
+if exist "!DLE_OUT!" for %%I in ("!DLE_OUT!") do set "DLE_SZ0=%%~zI"
 call :DL_ONE
 if not errorlevel 1 goto :DLE_OK
 if "!DL_NOTFOUND!"=="1" goto :DLE_FAIL
-if !DLE_N! GEQ !DLE_MAX! goto :DLE_FAIL
+set "DLE_SZ1=0"
+if exist "!DLE_OUT!" for %%I in ("!DLE_OUT!") do set "DLE_SZ1=%%~zI"
+if !DLE_SZ1! GTR !DLE_SZ0! (
+    set "DLE_NOPROG=0"
+) else (
+    set /a DLE_NOPROG+=1
+)
+set "DLE_GIVEUP=0"
+if !DLE_NOPROG! GEQ 3 set "DLE_GIVEUP=1"
+if !DLE_K! GEQ !DLE_CAP! set "DLE_GIVEUP=1"
+if "!DLE_GIVEUP!"=="0" goto :DLE_PAUSE
+:: sorgente esaurita: mirror se c'e', altrimenti rinuncia
+if "!DLE_SRC!"=="2" goto :DLE_FAIL
+if not defined DLE_URL2 goto :DLE_FAIL
+set "DLE_SRC=2"
+set "DLE_K=0"
+set "DLE_NOPROG=0"
+if exist "!DLE_OUT!" del /f /q "!DLE_OUT!" >nul 2>&1
+:DLE_PAUSE
 set "DLE_PN=4"
-if !DLE_N! EQU 2 set "DLE_PN=7"
-if !DLE_N! EQU 5 set "DLE_PN=7"
+if !DLE_NOPROG! GEQ 2 set "DLE_PN=7"
 ping -n !DLE_PN! 127.0.0.1 >nul
 goto :DLE_LOOP
 :DLE_OK
@@ -3914,7 +3954,7 @@ set "DL_TAGID=!RANDOM!!RANDOM!"
 set "DL_HDR=%TEMP%\ub_dlh_!DL_TAGID!.txt"
 set "DL_CODE=%TEMP%\ub_dlc_!DL_TAGID!.txt"
 set "DL_INM=%TEMP%\ub_dli_!DL_TAGID!.txt"
-set "DL_FLAGS=--ipv4 --location --connect-timeout 10 --speed-limit 10240 --speed-time 20 --max-time 600"
+set "DL_FLAGS=--ipv4 --location --connect-timeout 20 --speed-limit 2048 --speed-time 30 --max-time 900"
 set "DL_INM_OK="
 set "DL_REFZ=!DL_REF!"
 if not defined DL_REFZ set "DL_REFZ=%TEMP%\ub_dl_noref_!DL_TAGID!"
