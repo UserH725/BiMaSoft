@@ -14,9 +14,34 @@
 
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
   #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
-  #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  
+  /* Sfondo Generale con Vinile e Note */
+  #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  #bgDisc {
+    position: absolute;
+    width: min(85vw, 85vh);
+    height: min(85vw, 85vh);
+    border-radius: 50%;
+    opacity: 0.40;
+    filter: blur(0px);
+    animation: discSpin 10s linear infinite;
+    animation-play-state: paused;
+    background:
+      radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
+      radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
+      conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
+      repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px);
+  }
+
+  body.is-playing #bgDisc { animation-play-state: running; }
+
+  #notes .rn { 
+    position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; 
+    animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; animation-play-state: paused;
+  }
+  body.is-playing #notes .rn { animation-play-state: running; }
+
   main { position: relative; z-index: 1; }
-  #notes .rn { position: absolute; top: 100%; line-height: 1; opacity: 0; will-change: transform, opacity; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
@@ -30,6 +55,44 @@
   #nowSt.buf { color: #ffd24d; } #nowSt.buf .led { background: #ffd24d; animation: blink 1s ease-in-out infinite; }
   #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
   @keyframes blink { 50% { opacity: .25; } }
+
+  /* Barra di avanzamento Buffer dinamica */
+  #initBufWrap { 
+    width: 100%; 
+    max-width: 220px; 
+    height: 8px; 
+    background: rgba(255,255,255,.15); 
+    border-radius: 999px; 
+    overflow: hidden; 
+    margin-top: 6px; 
+    display: none; 
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.6); 
+  }
+  #initBufBar { 
+    height: 100%; 
+    width: 0%; 
+    border-radius: 999px; 
+    background-color: #ff1744; 
+    transition: width .2s linear, background-color .2s linear; 
+  }
+  #ovInitBufWrap { 
+    width: 80%; 
+    max-width: 280px; 
+    height: 10px; 
+    background: rgba(255,255,255,.15); 
+    border-radius: 999px; 
+    overflow: hidden; 
+    margin: 8px auto 0; 
+    display: none; 
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.6); 
+  }
+  #ovInitBufBar { 
+    height: 100%; 
+    width: 0%; 
+    border-radius: 999px; 
+    background-color: #ff1744; 
+    transition: width .2s linear, background-color .2s linear; 
+  }
 
   #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
@@ -131,15 +194,38 @@
   #ov { position: fixed; left: 0; right: 0; bottom: 0; top: var(--hh, 0px); z-index: 5; background: rgba(0,0,0,0); transition: background .35s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; }
   #ov[hidden] { display: none; }
   #ov.open { background: rgba(0,0,0,.62); }
-  #ov .ovc { position: fixed; z-index: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center;
+  
+  #ov .ovc { position: fixed; z-index: 2; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center;
     border: 1.5px solid rgba(255,255,255,.35); border-radius: 6px; background: rgba(255,255,255,.1); box-shadow: 0 0 14px rgba(0,0,0,.4);
     transition: top .38s cubic-bezier(.2,.8,.2,1), left .38s cubic-bezier(.2,.8,.2,1), width .38s cubic-bezier(.2,.8,.2,1), height .38s cubic-bezier(.2,.8,.2,1), border-radius .38s ease, box-shadow .38s ease; }
   #ov.open .ovc { border-radius: 18px; box-shadow: 0 8px 40px rgba(0,0,0,.65); }
   #ov .ovc:focus { outline: none; }
   #ov .ovc:focus-visible { outline: 2px solid #4fb3ff; outline-offset: 3px; }
-  #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
-  #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
-  #ov .ovi { width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -2; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -2; background: rgba(0,0,0,.26); pointer-events: none; }
+
+  /* Vinile integrato nella sovraimpressione */
+  #ov .ovc-disc {
+    position: absolute;
+    width: min(70vw, 70vh, 280px);
+    height: min(70vw, 70vh, 280px);
+    border-radius: 50%;
+    opacity: 0.35;
+    z-index: -1;
+    pointer-events: none;
+    animation: discSpin 10s linear infinite;
+    animation-play-state: paused;
+    background:
+      radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
+      radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
+      conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
+      repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px);
+  }
+  body.is-playing #ov .ovc-disc {
+    animation-play-state: running;
+  }
+
+  #ov .ovi { position: relative; z-index: 1; width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 10px #000, 0 0 16px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
   #ovName, #ovStTx, #ovSong, #ovHint { white-space: pre-wrap; }
   #ovName { font-size: clamp(22px, 6vw, 34px); font-weight: 700; line-height: 1.15; color: #fff; overflow-wrap: anywhere; }
@@ -172,18 +258,23 @@
   #btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
   #btn.is-on::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5h4v14H7zM13 5h4v14h-4z' fill='white'/%3E%3C/svg%3E"); }
   @keyframes discSpin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { #btn::before { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { #btn::before, #bgDisc, #ov .ovc-disc { animation: none; } }
 </style>
 <script src="./Radio_files/hls.min.js.download"></script></head>
 <body>
-<div id="notes" aria-hidden="true"></div>
+<div id="notes" aria-hidden="true">
+  <div id="bgDisc"></div>
+</div>
 <div id="hdr">
 <header id="player" data-g="2" class="">
 <div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
     <div id="nowName" title="Radio"><span id="nowTxt">Scegli una radio</span></div>
-    <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">pronta</span></div>
+    <div id="nowSt" class="off" role="status" aria-live="polite">
+      <span class="led"></span><span id="nowTx">pronta</span>
+    </div>
+    <div id="initBufWrap"><div id="initBufBar"></div></div>
   </div>
 </div>
 <div id="ana" aria-hidden="true">
@@ -234,9 +325,11 @@
 
 <div id="ov" style="--hh: 137px;" hidden="">
   <div class="ovc" role="button" tabindex="0" aria-label="Riduci e torna all'elenco delle radio">
+    <div class="ovc-disc" aria-hidden="true"></div>
     <div class="ovi">
       <div id="ovName"></div>
       <div id="ovSt"><span class="led"></span><span id="ovStTx"></span></div>
+      <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
       <div id="ovSong"></div>
       <div id="ovHint">Tocca per tornare all'elenco</div>
     </div>
@@ -244,7 +337,6 @@
 </div>
 
 <script>
-  // TARGET BUFFER INIZIALE IN SECONDI (Attesa di caricamento prima di avviare l'audio)
   var INIT_BUFFER_TARGET = 5;
 
   var STATIONS = [
@@ -318,7 +410,7 @@
     {name: 'RTL102.5 Disco', urls: ['https://streamcdni2-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S51100361/Sz3kCA55PrRh/playlist_audio.m3u8']},
     {name: 'Santana', urls: ['https://streaming.exclusive.radio/er/santana/icecast.audio']},
     {name: 'Scorpions', urls: ['https://streaming.exclusive.radio/er/scorpions/icecast.audio']},
-    {name: 'Sleeping Music', urls: ['https://stream-287.surfernetwork.com/30drqrdsyc9uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiIzMGRycXJkc3ljOXV2IiwiaG9zdCI6InN0cmVhbS0yODcuc3VyZmVybmV0d29yay5jb20iLCJ0bSI6ZmFsc2UsInJ0dGwiOjUsImp0aSI6Ik80RngtMnhoUmdlTHVjU1FhRDB3MkEiLCJpYXQiOjE3OTI0MjM4NzQsImV4cCI6MTc5MjQyMzkzNH0.wkAHQqeLfSPJ8rumdHrgUNQuGIPOfE3rNS6d7b6FNFQ']},
+    {name: 'Sleeping Music', urls: ['https://stream-287.surfernetwork.com/30drqrdsyc9uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiIzMGRycXJkc3ljOXV2IiwiaG9zdCI6InN0cmVhbS0yODcuc3VyZmVybmV0d29yay5jb20iLCJ0bSI6ZmFsc2UsInJ0dGwiOjUsImp0aSI6Ik80RngtMnhoUmdlTHVjU1FhRDB3MkEiLCJpYXQiOjE3OTI4MjM4NzQsImV4cCI6MTc5MjQyMzkzNH0.wkAHQqeLfSPJ8rumdHrgUNQuGIPOfE3rNS6d7b6FNFQ']},
     {name: 'Soulful House', urls: ['https://icy.unitedradio.it/um036.mp3']},
     {name: 'Soundtracks', urls: ['https://mp3.ffh.de/ffhchannels/hqsoundtrack.mp3?aw_0_req.gdpr=true', 'https://app.stargazer.fm/listen/cinematic/soundtracks.mp3']},
     {name: 'Soundtrask Relax FM', urls: ['https://my.radioprocessor.com:8100/relax-soundtracks-48.aac']},
@@ -341,7 +433,8 @@
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
   var nowTxt = document.getElementById('nowTxt');
 
-  // --- MONITORE DI RETE: Velocità in KB/s e Totale in MB (decamillesimi) ---
+  var initBufBar = document.getElementById('initBufBar'), ovInitBufBar = document.getElementById('ovInitBufBar');
+
   var totalBytes = 0, bytesInWindow = 0, lastNetTick = Date.now();
   var dlSpdEl = document.getElementById('dlSpd'), dlTotEl = document.getElementById('dlTot');
 
@@ -378,10 +471,22 @@
     return out;
   }
 
-  function setSt(cls, txt) { nowSt.className = cls; stText = txt; updateNow(); render(); }
+  function setSt(cls, txt) { 
+    nowSt.className = cls; 
+    stText = txt; 
+    updateNow(); 
+    render(); 
+  }
+
   function render() {
     var live = nowSt.className === 'on';
-    btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;'; btn.classList.toggle('is-on', !!(wantPlay && cur >= 0));
+    var isPlaying = !!(wantPlay && cur >= 0 && live);
+    
+    document.body.classList.toggle('is-playing', isPlaying);
+
+    btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;'; 
+    btn.classList.toggle('is-on', isPlaying);
+    
     items.forEach(function (b, i) {
       var on = i === cur;
       b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '');
@@ -490,6 +595,7 @@
 
   au.addEventListener('playing', function () { clearTimeout(stalledT); tries = 0; setSt('on', 'in onda'); });
   au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
+  au.addEventListener('pause', function () { render(); });
   au.addEventListener('error', function () { if (wantPlay && !hls) next(gen); });
   au.addEventListener('ended', function () { if (wantPlay) next(gen); });
   au.addEventListener('stalled', function () {
@@ -841,12 +947,14 @@
     var COL = ['#ff2d95', '#ff9500', '#ffe600', '#2dff7a', '#00c8ff', '#7a3dff'], GLY = ['\u266A', '\u266B', '\u266C', '\u2669'];
     function rnd(a, b) { return a + Math.random() * (b - a); }
     function build() {
+      var bgD = document.getElementById('bgDisc');
       var n = Math.max(60, Math.min(160, Math.round(box.clientWidth * box.clientHeight / 6000))), i, d, h = [];
       for (i = 0; i < n; i++) {
         d = rnd(9, 18);
         h.push('<span class="rn" style="left:' + rnd(1, 97).toFixed(1) + '%;font-size:' + Math.round(rnd(15, 24)) + 'px;color:' + COL[Math.floor(Math.random() * COL.length)] + ';animation-duration:' + d.toFixed(2) + 's;animation-delay:-' + rnd(0, d).toFixed(2) + 's">' + GLY[Math.floor(Math.random() * GLY.length)] + '</span>');
       }
       box.innerHTML = h.join('');
+      if (bgD) box.appendChild(bgD);
     }
     build();
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
@@ -868,7 +976,6 @@
     tm = setInterval(function () { set(cur >= 9 || cur < 1 ? 1 : cur + 1); }, PERIOD);
   })();
 
-  // Barra del buffer configurata sul target dei secondi da caricare prima dell'avvio
   (function () {
     var T = INIT_BUFFER_TARGET, FULL = 5, box = document.getElementById('bufrow'), bf = document.getElementById('bfill'), bt = document.getElementById('bftxt');
     var lastBufferedSec = 0;
@@ -896,29 +1003,102 @@
     setInterval(upd, 500);
   })();
 
-  // --- Pre-buffering: attende in pausa fino a riempire INIT_BUFFER_TARGET secondi ---
+// --- Pre-buffering: avanzamento completo con sblocco automatico ---
   (function () {
     var doneGen = -1;
+    var initWrap = document.getElementById('initBufWrap');
+    var ovInitWrap = document.getElementById('ovInitBufWrap');
+
     function ahead() {
       var r = au.buffered, t = au.currentTime, k;
-      for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) return Math.max(0, r.end(k) - t); }
+      for (k = 0; k < r.length; k++) { 
+        if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) return Math.max(0, r.end(k) - t); 
+      }
       return 0;
     }
+    
+    function setBufBar(pct) {
+      var hue = Math.round((pct / 100) * 140);
+      var lightness = Math.round(50 - (pct / 100) * 20);
+      var dynamicColor = 'hsl(' + hue + ', 100%, ' + lightness + '%)';
+
+      if (initBufBar) {
+        initBufBar.style.width = pct + '%';
+        initBufBar.style.backgroundColor = dynamicColor;
+      }
+      if (ovInitBufBar) {
+        ovInitBufBar.style.width = pct + '%';
+        ovInitBufBar.style.backgroundColor = dynamicColor;
+      }
+    }
+
+    function showBar(visible) {
+      if (visible) {
+        nowSt.classList.add('buf-loading');
+        if (ovSt) ovSt.classList.add('buf-loading');
+        if (initWrap) initWrap.style.display = 'block';
+        if (ovInitWrap) ovInitWrap.style.display = 'block';
+      } else {
+        nowSt.classList.remove('buf-loading');
+        if (ovSt) ovSt.classList.remove('buf-loading');
+        if (initWrap) initWrap.style.display = 'none';
+        if (ovInitWrap) ovInitWrap.style.display = 'none';
+      }
+    }
+
     au.addEventListener('playing', function () {
       if (doneGen === gen) return;
       doneGen = gen;
+      
       var need = INIT_BUFFER_TARGET;
-      if (hls || ahead() >= need) return;
-      var g = gen, last = ahead(), lastT = Date.now(), a;
+      if (hls || ahead() >= need) {
+        showBar(false);
+        return;
+      }
+      
+      var g = gen;
+      var currentPct = 0;
+      var startTime = Date.now();
+      
       au.pause();
+      showBar(true);
+      setBufBar(0);
+      
       (function w() {
-        if (g !== gen || !wantPlay) return;
-        a = ahead();
-        if (a > last + 0.5) { last = a; lastT = Date.now(); }
-        // Se raggiunge la quantità desiderata o se il server rallenta, fa partire la riproduzione
-        if (a >= need || Date.now() - lastT > (need * 1200)) { au.play().catch(onPlayErr(g)); return; }
-        setSt('buf', 'caricamento buffer ' + Math.round(a) + '/' + need + ' s');
-        setTimeout(w, 200);
+        if (g !== gen || !wantPlay) {
+          showBar(false);
+          return;
+        }
+        
+        var a = ahead();
+        var elapsed = Date.now() - startTime;
+        var targetPct = Math.min(100, Math.round((a / need) * 100));
+        
+        // Fai progredire la barra verso il target o avanza col tempo di attesa
+        if (currentPct < targetPct) {
+          currentPct = Math.min(targetPct, currentPct + 3);
+        } else if (elapsed > 500 && currentPct < 95) {
+          currentPct += 1; // Avanzamento graduale di sicurezza se il buffer si ferma a metà
+        }
+        
+        setBufBar(currentPct);
+        
+        // Condizioni di avvio: buffer target raggiunto, 100% completato, oppure timeout di sicurezza (2.5s) con almeno 1s di buffer
+        if (a >= need || currentPct >= 100 || (elapsed > 2500 && a >= 1)) { 
+          setBufBar(100);
+          setTimeout(function() {
+            if (g === gen) {
+              showBar(false);
+              au.play().catch(onPlayErr(g)); 
+            }
+          }, 120);
+          return; 
+        }
+
+        setSt('buf', 'caricamento buffer...');
+        showBar(true);
+
+        setTimeout(w, 40);
       })();
     });
   })();
