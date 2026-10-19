@@ -1,7 +1,6 @@
 <!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
+<html lang="it" data-g="2" class=""><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
 <title>Radio</title>
@@ -175,42 +174,42 @@
   @keyframes discSpin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { #btn::before { animation: none; } }
 </style>
-</head>
+<script src="./Radio_files/hls.min.js.download"></script></head>
 <body>
 <div id="notes" aria-hidden="true"></div>
 <div id="hdr">
-<header id="player" data-g="1">
+<header id="player" data-g="2" class="">
 <div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
-    <div id="nowName"><span id="nowTxt">Scegli una radio</span></div>
-    <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">in attesa</span></div>
+    <div id="nowName" title="Radio"><span id="nowTxt">Scegli una radio</span></div>
+    <div id="nowSt" class="off" role="status" aria-live="polite"><span class="led"></span><span id="nowTx">pronta</span></div>
   </div>
 </div>
 <div id="ana" aria-hidden="true">
   <svg viewBox="0 0 100 100">
-    <circle cx="50" cy="50" r="48" fill="#0b0b0b" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/>
+    <circle cx="50" cy="50" r="48" fill="#0b0b0b" stroke="rgba(255,255,255,.3)" stroke-width="1.5"></circle>
     <g id="anaDots"></g>
-    <line id="anaH" x1="50" y1="50" x2="50" y2="27" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
-    <line id="anaM" x1="50" y1="50" x2="50" y2="16" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-    <line id="anaS" x1="50" y1="58" x2="50" y2="12" stroke="#ffe600" stroke-width="1.6" stroke-linecap="round"/>
-    <circle cx="50" cy="50" r="3" fill="#ffe600"/>
+    <line id="anaH" x1="50" y1="50" x2="50" y2="27" stroke="#fff" stroke-width="4" stroke-linecap="round"></line>
+    <line id="anaM" x1="50" y1="50" x2="50" y2="16" stroke="#fff" stroke-width="3" stroke-linecap="round"></line>
+    <line id="anaS" x1="50" y1="58" x2="50" y2="12" stroke="#ffe600" stroke-width="1.6" stroke-linecap="round"></line>
+    <circle cx="50" cy="50" r="3" fill="#ffe600"></circle>
   </svg>
 </div>
 <div class="pr">
  <div id="rc">
   <div id="clock">
-    <b id="ck"></b>
+    <b id="ck" aria-label=""></b>
     <span id="cd"></span>
     <div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB a 4 cifre decimali dall'apertura della pagina">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
   </div>
   <div id="volbox" title="Volume">
     <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
-      <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>
-      <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"></path>
+      <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+      <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+      <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+      <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
     </svg>
     <input id="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume">
     <span id="volVal" aria-hidden="true">100%</span>
@@ -219,25 +218,25 @@
 </div>
 </header>
 <div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
-<div id="mtr"><canvas id="meter" width="1200" height="40" aria-hidden="true"></canvas></div>
+<div id="mtr"><canvas id="meter" width="1905" height="40" aria-hidden="true"></canvas></div>
 </div>
 
 <main>
   <div class="head">
-    <h1>Radio</h1><span id="count"></span>
+    <h1>Radio</h1><span id="count">0 stazioni</span>
     <input id="find" type="search" placeholder="Cerca una radio" aria-label="Cerca una radio" autocomplete="off">
   </div>
   <ul id="list"></ul>
-  <p id="none" hidden>Nessuna radio trovata. Prova con un altro nome.</p>
+  <p id="none" hidden="">Nessuna radio trovata. Prova con un altro nome.</p>
 </main>
 
-<audio id="au" preload="none" playsinline></audio>
+<audio id="au" preload="none" playsinline=""></audio>
 
-<div id="ov" hidden>
+<div id="ov" style="--hh: 137px;" hidden="">
   <div class="ovc" role="button" tabindex="0" aria-label="Riduci e torna all'elenco delle radio">
     <div class="ovi">
       <div id="ovName"></div>
-      <div id="ovSt" class="off"><span class="led"></span><span id="ovStTx"></span></div>
+      <div id="ovSt"><span class="led"></span><span id="ovStTx"></span></div>
       <div id="ovSong"></div>
       <div id="ovHint">Tocca per tornare all'elenco</div>
     </div>
@@ -297,14 +296,14 @@
     {name: 'Radio Subasio', urls: ['https://icy.unitedradio.it/Subasio.mp3'], info: 'https://meta1.xdevel.com/song/current/radio-subasio'},
     {name: 'Radio Toscana', urls: ['https://sr14.inmystream.it/stream/radiotoscana/stream', 'https://sr14.inmystream.it/stream/radiotoscana/stream2'], info: 'https://sr14.inmystream.it/AudioPlayer/radiotoscana/playerInfo'},
     {name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds'},
-    {name: 'Relax SPA', urls: ['https://edge05.cdn.bitflip.ee:8888/spa?_i=681cc2e2'},
+    {name: 'Relax SPA', urls: ['https://edge05.cdn.bitflip.ee:8888/spa?_i=681cc2e2']},
     {name: 'RMC', urls: ['https://icy.unitedradio.it/RMC.mp3'], info: 'https://www.radiomontecarlo.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRMC.aac'},
     {name: 'RMC - Blue Moon', urls: ['https://icy.unitedradio.it/rmcweb017']},
     {name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023']},
     {name: 'RMC Greatest Artists', urls: ['https://icy.unitedradio.it/rmcweb007']},
     {name: 'RMC Love Song', urls: ['https://icy.unitedradio.it/rmcweb006']},
     {name: 'Rolling Stones', urls: ['https://streaming.exclusive.radio/er/rollingstones/icecast.audio']},
-    {name: 'Romantic Vibes', urls: ['https://romantic.streeemer.com/listen/romantic/radio.aac'},
+    {name: 'Romantic Vibes', urls: ['https://romantic.streeemer.com/listen/romantic/radio.aac']},
     {name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025']},
     {name: 'RTL102.5 Best', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S76960628/fYNIdrsfP3xC/chunklist_b192000.m3u8']},
     {name: 'RTL102.5 Caliente', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S8448465/TxhFMf45Q7cw/playlist_audio.m3u8']},
@@ -318,10 +317,9 @@
     {name: 'TikTok Hits', urls: ['https://tiktokhits.funstream.net/listen/tiktokhits/radio.aac']},
     {name: 'U2', urls: ['https://streaming.exclusive.radio/er/u2/icecast.audio']},
     {name: 'Whitney Houston - HITS', urls: ['https://streaming.exclusive.radio/er/whitneyhoustonhits/icecast.audio']},
-    {name: 'Zen FM', urls: ['https://27793.live.streamtheworld.com/TOPZEN_SC']},
-  
+    {name: 'Zen FM', urls: ['https://27793.live.streamtheworld.com/TOPZEN_SC']}
   ];
-  
+
   STATIONS.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true }); });
 
   var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
@@ -1044,5 +1042,5 @@
     requestAnimationFrame(loop);
   })();
 </script>
-</body>
-</html>
+
+</body></html>
