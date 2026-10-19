@@ -152,6 +152,7 @@
   #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
   #ov .ovi { width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
+  #ovName, #ovStTx, #ovSong, #ovHint { white-space: pre-wrap; }
   #ovName { font-size: clamp(22px, 6vw, 34px); font-weight: 700; line-height: 1.15; color: #fff; overflow-wrap: anywhere; }
   #ovSt { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 15px; color: #cfcfcf; }
   #ovSt.on { color: #3ddc84; } #ovSt.on .led { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
@@ -491,9 +492,9 @@
   }
   // Effetto "lettere che scorrono": ogni lettera scorre dalla A alla lettera giusta (A, B, C, ...) e si ferma; le lettere partono una dopo l'altra
   // da sinistra e cosi' la scritta si compone. Spazi, numeri e simboli compaiono subito. Lettere accentate: scorre la lettera base e poi compare quella accentata.
-  var scrT = null, shownTxt = '', SCR_STEP = 30;
+  var shownTxt = '', SCR_STEP = 30;
   function scramble(el, text, done) {
-    clearInterval(scrT);
+    clearInterval(el._scr);
     if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; if (done) done(); return; }
     var chars = Array.from(text), n = chars.length, st = [], i, b, lt, tick = 0;
     var gap = Math.max(1, Math.min(3, Math.round(900 / Math.max(1, n) / SCR_STEP)));   // pause tra la partenza di una lettera e la successiva (durata totale ~2 s al massimo)
@@ -502,7 +503,7 @@
       st.push({ ch: chars[i], up: lt && b === b.toUpperCase(), t: lt ? b.toLowerCase().charCodeAt(0) - 97 : -1, at: i * gap });
     }
     el.textContent = '';
-    scrT = setInterval(function () {
+    el._scr = setInterval(function () {
       var out = '', fin = true, k, x, c;
       tick++;
       for (k = 0; k < n; k++) {
@@ -514,7 +515,7 @@
         out += String.fromCharCode((x.up ? 65 : 97) + c); fin = false;    // in corsa: A, B, C, ...
       }
       el.textContent = out;
-      if (fin) { clearInterval(scrT); scrT = null; if (done) done(); }
+      if (fin) { clearInterval(el._scr); el._scr = null; if (done) done(); }
     }, SCR_STEP);
   }
   function updateNow() {
@@ -756,10 +757,16 @@
   }
   function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
   function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
-  function ovFill() {
-    ovName.textContent = cur >= 0 ? STATIONS[cur].name : '';
-    ovSt.className = nowSt.className; ovStTx.textContent = stText;
-    ovSong.textContent = song ? '\u266A ' + song : '';
+  var ovShown = {};
+  function ovSet(el, key, text, force) {   // la scritta si compone con l'effetto lettere che scorrono, solo se e' cambiata (o se force)
+    if (!force && ovShown[key] === text) return;
+    ovShown[key] = text; scramble(el, text);
+  }
+  function ovFill(force) {
+    ovSt.className = nowSt.className;
+    ovSet(ovName, 'n', cur >= 0 ? STATIONS[cur].name : '', force);
+    ovSet(ovStTx, 's', stText, force);
+    ovSet(ovSong, 'g', song ? '\u266A ' + song : '', force);
   }
   function ovRect(row, t) {   // rettangolo della riga se visibile, altrimenti un punto al centro della scheda
     var r = row ? row.getBoundingClientRect() : null, hb = hdrEl.getBoundingClientRect().bottom;
@@ -769,7 +776,7 @@
   function ovShow(i) {
     var t;
     clearTimeout(ovT);
-    ovFill(); t = ovTarget();
+    ovFill(true); ovSet(document.getElementById('ovHint'), 'h', "Tocca per tornare all'elenco", true); t = ovTarget();
     ovEl.hidden = false; ovEl.classList.remove('open');
     ovNoAnim(function () { ovPlace(ovRect(items[i], t)); });
     ovOpen = true; ovAt = Date.now();
