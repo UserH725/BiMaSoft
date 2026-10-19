@@ -93,25 +93,25 @@
   @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
   @keyframes gspin { to { --ang: 360deg; } }
   /* 1 Arcobaleno */
-  #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before, html[data-g="1"] #ov .ovc::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
   /* 2 Aurora (macchie di luce che si muovono) */
-  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
+  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%);
     animation: gblob 16s ease-in-out infinite alternate; }
   /* 3 Tramonto */
-  #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before, html[data-g="3"] #ov .ovc::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 4 Oceano */
-  #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before, html[data-g="4"] #ov .ovc::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 5 Fuoco */
-  #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
+  #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before, html[data-g="5"] #ov .ovc::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
   /* 6 Foresta / lime */
-  #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before, html[data-g="6"] #ov .ovc::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
   /* 7 Caramella */
-  #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before, html[data-g="7"] #ov .ovc::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
   /* 8 Giostra (gradiente conico che ruota) */
-  #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
+  #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before, html[data-g="8"] #ov .ovc::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
   /* 9 Lava (macchie calde, piu' veloci) */
-  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
+  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
     background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%);
     animation: gblob 8s ease-in-out infinite alternate; }
   /* Riga 2: buffer = linea spessa a tutta larghezza, valori scritti a destra */
@@ -134,9 +134,33 @@
   #list .st.cur .nm, #list .st.cur .ic { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #list .st.cur::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
   #list .st.cur::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
-  html[data-g="0"] #list .st.cur::before, html[data-g="0"] #list .st.cur::after { display: none; }
-  html.fo #list .st.cur::before { opacity: 0; }
-  @media (prefers-reduced-motion: reduce) { #list .st.cur::before { animation: none !important; } }
+  html[data-g="0"] #list .st.cur::before, html[data-g="0"] #list .st.cur::after, html[data-g="0"] #ov .ovc::before, html[data-g="0"] #ov .ovc::after { display: none; }
+  html.fo #list .st.cur::before, html.fo #ov .ovc::before { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { #list .st.cur::before, #ov .ovc::before { animation: none !important; } }
+
+  /* === Sovraimpressione della radio scelta: scheda grande con lo stesso gradiente della riga attiva; al tocco si riduce e torna nella riga dell'elenco === */
+  #ov { position: fixed; left: 0; right: 0; bottom: 0; top: var(--hh, 0px); z-index: 5; background: rgba(0,0,0,0); transition: background .35s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; }
+  #ov[hidden] { display: none; }
+  #ov.open { background: rgba(0,0,0,.62); }
+  #ov .ovc { position: fixed; z-index: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center;
+    border: 1.5px solid rgba(255,255,255,.35); border-radius: 6px; background: rgba(255,255,255,.1); box-shadow: 0 0 14px rgba(0,0,0,.4);
+    transition: top .38s cubic-bezier(.2,.8,.2,1), left .38s cubic-bezier(.2,.8,.2,1), width .38s cubic-bezier(.2,.8,.2,1), height .38s cubic-bezier(.2,.8,.2,1), border-radius .38s ease, box-shadow .38s ease; }
+  #ov.open .ovc { border-radius: 18px; box-shadow: 0 8px 40px rgba(0,0,0,.65); }
+  #ov .ovc:focus { outline: none; }
+  #ov .ovc:focus-visible { outline: 2px solid #4fb3ff; outline-offset: 3px; }
+  #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
+  #ov .ovi { width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
+  #ovName { font-size: clamp(22px, 6vw, 34px); font-weight: 700; line-height: 1.15; color: #fff; overflow-wrap: anywhere; }
+  #ovSt { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 15px; color: #cfcfcf; }
+  #ovSt.on { color: #3ddc84; } #ovSt.on .led { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
+  #ovSt.buf { color: #ffd24d; } #ovSt.buf .led { background: #ffd24d; animation: blink 1s ease-in-out infinite; }
+  #ovSt.err { color: #ff7b7b; } #ovSt.err .led { background: #ff5c5c; }
+  #ovSong { margin-top: 10px; font-size: clamp(15px, 4vw, 20px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  #ovSong:empty { display: none; }
+  #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
+  @media (prefers-reduced-motion: reduce) { #ov, #ov .ovc, #ov .ovi { transition: none !important; } #ovSt.buf .led { animation: none; } }
 
   /* === Meter dell'onda sonora (istogramma) al centro del player === */
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
@@ -215,6 +239,17 @@
 </main>
 
 <audio id="au" preload="none" playsinline></audio>
+
+<div id="ov" hidden>
+  <div class="ovc" role="button" tabindex="0" aria-label="Riduci e torna all'elenco delle radio">
+    <div class="ovi">
+      <div id="ovName"></div>
+      <div id="ovSt" class="off"><span class="led"></span><span id="ovStTx"></span></div>
+      <div id="ovSong"></div>
+      <div id="ovHint">Tocca per tornare all'elenco</div>
+    </div>
+  </div>
+</div>
 
 <script>
   // Elenco delle radio: per aggiungerne una basta una riga nuova { name: 'Nome', urls: ['https://...'] }.
@@ -487,6 +522,7 @@
     nowName.title = song || name;
     nowTx.textContent = stText + (song && name ? ' \u00B7 ' + name : '');
     tabSet(song, name);
+    if (ovOpen) ovFill();
     if (shownTxt !== txt) {
       shownTxt = txt;
       nowName.classList.remove('mq'); nowName.style.removeProperty('--d');   // durante l'effetto niente scorrimento; si ricalcola a scritta completa
@@ -696,7 +732,7 @@
     b.type = 'button'; b.className = 'st'; b.setAttribute('aria-pressed', 'false');
     b.innerHTML = '<span class="ic" aria-hidden="true">&#9654;</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="nm"></span>';
     b.querySelector('.nm').textContent = s.name;
-    b.addEventListener('click', function () { select(i, true); });
+    b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); });
     li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase());
     listEl.appendChild(li); items.push(b);
   });
@@ -709,6 +745,54 @@
     });
     document.getElementById('none').hidden = shown > 0;
   });
+
+  // Sovraimpressione: la radio scelta si apre in grande sopra l'elenco, col gradiente della riga attiva; al tocco successivo si riduce e torna nella sua riga, per sceglierne un'altra
+  var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName'), ovSt = document.getElementById('ovSt');
+  var ovStTx = document.getElementById('ovStTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
+  function ovTarget() {
+    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(160, Math.min(vh - hb - 24, 320));
+    ovEl.style.setProperty('--hh', hb + 'px');
+    return { top: hb + (vh - hb - h) / 2, left: (vw - w) / 2, width: w, height: h };
+  }
+  function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
+  function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
+  function ovFill() {
+    ovName.textContent = cur >= 0 ? STATIONS[cur].name : '';
+    ovSt.className = nowSt.className; ovStTx.textContent = stText;
+    ovSong.textContent = song ? '\u266A ' + song : '';
+  }
+  function ovRect(row, t) {   // rettangolo della riga se visibile, altrimenti un punto al centro della scheda
+    var r = row ? row.getBoundingClientRect() : null, hb = hdrEl.getBoundingClientRect().bottom;
+    if (r && r.width > 0 && r.height > 0 && r.bottom > hb && r.top < window.innerHeight) return { top: r.top, left: r.left, width: r.width, height: r.height };
+    return { top: t.top + t.height / 2, left: t.left + t.width / 2, width: 0, height: 0 };
+  }
+  function ovShow(i) {
+    var t;
+    clearTimeout(ovT);
+    ovFill(); t = ovTarget();
+    ovEl.hidden = false; ovEl.classList.remove('open');
+    ovNoAnim(function () { ovPlace(ovRect(items[i], t)); });
+    ovOpen = true; ovAt = Date.now();
+    ovEl.classList.add('open');
+    ovPlace(t);
+    try { ovCard.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function ovHide() {
+    if (!ovOpen || Date.now() - ovAt < 350) return;
+    var row = cur >= 0 ? items[cur] : null;
+    ovOpen = false;
+    ovEl.classList.remove('open');
+    ovPlace(ovRect(row, ovTarget()));
+    clearTimeout(ovT);
+    ovT = setTimeout(function () { ovEl.hidden = true; }, 420);
+    if (row) { try { row.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  ovEl.addEventListener('click', ovHide);
+  ovEl.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+  ovEl.addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
+  ovCard.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ovHide(); } });
+  document.addEventListener('keydown', function (e) { if (ovOpen && e.key === 'Escape') ovHide(); });
+  window.addEventListener('resize', function () { if (ovOpen) ovNoAnim(function () { ovPlace(ovTarget()); }); });
 
   vol.value = 100;   // a ogni apertura della pagina il volume parte sempre al massimo
   au.volume = 1; volUI();
