@@ -341,6 +341,7 @@
 
   var STATIONS = [
     {name: '105 Dance 90', urls: ['https://icy.unitedradio.it/105Dance90.mp3']},
+    {name: '20s Pop Music', urls: ['https://radio.hearme.fm:8000/stream']},
     {name: '80s 90s Super Pop Hits', urls: ['https://s4.myradiostream.com:7344/listen.mp3?nocache=1792243995', 'https://s4.myradiostream.com/7344/listen.mp3']},
     {name: '80s Pop Vibes', urls: ['https://oldies.streeemer.com/listen/oldies/radio.aac']},
     {name: 'Absolute Chillout', urls: ['https://ais-edge89-dal02.cdnstream.com/b05055_128mp3']},
@@ -359,8 +360,15 @@
     {name: 'Elton John', urls: ['https://streaming.exclusive.radio/er/eltonjohn/icecast.audio']},
     {name: 'Fleetwood Mac', urls: ['https://streaming.exclusive.radio/er/fleetwoodmac/icecast.audio']},
     {name: 'George Michael', urls: ['https://streaming.exclusive.radio/er/georgemichael/icecast.audio']},
+    {name: 'Indie Beats', urls: ['https://radio.hearme.fm:8352/stream']},
+    {name: 'Jazz House', urls: ['https://radio.hearme.fm:8354/stream']},
+    {name: 'Jungle Radio', urls: ['https://radio.hearme.fm:8356/stream']},
     {name: 'Kizomba', urls: ['https://latinakizomba.ice.infomaniak.ch/latinakizomba.mp3']},
+    {name: 'Latin House', urls: ['https://radio.hearme.fm:8358/stream']},
     {name: 'Latino Mix', urls: ['https://dattavolt.com/8052/stream']},
+    {name: 'Liquid Trap', urls: ['https://radio.hearme.fm:8364/stream']},
+    {name: 'Lofi HipHop', urls: ['https://radio.hearme.fm:8366/stream']},
+    {name: 'Lofi Lounge n Chill', urls: ['https://radio.hearme.fm:8368/stream']},
     {name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json'},
     {name: 'MC2 New Age Channel', urls: ['https://n02-eu1.rcs.revma.com/vs284ceky7uvv?rj-ttl=5&rj-tok=AAABoVVRze0A_KJc2KoCHEC7aA']},
     {name: 'Madonna', urls: ['https://icy.unitedradio.it/um1031.mp3']},
@@ -369,6 +377,7 @@
     {name: 'Movie Soundtracks', urls: ['https://radio.hearme.fm:8074/stream']},
     {name: 'NOSTALGIE CELINE DION', urls: ['https://streaming.nrjaudio.fm/ou2q4fpw5hs7?origine=mytuner']},
     {name: 'NRJ FIESTA LATINA', urls: ['https://streaming.nrjaudio.fm/ourf5qvukkaq?aw_0_1st.station=NRJ-Fiesta-Latina&origine=mytuner']},
+    {name: 'Old school house', urls: ['https://radio.hearme.fm:8384/stream']},
     {name: 'Phil Collins', urls: ['https://streaming.exclusive.radio/er/philcollins/icecast.audio']},
     {name: 'Pink Floyd', urls: ['https://streaming.exclusive.radio/er/pinkfloyd/icecast.audio']},
     {name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/']},
@@ -1003,7 +1012,7 @@
     setInterval(upd, 500);
   })();
 
-// --- Pre-buffering: avanzamento completo con sblocco automatico ---
+  // --- Pre-buffering: avanzamento completo con sblocco automatico ---
   (function () {
     var doneGen = -1;
     var initWrap = document.getElementById('initBufWrap');
@@ -1074,16 +1083,14 @@
         var elapsed = Date.now() - startTime;
         var targetPct = Math.min(100, Math.round((a / need) * 100));
         
-        // Fai progredire la barra verso il target o avanza col tempo di attesa
         if (currentPct < targetPct) {
           currentPct = Math.min(targetPct, currentPct + 3);
         } else if (elapsed > 500 && currentPct < 95) {
-          currentPct += 1; // Avanzamento graduale di sicurezza se il buffer si ferma a metà
+          currentPct += 1;
         }
         
         setBufBar(currentPct);
         
-        // Condizioni di avvio: buffer target raggiunto, 100% completato, oppure timeout di sicurezza (2.5s) con almeno 1s di buffer
         if (a >= need || currentPct >= 100 || (elapsed > 2500 && a >= 1)) { 
           setBufBar(100);
           setTimeout(function() {
