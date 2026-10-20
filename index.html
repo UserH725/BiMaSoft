@@ -17,7 +17,7 @@
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
-  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 86px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 94px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
@@ -47,18 +47,21 @@
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
-  #nowSt { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 13px; color: #9a9a9a; }
-  .led { width: 9px; height: 9px; border-radius: 50%; background: #666; flex: 0 0 auto; }
-  #nowSt.on { color: #3ddc84; }
-  #nowSt.buf { color: #ffd24d; }
-  #nowSt.err { color: #ff7b7b; }
-  /* pallino di stato: verde pulsante (in onda), giallo lampeggiante (buffer), rosso grande (fermo/errore) */
-  #nowSt.on .led, #ovSt.on .led { background: #5dff9a; box-shadow: 0 0 10px #5dff9a; animation: ledPulse 1.3s ease-in-out infinite; }
-  #nowSt.buf .led, #ovSt.buf .led { background: #ffd24d; box-shadow: 0 0 10px #ffd24d; transform: scale(1.4); animation: ledBlink .8s ease-in-out infinite; }
-  #nowSt.off .led, #ovSt.off .led, #nowSt.err .led, #ovSt.err .led { background: #ff3b30; box-shadow: 0 0 10px #ff3b30; transform: scale(1.5); }
-  @keyframes ledPulse { 0%, 100% { transform: scale(.7); background: #0d6b35; box-shadow: 0 0 2px #0d6b35; } 50% { transform: scale(1.5); background: #5dff9a; box-shadow: 0 0 12px #5dff9a; } }
-  @keyframes ledBlink { 0%, 100% { opacity: 1; } 50% { opacity: .1; } }
-  @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
+  /* insegna ON AIR in intestazione: verde/bianco lampeggiante (in riproduzione), giallo lampeggiante (buffer), rosso (fermo/errore) */
+  #nowSt { --ac: #ff3b30; display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 4px; padding: 4px 11px 4px 8px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.35); color: var(--ac); font-weight: 700; font-size: 13px; letter-spacing: .2em; line-height: 1; white-space: nowrap; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
+  @media (max-width: 370px) { #nowSt { gap: 5px; padding: 3px 8px 3px 6px; font-size: 11.5px; letter-spacing: .1em; } }
+  /* senza brano, sotto la radio compare il dettaglio dello stato (es. "tocca play per avviare") */
+  #nowName.det { font-size: 14px; font-weight: 600; color: #d6d6d6; }
+  #nowSt svg { width: 18px; height: 18px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
+  #nowSt .w { animation: obWv 1.6s ease-in-out infinite; } #nowSt .w2 { animation-delay: .25s; }
+  #nowSt.on { --ac: #3ddc84; animation: nsBx 1s ease-in-out infinite; }
+  #nowSt.on #nowTx { animation: nsTx 1s ease-in-out infinite; }
+  #nowSt.buf { --ac: #ffd24d; animation: obBl .8s ease-in-out infinite; }
+  #nowSt.off, #nowSt.err { --ac: #ff3b30; }
+  #nowSt.off .w, #nowSt.err .w { animation: none; opacity: .35; }
+  @keyframes nsTx { 0%, 100% { color: #7dffb0; text-shadow: 0 0 6px #7dffb0, 0 0 14px #7dffb0; } 50% { color: #0c8f43; text-shadow: 0 0 4px #0c8f43; } }
+  @keyframes nsBx { 0%, 100% { border-color: #7dffb0; box-shadow: 0 0 10px #7dffb0, inset 0 0 8px rgba(255,255,255,.12); } 50% { border-color: #0c8f43; box-shadow: 0 0 5px #0c8f43, inset 0 0 8px rgba(0,0,0,.2); } }
+  @media (prefers-reduced-motion: reduce) { #nowSt, #nowSt .w, #nowSt #nowTx { animation: none !important; } }
   @keyframes blink { 50% { opacity: .25; } }
 
   #initBufWrap { width: 100%; max-width: 220px; height: 8px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin-top: 6px; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
@@ -109,25 +112,25 @@
 
   /* --- REGOLE CSS GRADIENTI MULTIPLI RIPRISTINATE --- */
   @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-  #player::before { content: ""; position: absolute; inset: -34px; z-index: -1; filter: blur(22px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
-  #player.fo::before { opacity: 0; }
-  #player::after  { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
-  #player[data-g="0"]::before, #player[data-g="0"]::after { display: none; }
-  #player[data-g="0"] { background: rgba(0,0,0,.55); }
+  #player::before { content: ""; position: absolute; inset: -34px; z-index: -1; filter: blur(22px) saturate(1.15) brightness(.74); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #player.fo::before { opacity: 0; transition: none; }
+  #player::after  { content: ""; position: absolute; inset: -34px; z-index: -2; filter: blur(22px) saturate(1.15) brightness(.74); pointer-events: none; }
   
   @keyframes gx { to { background-position: 200% 0; } }
   @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
   @keyframes gspin { to { --ang: 360deg; } }
 
-  #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before, html[data-g="1"] #ov .ovc::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
-  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%); animation: gblob 16s ease-in-out infinite alternate; }
-  #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before, html[data-g="3"] #ov .ovc::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before, html[data-g="4"] #ov .ovc::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before, html[data-g="5"] #ov .ovc::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
-  #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before, html[data-g="6"] #ov .ovc::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
-  #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before, html[data-g="7"] #ov .ovc::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
-  #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before, html[data-g="8"] #ov .ovc::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
-  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%); animation: gblob 8s ease-in-out infinite alternate; }
+  #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before, html[data-g="1"] #ov .ovc::before, #player[data-go="1"]::after, html[data-go="1"] #list .st.cur::after, html[data-go="1"] #ov .ovc::after { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before, #player[data-go="2"]::after, html[data-go="2"] #list .st.cur::after, html[data-go="2"] #ov .ovc::after { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%); animation: gblob 16s ease-in-out infinite alternate; }
+  #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before, html[data-g="3"] #ov .ovc::before, #player[data-go="3"]::after, html[data-go="3"] #list .st.cur::after, html[data-go="3"] #ov .ovc::after { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before, html[data-g="4"] #ov .ovc::before, #player[data-go="4"]::after, html[data-go="4"] #list .st.cur::after, html[data-go="4"] #ov .ovc::after { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before, html[data-g="5"] #ov .ovc::before, #player[data-go="5"]::after, html[data-go="5"] #list .st.cur::after, html[data-go="5"] #ov .ovc::after { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
+  #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before, html[data-g="6"] #ov .ovc::before, #player[data-go="6"]::after, html[data-go="6"] #list .st.cur::after, html[data-go="6"] #ov .ovc::after { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
+  #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before, html[data-g="7"] #ov .ovc::before, #player[data-go="7"]::after, html[data-go="7"] #list .st.cur::after, html[data-go="7"] #ov .ovc::after { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
+  #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before, html[data-g="8"] #ov .ovc::before, #player[data-go="8"]::after, html[data-go="8"] #list .st.cur::after, html[data-go="8"] #ov .ovc::after { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
+  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before, #player[data-go="9"]::after, html[data-go="9"] #list .st.cur::after, html[data-go="9"] #ov .ovc::after { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%); animation: gblob 8s ease-in-out infinite alternate; }
+
+  #player[data-go]::after, html[data-go] #list .st.cur::after, html[data-go] #ov .ovc::after { animation-delay: var(--od, 0s); }
 
   #bufrow { position: relative; height: 20px; background: #111; overflow: hidden; --c: #3ddc84; }
   #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
@@ -150,10 +153,9 @@
   #list .st { border: 1.5px solid transparent; }
   #list .st.cur { position: relative; z-index: 0; overflow: hidden; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); box-shadow: 0 0 14px rgba(0,0,0,.4); }
   #list .st.cur .nm, #list .st.cur .ic { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
-  #list .st.cur::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
-  #list .st.cur::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
-  html[data-g="0"] #list .st.cur::before, html[data-g="0"] #list .st.cur::after, html[data-g="0"] #ov .ovc::before, html[data-g="0"] #ov .ovc::after { display: none; }
-  html.fo #list .st.cur::before, html.fo #ov .ovc::before { opacity: 0; }
+  #list .st.cur::before { content: ""; position: absolute; inset: -20px; z-index: -1; filter: blur(14px) saturate(1.15) brightness(.74); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #list .st.cur::after { content: ""; position: absolute; inset: -20px; z-index: -2; filter: blur(14px) saturate(1.15) brightness(.74); pointer-events: none; }
+  html.fo #list .st.cur::before, html.fo #ov .ovc::before { opacity: 0; transition: none; }
 
   #ov { position: fixed; left: 0; right: 0; bottom: 0; top: var(--hh, 0px); z-index: 5; background: rgba(0,0,0,0); transition: background .35s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; }
   #ov[hidden] { display: none; }
@@ -165,8 +167,8 @@
   #ov.open .ovc { border-radius: 18px; box-shadow: 0 8px 40px rgba(0,0,0,.65); }
   #ov .ovc:focus { outline: none; }
   #ov .ovc:focus-visible { outline: 2px solid #4fb3ff; outline-offset: 3px; }
-  #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -2; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
-  #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -2; background: rgba(0,0,0,.26); pointer-events: none; }
+  #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -2; filter: blur(14px) saturate(1.15) brightness(.74); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
+  #ov .ovc::after { content: ""; position: absolute; inset: -20px; z-index: -3; filter: blur(14px) saturate(1.15) brightness(.74); pointer-events: none; }
 
   #ov .ovc-disc {
     position: absolute; width: min(70vw, 70vh, 280px); height: min(70vw, 70vh, 280px); border-radius: 50%; opacity: 0.35; z-index: -1; pointer-events: none;
@@ -181,25 +183,22 @@
 
   #ov .ovi { position: relative; z-index: 1; width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 10px #000, 0 0 16px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
-  #ovName, #ovStTx, #ovSong, #ovHint { white-space: pre-wrap; }
+  #ovName, #ovSong, #ovHint { white-space: pre-wrap; }
   #ovName { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-size: clamp(24px, 6.5vw, 38px); font-weight: 700; line-height: 1.15; color: #ffe600; overflow-wrap: anywhere; }
-  #ovSt { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 15px; color: #cfcfcf; }
-  #ovSt.on { color: #3ddc84; }
-  #ovSt.buf { color: #ffd24d; }
-  #ovSt.err { color: #ff7b7b; }
-  #ovSong { margin-top: 10px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  #ovSong { margin-top: 12px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   #ovSong:empty { display: none; }
   /* insegna neon ON AIR sopra il nome della stazione */
   #ovBadge { --ac: #ff3b5c; display: flex; align-items: center; gap: 7px; width: fit-content; margin: 0 auto 10px; padding: 5px 14px 5px 10px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.3); color: var(--ac); font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: .22em; line-height: 1; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
   #ovBadge svg { width: 22px; height: 22px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
   #ovBadge .w { animation: obWv 1.6s ease-in-out infinite; } #ovBadge .w2 { animation-delay: .25s; }
-  #ovBadge[data-s="on"] #ovBadgeTx { animation: obTx 1.6s ease-in-out infinite; }
+  #ovBadge[data-s="on"] { --ac: #3ddc84; animation: nsBx 1.6s ease-in-out infinite; }
+  #ovBadge[data-s="on"] #ovBadgeTx { animation: nsTx 1.6s ease-in-out infinite; }
   @keyframes obTx { 0%, 100% { color: var(--ac); text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); } 50% { color: #fff; text-shadow: 0 0 6px #fff, 0 0 16px var(--ac); } }
   @keyframes obWv { 0%, 100% { opacity: .2; } 45% { opacity: 1; } }
   #ovBadge[data-s="buf"] { --ac: #ffd24d; animation: obBl .8s ease-in-out infinite; }
   @keyframes obBl { 50% { opacity: .3; } }
-  #ovBadge[data-s="off"] { --ac: #9a9a9a; text-shadow: none; box-shadow: none; }
-  #ovBadge[data-s="off"] .w { animation: none; opacity: .3; } #ovBadge[data-s="off"] svg { filter: none; }
+  #ovBadge[data-s="off"] { --ac: #ff3b30; }
+  #ovBadge[data-s="off"] .w { animation: none; opacity: .3; }
   @media (prefers-reduced-motion: reduce) { #ovBadge, #ovBadge .w, #ovBadgeTx { animation: none !important; } }
   #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
 
@@ -235,7 +234,7 @@
     <div id="nowRadio">Scegli una radio</div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite">
-      <span class="led"></span><span id="nowTx">pronta</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
     </div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
   </div>
@@ -292,7 +291,6 @@
     <div class="ovi">
       <div id="ovBadge" data-s="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="ovBadgeTx">OFF AIR</span></div>
       <div id="ovName"></div>
-      <div id="ovSt"><span class="led"></span><span id="ovStTx"></span></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
       <div id="ovSong"></div>
       <div id="ovHint">Tocca per tornare all'elenco</div>
@@ -723,10 +721,13 @@
     }, SCR_STEP);
   }
   function updateNow() {
-    var name = cur >= 0 ? STATIONS[cur].name : '', txt = song ? '\u266A ' + song : '', rad = name || 'Scegli una radio';
-    nowName.title = song || name;
+    var sc = nowSt.classList.contains('on') ? 'on' : nowSt.classList.contains('buf') ? 'buf' : nowSt.classList.contains('err') ? 'err' : 'off';
+    var name = cur >= 0 ? STATIONS[cur].name : '', det = sc !== 'on' ? stText : '', txt = song ? '\u266A ' + song : det, rad = name || 'Scegli una radio';
+    nowName.title = song || stText || name;
+    nowName.classList.toggle('det', !song);
     nowRadio.title = name;
-    nowTx.textContent = stText;
+    nowSt.title = stText;
+    nowTx.textContent = sc === 'on' ? 'ON AIR' : sc === 'buf' ? 'BUFFER' : 'OFF';
     tabSet(song, name); tabApply();
     if (ovOpen) ovFill();
     if (shownRadio !== rad) { shownRadio = rad; scramble(nowRadio, rad); }
@@ -946,8 +947,8 @@
     document.getElementById('none').hidden = shown > 0;
   });
 
-  var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName'), ovSt = document.getElementById('ovSt');
-  var ovStTx = document.getElementById('ovStTx'), ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
+  var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName');
+  var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
     var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(200, Math.min(vh - hb - 24, 340));
     ovEl.style.setProperty('--hh', hb + 'px');
@@ -961,12 +962,10 @@
     ovShown[key] = text; scramble(el, text);
   }
   function ovFill(force) {
-    ovSt.className = nowSt.className;
     var bs = nowSt.classList.contains('on') ? 'on' : nowSt.classList.contains('buf') ? 'buf' : 'off';
     ovBadge.setAttribute('data-s', bs);
-    ovBadgeTx.textContent = bs === 'on' ? 'ON AIR' : bs === 'buf' ? 'BUFFER' : 'OFF AIR';
+    ovBadgeTx.textContent = bs === 'on' ? 'ON AIR' : bs === 'buf' ? 'BUFFER' : 'OFF';
     ovSet(ovName, 'n', cur >= 0 ? STATIONS[cur].name : '', force);
-    ovSet(ovStTx, 's', stText, force);
     ovSet(ovSong, 'g', song ? '\u266A ' + song : '', force);
   }
   function ovRect(row, t) {
@@ -1029,14 +1028,22 @@
   // --- MOTORINO JS PER CAMBIO GRADIENTI AUTOMATICO RIPRISTINATO ---
   (function () {
     var de = document.documentElement, pl = document.getElementById('player');
-    var curGrad = 1, tm = null, fadeT = null, PERIOD = 60000;
-    function apply(g) { pl.setAttribute('data-g', g); de.setAttribute('data-g', g); pl.classList.remove('fo'); de.classList.remove('fo'); }
+    var curGrad = 1, tm = null, doneT = null, PERIOD = 60000, since = Date.now();
+    function setG(g) { pl.setAttribute('data-g', g); de.setAttribute('data-g', g); since = Date.now(); }
+    function clearOld() { pl.removeAttribute('data-go'); de.removeAttribute('data-go'); }
     function set(g, instant) {
+      var old = curGrad;
       curGrad = g; store('radioGrad', g);
-      clearTimeout(fadeT);
-      if (instant) { apply(g); return; }
+      clearTimeout(doneT);
+      if (instant) { clearOld(); setG(g); return; }
+      /* dissolvenza incrociata: il vecchio gradiente resta visibile (strato ::after) mentre il nuovo (::before) sale da 0 a 1 */
+      de.style.setProperty('--od', '-' + ((Date.now() - since) / 1000).toFixed(2) + 's');
+      pl.setAttribute('data-go', old); de.setAttribute('data-go', old);
       pl.classList.add('fo'); de.classList.add('fo');
-      fadeT = setTimeout(function () { apply(g); }, 900);
+      setG(g);
+      void de.offsetWidth;
+      pl.classList.remove('fo'); de.classList.remove('fo');
+      doneT = setTimeout(clearOld, 1000);
     }
     var sv = parseInt(load('radioGrad'), 10);
     set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
@@ -1101,12 +1108,10 @@
     function showBar(visible) {
       if (visible) {
         nowSt.classList.add('buf-loading');
-        if (ovSt) ovSt.classList.add('buf-loading');
         if (initWrap) initWrap.style.display = 'block';
         if (ovInitWrap) ovInitWrap.style.display = 'block';
       } else {
         nowSt.classList.remove('buf-loading');
-        if (ovSt) ovSt.classList.remove('buf-loading');
         if (initWrap) initWrap.style.display = 'none';
         if (ovInitWrap) ovInitWrap.style.display = 'none';
       }
