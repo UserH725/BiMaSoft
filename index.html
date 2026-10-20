@@ -439,6 +439,7 @@
   var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
+  var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0;
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
   var nowTxt = document.getElementById('nowTxt');
 
@@ -602,9 +603,31 @@
     } catch (e) {}
   }
 
-  au.addEventListener('playing', function () { clearTimeout(stalledT); tries = 0; setSt('on', 'in onda'); });
+  au.addEventListener('playing', function () { clearTimeout(stalledT); clearTimeout(resumeT); resumeN = 0; tries = 0; setSt('on', 'in onda'); if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {} } });
   au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
-  au.addEventListener('pause', function () { render(); });
+  // Android: una notifica/telefonata toglie il "focus audio" e Chrome mette in pausa il <audio>
+  // senza che la pagina lo sappia. Qui lo rileviamo e proviamo a riprendere (o a riconnetterci al live).
+  function resumeTry() {
+    clearTimeout(resumeT);
+    if (!wantPlay || bufHold || !au.paused) { resumeN = 0; return; }
+    if (resumeN >= 12) { resumeN = 0; stop(); setSt('off', 'interrotta, tocca play'); return; }
+    resumeN++;
+    if (Date.now() - pausedAt > 8000) { tries = 0; start(); }          // pausa lunga: torna in diretta
+    else { var p = au.play(); if (p && p.catch) p.catch(function () {}); }
+    resumeT = setTimeout(resumeTry, 1500);
+  }
+  au.addEventListener('pause', function () {
+    render();
+    if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {} }
+    if (wantPlay && !bufHold && nowSt.className === 'on') {
+      pausedAt = Date.now(); resumeN = 0;
+      setSt('buf', 'ripresa dopo interruzione...');
+      clearTimeout(resumeT); resumeT = setTimeout(resumeTry, 700);
+    }
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && wantPlay && !bufHold && au.paused) { resumeN = 0; resumeTry(); }
+  });
   au.addEventListener('error', function () { if (wantPlay && !hls) next(gen); });
   au.addEventListener('ended', function () { if (wantPlay) next(gen); });
   au.addEventListener('stalled', function () {
@@ -1069,12 +1092,14 @@
       var currentPct = 0;
       var startTime = Date.now();
       
+      bufHold = true;
       au.pause();
       showBar(true);
       setBufBar(0);
       
       (function w() {
         if (g !== gen || !wantPlay) {
+          bufHold = false;
           showBar(false);
           return;
         }
@@ -1094,6 +1119,7 @@
         if (a >= need || currentPct >= 100 || (elapsed > 2500 && a >= 1)) { 
           setBufBar(100);
           setTimeout(function() {
+            bufHold = false;
             if (g === gen) {
               showBar(false);
               au.play().catch(onPlayErr(g)); 
