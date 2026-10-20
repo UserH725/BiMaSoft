@@ -49,9 +49,16 @@
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
   #nowSt { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 13px; color: #9a9a9a; }
   .led { width: 9px; height: 9px; border-radius: 50%; background: #666; flex: 0 0 auto; }
-  #nowSt.on { color: #3ddc84; } #nowSt.on .led { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
-  #nowSt.buf { color: #ffd24d; } #nowSt.buf .led { background: #ffd24d; animation: blink 1s ease-in-out infinite; }
-  #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
+  #nowSt.on { color: #3ddc84; }
+  #nowSt.buf { color: #ffd24d; }
+  #nowSt.err { color: #ff7b7b; }
+  /* pallino di stato: verde pulsante (in onda), giallo lampeggiante (buffer), rosso grande (fermo/errore) */
+  #nowSt.on .led, #ovSt.on .led { background: #5dff9a; box-shadow: 0 0 10px #5dff9a; animation: ledPulse 1.3s ease-in-out infinite; }
+  #nowSt.buf .led, #ovSt.buf .led { background: #ffd24d; box-shadow: 0 0 10px #ffd24d; transform: scale(1.4); animation: ledBlink .8s ease-in-out infinite; }
+  #nowSt.off .led, #ovSt.off .led, #nowSt.err .led, #ovSt.err .led { background: #ff3b30; box-shadow: 0 0 10px #ff3b30; transform: scale(1.5); }
+  @keyframes ledPulse { 0%, 100% { transform: scale(.7); background: #0d6b35; box-shadow: 0 0 2px #0d6b35; } 50% { transform: scale(1.5); background: #5dff9a; box-shadow: 0 0 12px #5dff9a; } }
+  @keyframes ledBlink { 0%, 100% { opacity: 1; } 50% { opacity: .1; } }
+  @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
   @keyframes blink { 50% { opacity: .25; } }
 
   #initBufWrap { width: 100%; max-width: 220px; height: 8px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin-top: 6px; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
@@ -177,11 +184,21 @@
   #ovName, #ovStTx, #ovSong, #ovHint { white-space: pre-wrap; }
   #ovName { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-size: clamp(24px, 6.5vw, 38px); font-weight: 700; line-height: 1.15; color: #ffe600; overflow-wrap: anywhere; }
   #ovSt { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 15px; color: #cfcfcf; }
-  #ovSt.on { color: #3ddc84; } #ovSt.on .led { background: #3ddc84; box-shadow: 0 0 8px #3ddc84; }
-  #ovSt.buf { color: #ffd24d; } #ovSt.buf .led { background: #ffd24d; animation: blink 1s ease-in-out infinite; }
-  #ovSt.err { color: #ff7b7b; } #ovSt.err .led { background: #ff5c5c; }
+  #ovSt.on { color: #3ddc84; }
+  #ovSt.buf { color: #ffd24d; }
+  #ovSt.err { color: #ff7b7b; }
   #ovSong { margin-top: 10px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   #ovSong:empty { display: none; }
+  /* insegna neon ON AIR sopra il nome della stazione */
+  #ovBadge { --ac: #ff3b5c; display: flex; align-items: center; gap: 7px; width: fit-content; margin: 0 auto 10px; padding: 5px 14px 5px 10px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.3); color: var(--ac); font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: .22em; line-height: 1; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
+  #ovBadge svg { width: 22px; height: 22px; flex: 0 0 auto; overflow: visible; filter: drop-shadow(0 0 4px var(--ac)); }
+  #ovBadge .w { animation: obWv 1.6s ease-in-out infinite; } #ovBadge .w2 { animation-delay: .25s; }
+  @keyframes obWv { 0%, 100% { opacity: .2; } 45% { opacity: 1; } }
+  #ovBadge[data-s="buf"] { --ac: #ffd24d; animation: obBl .8s ease-in-out infinite; }
+  @keyframes obBl { 50% { opacity: .3; } }
+  #ovBadge[data-s="off"] { --ac: #9a9a9a; text-shadow: none; box-shadow: none; }
+  #ovBadge[data-s="off"] .w { animation: none; opacity: .3; } #ovBadge[data-s="off"] svg { filter: none; }
+  @media (prefers-reduced-motion: reduce) { #ovBadge, #ovBadge .w { animation: none !important; } }
   #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
 
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
@@ -271,6 +288,7 @@
   <div class="ovc" role="button" tabindex="0" aria-label="Riduci e torna all'elenco delle radio">
     <div class="ovc-disc" aria-hidden="true"></div>
     <div class="ovi">
+      <div id="ovBadge" data-s="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="ovBadgeTx">OFF AIR</span></div>
       <div id="ovName"></div>
       <div id="ovSt"><span class="led"></span><span id="ovStTx"></span></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
@@ -651,12 +669,20 @@
   }
   vol.addEventListener('input', function () { au.volume = vol.value / 100; volUI(); });
 
-  var tabSong = '', tabName = '', tabI = 0, tabT = null, TAB_W = 26;
+  var tabSong = '', tabName = '', tabI = 0, tabT = null, TAB_W = 26, tabBase = 'Radio', tabPh = 0;
+  function tabLed() {
+    var c = nowSt.classList;
+    if (c.contains('on')) return tabPh ? '\uD83D\uDFE9 ' : '\uD83D\uDFE2 ';
+    if (c.contains('buf')) return tabPh ? '' : '\uD83D\uDFE1 ';
+    return '\uD83D\uDD34 ';
+  }
+  function tabApply() { var t = tabLed() + (tabBase || 'Radio'); if (document.title !== t) document.title = t; }
+  setInterval(function () { tabPh ^= 1; tabApply(); }, 600);
   function tabSet(sg, nm) {
     if (sg === tabSong && nm === tabName) return;
     tabSong = sg; tabName = nm; tabI = 0;
     clearInterval(tabT); tabT = null;
-    if (!sg) { document.title = nm ? nm + ' \u00B7 Radio' : 'Radio'; return; }
+    if (!sg) { tabBase = nm ? nm + ' \u00B7 Radio' : 'Radio'; tabApply(); return; }
     tabTick(); tabT = setInterval(tabTick, 350);
   }
   function tabTick() {
@@ -665,7 +691,7 @@
     if (k < hold) t = (s.length - 7 > TAB_W ? s : tabSong.length ? '\u266A ' + tabSong : s).slice(0, TAB_W + 8);
     else if (k < hold + scroll) { var o = k - hold; t = (s + s).substr(o, TAB_W + 8); }
     else t = '\u266B ' + name;
-    document.title = t; tabI++;
+    tabBase = t; tabApply(); tabI++;
   }
 
   var shownTxt = '', shownRadio = '', SCR_STEP = 30;
@@ -699,7 +725,7 @@
     nowName.title = song || name;
     nowRadio.title = name;
     nowTx.textContent = stText;
-    tabSet(song, name);
+    tabSet(song, name); tabApply();
     if (ovOpen) ovFill();
     if (shownRadio !== rad) { shownRadio = rad; scramble(nowRadio, rad); }
     if (shownTxt !== txt) {
@@ -919,9 +945,9 @@
   });
 
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName'), ovSt = document.getElementById('ovSt');
-  var ovStTx = document.getElementById('ovStTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
+  var ovStTx = document.getElementById('ovStTx'), ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
-    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(160, Math.min(vh - hb - 24, 320));
+    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(200, Math.min(vh - hb - 24, 340));
     ovEl.style.setProperty('--hh', hb + 'px');
     return { top: hb + (vh - hb - h) / 2, left: (vw - w) / 2, width: w, height: h };
   }
@@ -934,6 +960,9 @@
   }
   function ovFill(force) {
     ovSt.className = nowSt.className;
+    var bs = nowSt.classList.contains('on') ? 'on' : nowSt.classList.contains('buf') ? 'buf' : 'off';
+    ovBadge.setAttribute('data-s', bs);
+    ovBadgeTx.textContent = bs === 'on' ? 'ON AIR' : bs === 'buf' ? 'BUFFER' : 'OFF AIR';
     ovSet(ovName, 'n', cur >= 0 ? STATIONS[cur].name : '', force);
     ovSet(ovStTx, 's', stText, force);
     ovSet(ovSong, 'g', song ? '\u266A ' + song : '', force);
