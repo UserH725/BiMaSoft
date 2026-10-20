@@ -42,7 +42,9 @@
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
-  #nowRadio { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 19px; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #nowRadio { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 19px; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; }
+  #nowRadio span, #ovName span, #ovSong span { display: inline-block; }
+  #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   #nowName { font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 18px; font-weight: 600; line-height: 1.25; min-height: 1.25em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
@@ -108,7 +110,7 @@
   #none[hidden] { display: none; }
 
   @media (max-width: 560px) { #volbox { display: none; } #player { gap: 12px; } }
-  @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span, #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: none; } #nowRadio, #ovName, #ovSong { text-overflow: ellipsis; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
 
   /* --- REGOLE CSS GRADIENTI MULTIPLI RIPRISTINATE --- */
   @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
@@ -183,10 +185,10 @@
 
   #ov .ovi { position: relative; z-index: 1; width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 10px #000, 0 0 16px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
-  #ovName, #ovSong, #ovHint { white-space: pre-wrap; }
-  #ovName { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-size: clamp(24px, 6.5vw, 38px); font-weight: 700; line-height: 1.15; color: #ffe600; overflow-wrap: anywhere; }
-  #ovSong { margin-top: 12px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  #ovSong:empty { display: none; }
+  #ovHint { white-space: pre-wrap; }
+  #ovName { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-size: clamp(24px, 6.5vw, 38px); font-weight: 700; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; }
+  #ovSong { margin-top: 12px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; white-space: nowrap; overflow: hidden; }
+  #ovSong:has(#ovSongTx:empty) { display: none; }
   /* insegna neon ON AIR sopra il nome della stazione */
   #ovBadge { --ac: #ff3b5c; display: flex; align-items: center; gap: 7px; width: fit-content; margin: 0 auto 10px; padding: 5px 14px 5px 10px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.3); color: var(--ac); font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: .22em; line-height: 1; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
   #ovBadge svg { width: 22px; height: 22px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
@@ -231,7 +233,7 @@
 <div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
-    <div id="nowRadio">Scegli una radio</div>
+    <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
@@ -290,9 +292,9 @@
     <div class="ovc-disc" aria-hidden="true"></div>
     <div class="ovi">
       <div id="ovBadge" data-s="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="ovBadgeTx">OFF AIR</span></div>
-      <div id="ovName"></div>
+      <div id="ovName"><span id="ovNameTx"></span></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
-      <div id="ovSong"></div>
+      <div id="ovSong"><span id="ovSongTx"></span></div>
       <div id="ovHint">Tocca per tornare all'elenco</div>
     </div>
   </div>
@@ -445,7 +447,7 @@
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0;
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
-  var nowTxt = document.getElementById('nowTxt'), nowRadio = document.getElementById('nowRadio');
+  var nowTxt = document.getElementById('nowTxt'), nowRadio = document.getElementById('nowRadio'), nowRadioTx = document.getElementById('nowRadioTx');
 
   var initBufBar = document.getElementById('initBufBar'), ovInitBufBar = document.getElementById('ovInitBufBar');
 
@@ -730,19 +732,24 @@
     nowTx.textContent = sc === 'on' ? 'ON AIR' : sc === 'buf' ? 'BUFFER' : 'OFF';
     tabSet(song, name); tabApply();
     if (ovOpen) ovFill();
-    if (shownRadio !== rad) { shownRadio = rad; scramble(nowRadio, rad); }
+    if (shownRadio !== rad) { shownRadio = rad; nowRadio.classList.remove('mq'); scramble(nowRadioTx, rad, function () { fitMq(nowRadio, nowRadioTx); }); }
     if (shownTxt !== txt) {
       shownTxt = txt;
       nowName.classList.remove('mq'); nowName.style.removeProperty('--d');
       scramble(nowTxt, txt, fit);
     }
   }
+  function fitMq(box, tx) {
+    box.classList.remove('mq'); box.style.removeProperty('--d');
+    var ov = tx.offsetWidth - box.clientWidth;
+    if (ov > 2) { box.style.setProperty('--d', ov + 'px'); box.style.setProperty('--t', Math.max(6, ov / 30 + 4).toFixed(1) + 's'); box.classList.add('mq'); }
+  }
   function fit() {
     nowName.classList.remove('mq'); nowName.style.removeProperty('--d');
     var ov = nowTxt.offsetWidth - nowName.clientWidth;
     if (ov > 2) { nowName.style.setProperty('--d', ov + 'px'); nowName.style.setProperty('--t', Math.max(6, ov / 30 + 4).toFixed(1) + 's'); nowName.classList.add('mq'); }
   }
-  window.addEventListener('resize', function () { clearTimeout(fitT); fitT = setTimeout(fit, 200); });
+  window.addEventListener('resize', function () { clearTimeout(fitT); fitT = setTimeout(function () { fit(); fitMq(nowRadio, nowRadioTx); if (ovOpen) { fitMq(ovName, ovNameTx); fitMq(ovSong, ovSongTx); } }, 200); });
 
   function secure(u) { return location.protocol === 'https:' ? u.replace(/^http:/i, 'https:') : u; }
   function cleanSong(s) {
@@ -947,7 +954,7 @@
     document.getElementById('none').hidden = shown > 0;
   });
 
-  var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovName = document.getElementById('ovName');
+  var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovSongTx = document.getElementById('ovSongTx'), ovName = document.getElementById('ovName'), ovNameTx = document.getElementById('ovNameTx');
   var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
     var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(200, Math.min(vh - hb - 24, 340));
@@ -957,16 +964,20 @@
   function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
   function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
   var ovShown = {};
-  function ovSet(el, key, text, force) {
+  function ovSet(el, key, text, force, done) {
     if (!force && ovShown[key] === text) return;
-    ovShown[key] = text; scramble(el, text);
+    ovShown[key] = text; scramble(el, text, done);
   }
   function ovFill(force) {
     var bs = nowSt.classList.contains('on') ? 'on' : nowSt.classList.contains('buf') ? 'buf' : 'off';
     ovBadge.setAttribute('data-s', bs);
     ovBadgeTx.textContent = bs === 'on' ? 'ON AIR' : bs === 'buf' ? 'BUFFER' : 'OFF';
-    ovSet(ovName, 'n', cur >= 0 ? STATIONS[cur].name : '', force);
-    ovSet(ovSong, 'g', song ? '\u266A ' + song : '', force);
+    var nm = cur >= 0 ? STATIONS[cur].name : '';
+    if (force || ovShown.n !== nm) ovName.classList.remove('mq');
+    ovSet(ovNameTx, 'n', nm, force, function () { fitMq(ovName, ovNameTx); });
+    var sg = song ? '\u266A ' + song : '';
+    if (force || ovShown.g !== sg) ovSong.classList.remove('mq');
+    ovSet(ovSongTx, 'g', sg, force, function () { fitMq(ovSong, ovSongTx); });
   }
   function ovRect(row, t) {
     var r = row ? row.getBoundingClientRect() : null, hb = hdrEl.getBoundingClientRect().bottom;
@@ -994,6 +1005,7 @@
     ovT = setTimeout(function () { ovEl.hidden = true; }, 420);
     if (row) { try { row.focus({ preventScroll: true }); } catch (e) {} }
   }
+  ovCard.addEventListener('transitionend', function (e) { if (ovOpen && e.propertyName === 'width') { fitMq(ovName, ovNameTx); fitMq(ovSong, ovSongTx); } });
   ovEl.addEventListener('click', ovHide);
   ovEl.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
   ovEl.addEventListener('wheel', function (e) { e.preventDefault(); }, { passive: false });
