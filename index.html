@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html lang="it" data-g="2" class=""><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
+<html lang="it" data-g="2" class="">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#000000">
 <title>Radio</title>
@@ -15,17 +16,10 @@
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
   #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
-  /* Sfondo Generale con Vinile e Note */
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
-    position: absolute;
-    width: min(85vw, 85vh);
-    height: min(85vw, 85vh);
-    border-radius: 50%;
-    opacity: 0.40;
-    filter: blur(0px);
-    animation: discSpin 10s linear infinite;
-    animation-play-state: paused;
+    position: absolute; width: min(85vw, 85vh); height: min(85vw, 85vh); border-radius: 50%; opacity: 0.40; filter: blur(0px);
+    animation: discSpin 10s linear infinite; animation-play-state: paused;
     background:
       radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
       radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
@@ -56,43 +50,10 @@
   #nowSt.err { color: #ff7b7b; } #nowSt.err .led { background: #ff5c5c; }
   @keyframes blink { 50% { opacity: .25; } }
 
-  /* Barra di avanzamento Buffer dinamica */
-  #initBufWrap { 
-    width: 100%; 
-    max-width: 220px; 
-    height: 8px; 
-    background: rgba(255,255,255,.15); 
-    border-radius: 999px; 
-    overflow: hidden; 
-    margin-top: 6px; 
-    display: none; 
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.6); 
-  }
-  #initBufBar { 
-    height: 100%; 
-    width: 0%; 
-    border-radius: 999px; 
-    background-color: #ff1744; 
-    transition: width .2s linear, background-color .2s linear; 
-  }
-  #ovInitBufWrap { 
-    width: 80%; 
-    max-width: 280px; 
-    height: 10px; 
-    background: rgba(255,255,255,.15); 
-    border-radius: 999px; 
-    overflow: hidden; 
-    margin: 8px auto 0; 
-    display: none; 
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.6); 
-  }
-  #ovInitBufBar { 
-    height: 100%; 
-    width: 0%; 
-    border-radius: 999px; 
-    background-color: #ff1744; 
-    transition: width .2s linear, background-color .2s linear; 
-  }
+  #initBufWrap { width: 100%; max-width: 220px; height: 8px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin-top: 6px; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+  #initBufBar { height: 100%; width: 0%; border-radius: 999px; background-color: #ff1744; transition: width .2s linear, background-color .2s linear; }
+  #ovInitBufWrap { width: 80%; max-width: 280px; height: 10px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin: 8px auto 0; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+  #ovInitBufBar { height: 100%; width: 0%; border-radius: 999px; background-color: #ff1744; transition: width .2s linear, background-color .2s linear; }
 
   #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
@@ -101,14 +62,10 @@
   #volIc[data-l="0"] .mx { opacity: 1; }
   #volVal { flex: 0 0 auto; min-width: 4ch; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #e8e8e8; }
   #vol { --p: 100%; -webkit-appearance: none; appearance: none; flex: 0 0 auto; width: 130px; height: 24px; margin: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 12px; }
-  #vol::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6);
-    background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
-  #vol::-moz-range-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6);
-    background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
-  #vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%; border: 0; background: #fff;
-    box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
-  #vol::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 0; background: #fff;
-    box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
+  #vol::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6); background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
+  #vol::-moz-range-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6); background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
+  #vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
+  #vol::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
   #vol:hover::-webkit-slider-thumb, #vol:active::-webkit-slider-thumb { transform: scale(1.18); }
   #vol:hover::-moz-range-thumb, #vol:active::-moz-range-thumb { transform: scale(1.18); }
 
@@ -139,30 +96,27 @@
   @media (max-width: 560px) { #volbox { display: none; } #player { gap: 12px; } }
   @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span { animation: none; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
 
+  /* --- REGOLE CSS GRADIENTI MULTIPLI RIPRISTINATE --- */
   @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
   #player::before { content: ""; position: absolute; inset: -34px; z-index: -1; filter: blur(22px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
   #player.fo::before { opacity: 0; }
   #player::after  { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
   #player[data-g="0"]::before, #player[data-g="0"]::after { display: none; }
   #player[data-g="0"] { background: rgba(0,0,0,.55); }
-  #nowSt { text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  
   @keyframes gx { to { background-position: 200% 0; } }
-  @keyframes gdiag { to { background-position: 200% 200%; } }
   @keyframes gblob { from { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; } to { background-position: 100% 100%, 0% 100%, 100% 0%, 0% 0%; } }
   @keyframes gspin { to { --ang: 360deg; } }
+
   #player[data-g="1"]::before, html[data-g="1"] #list .st.cur::before, html[data-g="1"] #ov .ovc::before { background: linear-gradient(90deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 200% 100%; animation: gx 12s linear infinite; }
-  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%;
-    background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%);
-    animation: gblob 16s ease-in-out infinite alternate; }
+  #player[data-g="2"]::before, html[data-g="2"] #list .st.cur::before, html[data-g="2"] #ov .ovc::before { background-color: #14083a; background-repeat: no-repeat; background-size: 200% 200%, 180% 180%, 220% 220%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #00c8ff, transparent 70%), radial-gradient(45% 100% at 80% 60%, #7a3dff, transparent 70%), radial-gradient(45% 100% at 60% 50%, #2dff7a, transparent 70%); animation: gblob 16s ease-in-out infinite alternate; }
   #player[data-g="3"]::before, html[data-g="3"] #list .st.cur::before, html[data-g="3"] #ov .ovc::before { background: linear-gradient(100deg, #ff512f, #dd2476, #7a3dff, #dd2476, #ff512f); background-size: 200% 100%; animation: gx 14s linear infinite; }
   #player[data-g="4"]::before, html[data-g="4"] #list .st.cur::before, html[data-g="4"] #ov .ovc::before { background: linear-gradient(100deg, #00c6ff, #0072ff, #00e5c3, #0072ff, #00c6ff); background-size: 200% 100%; animation: gx 14s linear infinite; }
   #player[data-g="5"]::before, html[data-g="5"] #list .st.cur::before, html[data-g="5"] #ov .ovc::before { background: linear-gradient(100deg, #ff1e00, #ff7a00, #ffd000, #ff7a00, #ff1e00); background-size: 200% 100%; animation: gx 8s linear infinite; }
   #player[data-g="6"]::before, html[data-g="6"] #list .st.cur::before, html[data-g="6"] #ov .ovc::before { background: linear-gradient(100deg, #0f9b6e, #38ef7d, #c6f03a, #38ef7d, #0f9b6e); background-size: 200% 100%; animation: gx 14s linear infinite; }
   #player[data-g="7"]::before, html[data-g="7"] #list .st.cur::before, html[data-g="7"] #ov .ovc::before { background: linear-gradient(100deg, #ff6fb5, #ffb86b, #7ee8a0, #6ec5ff, #b48cff, #ff6fb5); background-size: 200% 100%; animation: gx 12s linear infinite; }
   #player[data-g="8"]::before, html[data-g="8"] #list .st.cur::before, html[data-g="8"] #ov .ovc::before { inset: -300px -34px; background: conic-gradient(from var(--ang) at 50% 50%, #ff2d95, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); animation: gspin 9s linear infinite; }
-  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%;
-    background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%);
-    animation: gblob 8s ease-in-out infinite alternate; }
+  #player[data-g="9"]::before, html[data-g="9"] #list .st.cur::before, html[data-g="9"] #ov .ovc::before { background-color: #3a0a1a; background-repeat: no-repeat; background-size: 200% 200%, 170% 170%, 230% 230%, 160% 160%; background-image: radial-gradient(45% 100% at 20% 50%, #ff2d95, transparent 70%), radial-gradient(45% 100% at 50% 40%, #ff9500, transparent 70%), radial-gradient(45% 100% at 80% 60%, #ffe600, transparent 70%), radial-gradient(45% 100% at 60% 50%, #7a3dff, transparent 70%); animation: gblob 8s ease-in-out infinite alternate; }
 
   #bufrow { position: relative; height: 20px; background: #111; overflow: hidden; --c: #3ddc84; }
   #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
@@ -189,7 +143,6 @@
   #list .st.cur::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.26); pointer-events: none; }
   html[data-g="0"] #list .st.cur::before, html[data-g="0"] #list .st.cur::after, html[data-g="0"] #ov .ovc::before, html[data-g="0"] #ov .ovc::after { display: none; }
   html.fo #list .st.cur::before, html.fo #ov .ovc::before { opacity: 0; }
-  @media (prefers-reduced-motion: reduce) { #list .st.cur::before, #ov .ovc::before { animation: none !important; } }
 
   #ov { position: fixed; left: 0; right: 0; bottom: 0; top: var(--hh, 0px); z-index: 5; background: rgba(0,0,0,0); transition: background .35s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; }
   #ov[hidden] { display: none; }
@@ -204,26 +157,16 @@
   #ov .ovc::before { content: ""; position: absolute; inset: -20px; z-index: -2; filter: blur(14px) saturate(1.15); pointer-events: none; opacity: 1; transition: opacity .9s ease; }
   #ov .ovc::after { content: ""; position: absolute; inset: 0; z-index: -2; background: rgba(0,0,0,.26); pointer-events: none; }
 
-  /* Vinile integrato nella sovraimpressione */
   #ov .ovc-disc {
-    position: absolute;
-    width: min(70vw, 70vh, 280px);
-    height: min(70vw, 70vh, 280px);
-    border-radius: 50%;
-    opacity: 0.35;
-    z-index: -1;
-    pointer-events: none;
-    animation: discSpin 10s linear infinite;
-    animation-play-state: paused;
+    position: absolute; width: min(70vw, 70vh, 280px); height: min(70vw, 70vh, 280px); border-radius: 50%; opacity: 0.35; z-index: -1; pointer-events: none;
+    animation: discSpin 10s linear infinite; animation-play-state: paused;
     background:
       radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
       radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
       conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
       repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px);
   }
-  body.is-playing #ov .ovc-disc {
-    animation-play-state: running;
-  }
+  body.is-playing #ov .ovc-disc { animation-play-state: running; }
 
   #ov .ovi { position: relative; z-index: 1; width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 10px #000, 0 0 16px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
@@ -236,13 +179,11 @@
   #ovSong { margin-top: 10px; font-size: clamp(15px, 4vw, 20px); color: #fff; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   #ovSong:empty { display: none; }
   #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
-  @media (prefers-reduced-motion: reduce) { #ov, #ov .ovc, #ov .ovi { transition: none !important; } #ovSt.buf .led { animation: none; } }
 
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
   #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
   #mtr { display: block; height: 40px; background: #000; }
   #meter { display: block; width: 100%; height: 40px; pointer-events: none; }
-  @media (prefers-reduced-motion: reduce) { #mtr { display: none; } }
 
   #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
   #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
@@ -258,13 +199,11 @@
   #btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
   #btn.is-on::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5h4v14H7zM13 5h4v14h-4z' fill='white'/%3E%3C/svg%3E"); }
   @keyframes discSpin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { #btn::before, #bgDisc, #ov .ovc-disc { animation: none; } }
 </style>
-<script src="./Radio_files/hls.min.js.download"></script></head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
+</head>
 <body>
-<div id="notes" aria-hidden="true">
-  <div id="bgDisc"></div>
-</div>
+<div id="notes" aria-hidden="true"><div id="bgDisc"></div></div>
 <div id="hdr">
 <header id="player" data-g="2" class="">
 <div class="pl">
@@ -292,7 +231,7 @@
   <div id="clock">
     <b id="ck" aria-label=""></b>
     <span id="cd"></span>
-    <div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB a 4 cifre decimali dall'apertura della pagina">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
+    <div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
   </div>
   <div id="volbox" title="Volume">
     <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
@@ -337,6 +276,48 @@
 </div>
 
 <script>
+  if ('serviceWorker' in navigator) {
+    var swCode = "self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));" +
+                 "self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));" +
+                 "self.addEventListener('fetch', e => { if(e.request.mode === 'navigate') { e.respondWith(fetch(e.request).catch(() => caches.match(e.request))); } });";
+    var blob = new Blob([swCode], { type: 'text/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(function() {});
+  }
+
+  var audioCtx = null;
+  function unlockAudioContext() {
+    if (!audioCtx) {
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) audioCtx = new AudioContext();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    if (audioCtx) {
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(0);
+      osc.stop(0.001);
+    }
+  }
+
+  var wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch (err) {}
+  }
+  function releaseWakeLock() {
+    if (wakeLock) {
+      wakeLock.release().then(() => { wakeLock = null; });
+    }
+  }
+
   var INIT_BUFFER_TARGET = 5;
 
   var STATIONS = [
@@ -459,9 +440,7 @@
     lastNetTick = now;
     var kbs = dt > 0 ? ((bytesInWindow / 1024) / dt) : 0;
     bytesInWindow = 0;
-    
     var totalMB = totalBytes / 1048576;
-    
     dlSpdEl.textContent = kbs.toFixed(1).replace('.', ',') + ' KB/s';
     dlTotEl.textContent = totalMB.toFixed(4).replace('.', ',') + ' MB';
   }, 1000);
@@ -491,12 +470,9 @@
   function render() {
     var live = nowSt.className === 'on';
     var isPlaying = !!(wantPlay && cur >= 0 && live);
-    
     document.body.classList.toggle('is-playing', isPlaying);
-
     btn.innerHTML = (wantPlay && cur >= 0) ? '&#10074;&#10074;' : '&#9654;'; 
     btn.classList.toggle('is-on', isPlaying);
-    
     items.forEach(function (b, i) {
       var on = i === cur;
       b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '');
@@ -508,7 +484,7 @@
     clearTimeout(retryT); clearTimeout(stalledT);
     if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
   }
-  function haltAudio() { au.pause(); au.removeAttribute('src'); au.load(); }
+  function haltAudio() { au.pause(); au.removeAttribute('src'); au.load(); releaseWakeLock(); }
 
   function loadHls(cb) {
     if (window.Hls) { cb(true); return; }
@@ -524,7 +500,11 @@
   function onPlayErr(g) {
     return function (err) {
       if (g !== gen) return;
-      if (err && err.name === 'NotAllowedError') { setSt('off', 'tocca play per avviare'); wantPlay = false; render(); return; }
+      if (err && err.name === 'NotAllowedError') {
+        unlockAudioContext();
+        setSt('off', 'tocca play per avviare');
+        wantPlay = false; render(); return;
+      }
       if (err && err.name === 'AbortError') return;
       next(g);
     };
@@ -532,6 +512,8 @@
 
   function start() {
     teardown();
+    unlockAudioContext();
+    requestWakeLock();
     var g = ++gen, u = cands[uIdx];
     song = ''; segSong = {};
     if (!u) { setSt('err', 'nessun indirizzo disponibile'); return; }
@@ -543,11 +525,7 @@
           hls = new Hls({ lowLatencyMode: false, maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
           hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
-          
-          hls.on(Hls.Events.FRAG_LOADED, function (e, d) {
-            if (d && d.frag && d.frag.loaded) addDownloadedBytes(d.frag.loaded);
-          });
-
+          hls.on(Hls.Events.FRAG_LOADED, function (e, d) { if (d && d.frag && d.frag.loaded) addDownloadedBytes(d.frag.loaded); });
           hls.on(Hls.Events.FRAG_PARSING_METADATA, function (e, d) {
             if (g !== gen || !d || !d.frag || !d.samples) return;
             d.samples.forEach(function (sm) {
@@ -572,11 +550,14 @@
   function next(g) {
     if (g !== gen || !wantPlay) return;
     tries++;
-    if (tries >= 40) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
+    if (tries >= 50) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
     uIdx = (uIdx + 1) % cands.length;
     setSt('buf', navigator.onLine === false ? 'senza rete, attendo...' : 'riconnessione...');
     clearTimeout(retryT);
-    retryT = setTimeout(start, uIdx === 0 ? Math.min(6000, 1500 + tries * 300) : 600);
+    var baseDelay = Math.min(16000, 1000 * Math.pow(1.3, Math.min(tries, 10)));
+    var jitter = Math.random() * 800;
+    var delay = Math.round(baseDelay + jitter);
+    retryT = setTimeout(start, uIdx === 0 ? delay : 500);
   }
 
   function select(i, autoplay) {
@@ -592,39 +573,52 @@
 
   function setMedia() {
     if (!('mediaSession' in navigator) || cur < 0 || !window.MediaMetadata) return;
-    navigator.mediaSession.metadata = new MediaMetadata({ title: song || STATIONS[cur].name, artist: song ? STATIONS[cur].name : 'Radio' });
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song || STATIONS[cur].name,
+      artist: song ? STATIONS[cur].name : 'Radio',
+      album: 'Radio Live',
+      artwork: [
+        { src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"%3E%3Crect width="512" height="512" fill="%23000"/%3E%3Ccircle cx="256" cy="256" r="200" fill="%23ff2d95"/%3E%3Ctext x="256" y="340" font-size="260" text-anchor="middle" fill="%23fff"%3E%E2%99%AB%3C/text%3E%3C/svg%3E', sizes: '512x512', type: 'image/svg+xml' }
+      ]
+    });
   }
   if ('mediaSession' in navigator) {
     try {
-      navigator.mediaSession.setActionHandler('play', function () { if (cur >= 0) select(cur, true); });
+      navigator.mediaSession.setActionHandler('play', function () { unlockAudioContext(); if (cur >= 0) select(cur, true); });
       navigator.mediaSession.setActionHandler('pause', stop);
       navigator.mediaSession.setActionHandler('previoustrack', function () { step(-1); });
       navigator.mediaSession.setActionHandler('nexttrack', function () { step(1); });
     } catch (e) {}
   }
 
-  au.addEventListener('playing', function () { clearTimeout(stalledT); clearTimeout(resumeT); resumeN = 0; tries = 0; setSt('on', 'in onda'); if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {} } });
+  au.addEventListener('playing', function () {
+    clearTimeout(stalledT); clearTimeout(resumeT); resumeN = 0; tries = 0;
+    setSt('on', 'in onda');
+    if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {} }
+  });
   au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
-  // Android: una notifica/telefonata toglie il "focus audio" e Chrome mette in pausa il <audio>
-  // senza che la pagina lo sappia. Qui lo rileviamo e proviamo a riprendere (o a riconnetterci al live).
+
   function resumeTry() {
     clearTimeout(resumeT);
     if (!wantPlay || bufHold || !au.paused) { resumeN = 0; return; }
-    if (resumeN >= 12) { resumeN = 0; stop(); setSt('off', 'interrotta, tocca play'); return; }
+    if (resumeN >= 15) { resumeN = 0; stop(); setSt('off', 'interrotta, tocca play'); return; }
     resumeN++;
-    if (Date.now() - pausedAt > 8000) { tries = 0; start(); }          // pausa lunga: torna in diretta
+    unlockAudioContext();
+    if (Date.now() - pausedAt > 6000) { tries = 0; start(); }
     else { var p = au.play(); if (p && p.catch) p.catch(function () {}); }
-    resumeT = setTimeout(resumeTry, 1500);
+    resumeT = setTimeout(resumeTry, 1200);
   }
+
   au.addEventListener('pause', function () {
     render();
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {} }
     if (wantPlay && !bufHold && nowSt.className === 'on') {
       pausedAt = Date.now(); resumeN = 0;
       setSt('buf', 'ripresa dopo interruzione...');
-      clearTimeout(resumeT); resumeT = setTimeout(resumeTry, 700);
+      clearTimeout(resumeT); resumeT = setTimeout(resumeTry, 500);
     }
   });
+
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && wantPlay && !bufHold && au.paused) { resumeN = 0; resumeTry(); }
   });
@@ -633,14 +627,16 @@
   au.addEventListener('stalled', function () {
     if (!wantPlay) return;
     var g = gen; clearTimeout(stalledT);
-    stalledT = setTimeout(function () { if (g === gen && wantPlay && !au.paused && au.readyState < 3) start(); }, 8000);
+    stalledT = setTimeout(function () { if (g === gen && wantPlay && !au.paused && au.readyState < 3) start(); }, 6000);
   });
 
   btn.addEventListener('click', function () {
+    unlockAudioContext();
     if (wantPlay) { stop(); return; }
     if (cur < 0) { select(0, true); return; }
     select(cur, true);
   });
+
   var volIc = document.getElementById('volIc'), volVal = document.getElementById('volVal');
   function volUI() {
     var n = parseInt(vol.value, 10) || 0;
@@ -992,12 +988,13 @@
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
   })();
 
+  // --- MOTORINO JS PER CAMBIO GRADIENTI AUTOMATICO RIPRISTINATO ---
   (function () {
     var de = document.documentElement, pl = document.getElementById('player');
-    var cur = 1, tm = null, fadeT = null, PERIOD = 60000;
+    var curGrad = 1, tm = null, fadeT = null, PERIOD = 60000;
     function apply(g) { pl.setAttribute('data-g', g); de.setAttribute('data-g', g); pl.classList.remove('fo'); de.classList.remove('fo'); }
     function set(g, instant) {
-      cur = g; store('radioGrad', g);
+      curGrad = g; store('radioGrad', g);
       clearTimeout(fadeT);
       if (instant) { apply(g); return; }
       pl.classList.add('fo'); de.classList.add('fo');
@@ -1005,7 +1002,7 @@
     }
     var sv = parseInt(load('radioGrad'), 10);
     set(isNaN(sv) || sv < 1 || sv > 9 ? 1 : sv, true);
-    tm = setInterval(function () { set(cur >= 9 || cur < 1 ? 1 : cur + 1); }, PERIOD);
+    tm = setInterval(function () { set(curGrad >= 9 || curGrad < 1 ? 1 : curGrad + 1); }, PERIOD);
   })();
 
   (function () {
@@ -1035,7 +1032,6 @@
     setInterval(upd, 500);
   })();
 
-  // --- Pre-buffering: avanzamento completo con sblocco automatico ---
   (function () {
     var doneGen = -1;
     var initWrap = document.getElementById('initBufWrap');
@@ -1136,7 +1132,11 @@
     });
   })();
 
-  window.addEventListener('online', function () { if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) { tries = 0; clearTimeout(retryT); start(); } });
+  window.addEventListener('online', function () {
+    if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) {
+      tries = 0; clearTimeout(retryT); start();
+    }
+  });
   window.addEventListener('offline', function () { if (wantPlay) setSt('buf', 'senza rete, attendo...'); });
 
   (function () {
@@ -1268,5 +1268,5 @@
     requestAnimationFrame(loop);
   })();
 </script>
-
-</body></html>
+</body>
+</html>
