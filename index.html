@@ -191,14 +191,16 @@
   #ovSong:empty { display: none; }
   /* insegna neon ON AIR sopra il nome della stazione */
   #ovBadge { --ac: #ff3b5c; display: flex; align-items: center; gap: 7px; width: fit-content; margin: 0 auto 10px; padding: 5px 14px 5px 10px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.3); color: var(--ac); font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: 17px; letter-spacing: .22em; line-height: 1; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
-  #ovBadge svg { width: 22px; height: 22px; flex: 0 0 auto; overflow: visible; filter: drop-shadow(0 0 4px var(--ac)); }
+  #ovBadge svg { width: 22px; height: 22px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
   #ovBadge .w { animation: obWv 1.6s ease-in-out infinite; } #ovBadge .w2 { animation-delay: .25s; }
+  #ovBadge[data-s="on"] #ovBadgeTx { animation: obTx 1.6s ease-in-out infinite; }
+  @keyframes obTx { 0%, 100% { color: var(--ac); text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); } 50% { color: #fff; text-shadow: 0 0 6px #fff, 0 0 16px var(--ac); } }
   @keyframes obWv { 0%, 100% { opacity: .2; } 45% { opacity: 1; } }
   #ovBadge[data-s="buf"] { --ac: #ffd24d; animation: obBl .8s ease-in-out infinite; }
   @keyframes obBl { 50% { opacity: .3; } }
   #ovBadge[data-s="off"] { --ac: #9a9a9a; text-shadow: none; box-shadow: none; }
   #ovBadge[data-s="off"] .w { animation: none; opacity: .3; } #ovBadge[data-s="off"] svg { filter: none; }
-  @media (prefers-reduced-motion: reduce) { #ovBadge, #ovBadge .w { animation: none !important; } }
+  @media (prefers-reduced-motion: reduce) { #ovBadge, #ovBadge .w, #ovBadgeTx { animation: none !important; } }
   #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
 
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
