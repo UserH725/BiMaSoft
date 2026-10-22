@@ -17,7 +17,7 @@
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
-  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 14px; height: 94px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; height: 70px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
@@ -42,19 +42,19 @@
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
-  #nowRadio { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 19px; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; }
+  #nowRadio { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 17px; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; }
   #nowRadio span, #ovName span, #ovSong span { display: inline-block; }
   #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
-  #nowName { font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 18px; font-weight: 600; line-height: 1.25; min-height: 1.25em; white-space: nowrap; overflow: hidden; }
+  #nowName { font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
   /* insegna ON AIR in intestazione: verde/bianco lampeggiante (in riproduzione), giallo lampeggiante (buffer), rosso (fermo/errore) */
-  #nowSt { --ac: #ff3b30; display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 4px; padding: 4px 11px 4px 8px; border: 2px solid var(--ac); border-radius: 6px; background: rgba(0,0,0,.35); color: var(--ac); font-weight: 700; font-size: 13px; letter-spacing: .2em; line-height: 1; white-space: nowrap; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
-  @media (max-width: 370px) { #nowSt { gap: 5px; padding: 3px 8px 3px 6px; font-size: 11.5px; letter-spacing: .1em; } }
+  #nowSt { --ac: #ff3b30; display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 3px; padding: 3px 9px 3px 6px; border: 1.5px solid var(--ac); border-radius: 5px; background: rgba(0,0,0,.35); color: var(--ac); font-weight: 700; font-size: 11.5px; letter-spacing: .18em; line-height: 1; white-space: nowrap; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
+  @media (max-width: 370px) { #nowSt { gap: 5px; padding: 2px 7px 2px 5px; font-size: 10.5px; letter-spacing: .1em; } }
   /* senza brano, sotto la radio compare il dettaglio dello stato (es. "tocca play per avviare") */
-  #nowName.det { font-size: 14px; font-weight: 600; color: #d6d6d6; }
-  #nowSt svg { width: 18px; height: 18px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
+  #nowName.det { font-size: 12.5px; font-weight: 600; color: #d6d6d6; }
+  #nowSt svg { width: 15px; height: 15px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
   #nowSt .w { animation: obWv 1.6s ease-in-out infinite; } #nowSt .w2 { animation-delay: .25s; }
   #nowSt.on { --ac: #3ddc84; animation: nsBx 1s ease-in-out infinite; }
   #nowSt.on #nowTx { animation: nsTx 1s ease-in-out infinite; }
@@ -66,27 +66,12 @@
   @media (prefers-reduced-motion: reduce) { #nowSt, #nowSt .w, #nowSt #nowTx { animation: none !important; } }
   @keyframes blink { 50% { opacity: .25; } }
 
-  #initBufWrap { width: 100%; max-width: 220px; height: 8px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin-top: 6px; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+  #initBufWrap { width: 100%; max-width: 220px; height: 5px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin: 3px 0 2px; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+  body:has(#ov.open) #initBufWrap { display: none !important; }
   #initBufBar { height: 100%; width: 0%; border-radius: 999px; background-color: #ff1744; transition: width .2s linear, background-color .2s linear; }
   #ovInitBufWrap { width: 80%; max-width: 280px; height: 10px; background: rgba(255,255,255,.15); border-radius: 999px; overflow: hidden; margin: 8px auto 0; display: none; box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
   #ovInitBufBar { height: 100%; width: 0%; border-radius: 999px; background-color: #ff1744; transition: width .2s linear, background-color .2s linear; }
 
-  #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
-  #volrow { display: flex; align-items: center; height: 26px; padding: 0 16px; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
-  #volrow #volbox { flex: 1 1 auto; width: 100%; }
-  #volrow #vol { flex: 1 1 auto; width: auto; min-width: 0; height: 20px; }
-  #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
-  #volIc .w, #volIc .mx { opacity: 0; transition: opacity .15s ease; }
-  #volIc[data-l="1"] .w1, #volIc[data-l="2"] .w1, #volIc[data-l="2"] .w2, #volIc[data-l="3"] .w { opacity: 1; }
-  #volIc[data-l="0"] .mx { opacity: 1; }
-  #volVal { flex: 0 0 auto; min-width: 4ch; text-align: right; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #e8e8e8; }
-  #vol { --p: 100%; -webkit-appearance: none; appearance: none; flex: 0 0 auto; width: 130px; height: 24px; margin: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 12px; }
-  #vol::-webkit-slider-runnable-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6); background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
-  #vol::-moz-range-track { height: 6px; border-radius: 999px; box-shadow: 0 0 0 1px rgba(255,255,255,.22), 0 1px 4px rgba(0,0,0,.6); background: linear-gradient(90deg, transparent var(--p), #1c1c1c var(--p)), linear-gradient(90deg, #00c8ff, #7a3dff 55%, #ff2d95); }
-  #vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
-  #vol::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; border: 0; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.7), 0 0 10px rgba(255,45,149,.55); transition: transform .12s ease; }
-  #vol:hover::-webkit-slider-thumb, #vol:active::-webkit-slider-thumb { transform: scale(1.18); }
-  #vol:hover::-moz-range-thumb, #vol:active::-moz-range-thumb { transform: scale(1.18); }
 
   main { max-width: 980px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom, 0px)); }
   .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -137,16 +122,16 @@
 
   #player[data-go]::after, html[data-go] #list .st.cur::after, html[data-go] #ov .ovc::after { animation-delay: var(--od, 0s); }
 
-  #bufrow { position: relative; height: 20px; background: #111; overflow: hidden; --c: #3ddc84; }
+  #bufrow { position: relative; height: 15px; background: #111; overflow: hidden; --c: #3ddc84; }
   #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
-  #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+  #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
   #ck .dg { position: relative; display: inline-block; width: 1ch; height: 1.15em; overflow: hidden; vertical-align: top; }
   #ck .dg > span { position: absolute; left: 0; top: 0; width: 100%; text-align: center; }
-  #clock #cd { display: block; font-size: 11px; color: #cfcfcf; white-space: nowrap; }
+  #clock #cd { display: block; font-size: 10px; color: #cfcfcf; white-space: nowrap; }
   
-  #netStat { display: block; font-size: 10.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
+  #netStat { display: block; font-size: 10px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
   #netStat span { font-variant-numeric: tabular-nums; }
   #netCon { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
   #netDot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
@@ -157,8 +142,8 @@
   @keyframes netBl { 50% { opacity: .35; } }
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  #rc #clock b { font-size: 20px; }
-  #ana { flex: 0 0 auto; width: 64px; height: 64px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
+  #rc #clock b { font-size: 17px; }
+  #ana { flex: 0 0 auto; width: 54px; height: 54px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
 
@@ -219,7 +204,7 @@
   #mtr { display: block; height: 26px; background: #000; }
   #meter { display: block; width: 100%; height: 26px; pointer-events: none; }
 
-  #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
+  #btn { flex: 0 0 auto; position: relative; width: 46px; height: 46px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
   #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
   #btn:hover { transform: scale(1.08); }
   #btn:active { transform: scale(.94); }
@@ -244,11 +229,11 @@
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
     <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
+    <div id="initBufWrap"><div id="initBufBar"></div></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
     </div>
-    <div id="initBufWrap"><div id="initBufBar"></div></div>
   </div>
 </div>
 <div id="ana" aria-hidden="true">
@@ -271,19 +256,6 @@
  </div>
 </div>
 </header>
-<div id="volrow">
-<div id="volbox" title="Volume">
-  <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
-    <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"></path>
-    <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-    <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-    <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-    <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-  </svg>
-  <input id="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume">
-  <span id="volVal" aria-hidden="true">100%</span>
-</div>
-</div>
 <div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
 <div id="mtr"><canvas id="meter" width="1905" height="26" aria-hidden="true"></canvas></div>
 </div>
@@ -473,7 +445,7 @@
 
   STATIONS.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base', numeric: true }); });
 
-  var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
+  var au = document.getElementById('au'), btn = document.getElementById('btn');
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0, userWants = false, tapArmed = false;
@@ -704,15 +676,6 @@
     if (cur < 0) { select(0, true); return; }
     select(cur, true);
   });
-
-  var volIc = document.getElementById('volIc'), volVal = document.getElementById('volVal');
-  function volUI() {
-    var n = parseInt(vol.value, 10) || 0;
-    vol.style.setProperty('--p', 'calc(8px + (100% - 16px) * ' + (n / 100) + ')');
-    volVal.textContent = n + '%';
-    volIc.setAttribute('data-l', n === 0 ? '0' : n < 34 ? '1' : n < 67 ? '2' : '3');
-  }
-  vol.addEventListener('input', function () { au.volume = vol.value / 100; volUI(); });
 
   var tabSong = '', tabName = '', tabI = 0, tabT = null, TAB_W = 26, tabBase = 'Radio', tabPh = 0;
   function tabLed() {
@@ -1056,8 +1019,7 @@
   document.addEventListener('keydown', function (e) { if (ovOpen && e.key === 'Escape') ovHide(); });
   window.addEventListener('resize', function () { if (ovOpen) ovNoAnim(function () { ovPlace(ovTarget()); }); });
 
-  vol.value = 100;
-  au.volume = 1; volUI();
+  au.volume = 1;
   var last = load('radioLast'), li0 = -1;
   STATIONS.forEach(function (s, i) { if (s.name === last) li0 = i; });
   if (li0 >= 0) select(li0, false); else { render(); updateNow(); }
