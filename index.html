@@ -145,14 +145,13 @@
   
   #netStat { display: block; font-size: 10.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
   #netStat span { font-variant-numeric: tabular-nums; }
-  #netCon { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; vertical-align: middle; }
+  #netCon { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
   #netDot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
-  #netCon.ok #netDot { background: #2ee66b; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #2ee66b; }
+  #netCon.ok #netDot { background: #2ee66b; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #2ee66b; animation: netBl 1s steps(2, end) infinite; }
   #netCon.ko #netDot { background: #ff3b30; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #ff3b30; animation: netBl 1s steps(2, end) infinite; }
   #netCon.ok #netLbl { color: #7dffa5; }
   #netCon.ko #netLbl { color: #ff8a80; }
   @keyframes netBl { 50% { opacity: .35; } }
-  @media (max-width: 480px) { #netCon.ok #netLbl { display: none; } }
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 20px; }
@@ -1241,7 +1240,7 @@
   function netSet(ok, wake) {
     var was = netOk; netOk = ok;
     netCon.className = ok ? 'ok' : 'ko';
-    netLbl.textContent = ok ? 'SÌ CONNESSIONE' : 'NO CONNESSIONE';
+    netLbl.textContent = ok ? 'connessione OK' : 'connessione KO';
     if (ok && (was !== true || wake)) netBack(was === null);
     if (!ok && was !== false && wantPlay) setSt('buf', 'senza rete, attendo...');
   }
