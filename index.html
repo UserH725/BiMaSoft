@@ -72,6 +72,9 @@
   #ovInitBufBar { height: 100%; width: 0%; border-radius: 999px; background-color: #ff1744; transition: width .2s linear, background-color .2s linear; }
 
   #volbox { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
+  #volrow { display: flex; align-items: center; height: 26px; padding: 0 16px; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
+  #volrow #volbox { flex: 1 1 auto; width: 100%; }
+  #volrow #vol { flex: 1 1 auto; width: auto; min-width: 0; height: 20px; }
   #volIc { flex: 0 0 auto; width: 22px; height: 22px; color: #e8e8e8; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
   #volIc .w, #volIc .mx { opacity: 0; transition: opacity .15s ease; }
   #volIc[data-l="1"] .w1, #volIc[data-l="2"] .w1, #volIc[data-l="2"] .w2, #volIc[data-l="3"] .w { opacity: 1; }
@@ -109,7 +112,7 @@
   #none { color: #9a9a9a; padding: 18px 8px; }
   #none[hidden] { display: none; }
 
-  @media (max-width: 560px) { #volbox { display: none; } #player { gap: 12px; } }
+  @media (max-width: 560px) { #player { gap: 12px; } }
   @media (prefers-reduced-motion: reduce) { #player::before { animation: none !important; } #notes { display: none; } #nowName { text-overflow: ellipsis; } #nowName.mq span, #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: none; } #nowRadio, #ovName, #ovSong { text-overflow: ellipsis; } #btn { animation: none; } .eq i { animation: none; transform: scaleY(.6); } #nowSt.buf .led { animation: none; } }
 
   /* --- REGOLE CSS GRADIENTI MULTIPLI RIPRISTINATE --- */
@@ -145,7 +148,7 @@
   
   #netStat { display: block; font-size: 10.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
   #netStat span { font-variant-numeric: tabular-nums; }
-  #netCon { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
+  #netCon { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
   #netDot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
   #netCon.ok #netDot { background: #2ee66b; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #2ee66b; animation: netBl 1s steps(2, end) infinite; }
   #netCon.ko #netDot { background: #ff3b30; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #ff3b30; animation: netBl 1s steps(2, end) infinite; }
@@ -213,8 +216,8 @@
 
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
   #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
-  #mtr { display: block; height: 40px; background: #000; }
-  #meter { display: block; width: 100%; height: 40px; pointer-events: none; }
+  #mtr { display: block; height: 26px; background: #000; }
+  #meter { display: block; width: 100%; height: 26px; pointer-events: none; }
 
   #btn { flex: 0 0 auto; position: relative; width: 52px; height: 52px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
   #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
@@ -243,7 +246,7 @@
     <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
     </div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
   </div>
@@ -263,24 +266,26 @@
   <div id="clock">
     <b id="ck" aria-label=""></b>
     <span id="cd"></span>
-    <div id="netStat" title="Stato connessione, velocità download istantanea in KB/s e totale dati scaricati in MB"><span id="netCon" role="status" aria-live="polite"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span>↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
-  </div>
-  <div id="volbox" title="Volume">
-    <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
-      <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"></path>
-      <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-      <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-      <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-      <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
-    </svg>
-    <input id="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume">
-    <span id="volVal" aria-hidden="true">100%</span>
+    <div id="netStat" title="Stato connessione, velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span><span id="netCon" role="status" aria-live="polite"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span></div>
   </div>
  </div>
 </div>
 </header>
+<div id="volrow">
+<div id="volbox" title="Volume">
+  <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
+    <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"></path>
+    <path class="w w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+    <path class="w w2" d="M17.8 7a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+    <path class="w w3" d="M20 4.8a10 10 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+    <path class="mx" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+  </svg>
+  <input id="vol" type="range" min="0" max="100" step="1" value="100" aria-label="Volume">
+  <span id="volVal" aria-hidden="true">100%</span>
+</div>
+</div>
 <div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
-<div id="mtr"><canvas id="meter" width="1905" height="40" aria-hidden="true"></canvas></div>
+<div id="mtr"><canvas id="meter" width="1905" height="26" aria-hidden="true"></canvas></div>
 </div>
 
 <main>
