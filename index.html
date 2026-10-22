@@ -145,6 +145,14 @@
   
   #netStat { display: block; font-size: 10.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
   #netStat span { font-variant-numeric: tabular-nums; }
+  #netCon { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; vertical-align: middle; }
+  #netDot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+  #netCon.ok #netDot { background: #2ee66b; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #2ee66b; }
+  #netCon.ko #netDot { background: #ff3b30; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #ff3b30; animation: netBl 1s steps(2, end) infinite; }
+  #netCon.ok #netLbl { color: #7dffa5; }
+  #netCon.ko #netLbl { color: #ff8a80; }
+  @keyframes netBl { 50% { opacity: .35; } }
+  @media (max-width: 480px) { #netCon.ok #netLbl { display: none; } }
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 20px; }
@@ -256,7 +264,7 @@
   <div id="clock">
     <b id="ck" aria-label=""></b>
     <span id="cd"></span>
-    <div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
+    <div id="netStat" title="Stato connessione, velocità download istantanea in KB/s e totale dati scaricati in MB"><span id="netCon" role="status" aria-live="polite"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span>↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span></div>
   </div>
   <div id="volbox" title="Volume">
     <svg id="volIc" viewBox="0 0 24 24" data-l="3" aria-hidden="true">
@@ -464,7 +472,7 @@
   var au = document.getElementById('au'), btn = document.getElementById('btn'), vol = document.getElementById('vol');
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
-  var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0;
+  var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0, userWants = false, tapArmed = false;
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
   var nowTxt = document.getElementById('nowTxt'), nowRadio = document.getElementById('nowRadio'), nowRadioTx = document.getElementById('nowRadioTx');
 
@@ -547,11 +555,23 @@
       if (err && err.name === 'NotAllowedError') {
         unlockAudioContext();
         setSt('off', 'tocca play per avviare');
-        wantPlay = false; render(); return;
+        wantPlay = false; render(); armTap(); return;
       }
       if (err && err.name === 'AbortError') return;
       next(g);
     };
+  }
+
+  function armTap() {
+    if (tapArmed) return;
+    tapArmed = true;
+    var h = function (e) {
+      document.removeEventListener('click', h, true); tapArmed = false;
+      var t = e.target;
+      if (t && t.closest && t.closest('button, input, a, #list, #ov')) return;
+      if (cur >= 0 && !wantPlay) { e.stopPropagation(); e.preventDefault(); unlockAudioContext(); select(cur, true); }
+    };
+    document.addEventListener('click', h, true);
   }
 
   function start() {
@@ -610,7 +630,7 @@
     song = '';
     store('radioLast', STATIONS[i].name);
     setMedia();
-    if (autoplay) { wantPlay = true; start(); } else { setSt('off', 'pronta'); }
+    if (autoplay) { userWants = true; wantPlay = true; start(); } else { setSt('off', 'pronta'); }
   }
   function stop() { wantPlay = false; song = ''; ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
   function step(d) { if (!STATIONS.length) return; select(((cur < 0 ? 0 : cur) + d + STATIONS.length) % STATIONS.length, true); }
@@ -629,7 +649,7 @@
   if ('mediaSession' in navigator) {
     try {
       navigator.mediaSession.setActionHandler('play', function () { unlockAudioContext(); if (cur >= 0) select(cur, true); });
-      navigator.mediaSession.setActionHandler('pause', stop);
+      navigator.mediaSession.setActionHandler('pause', function () { userWants = false; stop(); });
       navigator.mediaSession.setActionHandler('previoustrack', function () { step(-1); });
       navigator.mediaSession.setActionHandler('nexttrack', function () { step(1); });
     } catch (e) {}
@@ -676,7 +696,7 @@
 
   btn.addEventListener('click', function () {
     unlockAudioContext();
-    if (wantPlay) { stop(); return; }
+    if (wantPlay) { userWants = false; stop(); return; }
     if (cur < 0) { select(0, true); return; }
     select(cur, true);
   });
@@ -1206,12 +1226,53 @@
     });
   })();
 
-  window.addEventListener('online', function () {
-    if (wantPlay && (nowSt.className !== 'on' || au.readyState < 3)) {
-      tries = 0; clearTimeout(retryT); start();
+  /* --- RILEVAMENTO CONNESSIONE REALE + RIPARTENZA AUTOMATICA --- */
+  var netOk = null, netProbeT = null, netBusy = false, netWake = false, bootAuto = false;
+  var netCon = document.getElementById('netCon'), netLbl = document.getElementById('netLbl');
+  var NET_URL = 'https://www.gstatic.com/generate_204';
+
+  function isPlayingNow() { return nowSt.className === 'on' && !au.paused && au.readyState >= 3; }
+
+  function netBack(first) {
+    if (cur < 0 || isPlayingNow()) return;
+    if (first ? bootAuto : (userWants || wantPlay)) { tries = 0; clearTimeout(retryT); select(cur, true); }
+  }
+
+  function netSet(ok, wake) {
+    var was = netOk; netOk = ok;
+    netCon.className = ok ? 'ok' : 'ko';
+    netLbl.textContent = ok ? 'SÌ CONNESSIONE' : 'NO CONNESSIONE';
+    if (ok && (was !== true || wake)) netBack(was === null);
+    if (!ok && was !== false && wantPlay) setSt('buf', 'senza rete, attendo...');
+  }
+
+  function netProbe(wake) {
+    if (wake) netWake = true;
+    if (netBusy) return;
+    clearTimeout(netProbeT);
+    netBusy = true;
+    var done = false, ctl = ('AbortController' in window) ? new AbortController() : null;
+    var to = setTimeout(function () { finish(false); if (ctl) { try { ctl.abort(); } catch (e) {} } }, 5000);
+    function finish(ok) {
+      if (done) return; done = true; clearTimeout(to); netBusy = false;
+      var w = netWake; netWake = false;
+      netSet(ok, w);
+      netProbeT = setTimeout(netProbe, ok ? 15000 : 4000);
     }
-  });
-  window.addEventListener('offline', function () { if (wantPlay) setSt('buf', 'senza rete, attendo...'); });
+    if (navigator.onLine === false) { finish(false); return; }
+    try {
+      fetch(NET_URL + '?_=' + Date.now(), { mode: 'no-cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+        .then(function () { finish(true); }, function () { finish(false); });
+    } catch (e) { finish(false); }
+  }
+
+  window.addEventListener('online', function () { netProbe(true); });
+  window.addEventListener('offline', function () { netSet(false, false); });
+  window.addEventListener('pageshow', function () { netProbe(true); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) netProbe(true); });
+
+  bootAuto = cur >= 0;
+  netProbe(false);
 
   (function () {
     var ck = document.getElementById('ck'), cd = document.getElementById('cd');
