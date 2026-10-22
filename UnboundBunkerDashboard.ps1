@@ -778,16 +778,17 @@ function Start-WanRefreshAsync {
     $ps = [powershell]::Create()
     [void]$ps.AddScript({
         $ProgressPreference = 'SilentlyContinue'
-        $ip4Wan = "N/D"; $loc4 = ""; $isp4 = ""; $cc4 = ""
+        $ip4Wan = "N/D"; $loc4 = ""; $isp4 = ""; $cc4 = ""; $as4 = ""; $proxy4 = $false; $host4 = $false
         $ip6Wan = "N/D"; $loc6 = ""; $isp6 = ""; $cc6 = ""
 
         try {
-            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,countryCode,isp,org,query' -TimeoutSec 3 -ErrorAction Stop
+            $r4 = Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=status,city,country,countryCode,isp,org,as,proxy,hosting,query' -TimeoutSec 3 -ErrorAction Stop
             if ($r4.status -eq 'success') {
                 $ip4Wan = $r4.query
                 $isp4   = if ($r4.isp) { [string]$r4.isp } elseif ($r4.org) { [string]$r4.org } else { "" }
                 $loc4   = (@($r4.city, $r4.country) | Where-Object { $_ }) -join ', '
                 if ($r4.countryCode) { $cc4 = ([string]$r4.countryCode).ToUpper() }
+                $as4 = [string]$r4.as; $proxy4 = [bool]$r4.proxy; $host4 = [bool]$r4.hosting
             }
         } catch {
             try {
@@ -815,12 +816,12 @@ function Start-WanRefreshAsync {
                 $raw6 = (Invoke-WebRequest -Uri 'https://ipv6.icanhazip.com' -TimeoutSec 3 -UseBasicParsing).Content.Trim()
                 if ($raw6 -match ':') {
                     $ip6Wan = $raw6
-                    $loc6   = "Cloudflare WARP"
+                    $loc6   = ""
                 }
             } catch {}
         }
 
-        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; isp4 = $isp4; ip6 = $ip6Wan; loc6 = $loc6; isp6 = $isp6; cc4 = $cc4; cc6 = $cc6 }
+        [pscustomobject]@{ ip4 = $ip4Wan; loc4 = $loc4; isp4 = $isp4; ip6 = $ip6Wan; loc6 = $loc6; isp6 = $isp6; cc4 = $cc4; cc6 = $cc6; as4 = $as4; proxy4 = $proxy4; host4 = $host4 }
     })
     $script:WanAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke(); Started = (Get-Date) }
 }
@@ -841,6 +842,9 @@ function Update-WanCacheState {
                     ipv4_loc    = $res.loc4
                     ipv4_isp    = $res.isp4
                     ipv4_cc     = $res.cc4
+                    ipv4_as     = $res.as4
+                    ipv4_proxy  = [bool]$res.proxy4
+                    ipv4_hosting = [bool]$res.host4
                     ipv6_wan    = $res.ip6
                     ipv6_wan_ok = ($res.ip6 -ne "N/D")
                     ipv6_loc    = $res.loc6
@@ -852,7 +856,7 @@ function Update-WanCacheState {
                 $script:WanFailCount++
                 if ($script:WanFailCount -ge 2) {
                     $script:WanCacheData = @{
-                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""; ipv4_isp = ""; ipv4_cc = ""
+                        ipv4_wan = "N/D"; ipv4_wan_ok = $false; ipv4_loc = ""; ipv4_isp = ""; ipv4_cc = ""; ipv4_as = ""; ipv4_proxy = $false; ipv4_hosting = $false
                         ipv6_wan = "N/D"; ipv6_wan_ok = $false; ipv6_loc = ""; ipv6_isp = ""; ipv6_cc = ""
                     }
                 }
@@ -914,9 +918,310 @@ function Get-IpConnectivityStatus {
         ipv4_cc     = $script:WanCacheData.ipv4_cc
         ipv6_wan    = $script:WanCacheData.ipv6_wan
         ipv6_wan_ok = $script:WanCacheData.ipv6_wan_ok
-        ipv6_loc    = $script:WanCacheData.ipv6_loc
+        ipv6_loc    = $(if ($script:WanCacheData.ipv6_loc) { $script:WanCacheData.ipv6_loc } elseif ($script:TunnelWarp6 -and $script:WanCacheData.ipv6_wan_ok) { "Cloudflare WARP" } else { "" })
         ipv6_isp    = $script:WanCacheData.ipv6_isp
         ipv6_cc     = $script:WanCacheData.ipv6_cc
+    }
+}
+
+# === TUNNEL / VPN: WIREGUARD-WARP SUL PC E VPN SUL ROUTER ===
+# PC: adattatore + rotte predefinite (letture locali ogni 10 s) e prova lato Cloudflare (cdn-cgi/trace, campo warp=).
+# Router: NON osservabile direttamente dal PC -> solo indizi: IP WAN del router via UPnP confrontato con l'IP pubblico,
+# flag proxy/hosting di ip-api, provider VPN/hosting noto, ISP atteso (facoltativo: prima riga di expected_isp.txt in $UbDir).
+# Le richieste di rete (trace, UPnP) girano in un runspace separato e NON bloccante, come per l'IP WAN.
+$script:TunnelAdapterRx = 'WireGuard|Wintun|WARP'
+$script:VpnProviderRx   = 'Mullvad|M247|Proton|Nord|Surfshark|Express ?VPN|Private Internet|Windscribe|IVPN|Datacamp|CDN77|Tefincom|CyberGhost|Perfect Privacy|AirVPN|hide\.me|TunnelBear|Cloudflare|Hetzner|OVH|Leaseweb|Choopa|Vultr|DigitalOcean|Amazon|Google Cloud|Contabo|Quadranet|Zenlayer|Linode|Akamai'
+$script:TunLocalData   = $null
+$script:TunLocalTime   = [DateTime]::MinValue
+$script:TunRemoteData  = $null
+$script:TunRemoteAsync = $null
+$script:TunRemoteTime  = [DateTime]::MinValue
+$script:TunUpnpIp      = ''
+$script:TunUpnpLastTry = [DateTime]::MinValue
+$script:TunExpIsp      = ''
+$script:TunExpIspTime  = [DateTime]::MinValue
+$script:TunnelWarp6    = $false
+
+function Get-IpClassSimple {
+    param([string]$Ip)
+    $o = $null
+    if (-not [System.Net.IPAddress]::TryParse($Ip, [ref]$o)) { return 'invalid' }
+    if ($o.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { return 'invalid' }
+    $b = $o.GetAddressBytes()
+    if ($b[0] -eq 0 -or $b[0] -ge 224) { return 'invalid' }
+    if ($b[0] -eq 169 -and $b[1] -eq 254) { return 'invalid' }
+    if ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) { return 'cgnat' }
+    if ($b[0] -eq 10 -or ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) -or ($b[0] -eq 192 -and $b[1] -eq 168)) { return 'private' }
+    return 'public'
+}
+
+function Test-DefaultRouteViaTunnel {
+    # True se il traffico internet della famiglia indicata esce da un adattatore tunnel.
+    # Le rotte /1 (WireGuard full tunnel) vincono sulla /0 per lunghezza del prefisso; senza /1 decide la metrica.
+    param([string]$Family, [int[]]$TunIdx)
+    $pfx = if ($Family -eq 'IPv4') { @('0.0.0.0/1', '128.0.0.0/1', '0.0.0.0/0') } else { @('::/1', '8000::/1', '::/0') }
+    $routes = @(Get-NetRoute -AddressFamily $Family -ErrorAction SilentlyContinue | Where-Object { $pfx -contains $_.DestinationPrefix })
+    if ($routes.Count -eq 0) { return $false }
+    $spec = @($routes | Where-Object { $_.DestinationPrefix -match '/1$' })
+    if ($spec.Count -gt 0) {
+        return (@($spec | Where-Object { $TunIdx -contains [int]$_.InterfaceIndex }).Count -gt 0)
+    }
+    $best = $routes | Sort-Object { [int]$_.RouteMetric + [int]$_.InterfaceMetric } | Select-Object -First 1
+    return ($TunIdx -contains [int]$best.InterfaceIndex)
+}
+
+function Get-LocalTunnelInfo {
+    if ($script:TunLocalData -and ((Get-Date) - $script:TunLocalTime).TotalSeconds -lt 10) { return $script:TunLocalData }
+    $info = @{ attivo = $false; tipo = ''; adapter = ''; v4 = $false; v6 = $false }
+    try {
+        $tun = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' -and (($_.Name + ' ' + $_.InterfaceDescription) -match $script:TunnelAdapterRx) })
+        if ($tun.Count -gt 0) {
+            $info.attivo  = $true
+            $info.adapter = [string]$tun[0].Name
+            $txt = [string]$tun[0].Name + ' ' + [string]$tun[0].InterfaceDescription
+            $info.tipo = if ($txt -match 'WARP') { 'Cloudflare WARP' } elseif ($txt -match 'WireGuard') { 'WireGuard' } else { 'Tunnel' }
+            $idx = @($tun | ForEach-Object { [int]$_.InterfaceIndex })
+            try { $info.v4 = [bool](Test-DefaultRouteViaTunnel -Family 'IPv4' -TunIdx $idx) } catch {}
+            try { $info.v6 = [bool](Test-DefaultRouteViaTunnel -Family 'IPv6' -TunIdx $idx) } catch {}
+        }
+    } catch {}
+    $script:TunLocalData = $info
+    $script:TunLocalTime = Get-Date
+    return $info
+}
+
+function Get-PhysicalLanIPv4 {
+    # IPv4 della scheda fisica (esclusi tunnel/loopback/APIPA): serve per far uscire la ricerca UPnP dalla LAN e non dal tunnel
+    try {
+        $c = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' -and ([string]$_.InterfaceAlias -notmatch $script:TunnelAdapterRx) } |
+            Sort-Object -Property InterfaceMetric | Select-Object -First 1
+        if ($c) { return [string]$c.IPAddress }
+    } catch {}
+    return ''
+}
+
+function Start-TunnelRemoteAsync {
+    param([string]$LanIp, [bool]$DoUpnp)
+    $ps = [powershell]::Create()
+    [void]$ps.AddScript({
+        param($LanIp, $DoUpnp)
+        $ProgressPreference = 'SilentlyContinue'
+        $parse = {
+            param($t)
+            $h = @{}
+            foreach ($l in ([string]$t -split "`n")) {
+                $p = $l.Trim() -split '=', 2
+                if ($p.Count -eq 2) { $h[$p[0]] = $p[1] }
+            }
+            $h
+        }
+        $ok4 = $false; $warp4 = ''; $ip4 = ''; $colo4 = ''
+        $ok6 = $false; $warp6 = ''; $ip6 = ''; $colo6 = ''
+        try {
+            $t4 = (Invoke-WebRequest -Uri 'https://1.1.1.1/cdn-cgi/trace' -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop).Content
+            $h4 = & $parse $t4
+            if ($h4.ContainsKey('warp')) { $ok4 = $true; $warp4 = [string]$h4['warp']; $ip4 = [string]$h4['ip']; $colo4 = [string]$h4['colo'] }
+        } catch {}
+        try {
+            $t6 = (Invoke-WebRequest -Uri 'https://[2606:4700:4700::1111]/cdn-cgi/trace' -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop).Content
+            $h6 = & $parse $t6
+            if ($h6.ContainsKey('warp')) { $ok6 = $true; $warp6 = [string]$h6['warp']; $ip6 = [string]$h6['ip']; $colo6 = [string]$h6['colo'] }
+        } catch {}
+
+        # IP WAN del router via UPnP (IGD): ricerca SSDP -> descrizione XML -> GetExternalIPAddress
+        $upnpIp = ''
+        if ($DoUpnp) {
+            try {
+                $loc = ''
+                $udp = $null
+                try {
+                    if ($LanIp) { $udp = New-Object System.Net.Sockets.UdpClient((New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($LanIp), 0))) }
+                    else { $udp = New-Object System.Net.Sockets.UdpClient }
+                    $udp.Client.ReceiveTimeout = 1500
+                    $msg = "M-SEARCH * HTTP/1.1`r`nHOST: 239.255.255.250:1900`r`nMAN: `"ssdp:discover`"`r`nMX: 1`r`nST: urn:schemas-upnp-org:device:InternetGatewayDevice:1`r`n`r`n"
+                    $bytes = [System.Text.Encoding]::ASCII.GetBytes($msg)
+                    [void]$udp.Send($bytes, $bytes.Length, '239.255.255.250', 1900)
+                    $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    for ($i = 0; $i -lt 4 -and -not $loc; $i++) {
+                        $data = $udp.Receive([ref]$ep)
+                        $txt = [System.Text.Encoding]::ASCII.GetString($data)
+                        if ($txt -match '(?im)^location:\s*(\S+)') { $loc = $Matches[1].Trim() }
+                    }
+                } finally { if ($udp) { $udp.Close() } }
+                if ($loc) {
+                    $xml = [xml](Invoke-WebRequest -Uri $loc -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop).Content
+                    $base = ([System.Uri]$loc).GetLeftPart([System.UriPartial]::Authority)
+                    foreach ($s in $xml.SelectNodes("//*[local-name()='service']")) {
+                        $nT = $s.SelectSingleNode("*[local-name()='serviceType']")
+                        $nC = $s.SelectSingleNode("*[local-name()='controlURL']")
+                        if (-not $nT -or -not $nC) { continue }
+                        $stype = [string]$nT.InnerText
+                        if ($stype -notmatch 'WAN(IP|PPP)Connection') { continue }
+                        $cu = [string]$nC.InnerText
+                        if ($cu -notmatch '^https?://') { if (-not $cu.StartsWith('/')) { $cu = '/' + $cu }; $cu = $base + $cu }
+                        try {
+                            $body = '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetExternalIPAddress xmlns:u="' + $stype + '"/></s:Body></s:Envelope>'
+                            $r = Invoke-WebRequest -Uri $cu -Method Post -Body $body -ContentType 'text/xml; charset="utf-8"' -Headers @{ SOAPAction = ('"' + $stype + '#GetExternalIPAddress"') } -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+                            if ([string]$r.Content -match '<NewExternalIPAddress>\s*([^<\s]+)\s*</NewExternalIPAddress>') { $upnpIp = $Matches[1]; break }
+                        } catch {}
+                    }
+                }
+            } catch {}
+        }
+
+        [pscustomobject]@{
+            ok4 = $ok4; warp4 = $warp4; ip4 = $ip4; colo4 = $colo4
+            ok6 = $ok6; warp6 = $warp6; ip6 = $ip6; colo6 = $colo6
+            upnp_ip = $upnpIp; upnp_tried = [bool]$DoUpnp
+        }
+    })
+    [void]$ps.AddArgument($LanIp)
+    [void]$ps.AddArgument($DoUpnp)
+    $script:TunRemoteAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke(); Started = (Get-Date) }
+}
+
+function Update-TunnelRemoteState {
+    $a = $script:TunRemoteAsync
+    if ($a) {
+        if ($a.Handle.IsCompleted) {
+            $res = $null
+            try { $res = @($a.Ps.EndInvoke($a.Handle))[0] } catch {}
+            try { $a.Ps.Dispose() } catch {}
+            $script:TunRemoteAsync = $null
+            if ($res) {
+                $script:TunRemoteData = $res
+                if ($res.upnp_tried) { $script:TunUpnpIp = [string]$res.upnp_ip }
+            }
+            $script:TunRemoteTime = Get-Date
+        }
+        elseif (((Get-Date) - $a.Started).TotalSeconds -gt 25) {
+            try { [void]$a.Ps.BeginStop($null, $null) } catch {}
+            $script:TunRemoteAsync = $null
+            $script:TunRemoteTime = Get-Date
+        }
+        return
+    }
+    $every = if ($script:TunRemoteData) { 60 } else { 5 }
+    if (((Get-Date) - $script:TunRemoteTime).TotalSeconds -ge $every) {
+        # UPnP: ogni 2 minuti se risponde, ogni 10 se il router non lo espone (evita multicast inutili)
+        $upEvery = if ($script:TunUpnpIp) { 120 } else { 600 }
+        $doUp = (((Get-Date) - $script:TunUpnpLastTry).TotalSeconds -ge $upEvery)
+        $lan = ''
+        if ($doUp) { $script:TunUpnpLastTry = Get-Date; $lan = Get-PhysicalLanIPv4 }
+        try { Start-TunnelRemoteAsync -LanIp $lan -DoUpnp $doUp } catch { $script:TunRemoteTime = Get-Date }
+    }
+}
+
+function Get-TunnelVpnVerdict {
+    # Funzione pura (nessun I/O): unisce rilevazioni locali, prova Cloudflare, dati WAN e UPnP in un verdetto testuale.
+    param($Local, $Remote, $Wan, [string]$UpnpIp, [string]$ExpIsp)
+
+    # ---- PC: WireGuard / Cloudflare WARP ----
+    $w4 = $false; $w6 = $false; $plus = $false; $colo = ''
+    if ($Remote) {
+        if ($Remote.ok4 -and (@('on', 'plus') -contains [string]$Remote.warp4)) { $w4 = $true }
+        if ($Remote.ok6 -and (@('on', 'plus') -contains [string]$Remote.warp6)) { $w6 = $true }
+        if ([string]$Remote.warp4 -eq 'plus' -or [string]$Remote.warp6 -eq 'plus') { $plus = $true }
+        if ($w4 -and $Remote.colo4) { $colo = [string]$Remote.colo4 } elseif ($w6 -and $Remote.colo6) { $colo = [string]$Remote.colo6 }
+    }
+    $warpOn = ($w4 -or $w6)
+    $lAtt   = [bool]($Local -and $Local.attivo)
+    $lTipo  = if ($Local) { [string]$Local.tipo } else { '' }
+    $v4t = ($w4 -or ($lAtt -and [bool]$Local.v4))
+    $v6t = ($w6 -or ($lAtt -and [bool]$Local.v6))
+    $pcAtt = ($warpOn -or $lAtt)
+    $tipo = if ($warpOn -and $lTipo -eq 'WireGuard') { 'WireGuard + Cloudflare WARP' }
+            elseif ($warpOn) { 'Cloudflare WARP' }
+            elseif ($lAtt) { $lTipo }
+            else { '' }
+    $fam = if ($v4t -and $v6t) { 'IPv4 + IPv6' } elseif ($v4t) { 'solo IPv4' } elseif ($v6t) { 'solo IPv6' } else { '' }
+    if ($pcAtt) {
+        $pcTxt = if ($fam) { "$tipo - $fam nel tunnel" } else { "$tipo - adattatore attivo, nessuna rotta internet nel tunnel" }
+        if ($plus) { $pcTxt += ' (WARP+)' }
+        if ($colo) { $pcTxt += ", uscita Cloudflare $colo" }
+        $pcBreve = if ($warpOn -and $lTipo -eq 'WireGuard') { 'WireGuard+WARP' } elseif ($warpOn) { 'WARP' } elseif ($lTipo -eq 'WireGuard') { 'WireGuard' } else { 'tunnel' }
+    } else {
+        $pcTxt = if ($Remote) { 'nessun tunnel WireGuard/WARP rilevato' } else { 'verifica in corso...' }
+        $pcBreve = ''
+    }
+
+    # ---- Router: VPN a monte (solo indizi) ----
+    $st = 'nd'; $lv = 'dim'; $tag = 'N/D'; $rtTxt = ''; $rtBreve = ''
+    $wanOk  = [bool]($Wan -and $Wan.ipv4_wan_ok)
+    $wanIp  = if ($Wan) { [string]$Wan.ipv4_wan } else { '' }
+    $upCls  = if ($UpnpIp) { Get-IpClassSimple $UpnpIp } else { 'invalid' }
+    if ($v4t) {
+        $st = 'nascosta'; $lv = 'dim'; $tag = 'NASCOSTA'
+        $rtTxt = 'non valutabile: il traffico IPv4 passa nel tunnel del PC'
+    }
+    elseif (-not $wanOk) {
+        $st = 'nd'; $lv = 'dim'; $tag = 'N/D'
+        $rtTxt = 'IP pubblico IPv4 non disponibile'
+    }
+    elseif ($upCls -ne 'invalid' -and $UpnpIp -eq $wanIp) {
+        $st = 'diretto'; $lv = 'ok'; $tag = 'NO VPN'
+        $rtTxt = "nessuna VPN sul router (IP WAN del router = IP pubblico $wanIp)"
+    }
+    else {
+        $reasons = @()
+        if ($upCls -eq 'public') { $reasons += "IP pubblico $wanIp diverso dal WAN del router $UpnpIp" }
+        if ($Wan.ipv4_proxy)   { $reasons += 'IP segnalato come proxy/VPN' }
+        if ($Wan.ipv4_hosting) { $reasons += 'IP di hosting/datacenter' }
+        $ispTxt = (([string]$Wan.ipv4_isp) + ' ' + ([string]$Wan.ipv4_as)).Trim()
+        if ($ispTxt -and $ispTxt -match $script:VpnProviderRx) { $reasons += "provider VPN/hosting noto ($ispTxt)" }
+        if ($ExpIsp -and $ispTxt -and ($ispTxt -notmatch [regex]::Escape($ExpIsp))) { $reasons += "ISP diverso dall'atteso ($ExpIsp)" }
+        if ($reasons.Count -gt 0) {
+            $st = 'vpn_probabile'; $lv = 'info'; $tag = 'VPN?'
+            $rtTxt = 'VPN a monte probabile: ' + ($reasons -join '; ')
+            $rtBreve = 'VPN a monte?'
+        }
+        elseif ($upCls -eq 'cgnat') {
+            $st = 'cgnat'; $lv = 'info'; $tag = 'CGNAT'
+            $rtTxt = "CGNAT dell'operatore (WAN del router $UpnpIp), nessuna VPN rilevata"
+            $rtBreve = 'CGNAT'
+        }
+        elseif ($upCls -eq 'private') {
+            $st = 'doppio_nat'; $lv = 'info'; $tag = 'DOPPIO NAT'
+            $rtTxt = "router dietro un altro apparato (WAN del router $UpnpIp privato), nessuna VPN rilevata"
+            $rtBreve = 'doppio NAT'
+        }
+        else {
+            $st = 'nessun_indizio'; $lv = 'ok'; $tag = 'NO INDIZI'
+            $rtTxt = 'nessun indizio di VPN (UPnP del router non disponibile: verifica solo indiziaria)'
+        }
+    }
+
+    return [ordered]@{
+        pc = [ordered]@{
+            attivo = $pcAtt; tipo = $tipo; adapter = $(if ($Local) { [string]$Local.adapter } else { '' })
+            ipv4 = $v4t; ipv6 = $v6t; warp = $warpOn; warp_plus = $plus; colo = $colo
+            testo = $pcTxt; breve = $pcBreve
+        }
+        router = [ordered]@{
+            stato = $st; livello = $lv; tag = $tag; testo = $rtTxt; breve = $rtBreve; upnp_ip = $UpnpIp
+        }
+    }
+}
+
+function Get-TunnelVpnStatus {
+    try {
+        try { Update-TunnelRemoteState } catch {}
+        if (((Get-Date) - $script:TunExpIspTime).TotalSeconds -ge 30) {
+            $script:TunExpIspTime = Get-Date
+            $script:TunExpIsp = ''
+            try {
+                $f = Join-Path $UbDir 'expected_isp.txt'
+                if (Test-Path -LiteralPath $f) { $script:TunExpIsp = ([string](Get-Content -LiteralPath $f -TotalCount 1 -ErrorAction Stop)).Trim() }
+            } catch {}
+        }
+        $local = Get-LocalTunnelInfo
+        $v = Get-TunnelVpnVerdict -Local $local -Remote $script:TunRemoteData -Wan $script:WanCacheData -UpnpIp $script:TunUpnpIp -ExpIsp $script:TunExpIsp
+        $script:TunnelWarp6 = [bool]($script:TunRemoteData -and $script:TunRemoteData.ok6 -and (@('on', 'plus') -contains [string]$script:TunRemoteData.warp6))
+        return $v
+    } catch {
+        Write-DashLog "Get-TunnelVpnStatus: $($_.Exception.Message)"
+        return $null
     }
 }
 
@@ -3142,6 +3447,7 @@ function Get-BunkerStatusJson {
     $netSpeed    = Get-NetworkSpeed
     $linePot = Get-LinePotential
     $ipConn      = Get-IpConnectivityStatus
+    $tunnelVpn   = Get-TunnelVpnStatus
     $dnsFallback = Get-DnsFallbackLog
     $blocchiOrari = Get-BlocksHourlyDistribution
     $winUpdate   = Get-WindowsUpdateStatus
@@ -3241,6 +3547,7 @@ function Get-BunkerStatusJson {
         hardware         = $hw
         ram_disk         = $ramDisk
         connettivita_ip  = $ipConn
+        tunnel_vpn       = $tunnelVpn
         versioni         = $versioni
         engine_attivo    = $engineOn
         net_speed        = $netSpeed
@@ -3360,6 +3667,7 @@ function Get-BunkerStatusLightJson {
     $netSpeed = Get-NetworkSpeed
     $linePot = Get-LinePotential
     $ipConn   = Get-IpConnectivityStatus
+    $tunnelVpn = Get-TunnelVpnStatus
     # Connessioni live (colonne Download/Upload): lettura incrementale delle sole righe nuove del log
     $connLive = Get-LightConnFeed
     # Mantiene aggiornata la finestra 24h (campiona al massimo 1 volta/minuto, costo minimo)
@@ -3412,6 +3720,7 @@ function Get-BunkerStatusLightJson {
         net_speed        = $netSpeed
         line_potential   = $linePot
         connettivita_ip  = $ipConn
+        tunnel_vpn       = $tunnelVpn
         conn_live        = $connLive
         ip_geo           = $ipGeo
         statistiche_live = $stats
@@ -5563,6 +5872,14 @@ $HtmlPageLight = @'
         nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
       } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
     }
+    var tv = d.tunnel_vpn;
+    if (tv && ip) {
+      if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsV6S'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
+      var xs = [];
+      if (tv.pc && tv.pc.attivo && tv.pc.ipv4 && tv.pc.breve) xs.push(tv.pc.breve);
+      if (tv.router && tv.router.breve) xs.push(tv.router.breve);
+      if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += '<br>' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
+    }
     var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
     rad = rad || [];
     var win = null, okN = 0;
@@ -6671,6 +6988,8 @@ $HtmlPage = @'
     animation: radar-pulse-green 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; opacity: 0;
   }
   .status-dot.bad { background-color: var(--red-bright); box-shadow: 0 0 8px var(--red-bright); }
+  .status-dot.info { background-color: #5aa9ff; box-shadow: 0 0 8px #5aa9ff; }
+  .status-dot.dim { background-color: var(--dim); }
   .status-dot.bad::after {
     content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px;
     border-radius: 50%; border: 2px solid var(--red-bright);
@@ -8962,6 +9281,14 @@ function nsUpdate(d) {
       nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
     } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
   }
+  var tv = d.tunnel_vpn;
+  if (tv && ip) {
+    if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsV6S'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
+    var xs = [];
+    if (tv.pc && tv.pc.attivo && tv.pc.ipv4 && tv.pc.breve) xs.push(tv.pc.breve);
+    if (tv.router && tv.router.breve) xs.push(tv.router.breve);
+    if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += '<br>' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
+  }
   var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
   rad = rad || [];
   var win = null, okN = 0;
@@ -9007,6 +9334,20 @@ async function refresh(forceVersions) {
     const locV4Str = ipc.ipv4_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + ipc.ipv4_loc + ')</span>' : '';
     const locV6Str = ipc.ipv6_loc ? ' <span class="muted" style="font-size:0.8em; font-weight:normal;">(' + ipc.ipv6_loc + ')</span>' : '';
 
+    const tvPc = (d.tunnel_vpn && d.tunnel_vpn.pc) || {};
+    const tvRt = (d.tunnel_vpn && d.tunnel_vpn.router) || {};
+    const tvRow = function (lbl, dot, tag, tagCls, txt) {
+      return '<div class="stat-ver"><div class="status-dot-container"><span class="status-dot ' + dot + '"></span></div>' +
+        '<span style="color:var(--dim); font-weight:bold; display:inline-block; min-width:64px;">' + lbl + '</span>' +
+        '<span style="display:inline-block; min-width:58px;" class="' + tagCls + '">' + nsEsc(tag) + '</span>' +
+        '<span style="color:var(--dim); font-weight:bold;">:</span> ' +
+        '<span style="color:#ffffff; font-weight:bold;">' + nsEsc(txt) + '</span></div>';
+    };
+    const tvRows = d.tunnel_vpn ? (
+      tvRow('Tunnel PC', tvPc.attivo ? 'ok' : 'dim', tvPc.attivo ? 'ATTIVO' : 'ASSENTE', tvPc.attivo ? 'ver-status-ok' : 'muted', tvPc.testo || 'N/D') +
+      tvRow('VPN Router', tvRt.livello === 'ok' ? 'ok' : (tvRt.livello === 'info' ? 'info' : 'dim'), tvRt.tag || 'N/D', tvRt.livello === 'ok' ? 'ver-status-ok' : 'muted', tvRt.testo || 'N/D')
+    ) : '';
+
     document.getElementById('statsIpConn').innerHTML = `
       <div class="stat-ver">
         <div class="status-dot-container"><span class="status-dot ${ipc.ipv4_lan_ok ? 'ok' : 'bad'}"></span></div>
@@ -9036,6 +9377,7 @@ async function refresh(forceVersions) {
         <span style="color:var(--dim); font-weight:bold;">:</span>
         <span style="color:#ffffff; font-weight:bold;">${ipc.ipv6_wan || 'N/D'}${locV6Str}</span>
       </div>
+      ${tvRows}
     `;
 
     const v = d.versioni || {};
