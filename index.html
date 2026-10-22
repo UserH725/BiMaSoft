@@ -180,7 +180,6 @@
 
   #ov .ovi { position: relative; z-index: 1; width: 100%; min-width: 0; opacity: 0; transition: opacity .2s ease; text-shadow: 0 1px 3px #000, 0 0 10px #000, 0 0 16px #000; }
   #ov.open .ovi { opacity: 1; transition: opacity .3s ease .15s; }
-  #ovHint { white-space: pre-wrap; }
   #ovName { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-size: clamp(24px, 6.5vw, 38px); font-weight: 700; line-height: 1.15; color: #ffe600; white-space: nowrap; overflow: hidden; }
   #ovSong { margin-top: 12px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(16px, 4.2vw, 21px); color: #fff; white-space: nowrap; overflow: hidden; }
   #ovSong:has(#ovSongTx:empty) { display: none; }
@@ -197,7 +196,6 @@
   #ovBadge[data-s="off"] { --ac: #ff3b30; }
   #ovBadge[data-s="off"] .w { animation: none; opacity: .3; }
   @media (prefers-reduced-motion: reduce) { #ovBadge, #ovBadge .w, #ovBadgeTx { animation: none !important; } }
-  #ovHint { margin-top: 16px; font-size: 12px; color: #cfcfcf; opacity: .8; }
 
   #player .pl { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 14px; }
   #player .pr { flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
@@ -218,6 +216,79 @@
   #btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
   #btn.is-on::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5h4v14H7zM13 5h4v14h-4z' fill='white'/%3E%3C/svg%3E"); }
   @keyframes discSpin { to { transform: rotate(360deg); } }
+
+/* Effetto bagliore (glow) sui bordi delle lettere ogni 10 secondi */
+  #nowRadioTx, #ovNameTx {
+    color: #ffe600;
+    /* Avvia l'animazione di 10 secondi a ciclo continuo */
+    animation: brilla-lettere 10s ease-in-out infinite;
+  }
+
+  /* Mantiene l'effetto anche quando il titolo è lungo e scorre a destra e sinistra */
+  #nowRadio.mq #nowRadioTx, #ovName.mq #ovNameTx {
+    animation: mq var(--t, 5s) ease-in-out infinite alternate, brilla-lettere 10s ease-in-out infinite;
+  }
+
+  @keyframes brilla-lettere {
+    /* Per 8.5 secondi il testo e l'ombra restano normali */
+    0%, 75%, 100% {
+      color: #ffe600;
+      text-shadow: 0 1px 3px #000, 0 0 8px #000;
+    }
+    /* Al 92% dell'animazione scatta il picco di luce */
+    90% {
+      color: #ffffff; /* Il centro della lettera diventa bianco abbagliante */
+      text-shadow: 
+        0 1px 3px #000,      /* Mantiene il contrasto col fondo */
+        0 0 6px #ffffff,     /* Crea un contorno bianco brillante proprio sul bordo */
+        0 0 15px #ffe600,    /* Crea un alone giallo intenso */
+        0 0 30px #ff9500;    /* Espande la luce calda dorata all'esterno */
+    }
+  }
+/* Protezione per lo scorrimento marquee: anima solo il contenitore e non le singole lettere */
+  #nowName.mq > span, #ovSong.mq > span { 
+    animation: mq var(--t, 8s) ease-in-out infinite alternate; 
+  }
+
+  /* Singola lettera sotto la lente d'ingrandimento */
+  .mag-char {
+    display: inline-block;
+    transform-origin: 50% 85%;
+    will-change: transform, color, text-shadow;
+    animation: lente-titolo 8s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * 0.05s);
+  }
+
+  /* Animazione: la lente passa da sinistra a destra, ingrandisce e accende ogni lettera */
+  @keyframes lente-titolo {
+    0% {
+      transform: scale(1) translateY(0);
+      color: inherit;
+      text-shadow: 0 1px 3px #000, 0 0 8px #000;
+    }
+    3.5% {
+      transform: scale(1.32) translateY(-2.5px); /* Ingrandimento effetto lente */
+      color: #00f5ff;                            /* Bagliore ciano/elettrico */
+      text-shadow: 0 0 8px #00f5ff, 0 0 18px rgba(0, 245, 255, 0.85), 0 2px 4px #000;
+    }
+    7% {
+      transform: scale(1.1) translateY(-0.5px);
+      color: #8dfbff;
+      text-shadow: 0 0 6px #00f5ff;
+    }
+    11%, 100% {
+      transform: scale(1) translateY(0);
+      color: inherit;
+      text-shadow: 0 1px 3px #000, 0 0 8px #000;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mag-char { animation: none !important; transform: none !important; }
+  }
+
+
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -279,7 +350,6 @@
       <div id="ovName"><span id="ovNameTx"></span></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
       <div id="ovSong"><span id="ovSongTx"></span></div>
-      <div id="ovHint">Tocca per tornare all'elenco</div>
     </div>
   </div>
 </div>
@@ -728,6 +798,24 @@
       if (fin) { clearInterval(el._scr); el._scr = null; if (done) done(); }
     }, SCR_STEP);
   }
+
+  function wrapMagChars(el) {
+    var str = el.textContent;
+    if (!str) return;
+    el.textContent = '';
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < str.length; i++) {
+      var sp = document.createElement('span');
+      var c = str.charAt(i);
+      sp.className = 'mag-char';
+      sp.style.setProperty('--i', i);
+      sp.textContent = c === ' ' ? '\u00A0' : c;
+      frag.appendChild(sp);
+    }
+    el.appendChild(frag);
+  }
+  
+  
   function updateNow() {
     var sc = nowSt.classList.contains('on') ? 'on' : nowSt.classList.contains('buf') ? 'buf' : nowSt.classList.contains('err') ? 'err' : 'off';
     var name = cur >= 0 ? STATIONS[cur].name : '', det = sc !== 'on' ? stText : '', txt = song ? '\u266A ' + song : det, rad = name || 'Scegli una radio';
@@ -993,7 +1081,7 @@
   function ovShow(i) {
     var t;
     clearTimeout(ovT);
-    ovFill(true); ovSet(document.getElementById('ovHint'), 'h', "Tocca per tornare all'elenco", true); t = ovTarget();
+    ovFill(true); t = ovTarget();
     ovEl.hidden = false; ovEl.classList.remove('open');
     ovNoAnim(function () { ovPlace(ovRect(items[i], t)); });
     ovOpen = true; ovAt = Date.now();
