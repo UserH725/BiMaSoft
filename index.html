@@ -79,7 +79,7 @@
   .head { position: sticky; top: var(--hdrh, 137px); z-index: 4; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 -16px 10px; padding: 10px 16px 12px; background: rgba(0,0,0,.93); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.14); }
   h1 { margin: 0; font-size: 22px; font-weight: 700; }
   #count { flex: 1 1 auto; min-width: 0; color: #d0d0d0; font-size: 14px; line-height: 1.3; }
-  /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / da verificare */
+  /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / in verifica */
   #scanRd { position: relative; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #3a6a8f; transition: border-color .4s ease; }
   #scanRd svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   #scanRd.busy svg { animation: scanRt 1.6s linear infinite; }
@@ -91,6 +91,12 @@
   #scanSeg .ok { background: #3ddc84; }
   #scanSeg .ko { background: #ff5a5a; }
   @media (prefers-reduced-motion: reduce) { #scanRd.busy svg { animation: none; } #scanSeg i { transition: none; } }
+  #count b { font-weight: 800; }
+  #count .cOk { color: #00ff66; }
+  #count .cKo { color: #ff1f1f; }
+  #count .cTo { color: #ffe600; animation: scanBl 1s steps(2, end) infinite; }
+  @keyframes scanBl { 50% { opacity: .15; } }
+  @media (prefers-reduced-motion: reduce) { #count .cTo { animation: none; } }
   #find { flex: 1 1 100%; order: 3; height: 46px; padding: 0 14px 0 44px; font-size: 16px; color: #fff; background: #181818 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234fb3ff' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E") no-repeat 13px center / 22px 22px; border: 2px solid #4fb3ff; border-radius: 10px; box-shadow: 0 0 0 3px rgba(79,179,255,.15); -webkit-appearance: none; appearance: none; }
   #find::placeholder { color: #9aa7b3; }
   #find:focus { outline: none; border-color: #8fd0ff; box-shadow: 0 0 0 4px rgba(79,179,255,.3); }
@@ -1106,7 +1112,7 @@
     var seg = document.getElementById('scanSeg'), tot = scanSt.length || 1;
     if (seg) { seg.firstChild.style.width = (ok / tot * 100) + '%'; seg.lastChild.style.width = (ko / tot * 100) + '%'; }
     scanBusy(rest);
-    if (el) el.textContent = STATIONS.length + ' stazioni \u00B7 ' + ok + ' ok \u00B7 ' + ko + ' non raggiungibili' + (rest ? ' \u00B7 ' + rest + ' da verificare' : '');
+    if (el) el.innerHTML = STATIONS.length + ' stazioni \u00B7 <b class="cOk">' + ok + '</b> ok \u00B7 <b class="cKo">' + ko + '</b> non raggiungibili' + (rest ? ' \u00B7 <b class="cTo">' + rest + '</b> in verifica' : '');
   }
   function scanBusy(rest) {
     var rd = document.getElementById('scanRd');
