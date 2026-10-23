@@ -1106,7 +1106,7 @@
   });
 
   /* ===== Scansione stato radio (verde = raggiungibile, rosso = non raggiungibile) ===== */
-  var SCAN_GAP_FIRST = 500, SCAN_GAP_STEADY = 6000, SCAN_GAP_PLAY = 12000, SCAN_PAR_FIRST = 2, SCAN_TIMEOUT = 10000, SCAN_HOLD = 6000;
+  var SCAN_GAP_FIRST = 500, SCAN_GAP_STEADY = 6000, SCAN_GAP_PLAY = 12000, SCAN_PAR_FIRST = 2, SCAN_PAR_IDLE_FIRST = 6, SCAN_PAR_IDLE = 3, SCAN_TIMEOUT = 15000, SCAN_HOLD = 6000;
   var scanIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   STATIONS.forEach(function (st, i) { scanSt[i] = { s: 0, f: 0, t: 0 }; });
 
@@ -1150,7 +1150,7 @@
     if (!ok && navigator.onLine === false) return;
     s.t = Date.now();
     if (ok) { s.s = 1; s.f = 0; }
-    else { s.f++; if (s.f >= 2) s.s = 2; }
+    else { s.f++; if (s.f >= 3) s.s = 2; }
     scanPaint(i); scanCount();
   }
   function scanLive(cls) {
@@ -1197,9 +1197,24 @@
     });
     return function () { if (!fin) { fin = true; clean(); } };
   }
+  /* basta che UNA delle due prove riesca: l'elemento audio capisce anche gli stream ICY/Shoutcast che fetch rifiuta,
+     fetch invece risponde appena il server e' raggiungibile anche quando l'audio impiega troppo ad avviarsi.
+     Rosso solo se falliscono entrambe. */
+  function probeBoth(url, done) {
+    var fin = false, pend = 2, c1 = null, c2 = null;
+    function end(ok) {
+      if (fin) return; fin = true;
+      try { if (c1) c1(); } catch (e) {} try { if (c2) c2(); } catch (e) {}
+      done(ok);
+    }
+    function sub(ok) { if (fin) return; if (ok) { end(true); return; } if (--pend <= 0) end(false); }
+    c1 = probeFetch(url, sub);
+    c2 = probeAudio(url, sub);
+    return function () { if (!fin) { fin = true; try { if (c1) c1(); } catch (e) {} try { if (c2) c2(); } catch (e) {} } };
+  }
   function probeUrl(url, done) {
     if (/\.m3u8(\?|$)/i.test(url)) return probeHls(url, done);
-    return scanIOS ? probeFetch(url, done) : probeAudio(url, done);
+    return scanIOS ? probeFetch(url, done) : probeBoth(url, done);
   }
   function probeStation(i, cb) {
     var urls = candidates(STATIONS[i]), k = 0, stopped = false, cancelCur = null;
@@ -1258,12 +1273,15 @@
   function scanPump() {
     clearTimeout(scanT); scanT = null;
     if (!scanReady()) { scanYield(); scanDue = Date.now() + 1500; scanT = setTimeout(scanPump, 1500); return; }
-    var first = scanUnknown() > 0, limit = first ? SCAN_PAR_FIRST : 1, playing = wantPlay && nowSt.className === 'on';
-    if (scanRun < limit) {
+    var first = scanUnknown() > 0, playing = wantPlay && nowSt.className === 'on';
+    /* player fermo: sonde in parallelo (molte al primo giro, poche dopo); in ascolto o in buffer si resta leggeri per non rubare banda alla musica */
+    var limit = wantPlay ? (first ? SCAN_PAR_FIRST : 1) : (first ? SCAN_PAR_IDLE_FIRST : SCAN_PAR_IDLE);
+    while (scanRun < limit) {
       var i = scanPick();
-      if (i >= 0) scanStart(i);
+      if (i < 0) break;
+      scanStart(i);
     }
-    var gap = scanRun >= limit ? 800 : (first ? SCAN_GAP_FIRST : (playing ? SCAN_GAP_PLAY : SCAN_GAP_STEADY));
+    var gap = scanRun >= limit ? 800 : (first ? (wantPlay ? SCAN_GAP_FIRST : 250) : (playing ? SCAN_GAP_PLAY : (wantPlay ? SCAN_GAP_STEADY : 3000)));
     scanDue = Date.now() + gap; scanT = setTimeout(scanPump, gap);
   }
   scanCount();
