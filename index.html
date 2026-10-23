@@ -79,7 +79,7 @@
   .head { position: sticky; top: var(--hdrh, 137px); z-index: 4; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 -16px 10px; padding: 10px 16px 12px; background: rgba(0,0,0,.93); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.14); }
   h1 { margin: 0; font-size: 22px; font-weight: 700; }
   #count { flex: 1 1 auto; min-width: 0; color: #d0d0d0; font-size: 14px; line-height: 1.3; }
-  /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / in verifica */
+  /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / da verificare */
   #scanRd { position: relative; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #3a6a8f; transition: border-color .4s ease; }
   #scanRd svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   #scanRd.busy svg { animation: scanRt 1.6s linear infinite; }
@@ -731,7 +731,12 @@
     if (autoplay) { userWants = true; wantPlay = true; start(); } else { setSt('off', 'pronta'); }
   }
   function stop() { wantPlay = false; song = ''; ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
-  function step(d) { if (!STATIONS.length) return; select(((cur < 0 ? 0 : cur) + d + STATIONS.length) % STATIONS.length, true); }
+  function step(d) {
+    if (!STATIONS.length) return;
+    /* precedente / successiva seguono l'ordine mostrato in lista (non raggiungibili in fondo) */
+    var ord = Array.prototype.map.call(listEl.children, function (li) { return +li.getAttribute('data-i'); }), pos = cur < 0 ? 0 : ord.indexOf(cur);
+    select(ord[(pos + d + ord.length) % ord.length], true);
+  }
 
   function setMedia() {
     if (!('mediaSession' in navigator) || cur < 0 || !window.MediaMetadata) return;
@@ -1087,7 +1092,7 @@
     b.innerHTML = '<span class="ic" aria-hidden="true">&#9654;</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="nm"></span>';
     b.querySelector('.nm').textContent = s.name;
     b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); });
-    li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase());
+    li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase()); li.setAttribute('data-i', i);
     listEl.appendChild(li); items.push(b);
   });
   document.getElementById('count').textContent = STATIONS.length + ' stazioni';
@@ -1112,7 +1117,7 @@
     var seg = document.getElementById('scanSeg'), tot = scanSt.length || 1;
     if (seg) { seg.firstChild.style.width = (ok / tot * 100) + '%'; seg.lastChild.style.width = (ko / tot * 100) + '%'; }
     scanBusy(rest);
-    if (el) el.innerHTML = STATIONS.length + ' stazioni \u00B7 <b class="cOk">' + ok + '</b> ok \u00B7 <b class="cKo">' + ko + '</b> non raggiungibili' + (rest ? ' \u00B7 <b class="cTo">' + rest + '</b> in verifica' : '');
+    if (el) el.innerHTML = STATIONS.length + ' stazioni \u00B7 <b class="cOk">' + ok + '</b> ok \u00B7 <b class="cKo">' + ko + '</b> non raggiungibili' + (rest ? ' \u00B7 <b class="cTo">' + rest + '</b> da verificare' : '');
   }
   function scanBusy(rest) {
     var rd = document.getElementById('scanRd');
@@ -1123,8 +1128,21 @@
   function scanPaint(i) {
     var b = items[i], s = scanSt[i].s;
     if (!b) return;
+    var wasKo = b.classList.contains('ko');
     b.classList.toggle('ok', s === 1);
     b.classList.toggle('ko', s === 2);
+    if (wasKo !== (s === 2)) scanPlace(i);
+  }
+  /* non raggiungibili in fondo alla lista (sempre in ordine alfabetico); se tornano a rispondere rientrano al loro posto tra le altre */
+  function scanPlace(i) {
+    var li = items[i] && items[i].parentNode, ko = scanSt[i].s === 2, ref = null, c = listEl.children, k, j, jko;
+    if (!li) return;
+    for (k = 0; k < c.length; k++) {
+      if (c[k] === li) continue;
+      j = +c[k].getAttribute('data-i'); jko = scanSt[j].s === 2;
+      if (ko ? (jko && j > i) : (jko || j > i)) { ref = c[k]; break; }
+    }
+    if (li.nextElementSibling !== ref) listEl.insertBefore(li, ref);
   }
   function scanRecord(i, ok) {
     var s = scanSt[i];
