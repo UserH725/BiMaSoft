@@ -290,6 +290,7 @@
 
 
 
+  #ver { position: fixed; left: calc(2px + env(safe-area-inset-left, 0px)); bottom: calc(3px + env(safe-area-inset-bottom, 0px)); z-index: 50; margin: 0; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11px; line-height: 1; color: #888; letter-spacing: .02em; user-select: none; pointer-events: none; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -339,6 +340,7 @@
   </div>
   <ul id="list"></ul>
   <p id="none" hidden="">Nessuna radio trovata. Prova con un altro nome.</p>
+  <div id="ver">&copy; Mauro Bigoni - v.1111.1</div>
 </main>
 
 <audio id="au" preload="none" playsinline=""></audio>
