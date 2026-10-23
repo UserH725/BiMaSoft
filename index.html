@@ -75,11 +75,26 @@
 
 
   main { max-width: 980px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom, 0px)); }
-  .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  /* riga titolo + contatore + ricerca: sempre visibile sotto l'intestazione; la sovraimpressione (#ov, z-index 5) resta sopra */
+  .head { position: sticky; top: var(--hdrh, 137px); z-index: 4; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 -16px 10px; padding: 10px 16px 12px; background: rgba(0,0,0,.93); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.14); }
   h1 { margin: 0; font-size: 22px; font-weight: 700; }
-  #count { color: #9a9a9a; font-size: 14px; }
-  #find { flex: 1 1 200px; max-width: 360px; margin-left: auto; height: 38px; padding: 0 12px; background: #111; border: 1px solid #555; border-radius: 6px; }
-  #find:focus { outline: none; border-color: #4fb3ff; }
+  #count { flex: 1 1 auto; min-width: 0; color: #d0d0d0; font-size: 14px; line-height: 1.3; }
+  /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / da verificare */
+  #scanRd { position: relative; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #3a6a8f; transition: border-color .4s ease; }
+  #scanRd svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #scanRd.busy svg { animation: scanRt 1.6s linear infinite; }
+  #scanRd:not(.busy) { border-color: #2b6b47; }
+  #scanRd:not(.busy) line { stroke: #3ddc84; }
+  @keyframes scanRt { to { transform: rotate(360deg); } }
+  #scanSeg { flex: 1 1 100%; order: 2; display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #2a2a2a; }
+  #scanSeg i { display: block; height: 100%; width: 0; transition: width .5s ease; }
+  #scanSeg .ok { background: #3ddc84; }
+  #scanSeg .ko { background: #ff5a5a; }
+  @media (prefers-reduced-motion: reduce) { #scanRd.busy svg { animation: none; } #scanSeg i { transition: none; } }
+  #find { flex: 1 1 100%; order: 3; height: 46px; padding: 0 14px 0 44px; font-size: 16px; color: #fff; background: #181818 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234fb3ff' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E") no-repeat 13px center / 22px 22px; border: 2px solid #4fb3ff; border-radius: 10px; box-shadow: 0 0 0 3px rgba(79,179,255,.15); -webkit-appearance: none; appearance: none; }
+  #find::placeholder { color: #9aa7b3; }
+  #find:focus { outline: none; border-color: #8fd0ff; box-shadow: 0 0 0 4px rgba(79,179,255,.3); }
+  @media (min-width: 700px) { #find { flex: 0 1 380px; order: 0; margin-left: auto; } }
 
   #list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 18px; }
   #list li { border-bottom: 1px solid #1d1d1d; }
@@ -90,6 +105,9 @@
   .st .ic { flex: 0 0 22px; width: 22px; text-align: center; color: #6a6a6a; font-size: 14px; }
   .st.cur .nm { color: #fff; }
   .st.cur .ic { color: #4fb3ff; }
+  #list .st .nm { transition: color .6s ease; }
+  #list .st.ok .nm { color: #3ddc84; }
+  #list .st.ko .nm { color: #ff5a5a; }
   .eq { flex: 0 0 22px; width: 22px; height: 18px; display: none; align-items: flex-end; justify-content: center; gap: 3px; }
   .eq i { width: 4px; height: 100%; border-radius: 1px; transform-origin: bottom; animation: eq .9s ease-in-out infinite; }
   .eq i:nth-child(1) { background: #ff2d95; animation-delay: -.2s; } .eq i:nth-child(2) { background: #ffe600; animation-delay: -.5s; } .eq i:nth-child(3) { background: #00c8ff; animation-delay: -.8s; }
@@ -335,7 +353,8 @@
 
 <main>
   <div class="head">
-    <h1>Radio</h1><span id="count">0 stazioni</span>
+    <h1>Radio</h1><span id="scanRd" class="busy" aria-hidden="true"><svg viewBox="0 0 22 22"><line x1="11" y1="11" x2="11" y2="2" stroke="#4fb3ff" stroke-width="2" stroke-linecap="round"/></svg></span><span id="count">0 stazioni</span>
+    <div id="scanSeg" aria-hidden="true"><i class="ok"></i><i class="ko"></i></div>
     <input id="find" type="search" placeholder="Cerca una radio" aria-label="Cerca una radio" autocomplete="off">
   </div>
   <ul id="list"></ul>
@@ -542,6 +561,7 @@
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0, userWants = false, tapArmed = false;
+  var scanSt = [], scanInfl = {}, scanRun = 0, scanT = null, scanHold = 0;
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
   var nowTxt = document.getElementById('nowTxt'), nowRadio = document.getElementById('nowRadio'), nowRadioTx = document.getElementById('nowRadioTx');
 
@@ -583,6 +603,7 @@
 
   function setSt(cls, txt) { 
     nowSt.className = cls; 
+    scanLive(cls);
     stText = txt; 
     updateNow(); 
     render(); 
@@ -596,7 +617,8 @@
     btn.classList.toggle('is-on', isPlaying);
     items.forEach(function (b, i) {
       var on = i === cur;
-      b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '');
+      var ss = scanSt[i] ? scanSt[i].s : 0;
+      b.className = 'st' + (on ? ' cur' : '') + (on && live ? ' live' : '') + (ss === 1 ? ' ok' : ss === 2 ? ' ko' : '');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
@@ -683,6 +705,7 @@
   function next(g) {
     if (g !== gen || !wantPlay) return;
     tries++;
+    if (cands.length && tries % cands.length === 0) scanRecord(cur, false);
     if (tries >= 50) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
     uIdx = (uIdx + 1) % cands.length;
     setSt('buf', navigator.onLine === false ? 'senza rete, attendo...' : 'riconnessione...');
@@ -729,7 +752,7 @@
     setSt('on', 'in onda');
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {} }
   });
-  au.addEventListener('waiting', function () { if (wantPlay) setSt('buf', 'buffering'); });
+  au.addEventListener('waiting', function () { if (wantPlay) { setSt('buf', 'buffering'); } });
 
   function resumeTry() {
     clearTimeout(resumeT);
@@ -1071,6 +1094,172 @@
     document.getElementById('none').hidden = shown > 0;
   });
 
+  /* ===== Scansione stato radio (verde = raggiungibile, rosso = non raggiungibile) ===== */
+  var SCAN_GAP_FIRST = 500, SCAN_GAP_STEADY = 6000, SCAN_GAP_PLAY = 12000, SCAN_PAR_FIRST = 2, SCAN_TIMEOUT = 10000, SCAN_HOLD = 6000;
+  var scanIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  STATIONS.forEach(function (st, i) { scanSt[i] = { s: 0, f: 0, t: 0 }; });
+
+  function scanCount() {
+    var ok = 0, ko = 0, i;
+    for (i = 0; i < scanSt.length; i++) { if (scanSt[i].s === 1) ok++; else if (scanSt[i].s === 2) ko++; }
+    var rest = scanSt.length - ok - ko, el = document.getElementById('count');
+    var seg = document.getElementById('scanSeg'), tot = scanSt.length || 1;
+    if (seg) { seg.firstChild.style.width = (ok / tot * 100) + '%'; seg.lastChild.style.width = (ko / tot * 100) + '%'; }
+    scanBusy(rest);
+    if (el) el.textContent = STATIONS.length + ' stazioni \u00B7 ' + ok + ' ok \u00B7 ' + ko + ' non raggiungibili' + (rest ? ' \u00B7 ' + rest + ' da verificare' : '');
+  }
+  function scanBusy(rest) {
+    var rd = document.getElementById('scanRd');
+    if (!rd) return;
+    if (rest === undefined) { rest = 0; for (var i = 0; i < scanSt.length; i++) if (scanSt[i].s === 0) rest++; }
+    rd.classList.toggle('busy', rest > 0 || scanRun > 0);
+  }
+  function scanPaint(i) {
+    var b = items[i], s = scanSt[i].s;
+    if (!b) return;
+    b.classList.toggle('ok', s === 1);
+    b.classList.toggle('ko', s === 2);
+  }
+  function scanRecord(i, ok) {
+    var s = scanSt[i];
+    if (!s) return;
+    if (!ok && navigator.onLine === false) return;
+    s.t = Date.now();
+    if (ok) { s.s = 1; s.f = 0; }
+    else { s.f++; if (s.f >= 2) s.s = 2; }
+    scanPaint(i); scanCount();
+  }
+  function scanLive(cls) {
+    if (cls === 'on') { scanHold = Date.now() + SCAN_HOLD; if (cur >= 0) scanRecord(cur, true); }
+  }
+
+  function probeAudio(url, done) {
+    var a = new Audio(), fin = false, t;
+    a.preload = 'metadata'; a.muted = true; a.volume = 0;
+    function clean() {
+      clearTimeout(t); a.onloadedmetadata = a.onloadeddata = a.oncanplay = a.onerror = null;
+      try { a.pause(); a.removeAttribute('src'); a.load(); } catch (e) {}
+    }
+    function end(ok) { if (fin) return; fin = true; clean(); done(ok); }
+    a.onloadedmetadata = a.onloadeddata = a.oncanplay = function () { end(true); };
+    a.onerror = function () { end(false); };
+    t = setTimeout(function () { end(false); }, SCAN_TIMEOUT);
+    a.src = url;
+    return function () { if (!fin) { fin = true; clean(); } };
+  }
+  function probeFetch(url, done) {
+    var ac = window.AbortController ? new AbortController() : null, fin = false, t;
+    function end(ok) { if (fin) return; fin = true; clearTimeout(t); if (ac) { try { ac.abort(); } catch (e) {} } done(ok); }
+    t = setTimeout(function () { end(false); }, SCAN_TIMEOUT);
+    fetch(url, { mode: 'no-cors', cache: 'no-store', priority: 'low', signal: ac ? ac.signal : undefined }).then(function () { end(true); }, function () { end(false); });
+    return function () { if (!fin) { fin = true; clearTimeout(t); if (ac) { try { ac.abort(); } catch (e) {} } } };
+  }
+  function probeHls(url, done) {
+    var h = null, fin = false, t, sub = null;
+    function clean() { clearTimeout(t); if (h) { try { h.destroy(); } catch (e) {} h = null; } if (sub) { sub(); sub = null; } }
+    function end(ok) { if (fin) return; fin = true; clean(); done(ok); }
+    t = setTimeout(function () { end(false); }, SCAN_TIMEOUT);
+    loadHls(function (ok) {
+      if (fin) return;
+      if (ok && window.Hls && Hls.isSupported()) {
+        h = new Hls({ autoStartLoad: false, startLevel: 0 });
+        h.on(Hls.Events.MANIFEST_PARSED, function () { try { h.startLoad(-1); } catch (e) { end(false); } });
+        h.on(Hls.Events.LEVEL_LOADED, function () { end(true); });
+        h.on(Hls.Events.ERROR, function (e, d) { if (d && d.fatal) end(false); });
+        h.loadSource(url);
+      } else if (au.canPlayType('application/vnd.apple.mpegurl')) {
+        sub = scanIOS ? probeFetch(url, end) : probeAudio(url, end);
+      } else { end(false); }
+    });
+    return function () { if (!fin) { fin = true; clean(); } };
+  }
+  function probeUrl(url, done) {
+    if (/\.m3u8(\?|$)/i.test(url)) return probeHls(url, done);
+    return scanIOS ? probeFetch(url, done) : probeAudio(url, done);
+  }
+  function probeStation(i, cb) {
+    var urls = candidates(STATIONS[i]), k = 0, stopped = false, cancelCur = null;
+    function nextUrl() {
+      if (stopped) return;
+      if (k >= urls.length) { cb(false); return; }
+      var u = urls[k++];
+      cancelCur = probeUrl(u, function (ok) { cancelCur = null; if (stopped) return; if (ok) cb(true); else nextUrl(); });
+    }
+    if (!urls.length) setTimeout(function () { if (!stopped) cb(false); }, 0); else nextUrl();
+    return function () { stopped = true; if (cancelCur) cancelCur(); };
+  }
+
+  function scanYield() {
+    Object.keys(scanInfl).forEach(function (k) {
+      var c = scanInfl[k]; delete scanInfl[k]; scanRun--;
+      try { c(); } catch (e) {}
+    });
+    scanBusy();
+  }
+  function scanPlayerBusy() {
+    if (Date.now() < scanHold) return true;
+    if (!wantPlay) return false;
+    return nowSt.className === 'buf' || bufHold || (!au.paused && au.readyState < 3);
+  }
+  function scanReady() {
+    /* la scansione non si ferma mai: né a pagina in background, né col player fermo o in buffer; si ferma solo senza rete */
+    return navigator.onLine !== false;
+  }
+  function scanUnknown() {
+    var n = 0, i;
+    for (i = 0; i < scanSt.length; i++) if (scanSt[i].s === 0 && !scanSt[i].f && !scanSt[i].t) n++;
+    return n;
+  }
+  function scanPick() {
+    var best = -1, bk = Infinity, now = Date.now(), i, s, key;
+    for (i = 0; i < STATIONS.length; i++) {
+      if (scanInfl[i] || (wantPlay && i === cur)) continue;
+      s = scanSt[i];
+      if (!s.t) return i;
+      if (s.s !== 1 && now - s.t < 20000) continue;
+      key = s.t - (s.s === 0 ? 3600000 : s.s === 2 ? 120000 : 0);
+      if (key < bk) { bk = key; best = i; }
+    }
+    return best;
+  }
+  function scanStart(i) {
+    scanRun++; scanBusy();
+    scanInfl[i] = probeStation(i, function (ok) {
+      if (!scanInfl[i]) return;
+      delete scanInfl[i]; scanRun--;
+      scanRecord(i, ok);
+    });
+  }
+  var scanDue = 0;
+  function scanPump() {
+    clearTimeout(scanT); scanT = null;
+    if (!scanReady()) { scanYield(); scanDue = Date.now() + 1500; scanT = setTimeout(scanPump, 1500); return; }
+    var first = scanUnknown() > 0, limit = first ? SCAN_PAR_FIRST : 1, playing = wantPlay && nowSt.className === 'on';
+    if (scanRun < limit) {
+      var i = scanPick();
+      if (i >= 0) scanStart(i);
+    }
+    var gap = scanRun >= limit ? 800 : (first ? SCAN_GAP_FIRST : (playing ? SCAN_GAP_PLAY : SCAN_GAP_STEADY));
+    scanDue = Date.now() + gap; scanT = setTimeout(scanPump, gap);
+  }
+  scanCount();
+  scanT = setTimeout(scanPump, 800);
+  /* anti-sospensione: i timer della pagina in background vengono rallentati o congelati dal browser.
+     1) un Web Worker fa da metronomo (non soggetto allo stesso throttling) e riavvia la pompa se è in ritardo;
+     2) un Web Lock tenuto per sempre scoraggia il congelamento della scheda;
+     3) al ritorno della pagina o della rete la scansione riparte subito. */
+  function scanKick() { if (!scanT || Date.now() > scanDue + 1500) scanPump(); }
+  try {
+    var wk = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},2000)'], { type: 'text/javascript' })));
+    wk.onmessage = scanKick;
+  } catch (e) {}
+  try { if (navigator.locks && navigator.locks.request) navigator.locks.request('radio-scan', function () { return new Promise(function () {}); }); } catch (e) {}
+  document.addEventListener('visibilitychange', scanKick);
+  document.addEventListener('resume', scanKick);
+  window.addEventListener('pageshow', scanKick);
+  window.addEventListener('focus', scanKick);
+  window.addEventListener('online', scanKick);
+
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovSongTx = document.getElementById('ovSongTx'), ovName = document.getElementById('ovName'), ovNameTx = document.getElementById('ovNameTx');
   var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
@@ -1080,6 +1269,13 @@
   }
   function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
   function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
+  /* altezza dell'intestazione fissa -> posizione della barra di ricerca sticky */
+  (function () {
+    var root = document.documentElement;
+    function setH() { root.style.setProperty('--hdrh', Math.round(hdrEl.getBoundingClientRect().height) + 'px'); }
+    setH(); window.addEventListener('resize', setH);
+    if (window.ResizeObserver) new ResizeObserver(setH).observe(hdrEl);
+  })();
   var ovShown = {};
   function ovSet(el, key, text, force, done) {
     if (!force && ovShown[key] === text) return;
