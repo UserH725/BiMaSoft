@@ -4663,10 +4663,10 @@ $HtmlShell = @'
       rdReset(); rdSay('Server non raggiungibile.', 'err');
     });
   });
-  // === TITOLO SCHEDA A ROTAZIONE (v1107.1; v1110.0: scorrimento piu' veloce e fluido, passo 150 ms) ===
+  // === TITOLO SCHEDA A ROTAZIONE (v1111.1; v1111.1: scorrimento piu' veloce e fluido, passo 150 ms) ===
   // Fasi fisse: indicazioni 4 s, radio 3 s, brano 4 s (se piu' lungo dello spazio nella linguetta scorre come un'insegna, un giro intero).
   // Radio ferma/in pausa o dashboard OFFLINE: nessuna rotazione, resta il titolo della dashboard. Brano assente: la fase viene saltata.
-  // v1110.0: la posizione dello scorrimento si calcola dal TEMPO REALE trascorso (non dal conteggio dei tick): se il browser ritarda un tick
+  // v1111.1: la posizione dello scorrimento si calcola dal TEMPO REALE trascorso (non dal conteggio dei tick): se il browser ritarda un tick
   // il testo non si ferma, recupera. Gli spazi del testo scorrevole sono spazi non separabili (U+00A0): il browser non li toglie ne' li riduce,
   // quindi la finestra ha sempre la stessa larghezza e il testo avanza di un carattere alla volta, senza salti.
   var baseT = '', rotPhase = 0, rotT0 = 0, ROT_W = 24, ROT_STEP = 150;   // ROT_STEP = ms per ogni carattere di scorrimento (era 500, poi 300)
@@ -5158,7 +5158,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -6602,7 +6602,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7448,7 +7448,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1110.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
