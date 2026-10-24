@@ -321,6 +321,16 @@
 
 
   #ver { position: fixed; left: calc(2px + env(safe-area-inset-left, 0px)); bottom: calc(3px + env(safe-area-inset-bottom, 0px)); z-index: 50; margin: 0; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11px; line-height: 1; color: #888; letter-spacing: .02em; user-select: none; pointer-events: none; }
+
+  /* --- EFFETTO DISCOTECA: fasci di luce dal basso, luci sfocate, scintille, neon --- */
+  #disco { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none; display: block; }
+  @keyframes neonPulse {
+    0%, 100% { color: #fff2a8; text-shadow: 0 1px 3px #000, 0 0 4px #fff, 0 0 10px #ff9500, 0 0 22px #ff2d55; }
+    50% { color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #fff, 0 0 16px #ffb000, 0 0 36px #ff2d95; }
+  }
+  body.is-playing #ov.open #ovNameTx { animation: neonPulse 2.2s ease-in-out infinite; }
+  body.is-playing #ov.open #ovName.mq #ovNameTx { animation: mq var(--t, 5s) ease-in-out infinite alternate, neonPulse 2.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.is-playing #ov.open #ovNameTx { animation: none; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -373,6 +383,8 @@
   <p id="none" hidden="">Nessuna radio trovata. Prova con un altro nome.</p>
   <div id="ver">&copy; Mauro Bigoni - v.1111.1</div>
 </main>
+
+<canvas id="disco" aria-hidden="true"></canvas>
 
 <audio id="au" preload="none" playsinline=""></audio>
 
@@ -1743,6 +1755,150 @@
       lastD = ts;
       if (!W || Math.round(cv.getBoundingClientRect().width) !== W) size();
       step(ts / 1000); draw();
+    }
+    window.addEventListener('resize', size);
+    size();
+    requestAnimationFrame(loop);
+  })();
+
+  /* --- EFFETTO DISCOTECA --- */
+  (function () {
+    var cv = document.getElementById('disco');
+    if (!cv || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    var cx = cv.getContext('2d'), W = 0, H = 0, dpr = 1, act = 0, beat = 0, nextK = 0, lastT = 0, lastD = 0, cleared = true, i;
+    var NB = 6, bm = [], cn = [], bk = [], ds = [];
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function ease(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+    for (i = 0; i < NB; i++) bm.push({ x: (i * 0.173 + 0.07) % 1, sp: 0.05 + ((i * 37) % 5) * 0.012, t0: -Math.random() * 10, dir: Math.random() < 0.5 ? 1 : -1, h: i * 53, w: 0.8 + ((i * 13) % 5) * 0.1, nx: rnd(1, 6), left: 0, s: 0 });
+    cn.push({ side: -1, cur: 0.9, from: 0.9, to: 0.9, t0: 0, dur: 1, nm: rnd(1, 3), h: 200, nx: rnd(2, 7), left: 0, s: 0 });
+    cn.push({ side: 1, cur: 0.9, from: 0.9, to: 0.9, t0: 0, dur: 1, nm: rnd(3, 6), h: 320, nx: rnd(2, 7), left: 0, s: 0 });
+    for (i = 0; i < 18; i++) bk.push({ x: Math.random(), y: Math.random(), r: 3 + Math.random() * 8, vy: 8 + Math.random() * 18, sw: 0.4 + Math.random() * 1.2, ph: Math.random() * 6, h: Math.random() * 360, a: 0.22 + Math.random() * 0.3 });
+    for (i = 0; i < 28; i++) ds.push({ x: Math.random(), y: Math.random(), r: 0.8 + Math.random() * 1.5, vy: 6 + Math.random() * 16, tw: 1 + Math.random() * 4, ph: Math.random() * 6 });
+
+    /* analisi audio reale: legge i bassi dell'elemento <audio> senza toccarne l'uscita (captureStream);
+       se la radio non lo permette o il segnale è nullo, si usa il ritmo simulato */
+    var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0;
+    function hookAudio(retry) {
+      try {
+        var cs = au.captureStream || au.mozCaptureStream, AC = window.AudioContext || window.webkitAudioContext, z, st;
+        if (!cs || !AC) return;
+        if (!actx) {
+          actx = new AC(); an = actx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.5;
+          z = actx.createGain(); z.gain.value = 0; an.connect(z); z.connect(actx.destination);
+          fd = new Uint8Array(an.frequencyBinCount);
+        }
+        if (actx.state === 'suspended') actx.resume();
+        st = cs.call(au);
+        if (!st.getAudioTracks().length) { if (!retry) setTimeout(function () { hookAudio(true); }, 1000); return; }
+        if (srcN) { try { srcN.disconnect(); } catch (e) {} }
+        srcN = actx.createMediaStreamSource(st); srcN.connect(an);
+      } catch (e) { srcN = null; }
+    }
+    if (au) au.addEventListener('playing', function () { hookAudio(false); });
+    function flashOn(t) {
+      var o = Math.random() < 0.7 ? bm[Math.floor(Math.random() * NB)] : cn[Math.floor(Math.random() * 2)];
+      if (o.left === 0 && t >= (o.cool || 0)) { o.left = 2; o.s = t; o.cool = t + 1.2; }
+    }
+    function analyse(t) {
+      var b, s = 0, k, e;
+      if (!an || !srcN) return false;
+      an.getByteFrequencyData(fd);
+      for (k = 1; k < 60; k++) s += fd[k];
+      if (s > 60) lastSig = t;
+      if (t - lastSig > 1.5) return false;
+      b = (fd[1] + fd[2] + fd[3]) / 3; e = b / 255;
+      bAvg += (e - bAvg) * 0.04;
+      if (e > 0.3 && e > bAvg * 1.22 + 0.06 && t - lastB > 0.2) { lastB = t; beat = 1; if (e > 0.7 && Math.random() < 0.4) flashOn(t); }
+      return true;
+    }
+
+    /* strobo: serie di 2-5 lampi (max ~3 al secondo), indipendente per ogni luce */
+    function stb(o, t) {
+      var p;
+      if (o.left > 0) { p = (t - o.s) / 0.34; if (p >= 1) { o.left--; o.s = t; p = 0; } return (p < 0.18 && o.left > 0) ? 1 : 0; }
+      if (t >= o.nx) { o.left = 2 + Math.floor(Math.random() * 4); o.s = t; o.nx = t + rnd(3, 9); }
+      return 0;
+    }
+    function size() {
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      W = window.innerWidth; H = window.innerHeight;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function glint(x, y, sz, hue) {
+      var g = cx.createRadialGradient(x, y, 0, x, y, sz);
+      g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(0.25, 'hsla(' + hue + ',100%,70%,.55)'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+      cx.fillStyle = g; cx.beginPath(); cx.arc(x, y, sz, 0, 6.3); cx.fill();
+      cx.strokeStyle = 'rgba(255,255,255,.8)'; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.moveTo(x - sz * 1.6, y); cx.lineTo(x + sz * 1.6, y); cx.moveTo(x, y - sz * 1.6); cx.lineTo(x, y + sz * 1.6); cx.stroke();
+    }
+    function draw(t, dt) {
+      var L = Math.hypot(W, H), pulse = 0.65 + beat * 0.5, e, o, u, env, a, hue, x0, y0, x1, y1, x2, y2, xm, ym, al, g, g2, px, py, f, b, rr, gg, hh, d, sp0 = 0.2;
+      cx.clearRect(0, 0, W, H);
+      cx.globalAlpha = act;
+      cx.globalCompositeOperation = 'lighter';
+      /* fasci dal basso: direzione, posizione e velocità casuali a ogni passaggio */
+      for (e = 0; e < NB; e++) {
+        o = bm[e]; u = (t - o.t0) * o.sp;
+        if (u >= 1) { o.t0 = t; o.dir = Math.random() < 0.5 ? 1 : -1; o.x = Math.random(); o.sp = 0.05 + Math.random() * 0.09; u = 0; }
+        env = Math.sin(u * Math.PI); f = stb(o, t);
+        a = -Math.PI / 2 + o.dir * (o.w - 2 * o.w * u); hue = (t * 35 + o.h) % 360;
+        x0 = o.x * W; y0 = H + 6; x1 = x0 + Math.cos(a) * L; y1 = y0 + Math.sin(a) * L;
+        al = (0.35 + 0.45 * pulse) * (0.25 + 0.75 * env); if (f) al = Math.min(1, al * 2.2 + 0.2);
+        g = cx.createLinearGradient(x0, y0, x1, y1);
+        g.addColorStop(0, 'hsla(' + hue + ',100%,' + (f ? 90 : 65) + '%,' + al + ')'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        cx.strokeStyle = g; cx.lineWidth = f ? 3.6 : 2.2; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
+        cx.globalAlpha = act * (f ? 0.4 : 0.22); cx.lineWidth = f ? 16 : 10; cx.stroke(); cx.globalAlpha = act;
+        px = Math.cos(a + Math.PI / 2) * L * 0.045; py = Math.sin(a + Math.PI / 2) * L * 0.045;
+        g2 = cx.createLinearGradient(x0, y0, x1, y1);
+        g2.addColorStop(0, 'hsla(' + hue + ',100%,60%,' + (al * 0.22) + ')'); g2.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        cx.fillStyle = g2; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1 + px, y1 + py); cx.lineTo(x1 - px, y1 - py); cx.closePath(); cx.fill();
+        glint(x0, H - 2, (f ? 12 : 6) + beat * 8 + Math.sin(t * 4 + e) * 2, hue);
+      }
+      /* coni larghi dagli angoli alti: ogni tanto si spostano, ciascuno con i suoi tempi */
+      for (e = 0; e < 2; e++) {
+        o = cn[e];
+        if (t >= o.nm) { o.from = o.cur; do { o.to = rnd(0.2, 1.4); } while (Math.abs(o.to - o.from) < 0.5); o.t0 = t; o.dur = rnd(1.2, 2.8); o.nm = t + o.dur + rnd(2, 7); }
+        o.cur = o.from + (o.to - o.from) * ease((t - o.t0) / o.dur);
+        f = stb(o, t);
+        a = o.side < 0 ? o.cur : Math.PI - o.cur;
+        x0 = o.side < 0 ? -4 : W + 4; y0 = -4; hue = (t * 25 + o.h) % 360;
+        al = Math.min(0.85, (0.28 + 0.3 * pulse) * (f ? 2.4 : 1));
+        x1 = x0 + Math.cos(a - sp0) * L; y1 = y0 + Math.sin(a - sp0) * L;
+        x2 = x0 + Math.cos(a + sp0) * L; y2 = y0 + Math.sin(a + sp0) * L;
+        xm = x0 + Math.cos(a) * L; ym = y0 + Math.sin(a) * L;
+        g = cx.createLinearGradient(x0, y0, xm, ym);
+        g.addColorStop(0, 'hsla(' + hue + ',100%,' + (f ? 88 : 68) + '%,' + al + ')'); g.addColorStop(0.6, 'hsla(' + hue + ',100%,62%,' + (al * 0.35) + ')'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        cx.fillStyle = g; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.lineTo(x2, y2); cx.closePath(); cx.fill();
+        cx.strokeStyle = g; cx.lineWidth = f ? 3 : 1.6; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(xm, ym); cx.stroke();
+        glint(x0, y0 + 2, (f ? 16 : 8) + beat * 8, hue);
+      }
+      for (i = 0; i < bk.length; i++) {
+        b = bk[i]; b.y -= b.vy * dt / H; b.x += Math.sin(t * b.sw + b.ph) * 0.0003;
+        if (b.y < -0.05) { b.y = 1.05; b.x = Math.random(); }
+        rr = b.r * (1 + beat * 0.25); hh = (b.h + t * 20) % 360;
+        gg = cx.createRadialGradient(b.x * W, b.y * H, 0, b.x * W, b.y * H, rr);
+        gg.addColorStop(0, 'hsla(' + hh + ',100%,70%,' + (b.a * 0.3) + ')'); gg.addColorStop(0.78, 'hsla(' + hh + ',100%,65%,' + (b.a * 0.55) + ')'); gg.addColorStop(1, 'hsla(' + hh + ',100%,60%,0)');
+        cx.fillStyle = gg; cx.beginPath(); cx.arc(b.x * W, b.y * H, rr, 0, 6.3); cx.fill();
+      }
+      for (i = 0; i < ds.length; i++) {
+        d = ds[i]; d.y -= d.vy * dt / H; if (d.y < -0.01) { d.y = 1.01; d.x = Math.random(); }
+        cx.fillStyle = 'rgba(255,255,255,' + (0.35 + 0.65 * Math.abs(Math.sin(t * d.tw + d.ph))) + ')';
+        cx.beginPath(); cx.arc(d.x * W, d.y * H, d.r, 0, 6.3); cx.fill();
+      }
+      cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
+    }
+    function loop(ts) {
+      requestAnimationFrame(loop);
+      if (ts - lastD < 33) return;
+      var t = ts / 1000, dt = Math.min(0.1, t - lastT);
+      lastD = ts; lastT = t; if (dt <= 0) return;
+      act += ((document.body.classList.contains('is-playing') ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
+      if (act < 0.01) { if (!cleared) { cx.clearRect(0, 0, W, H); cleared = true; } return; }
+      cleared = false;
+      if (!analyse(t) && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
+      beat *= Math.pow(0.86, dt * 60);
+      draw(t, dt);
     }
     window.addEventListener('resize', size);
     size();
