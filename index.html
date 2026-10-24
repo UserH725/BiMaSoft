@@ -502,7 +502,7 @@
     {name: 'Liquid Trap', urls: ['https://radio.hearme.fm:8364/stream']},
     {name: 'Lofi HipHop', urls: ['https://radio.hearme.fm:8366/stream']},
     {name: 'Lofi Lounge n Chill', urls: ['https://radio.hearme.fm:8368/stream']},
-    {name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json'},
+    {name: 'M2O', urls: ['https://streamcdni1-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8', 'https://streamcdnm5-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/play1.m3u8', 'https://4c4b867c89244861ac216426883d1ad0.msvdn.net/radiom2o/radiom2o/master_ma.m3u8'], info: 'https://www.m2o.it/api/pub/v2/all/gdwc-audio-player/onair?format=json', infoFmt: 'json'},
     {name: 'MC2 New Age Channel', urls: ['https://n02-eu1.rcs.revma.com/vs284ceky7uvv?rj-ttl=5&rj-tok=AAABoVVRze0A_KJc2KoCHEC7aA']},
     {name: 'Madonna', urls: ['https://icy.unitedradio.it/um1031.mp3']},
     {name: 'Michael Jackson', urls: ['https://streaming.exclusive.radio/er/michaeljackson/icecast.audio']},
@@ -529,7 +529,7 @@
     {name: 'Radio Freccia', urls: ['https://streamcdnf24-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S3160845/D6MENOraq6Qy/playlist_audio.m3u8']},
     {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir'},
     {name: 'Radio FS News', urls: ['https://fsnmob.newradio.it/stream']},
-    {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3']},
+    {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3'], info: 'https://titoli.fluidstream.it/grradio/titoliGR7.txt', infoFmt: 'dash'},
     {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices']},
     {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac']},
     {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6']},
@@ -1038,6 +1038,30 @@
     return cleanSong(title || artist);
   }
 
+  /* testo "Artista -- Titolo -- www.sito" (es. Radio Italia Network): toglie il sito finale; jingle/stacchi (nome radio, slogan) = nessun brano */
+  function parseDash(txt) {
+    var l = String(txt || '').split(/\r?\n/)[0].replace(/\s+/g, ' ').trim(), p;
+    if (!l) return '';
+    p = l.split(/\s+--\s+/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (p.length && /^(https?:\/\/)?(www\.)?[\w-]+(\.[\w-]+)+\/?$/i.test(p[p.length - 1])) p.pop();
+    if (!p.length) return '';
+    if (/^radio italia network$/i.test(p[0]) || /my life style/i.test(l)) return '';
+    return cleanSong(p.join(' - '));
+  }
+  function bust(u) { return u + (u.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now(); }
+  /* titoli da siti che non permettono la lettura da altre pagine (CORS): prima diretto, poi tramite proxy pubblici; si ricorda il percorso che funziona */
+  var INFO_PROXIES = ['', 'https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?url='], infoVia = {};
+  function fetchInfo(base) {
+    var idx = [0, 1, 2], pref = infoVia[base];
+    if (pref !== undefined) idx = [pref].concat(idx.filter(function (x) { return x !== pref; }));
+    return (function t(k) {
+      var i = idx[k], u = bust(base);
+      return fetchText(i ? INFO_PROXIES[i] + encodeURIComponent(u) : u, true).then(function (x) {
+        if (!String(x || '').trim()) throw new Error('vuoto');
+        infoVia[base] = i; return x;
+      }, function (e) { if (k + 1 < idx.length) return t(k + 1); throw e; });
+    })(0);
+  }
   function parseInfo(txt) {
     txt = String(txt || '').trim();
     if (txt.indexOf('#EXTM3U') === 0) return parseChunklist(txt);
@@ -1065,7 +1089,17 @@
     }
     az = j.now_playing && j.now_playing.song;
     if (az) { v = S(az.text) || artTitle(az.artist, az.title); if (v) return cleanSong(v); }
-    return cleanSong(artTitle(j.artist, j.title));
+    v = cleanSong(artTitle(j.artist, j.title));
+    return v || deepTitle(j, 0);
+  }
+  /* risposte JSON annidate (es. m2o onair): primo "title" non vuoto; se c'è anche "artist" e non è già nel titolo, lo antepone */
+  function deepTitle(o, d) {
+    var k, v, t, a;
+    if (!o || typeof o !== 'object' || d > 5) return '';
+    t = S(o.title);
+    if (t) { a = S(o.artist); return cleanSong(a && t.toLowerCase().indexOf(a.toLowerCase()) < 0 ? a + ' - ' + t : t); }
+    for (k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) { v = deepTitle(o[k], d + 1); if (v) return v; } }
+    return '';
   }
 
   function parseStatus(kind, txt) {
@@ -1123,7 +1157,7 @@
     if (!wantPlay || nowSt.className !== 'on' || cur < 0 || polling) return;
     var st = STATIONS[cur], u = cands[uIdx] || '', g = gen, om = u.match(/^(https?:\/\/[^\/]+)/i), o = om ? om[1] : '', key = o + '|' + cur, tasks = [], m;
     if (meta.o !== key) meta = { o: key, kind: '', fails: 0, t: 0 };
-    if (st.info) tasks.push({ k: 'info', f: function () { return fetchText(st.info, /\.m3u8(\?|$)/i.test(st.info)).then(parseInfo); } });
+    if (st.info) tasks.push({ k: 'info', f: function () { return (st.infoFmt ? fetchInfo(st.info) : fetchText(st.info, /\.m3u8(\?|$)/i.test(st.info))).then(st.infoFmt === 'dash' ? parseDash : parseInfo); } });
     if (o && !/\.m3u8(\?|$)/i.test(u)) {
       m = u.match(/^(https?:\/\/[^\/]+)\/listen\/([^\/?#]+)\//i);
       if (m) tasks.push({ k: 'azura', f: function () { return fetchText(m[1] + '/api/nowplaying/' + m[2]).then(parseInfo); } });
