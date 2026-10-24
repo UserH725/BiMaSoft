@@ -975,10 +975,15 @@
   }
 
   function id3Song(d) {
-    var pos = 0, title = '', json = null, ver, size, end, p, id, fs, body, enc, str, i, j, jj;
+    var pos = 0, title = '', artist = '', json = null, ver, size, end, p, id, fs, body, enc, str, i, j, jj, dbg = [];
     function ss(o) { return (d[o] << 21) | (d[o + 1] << 14) | (d[o + 2] << 7) | d[o + 3]; }
     function txt(a, e) {
       try { return new TextDecoder(e === 1 ? 'utf-16' : e === 2 ? 'utf-16be' : e === 3 ? 'utf-8' : 'iso-8859-1').decode(a); } catch (x) { return ''; }
+    }
+    function utf(a) { try { return new TextDecoder('utf-8').decode(a); } catch (x) { return ''; } }
+    function scanJson(t) {
+      var a1 = t.indexOf('{'), b1 = t.lastIndexOf('}');
+      if (a1 >= 0 && b1 > a1) { try { var o = JSON.parse(t.slice(a1, b1 + 1)); if (o && typeof o === 'object') json = o; } catch (x) {} }
     }
     if (!d || !d.length) return '';
     while (pos + 10 <= d.length && d[pos] === 0x49 && d[pos + 1] === 0x44 && d[pos + 2] === 0x33) {
@@ -988,20 +993,29 @@
         fs = ver === 4 ? ss(p + 4) : ((d[p + 4] << 24) | (d[p + 5] << 16) | (d[p + 6] << 8) | d[p + 7]);
         if (fs < 0 || p + 10 + fs > end) break;
         body = d.subarray(p + 10, p + 10 + fs); enc = body[0];
-        if (id === 'TIT2' && body.length > 1) title = txt(body.subarray(1), enc).replace(/\0+$/, '').trim();
-        else if (id === 'TXXX' && body.length > 1) {
-          str = txt(body.subarray(1), enc); i = str.indexOf('{'); j = str.lastIndexOf('}');
-          if (i >= 0 && j > i) { try { jj = JSON.parse(str.slice(i, j + 1)); if (jj && typeof jj === 'object') json = jj; } catch (x) {} }
-        }
+        if (id === 'TIT2' && body.length > 1) { title = txt(body.subarray(1), enc).replace(/\0+$/, '').trim(); dbg.push(id + ': ' + title); }
+        else if (id === 'TPE1' && body.length > 1) { artist = txt(body.subarray(1), enc).replace(/\0+$/, '').trim(); dbg.push(id + ': ' + artist); }
+        else if (id === 'TXXX' && body.length > 1) { str = txt(body.subarray(1), enc); dbg.push(id + ': ' + str.slice(0, 300)); scanJson(str); }
+        else if (id.charAt(0) === 'T' && body.length > 1) { str = txt(body.subarray(1), enc).replace(/\0+$/, ''); dbg.push(id + ': ' + str.slice(0, 200)); if (id === 'TIT1') { if (!title) title = str.trim(); } else scanJson(str); }
+        else { str = utf(body); dbg.push(id + ': ' + str.replace(/[^\x20-\x7e\u00a0-\uffff]+/g, ' ').slice(0, 300)); scanJson(str); }
         p += 10 + fs;
       }
       pos = end;
     }
-    if (json) {
-      if (String(json.type || '').toLowerCase() !== 'song') return '';
-      return cleanSong(artTitle(json.artista || json.sottotitolo, json.titolo || json.traccia)) || cleanSong(title);
+    try { window.__id3last = dbg; } catch (x) {}
+    if (json && json.songInfo && json.songInfo.present) {
+      jj = json.songInfo.present;
+      if (String(jj.class || 'Music').toLowerCase() !== 'music') return '';
+      jj = cleanSong(artTitle(jj.mus_art_name, jj.mus_sng_title));
+      if (jj) return jj;
     }
-    return cleanSong(title);
+    if (json && !json.songInfo) {
+      if (json.type !== undefined && String(json.type).toLowerCase() !== 'song') return '';
+      jj = cleanSong(artTitle(json.artista || json.artist || json.sottotitolo, json.titolo || json.title || json.traccia || json.song));
+      if (jj) return jj;
+    }
+    if (artist && title && title.toLowerCase().indexOf(artist.toLowerCase()) < 0) return cleanSong(artist + ' - ' + title);
+    return cleanSong(title || artist);
   }
 
   function parseInfo(txt) {
