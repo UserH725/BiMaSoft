@@ -76,9 +76,9 @@
 
   main { max-width: 980px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom, 0px)); }
   /* riga titolo + contatore + ricerca: sempre visibile sotto l'intestazione; la sovraimpressione (#ov, z-index 5) resta sopra */
-  .head { position: sticky; top: var(--hdrh, 137px); z-index: 4; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 0 -16px 10px; padding: 10px 16px 12px; background: rgba(0,0,0,.93); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.14); }
-  h1 { margin: 0; font-size: 22px; font-weight: 700; }
-  #count { flex: 1 1 auto; min-width: 0; color: #d0d0d0; font-size: 14px; line-height: 1.3; }
+  .head { position: sticky; top: var(--hdrh, 137px); z-index: 4; display: flex; align-items: center; gap: 8px 10px; flex-wrap: nowrap; margin: 0 -16px 8px; padding: 6px 16px 8px; background: rgba(0,0,0,.93); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(255,255,255,.14); }
+  h1 { margin: 0; flex: 0 0 auto; font-size: 20px; font-weight: 700; }
+  #count { flex: 1 1 auto; min-width: 0; color: #d0d0d0; font-size: 12px; line-height: 1.2; }
   /* indicatore scansione: radar (gira mentre si verifica) + barra a segmenti ok / non raggiungibili / da verificare */
   #scanRd { position: relative; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #3a6a8f; transition: border-color .4s ease; }
   #scanRd svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -86,7 +86,7 @@
   #scanRd:not(.busy) { border-color: #2b6b47; }
   #scanRd:not(.busy) line { stroke: #3ddc84; }
   @keyframes scanRt { to { transform: rotate(360deg); } }
-  #scanSeg { flex: 1 1 100%; order: 2; display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #2a2a2a; }
+  #scanSeg { position: absolute; left: 0; right: 0; bottom: 0; display: flex; height: 3px; overflow: hidden; background: #2a2a2a; }
   #scanSeg i { display: block; height: 100%; width: 0; transition: width .5s ease; }
   #scanSeg .ok { background: #3ddc84; }
   #scanSeg .ko { background: #ff5a5a; }
@@ -97,10 +97,16 @@
   #count .cTo { color: #ffe600; animation: scanBl 1s steps(2, end) infinite; }
   @keyframes scanBl { 50% { opacity: .15; } }
   @media (prefers-reduced-motion: reduce) { #count .cTo { animation: none; } }
-  #find { flex: 1 1 100%; order: 3; height: 46px; padding: 0 14px 0 44px; font-size: 16px; color: #fff; background: #181818 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234fb3ff' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E") no-repeat 13px center / 22px 22px; border: 2px solid #4fb3ff; border-radius: 10px; box-shadow: 0 0 0 3px rgba(79,179,255,.15); -webkit-appearance: none; appearance: none; }
-  #find::placeholder { color: #9aa7b3; }
-  #find:focus { outline: none; border-color: #8fd0ff; box-shadow: 0 0 0 4px rgba(79,179,255,.3); }
-  @media (min-width: 700px) { #find { flex: 0 1 380px; order: 0; margin-left: auto; } }
+  /* ricerca: a riposo e' solo una lente a margine destro; al clic il campo si allarga sulla riga */
+  #find { flex: 0 0 38px; width: 38px; height: 38px; margin-left: auto; padding: 0; font-size: 16px; color: transparent; caret-color: transparent; cursor: pointer; background: #181818 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234fb3ff' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5L21 21'/%3E%3C/svg%3E") no-repeat center / 20px 20px; border: 1.5px solid #4fb3ff; border-radius: 50%; box-shadow: none; -webkit-appearance: none; appearance: none; }
+  #find::placeholder { color: transparent; }
+  .head:not(.sr) #find::-webkit-search-cancel-button { display: none; }
+  .head.flt:not(.sr) #find { background-color: #0d3a5c; box-shadow: 0 0 0 3px rgba(79,179,255,.35); }
+  .head.sr > h1, .head.sr > #scanRd, .head.sr > #count { display: none; }
+  .head.sr #find { flex: 1 1 auto; width: auto; margin-left: 0; padding: 0 14px 0 42px; color: #fff; caret-color: auto; cursor: text; background-position: 12px center; border-width: 2px; border-radius: 10px; box-shadow: 0 0 0 3px rgba(79,179,255,.15); }
+  .head.sr #find::placeholder { color: #9aa7b3; }
+  .head.sr #find:focus { outline: none; border-color: #8fd0ff; box-shadow: 0 0 0 4px rgba(79,179,255,.3); }
+  #find:focus { outline: none; }
 
   #list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 18px; }
   #list li { border-bottom: 1px solid #1d1d1d; }
@@ -1101,18 +1107,33 @@
     b.type = 'button'; b.className = 'st'; b.setAttribute('aria-pressed', 'false');
     b.innerHTML = '<span class="ic" aria-hidden="true">&#9654;</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="nm"></span>';
     b.querySelector('.nm').textContent = s.name;
-    b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); });
+    b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); findCollapse(true); });
     li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase()); li.setAttribute('data-i', i);
     listEl.appendChild(li); items.push(b);
   });
   document.getElementById('count').textContent = STATIONS.length + ' stazioni';
-  document.getElementById('find').addEventListener('input', function () {
-    var q = this.value.trim().toLowerCase(), shown = 0;
+  var headEl = document.querySelector('.head'), findEl = document.getElementById('find');
+  function findApply() {
+    var q = findEl.value.trim().toLowerCase(), shown = 0;
     Array.prototype.forEach.call(listEl.children, function (li) {
       var ok = !q || li.getAttribute('data-n').indexOf(q) >= 0;
       li.hidden = !ok; if (ok) shown++;
     });
     document.getElementById('none').hidden = shown > 0;
+  }
+  /* torna alla sola lente; clear = azzera anche il filtro (dopo la scelta di una stazione) */
+  function findCollapse(clear) {
+    if (clear) { findEl.value = ''; findApply(); }
+    headEl.classList.remove('sr');
+    headEl.classList.toggle('flt', !!findEl.value.trim());
+    findEl.blur();
+  }
+  findEl.addEventListener('focus', function () { headEl.classList.add('sr'); });
+  findEl.addEventListener('input', findApply);
+  findEl.addEventListener('blur', function () { if (!findEl.value.trim()) findCollapse(false); });
+  findEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') findCollapse(false);
+    else if (e.key === 'Escape') findCollapse(true);
   });
 
   /* ===== Scansione stato radio (verde = raggiungibile, rosso = non raggiungibile) ===== */
