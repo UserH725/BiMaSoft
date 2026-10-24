@@ -324,13 +324,15 @@
 
   /* --- EFFETTO DISCOTECA: fasci di luce dal basso, luci sfocate, scintille, neon --- */
   #disco { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none; display: block; }
+  #ana { cursor: pointer; -webkit-tap-highlight-color: transparent; transition: filter .3s ease; }
+  #ana.disco-on { filter: drop-shadow(0 0 5px #ff2d95) drop-shadow(0 0 12px #00c8ff); }
   @keyframes neonPulse {
     0%, 100% { color: #fff2a8; text-shadow: 0 1px 3px #000, 0 0 4px #fff, 0 0 10px #ff9500, 0 0 22px #ff2d55; }
     50% { color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #fff, 0 0 16px #ffb000, 0 0 36px #ff2d95; }
   }
-  body.is-playing #ov.open #ovNameTx { animation: neonPulse 2.2s ease-in-out infinite; }
-  body.is-playing #ov.open #ovName.mq #ovNameTx { animation: mq var(--t, 5s) ease-in-out infinite alternate, neonPulse 2.2s ease-in-out infinite; }
-  @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.is-playing #ov.open #ovNameTx { animation: none; } }
+  body.disco-on #ov.open #ovNameTx { animation: neonPulse 2.2s ease-in-out infinite; }
+  body.disco-on #ov.open #ovName.mq #ovNameTx { animation: mq var(--t, 5s) ease-in-out infinite alternate, neonPulse 2.2s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -1777,6 +1779,26 @@
 
     /* analisi audio reale: legge i bassi dell'elemento <audio> senza toccarne l'uscita (captureStream);
        se la radio non lo permette o il segnale è nullo, si usa il ritmo simulato */
+    var discoOn = false, ana = document.getElementById('ana'), btnP = document.getElementById('btn');
+    /* le luci si accendono toccando l'orologio centrale e si spengono da sole quando la radio si ferma */
+    function stopped() { return !btnP || btnP.textContent.indexOf('\u275A') < 0; }
+    if (ana) ana.addEventListener('click', function () { if (discoOn) discoOn = false; else if (!stopped()) discoOn = true; });
+    /* sfondo dell'orologio analogico: sfuma tra tonalità scure e morbide a tempo di bassi (solo a luci accese) */
+    var bgc = ana ? ana.querySelector('circle') : null, cb = 0, pB = 0, hOff = 0, hCur = 0, cOn = false;
+    function clockFill(t) {
+      var hT = t * 20 + hOff;
+      if (!cOn) hCur = hT; else hCur += (hT - hCur) * 0.1;
+      return 'hsl(' + Math.round(((hCur % 360) + 360) % 360) + ',50%,' + (9 + cb * 11).toFixed(1) + '%)';
+    }
+    function clockBg(t, want) {
+      if (!bgc) return;
+      if (beat > pB + 0.5) hOff += 40;
+      pB = beat;
+      cb = Math.max(want ? beat : 0, cb * 0.94);
+      if (want) { bgc.setAttribute('fill', clockFill(t)); cOn = true; }
+      else if (cOn && cb < 0.02) { cOn = false; bgc.setAttribute('fill', '#0b0b0b'); }
+      else if (cOn) bgc.setAttribute('fill', clockFill(t));
+    }
     var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0;
     function hookAudio(retry) {
       try {
@@ -1893,7 +1915,12 @@
       if (ts - lastD < 33) return;
       var t = ts / 1000, dt = Math.min(0.1, t - lastT);
       lastD = ts; lastT = t; if (dt <= 0) return;
-      act += ((document.body.classList.contains('is-playing') ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
+      if (discoOn && stopped()) discoOn = false;
+      var want = discoOn && document.body.classList.contains('is-playing');
+      document.body.classList.toggle('disco-on', want);
+      if (ana) ana.classList.toggle('disco-on', discoOn);
+      act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
+      clockBg(t, want);
       if (act < 0.01) { if (!cleared) { cx.clearRect(0, 0, W, H); cleared = true; } return; }
       cleared = false;
       if (!analyse(t) && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
