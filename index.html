@@ -326,6 +326,8 @@
   #disco { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none; display: block; }
   #ana { cursor: pointer; -webkit-tap-highlight-color: transparent; transition: filter .3s ease; }
   #ana.disco-on { filter: drop-shadow(0 0 5px #ff2d95) drop-shadow(0 0 12px #00c8ff); }
+  #clock { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #clock.relax-on #ck { filter: drop-shadow(0 0 6px #7dffd0) drop-shadow(0 0 12px #6a7bff); }
   @keyframes neonPulse {
     0%, 100% { color: #fff2a8; text-shadow: 0 1px 3px #000, 0 0 4px #fff, 0 0 10px #ff9500, 0 0 22px #ff2d55; }
     50% { color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #fff, 0 0 16px #ffb000, 0 0 36px #ff2d95; }
@@ -562,7 +564,7 @@
     {name: 'Rolling Stones', urls: ['https://streaming.exclusive.radio/er/rollingstones/icecast.audio']},
     {name: 'Romantic Vibes', urls: ['https://romantic.streeemer.com/listen/romantic/radio.aac']},
     {name: 'Roxette', urls: ['https://streaming.exclusive.radio/er/roxette/icecast.audio']},
-    {name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025']},
+    {name: 'RTL102.5', urls: ['https://streamingv2.shoutcast.com/rtl-1025_48.aac']},
     {name: 'RTL102.5 Best', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S76960628/fYNIdrsfP3xC/chunklist_b192000.m3u8']},
     {name: 'RTL102.5 Caliente', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S8448465/TxhFMf45Q7cw/playlist_audio.m3u8']},
     {name: 'RTL102.5 Disco', urls: ['https://streamcdni2-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S51100361/Sz3kCA55PrRh/playlist_audio.m3u8']},
@@ -1782,7 +1784,9 @@
     var discoOn = false, ana = document.getElementById('ana'), btnP = document.getElementById('btn');
     /* le luci si accendono toccando l'orologio centrale e si spengono da sole quando la radio si ferma */
     function stopped() { return !btnP || btnP.textContent.indexOf('\u275A') < 0; }
-    if (ana) ana.addEventListener('click', function () { if (discoOn) discoOn = false; else if (!stopped()) discoOn = true; });
+    if (ana) ana.addEventListener('click', function () { if (discoOn) discoOn = false; else if (!stopped()) { discoOn = true; relaxOn = false; modeR = false; } });
+    var clkH = document.getElementById('clock');
+    if (clkH) clkH.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#netStat')) return; if (relaxOn) relaxOn = false; else if (!stopped()) { relaxOn = true; modeR = true; discoOn = false; } });
     /* sfondo dell'orologio analogico: sfuma tra tonalità scure e morbide a tempo di bassi (solo a luci accese) */
     var bgc = ana ? ana.querySelector('circle') : null, cb = 0, pB = 0, hOff = 0, hCur = 0, cOn = false;
     function clockFill(t) {
@@ -1832,6 +1836,51 @@
       bAvg += (e - bAvg) * 0.04;
       if (e > 0.3 && e > bAvg * 1.22 + 0.06 && t - lastB > 0.2) { lastB = t; beat = 1; if (e > 0.7 && Math.random() < 0.4) flashOn(t); }
       return true;
+    }
+
+    /* effetto rilassante: aurora boreale con stelle cadenti, attivabile toccando l'orologio digitale */
+    var relaxOn = false, modeR = false, lvA = 0.5, clk = document.getElementById('clock'), rs = [], sh = { on: false, nx: 0, t0: 0, x: 0, y: 0 };
+    for (i = 0; i < 55; i++) rs.push({ x: Math.random(), y: Math.random() * 0.5, r: 0.5 + Math.random() * 1.1, tw: 0.6 + Math.random() * 2.2, ph: Math.random() * 6 });
+    function avgLevel() {
+      var s = 0, k;
+      for (k = 1; k < 81; k++) s += fd[k];
+      return s / (80 * 255);
+    }
+    function drawRelax(t) {
+      var cols = [[140, 0.9], [175, 0.7], [280, 0.55]], gain = 0.75 + lvA * 0.6, b, x, u, yT, len, g, k, o, p, sx, sy, gs;
+      cx.clearRect(0, 0, W, H);
+      cx.globalAlpha = act;
+      cx.globalCompositeOperation = 'lighter';
+      for (b = 0; b < 3; b++) {
+        g = cx.createLinearGradient(0, 0, 0, H * 0.7);
+        g.addColorStop(0, 'hsla(' + cols[b][0] + ',80%,60%,' + (0.2 * cols[b][1] * gain) + ')');
+        g.addColorStop(0.6, 'hsla(' + cols[b][0] + ',80%,55%,' + (0.09 * cols[b][1] * gain) + ')');
+        g.addColorStop(1, 'hsla(' + cols[b][0] + ',80%,50%,0)');
+        cx.fillStyle = g;
+        for (x = 0; x < W; x += 4) {
+          u = x / W;
+          yT = H * (0.03 + b * 0.05) + Math.sin(u * 10 + t * 0.35 + b * 1.7) * H * 0.07 + Math.sin(u * 28 - t * 0.28 + b) * H * 0.025;
+          len = H * 0.42 * (0.55 + 0.45 * Math.sin(u * 16 + t * 0.45 + b * 2.1));
+          cx.fillRect(x, yT, 4, len);
+        }
+      }
+      for (k = 0; k < rs.length; k++) {
+        o = rs[k];
+        cx.fillStyle = 'rgba(255,255,255,' + (0.2 + 0.55 * Math.abs(Math.sin(t * o.tw * 0.5 + o.ph))) + ')';
+        cx.beginPath(); cx.arc(o.x * W, o.y * H, o.r, 0, 6.3); cx.fill();
+      }
+      if (!sh.on && t > sh.nx) { sh.on = true; sh.t0 = t; sh.x = Math.random() * W * 0.6; sh.y = Math.random() * H * 0.25; sh.nx = t + 5 + Math.random() * 6; }
+      if (sh.on) {
+        p = (t - sh.t0) / 0.9;
+        if (p > 1) sh.on = false;
+        else {
+          sx = sh.x + p * W * 0.3; sy = sh.y + p * H * 0.2;
+          gs = cx.createLinearGradient(sx, sy, sx - W * 0.1, sy - H * 0.07);
+          gs.addColorStop(0, 'rgba(255,255,255,' + (1 - p) + ')'); gs.addColorStop(1, 'rgba(255,255,255,0)');
+          cx.strokeStyle = gs; cx.lineWidth = 1.8; cx.beginPath(); cx.moveTo(sx, sy); cx.lineTo(sx - W * 0.1, sy - H * 0.07); cx.stroke();
+        }
+      }
+      cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
     }
 
     /* strobo: serie di 2-5 lampi (max ~3 al secondo), indipendente per ogni luce */
@@ -1915,17 +1964,19 @@
       if (ts - lastD < 33) return;
       var t = ts / 1000, dt = Math.min(0.1, t - lastT);
       lastD = ts; lastT = t; if (dt <= 0) return;
-      if (discoOn && stopped()) discoOn = false;
-      var want = discoOn && document.body.classList.contains('is-playing');
-      document.body.classList.toggle('disco-on', want);
+      if ((discoOn || relaxOn) && stopped()) { discoOn = false; relaxOn = false; }
+      var play = document.body.classList.contains('is-playing'), wantD = discoOn && play, want = (discoOn || relaxOn) && play;
+      document.body.classList.toggle('disco-on', wantD);
       if (ana) ana.classList.toggle('disco-on', discoOn);
+      if (clk) clk.classList.toggle('relax-on', relaxOn);
       act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
-      clockBg(t, want);
+      clockBg(t, wantD);
       if (act < 0.01) { if (!cleared) { cx.clearRect(0, 0, W, H); cleared = true; } return; }
       cleared = false;
-      if (!analyse(t) && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
+      var live = analyse(t);
+      if (!live && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
-      draw(t, dt);
+      if (modeR) { lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05; drawRelax(t); } else draw(t, dt);
     }
     window.addEventListener('resize', size);
     size();
