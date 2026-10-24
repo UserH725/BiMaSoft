@@ -45,6 +45,12 @@
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #nowRadio {   font-family: 'Cabin', sans-serif;   font-style: italic;   font-weight: 700;   font-size: 17px;   line-height: 1.15;   color: #ffe600;   white-space: nowrap;   overflow: hidden; }
   #nowRadio span, #ovName span, #ovSong span { display: inline-block; }
+  #nowRadioRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #nowRadioRow #nowRadio { flex: 1 1 auto; min-width: 0; }
+  #nowIc { flex: 0 0 22px; width: 22px; text-align: center; color: #4fb3ff; font-size: 14px; }
+  #nowEq { display: none; }
+  body.is-playing #nowEq { display: flex; }
+  body.is-playing #nowIc { display: none; }
   #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   #nowName { font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
@@ -345,7 +351,7 @@
 <div class="pl">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
   <div id="now">
-    <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
+    <div id="nowRadioRow"><span id="nowIc" class="ic" aria-hidden="true">&#9654;</span><span id="nowEq" class="eq" aria-hidden="true"><i></i><i></i><i></i></span><div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div></div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
     <div id="nowSt" class="off" role="status" aria-live="polite">
@@ -754,8 +760,22 @@
     retryT = setTimeout(start, uIdx === 0 ? delay : 500);
   }
 
+  /* la radio resta al suo posto in elenco; la pagina scorre in modo che sia la prima riga visibile sotto le intestazioni fisse */
+  var alignT = null;
+  function alignCur() {
+    clearTimeout(alignT);
+    alignT = setTimeout(function () {
+      var b = items[cur], li = b && b.parentNode;
+      if (!li || li.hidden) return;
+      var hdr = document.getElementById('hdr'), hd = document.querySelector('.head');
+      var off = (hdr ? hdr.getBoundingClientRect().height : 0) + (hd ? hd.offsetHeight : 0) + 4;
+      window.scrollTo({ top: Math.max(0, li.getBoundingClientRect().top + window.pageYOffset - off), behavior: 'smooth' });
+    }, 80);
+  }
   function select(i, autoplay) {
+    var changed = (cur !== i);
     cur = i; uIdx = 0; tries = 0;
+    if (changed) alignCur();
     cands = candidates(STATIONS[i]);
     song = '';
     store('radioLast', STATIONS[i].name);
