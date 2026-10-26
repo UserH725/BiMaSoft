@@ -2047,11 +2047,12 @@
       for (k = 0; k < gl.length && k < 4; k++) glint(gl[k][0], gl[k][1], R * 0.16, gl[k][2], c);
       c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
     }
-    /* sempre al centro; diametro = metà del lato corto dello schermo (proporzionale) */
+    /* centrata in orizzontale, vicino al bordo inferiore; diametro proporzionale al lato corto dello schermo */
     function balls(t) {
       if (!bcx) return;
       bcx.clearRect(0, 0, W, H);
-      ball(bcx, W / 2, H / 2, Math.min(W, H) * 0.25, Math.hypot(W, H) * 0.6, t);
+      var R = Math.min(W, H) * 0.21;
+      ball(bcx, W / 2, H - R - Math.max(14, H * 0.04), R, Math.hypot(W, H) * 0.6, t);
       bDirty = true;
     }
     function clrB() {
