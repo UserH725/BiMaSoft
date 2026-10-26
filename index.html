@@ -342,7 +342,7 @@
   body.disco-on #ov.open #ovName.mq #ovNameTx { animation: mq var(--t, 5s) ease-in-out infinite alternate, neonPulse 2.2s ease-in-out infinite; }
   /* mirror ball al posto del disco (solo a luci accese): dietro ai contenuti, in trasparenza leggera */
   #bgDisc { transition: opacity .8s ease; }
-  body.disco-on #bgDisc { opacity: 0; }
+  body.ball-on #bgDisc { opacity: 0; }
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 </style>
@@ -1921,40 +1921,36 @@
       for (k = 1; k < 81; k++) s += fd[k];
       return s / (80 * 255);
     }
+    /* modalità relax: il bordo della pagina si illumina con un gradiente sfumato che respira, con colori che scorrono */
+    var rlM = null, rlL = null, rlW = 0, rlH = 0;
     function drawRelax(t) {
-      var cols = [[140, 0.9], [175, 0.7], [280, 0.55]], gain = 0.75 + lvA * 0.6, b, x, u, yT, len, g, k, o, p, sx, sy, gs;
+      var e = Math.max(28, Math.min(70, Math.min(W, H) * 0.07)), gain = 0.75 + lvA * 0.6, q, g, k;
+      if (!rlM || rlW !== W || rlH !== H) {
+        rlW = W; rlH = H;
+        rlM = document.createElement('canvas'); rlM.width = W; rlM.height = H;
+        rlL = document.createElement('canvas'); rlL.width = W; rlL.height = H;
+        q = rlM.getContext('2d');
+        [[0, 0, 0, e], [0, H, 0, H - e], [0, 0, e, 0], [W, 0, W - e, 0]].forEach(function (a) {
+          g = q.createLinearGradient(a[0], a[1], a[2], a[3]);
+          g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+          q.fillStyle = g; q.fillRect(0, 0, W, H);
+        });
+      }
+      q = rlL.getContext('2d');
+      q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, W, H);
+      if (q.createConicGradient) {
+        g = q.createConicGradient(t * 0.35, W / 2, H / 2);
+        for (k = 0; k <= 6; k++) g.addColorStop(k / 6, 'hsl(' + ((t * 18 + k * 60) % 360) + ',100%,58%)');
+      } else {
+        g = q.createLinearGradient(0, 0, W, H);
+        for (k = 0; k <= 3; k++) g.addColorStop(k / 3, 'hsl(' + ((t * 18 + k * 120) % 360) + ',100%,58%)');
+      }
+      q.fillStyle = g; q.fillRect(0, 0, W, H);
+      q.globalCompositeOperation = 'destination-in'; q.drawImage(rlM, 0, 0);
       cx.clearRect(0, 0, W, H);
-      cx.globalAlpha = act;
+      cx.globalAlpha = Math.min(1, act * (0.5 + 0.2 * Math.sin(t * 1.1)) * gain);
       cx.globalCompositeOperation = 'lighter';
-      for (b = 0; b < 3; b++) {
-        g = cx.createLinearGradient(0, 0, 0, H * 0.7);
-        g.addColorStop(0, 'hsla(' + cols[b][0] + ',80%,60%,' + (0.2 * cols[b][1] * gain) + ')');
-        g.addColorStop(0.6, 'hsla(' + cols[b][0] + ',80%,55%,' + (0.09 * cols[b][1] * gain) + ')');
-        g.addColorStop(1, 'hsla(' + cols[b][0] + ',80%,50%,0)');
-        cx.fillStyle = g;
-        for (x = 0; x < W; x += 4) {
-          u = x / W;
-          yT = H * (0.03 + b * 0.05) + Math.sin(u * 10 + t * 0.35 + b * 1.7) * H * 0.07 + Math.sin(u * 28 - t * 0.28 + b) * H * 0.025;
-          len = H * 0.42 * (0.55 + 0.45 * Math.sin(u * 16 + t * 0.45 + b * 2.1));
-          cx.fillRect(x, yT, 4, len);
-        }
-      }
-      for (k = 0; k < rs.length; k++) {
-        o = rs[k];
-        cx.fillStyle = 'rgba(255,255,255,' + (0.2 + 0.55 * Math.abs(Math.sin(t * o.tw * 0.5 + o.ph))) + ')';
-        cx.beginPath(); cx.arc(o.x * W, o.y * H, o.r, 0, 6.3); cx.fill();
-      }
-      if (!sh.on && t > sh.nx) { sh.on = true; sh.t0 = t; sh.x = Math.random() * W * 0.6; sh.y = Math.random() * H * 0.25; sh.nx = t + 5 + Math.random() * 6; }
-      if (sh.on) {
-        p = (t - sh.t0) / 0.9;
-        if (p > 1) sh.on = false;
-        else {
-          sx = sh.x + p * W * 0.3; sy = sh.y + p * H * 0.2;
-          gs = cx.createLinearGradient(sx, sy, sx - W * 0.1, sy - H * 0.07);
-          gs.addColorStop(0, 'rgba(255,255,255,' + (1 - p) + ')'); gs.addColorStop(1, 'rgba(255,255,255,0)');
-          cx.strokeStyle = gs; cx.lineWidth = 1.8; cx.beginPath(); cx.moveTo(sx, sy); cx.lineTo(sx - W * 0.1, sy - H * 0.07); cx.stroke();
-        }
-      }
+      cx.drawImage(rlL, 0, 0, W, H);
       cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
     }
 
@@ -2124,6 +2120,7 @@
       if ((discoOn || relaxOn) && stopped()) { discoOn = false; relaxOn = false; }
       var play = document.body.classList.contains('is-playing'), wantD = discoOn && play, want = (discoOn || relaxOn) && play;
       document.body.classList.toggle('disco-on', wantD);
+      document.body.classList.toggle('ball-on', want);
       if (ana) ana.classList.toggle('disco-on', discoOn);
       if (clk) clk.classList.toggle('relax-on', relaxOn);
       act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
@@ -2133,7 +2130,7 @@
       var live = analyse(t);
       if (!live && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
-      if (modeR) { lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05; drawRelax(t); clrB(); } else { draw(t, dt); balls(t); }
+      if (modeR) { lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05; drawRelax(t); balls(t); } else { draw(t, dt); balls(t); }
     }
     window.addEventListener('resize', size);
     size();
