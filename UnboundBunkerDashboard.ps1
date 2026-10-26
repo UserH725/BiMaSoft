@@ -3175,6 +3175,293 @@ function Get-IpGeoMap {
     return $m
 }
 
+# === TRE PROVIDER PER OGNI IP (v1107.11): IPinfo + MaxMind GeoLite2 + DB-IP ===
+# Per l'IP pubblico (IPv4/IPv6), gli IPv6 locali globali, il DNS in uso e l'Upstream Radar la pagina mostra la
+# bandierina secondo TRE fonti, perche' spesso non coincidono (anycast/CDN):
+#   - IPinfo   : online, una richiesta per indirizzo (ipinfo.io/<ip>/country, 1000/giorno senza token; con un token
+#                gratuito si usa IPinfo Lite, senza limiti: [v1111.4] token integrato nello script, sostituibile con il file ipinfo_token.txt in $UbDir), risultato in cache 6 ore;
+#   - MaxMind  : GeoLite2 Country (IPv4 e IPv6) via sapics/ip-location-db, scaricato SOLO IN MEMORIA;
+#   - DB-IP    : DB-IP Lite Country; IPv4 con il database gia' caricato dal worker bandiere, IPv6 scaricato qui.
+# Nessuna scrittura su SSD o su R:\. I file CSV (ordinati per indirizzo iniziale) si interrogano con ricerca binaria
+# direttamente sui byte scaricati e vengono rilasciati dopo 5 minuti di inattivita'. Se una fonte non risponde la
+# sua bandierina resta in attesa e si riprova; se IPinfo risponde 429 la sua richiesta si sospende per 1 ora.
+# Il valore per indirizzo e' "IPinfo|MaxMind|DB-IP" con codice paese a 2 lettere, '-' = non determinabile, '?' = in attesa.
+$script:Geo3Urls = @{
+    M4 = @('https://raw.githubusercontent.com/sapics/ip-location-db/main/geolite2-country/geolite2-country-ipv4.csv',
+           'https://cdn.jsdelivr.net/gh/sapics/ip-location-db@main/geolite2-country/geolite2-country-ipv4.csv')
+    M6 = @('https://raw.githubusercontent.com/sapics/ip-location-db/main/geolite2-country/geolite2-country-ipv6.csv',
+           'https://cdn.jsdelivr.net/gh/sapics/ip-location-db@main/geolite2-country/geolite2-country-ipv6.csv')
+    D6 = @('https://raw.githubusercontent.com/sapics/ip-location-db/main/dbip-country/dbip-country-ipv6.csv',
+           'https://cdn.jsdelivr.net/gh/sapics/ip-location-db@main/dbip-country/dbip-country-ipv6.csv')
+}
+$script:Geo3Min    = @{ M4 = 3000000; M6 = 3000000; D6 = 3000000 }
+$script:Geo3State  = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string,string]'
+$script:Geo3Time   = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string,long]'
+$script:Geo3Pend   = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string,byte]'
+$script:Geo3Queue  = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
+$script:Geo3Org    = New-Object 'System.Collections.Concurrent.ConcurrentDictionary[string,string]'   # [v1111.2] ip -> "ASxxxx Operatore" (da IPinfo)
+$script:Geo3Worker = $null
+$script:Geo3WorkerFail = 0
+# [v1111.4] Token IPinfo Lite integrato: usato se il file ipinfo_token.txt in $UbDir manca o e' vuoto (evita il limite 429 senza gestione manuale).
+$script:Geo3DefaultToken = '80f1e8ed107bb0'
+
+$script:Geo3WorkerScript = {
+    $ErrorActionPreference = 'SilentlyContinue'
+    $ProgressPreference    = 'SilentlyContinue'
+    try { [System.Threading.Thread]::CurrentThread.Priority = [System.Threading.ThreadPriority]::BelowNormal } catch {}
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
+    $dbs = @{}; $dbFail = @{}
+    $st  = @{ last = [DateTime]::UtcNow }
+    $ipi = @{ block = [DateTime]::MinValue; tokBad = $false }
+
+    function Get-Bytes([string]$Url, [int]$TimeoutMs) {
+        $rs = $null
+        try {
+            $rq = [System.Net.HttpWebRequest]::Create($Url)
+            $rq.Timeout = $TimeoutMs
+            $rq.ReadWriteTimeout = $TimeoutMs
+            $rq.UserAgent = 'UnboundBunkerDashboard'
+            $rs = $rq.GetResponse()
+            $ms = New-Object System.IO.MemoryStream
+            $rs.GetResponseStream().CopyTo($ms)
+            return ,$ms.ToArray()
+        } finally { if ($rs) { $rs.Close() } }
+    }
+
+    function Get-Db([string]$K) {
+        $st.last = [DateTime]::UtcNow
+        if ($dbs.ContainsKey($K)) { return ,$dbs[$K] }
+        if ($dbFail.ContainsKey($K) -and ([DateTime]::UtcNow - $dbFail[$K]).TotalSeconds -lt 600) { return $null }
+        foreach ($u in @($Geo3Urls[$K])) {
+            try {
+                $b = Get-Bytes $u 30000
+                if ($b -and $b.Length -gt $Geo3Min[$K]) { $dbs[$K] = $b; return ,$b }
+            } catch {}
+        }
+        $dbFail[$K] = [DateTime]::UtcNow
+        return $null
+    }
+
+    function Convert-IpKey([string]$S) {
+        try {
+            $by = [System.Net.IPAddress]::Parse($S).GetAddressBytes()
+            $sb = New-Object System.Text.StringBuilder
+            foreach ($x in $by) { [void]$sb.Append($x.ToString('x2')) }
+            return $sb.ToString()
+        } catch { return $null }
+    }
+
+    function Find-Cc([byte[]]$B, [string]$Key) {
+        if (-not $B -or -not $Key) { return '?' }
+        $n = $B.Length; $lo = 0; $hi = $n; $bestEnd = $null; $bestCc = $null
+        $enc = [System.Text.Encoding]::ASCII
+        while ($lo -lt $hi) {
+            $mid = [int][Math]::Floor(($lo + $hi) / 2)
+            $s = $mid; while ($s -gt $lo -and $B[$s - 1] -ne 10) { $s-- }
+            $e = $mid; while ($e -lt $n -and $B[$e] -ne 10) { $e++ }
+            $ln = $enc.GetString($B, $s, $e - $s).Trim()
+            if ($ln.Length -eq 0) { $lo = $e + 1; continue }
+            $p = $ln.Split(',')
+            if ($p.Length -lt 3) { $lo = $e + 1; continue }
+            $k0 = Convert-IpKey $p[0]
+            if ($null -eq $k0) { $lo = $e + 1; continue }
+            if ([string]::CompareOrdinal($k0, $Key) -le 0) { $bestEnd = $p[1]; $bestCc = $p[2].Trim(); $lo = $e + 1 } else { $hi = $s }
+        }
+        if ($null -eq $bestCc) { return '-' }
+        $k1 = Convert-IpKey $bestEnd
+        if ($null -ne $k1 -and [string]::CompareOrdinal($Key, $k1) -le 0 -and $bestCc -match '^[A-Za-z]{2}$') { return $bestCc.ToUpper() }
+        return '-'
+    }
+
+    function Get-IpinfoCc([string]$Ip) {
+        $ipi.org = ''; $ipi.why = ''
+        if ([DateTime]::UtcNow -lt $ipi.block) { $ipi.why = 'sospeso per limite di richieste (429), riprovo piu tardi'; return '?' }
+        $useTok = ($Geo3Token -and -not $ipi.tokBad)
+        $url = if ($useTok) { 'https://api.ipinfo.io/lite/' + $Ip + '?token=' + $Geo3Token } else { 'https://ipinfo.io/' + $Ip + '/json' }
+        try {
+            $b = Get-Bytes $url 6000
+            $txt = [System.Text.Encoding]::UTF8.GetString($b).Trim()
+            $bogon = $false
+            if ($txt.StartsWith('{')) {
+                $j = $txt | ConvertFrom-Json
+                if ($useTok) { $txt = [string]$j.country_code; $ipi.org = (([string]$j.asn) + ' ' + ([string]$j.as_name)).Trim() }
+                else { $txt = [string]$j.country; $ipi.org = ([string]$j.org).Trim() }
+                if ($j.bogon) { $bogon = $true }
+            }
+            if ($txt -match '^[A-Za-z]{2}$') { return $txt.ToUpper() }
+            if (-not $useTok -and -not $bogon) {
+                # [v1111.3] risposta senza paese: ultimo tentativo con l'endpoint testuale /country (quello usato prima della v1111.2)
+                $b2 = Get-Bytes ('https://ipinfo.io/' + $Ip + '/country') 6000
+                $t2 = [System.Text.Encoding]::UTF8.GetString($b2).Trim()
+                if ($t2 -match '^[A-Za-z]{2}$') { return $t2.ToUpper() }
+            }
+            $ipi.why = $(if ($bogon) { 'indirizzo non instradabile' } else { 'risposta senza paese' })
+            return '-'
+        } catch {
+            $ex = $_.Exception
+            while ($ex -and -not ($ex -is [System.Net.WebException]) -and $ex.InnerException) { $ex = $ex.InnerException }
+            $code = 0
+            if ($ex -is [System.Net.WebException] -and $ex.Response) { try { $code = [int]$ex.Response.StatusCode } catch {} }
+            if ($code -eq 429) { $ipi.block = [DateTime]::UtcNow.AddHours(1); $ipi.why = 'limite di richieste raggiunto (429), sospeso 1 ora'; return '?' }
+            if ($useTok -and ($code -eq 401 -or $code -eq 403)) { $ipi.tokBad = $true; $ipi.why = 'token IPinfo non valido, uso la versione senza token'; return '?' }
+            if ($code -eq 404 -or $code -eq 400) { $ipi.why = 'indirizzo non valido per IPinfo'; return '-' }
+            $ipi.why = $(if ($code -gt 0) { 'errore HTTP ' + $code } else { 'nessuna risposta (rete o blocco)' })
+            return '?'
+        }
+    }
+
+    while ($true) {
+        $ip = $null
+        if (-not $Geo3Queue.TryDequeue([ref]$ip)) {
+            if ($dbs.Count -gt 0 -and ([DateTime]::UtcNow - $st.last).TotalSeconds -gt 300) { $dbs.Clear(); [System.GC]::Collect() }
+            Start-Sleep -Milliseconds 400
+            continue
+        }
+        $i = '?'; $m = '?'; $d = ''
+        try {
+            $v6  = $ip.Contains(':')
+            $key = Convert-IpKey $ip
+            $pv  = $null; $ps0 = ''
+            if ($Geo3State.TryGetValue($ip, [ref]$ps0) -and $ps0) { $pv = $ps0.Split('|') }
+            if ($null -eq $key) { $i = '-'; $m = '-'; if ($v6) { $d = '-' } }
+            else {
+                if ($pv -and $pv.Length -eq 3 -and $pv[1] -ne '?') { $m = $pv[1] }
+                else { $kM = if ($v6) { 'M6' } else { 'M4' }; $b = Get-Db $kM; if ($b) { $m = Find-Cc $b $key } }
+                if ($v6) {
+                    if ($pv -and $pv.Length -eq 3 -and $pv[2] -ne '?' -and $pv[2] -ne '') { $d = $pv[2] }
+                    else { $d = '?'; $b = Get-Db 'D6'; if ($b) { $d = Find-Cc $b $key } }
+                }
+                $i = Get-IpinfoCc $ip
+                if ($ipi.org) { $Geo3Org[$ip] = [string]$ipi.org }
+                elseif ($ipi.why) { $Geo3Org[$ip] = '!' + [string]$ipi.why }   # '!' = motivo del mancato paese IPinfo, per il tooltip
+            }
+        } catch {}
+        $Geo3State[$ip] = $i + '|' + $m + '|' + $d
+        $Geo3Time[$ip]  = [DateTime]::UtcNow.Ticks
+        $tmp = [byte]0; [void]$Geo3Pend.TryRemove($ip, [ref]$tmp)
+        Start-Sleep -Milliseconds 1100
+    }
+}
+
+function Start-Geo3Worker {
+    if ($script:Geo3Worker -or $script:Geo3WorkerFail -ge 3) { return }
+    try {
+        $tok = ''
+        try {
+            $tf = Join-Path $UbDir 'ipinfo_token.txt'
+            if (Test-Path -LiteralPath $tf) { $tok = ([string](Get-Content -LiteralPath $tf -TotalCount 1)).Trim() }
+        } catch {}
+        if (-not $tok) { $tok = [string]$script:Geo3DefaultToken }   # [v1111.4] token integrato se il file manca
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.ApartmentState = 'MTA'
+        $rs.ThreadOptions  = 'ReuseThread'
+        $rs.Open()
+        $rs.SessionStateProxy.SetVariable('Geo3State', $script:Geo3State)
+        $rs.SessionStateProxy.SetVariable('Geo3Time',  $script:Geo3Time)
+        $rs.SessionStateProxy.SetVariable('Geo3Pend',  $script:Geo3Pend)
+        $rs.SessionStateProxy.SetVariable('Geo3Queue', $script:Geo3Queue)
+        $rs.SessionStateProxy.SetVariable('Geo3Org',   $script:Geo3Org)
+        $rs.SessionStateProxy.SetVariable('Geo3Urls',  $script:Geo3Urls)
+        $rs.SessionStateProxy.SetVariable('Geo3Min',   $script:Geo3Min)
+        $rs.SessionStateProxy.SetVariable('Geo3Token', $tok)
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript($script:Geo3WorkerScript)
+        $script:Geo3Worker = @{ Ps = $ps; Rs = $rs; Handle = $ps.BeginInvoke() }
+        Write-DashLog ("Worker bandierine a 3 provider avviato (IPinfo " + $(if ($tok) { 'Lite con token' } else { 'senza token' }) + ", MaxMind GeoLite2 e DB-IP in memoria al primo utilizzo).")
+    } catch {
+        $script:Geo3WorkerFail++
+        $script:Geo3Worker = $null
+        Write-DashLog "Worker bandierine a 3 provider NON avviato: $($_.Exception.Message)"
+    }
+}
+
+function Test-Geo3Public {
+    param([string]$Ip)
+    if ($Ip -match '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$') {
+        $a = [int]$matches[1]; $b = [int]$matches[2]; $c = [int]$matches[3]
+        if ($a -eq 10 -or $a -eq 127 -or $a -eq 0 -or $a -ge 224) { return $false }
+        if (($a -eq 192 -and $b -eq 0 -and ($c -eq 0 -or $c -eq 2)) -or ($a -eq 198 -and ($b -eq 18 -or $b -eq 19)) -or ($a -eq 198 -and $b -eq 51 -and $c -eq 100) -or ($a -eq 203 -and $b -eq 0 -and $c -eq 113)) { return $false }
+        if (($a -eq 192 -and $b -eq 168) -or ($a -eq 172 -and $b -ge 16 -and $b -le 31) -or ($a -eq 169 -and $b -eq 254) -or ($a -eq 100 -and $b -ge 64 -and $b -le 127)) { return $false }
+        return $true
+    }
+    if ($Ip.Contains(':')) {
+        if ($Ip -eq '::1' -or $Ip -eq '::' -or $Ip -match '^fe[89ab]' -or $Ip -match '^f[cd]' -or $Ip -match '^ff' -or $Ip -match '^2001:0?db8:') { return $false }
+        return $true
+    }
+    return $false
+}
+
+# Registra l'indirizzo per la ricerca (se pubblico e non ancora fresco in cache) e ne restituisce la chiave normalizzata.
+function Request-Geo3 {
+    param([string]$Ip)
+    try {
+        $k = ([string]$Ip).Trim().Trim('[', ']')
+        $p = $k.IndexOf('%'); if ($p -gt 0) { $k = $k.Substring(0, $p) }
+        $k = $k.ToLowerInvariant()
+        if (-not (Test-Geo3Public $k)) { return $null }
+        $cur = ''
+        if ($script:Geo3State.TryGetValue($k, [ref]$cur)) {
+            $t = [long]0; [void]$script:Geo3Time.TryGetValue($k, [ref]$t)
+            $ageS = ([DateTime]::UtcNow.Ticks - $t) / 10000000
+            if ($cur.Contains('?')) { if ($ageS -lt 300) { return $k } }
+            elseif ($ageS -lt 21600) { return $k }
+        }
+        if ($script:Geo3State.Count -gt 500) { $script:Geo3State.Clear(); $script:Geo3Org.Clear() }
+        if ($script:Geo3Pend.TryAdd($k, [byte]1)) {
+            $script:Geo3Queue.Enqueue($k)
+            if (-not $script:Geo3Worker) { Start-Geo3Worker }
+        }
+        return $k
+    } catch { return $null }
+}
+
+# Mappa indirizzo -> "IPinfo|MaxMind|DB-IP" per gli IP che la pagina mostra con le tre bandierine.
+function Get-Geo3Map {
+    param($Radar, $Conn)
+    $m = [ordered]@{}
+    try {
+        $cand = New-Object 'System.Collections.Generic.List[string]'
+        $w = $script:WanCacheData
+        if ($w) {
+            if ($w.ipv4_wan_ok) { $cand.Add([string]$w.ipv4_wan) }
+            if ($w.ipv6_wan_ok) { $cand.Add([string]$w.ipv6_wan) }
+        }
+        if ($Conn -and $Conn.ipv4_lan_ok) { foreach ($x in ([string]$Conn.ipv4_lan -split ',\s*')) { if ($x) { $cand.Add($x) } } }   # [v1111.3] IPv4 locali: se pubblici si cerca il paese
+        if ($Conn -and $Conn.ipv6_lan_ok) { foreach ($x in ([string]$Conn.ipv6_lan -split ',\s*')) { if ($x) { $cand.Add($x) } } }
+        foreach ($r in @($Radar)) { if ($r -and $r.ip) { $cand.Add([string]$r.ip) } }
+        $n = 0
+        foreach ($raw in $cand) {
+            if ($n -ge 24) { break }
+            $k = Request-Geo3 $raw
+            if (-not $k) { continue }
+            $n++
+            $v = ''
+            if (-not $script:Geo3State.TryGetValue($k, [ref]$v) -or -not $v) { continue }
+            $p = $v.Split('|')
+            if ($p.Length -ne 3) { continue }
+            $dd = $p[2]
+            if (-not $k.Contains(':')) { $c = Get-IpGeoCc $k; $dd = if ($c) { $c } else { '?' } }
+            $m[$k] = $p[0] + '|' + $p[1] + '|' + $dd
+        }
+    } catch {}
+    return $m
+}
+
+# [v1111.2] Mappa indirizzo -> "ASxxxx Operatore" per il tooltip delle bandierine (dato gia' ottenuto dalla richiesta IPinfo del paese,
+# nessuna richiesta o download in piu'). Operatore = chi possiede la rete, il paese delle bandierine e' dove il database colloca l'IP.
+function Get-Geo3AsnMap {
+    param($Geo3)
+    $m = [ordered]@{}
+    try {
+        foreach ($k in @($Geo3.Keys)) {
+            $o = ''
+            if ($script:Geo3Org.TryGetValue([string]$k, [ref]$o) -and $o) { $m[[string]$k] = $o }
+        }
+    } catch {}
+    return $m
+}
+
 # [v1107.9] Il dominio e' eleggibile alla ricerca del paese? (stesse regole di Request-GeoCountry + traffico della dashboard)
 function Test-GeoEligible {
     param([string]$Dom)
@@ -3540,6 +3827,8 @@ function Get-BunkerStatusJson {
     if ($saluteScore -lt 0) { $saluteScore = 0 }
 
     $ipGeo = Get-IpGeoMap -Radar $radar -RootRadar $rootRadar -ConnEvents $(if ($connLive) { $connLive.ev } else { $null }) -Fallback $dnsFallback
+    $ipGeo3 = Get-Geo3Map -Radar $radar -Conn $ipConn
+    $ipAsn = Get-Geo3AsnMap $ipGeo3
 
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
@@ -3565,6 +3854,8 @@ function Get-BunkerStatusJson {
         upstream_radar   = $radar
         root_radar       = $rootRadar
         ip_geo           = $ipGeo
+        ip_geo3          = $ipGeo3
+        ip_asn           = $ipAsn
         dns_fallback_log = $dnsFallback
         blocchi_orari    = $blocchiOrari
         windows_update   = $winUpdate
@@ -3708,6 +3999,8 @@ function Get-BunkerStatusLightJson {
     if ($saluteScore -lt 0) { $saluteScore = 0 }
 
     $ipGeo = Get-IpGeoMap -Radar $radar -ConnEvents $(if ($connLive) { $connLive.ev } else { $null })
+    $ipGeo3 = Get-Geo3Map -Radar $radar -Conn $ipConn
+    $ipAsn = Get-Geo3AsnMap $ipGeo3
 
     $obj = [ordered]@{
         generato_il      = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
@@ -3723,6 +4016,8 @@ function Get-BunkerStatusLightJson {
         tunnel_vpn       = $tunnelVpn
         conn_live        = $connLive
         ip_geo           = $ipGeo
+        ip_geo3          = $ipGeo3
+        ip_asn           = $ipAsn
         statistiche_live = $stats
         dall_ultimo_report = [ordered]@{
             query_totali         = $stats.base.query_totali
@@ -3955,7 +4250,6 @@ $HtmlShell = @'
   {name: 'Chillout Vibes', urls: ['https://chillout.streeemer.com/listen/chillout/radio.mp3']},
   {name: 'Christmas Radio', urls: ['https://radio1.streamserver.link:8070/hcr-aac-hq']},
   {name: 'Coldplay', urls: ['https://streaming.exclusive.radio/er/coldplay/icecast.audio']},
-  {name: 'Dance Hits 80', urls: ['https://icy.unitedradio.it/um040.mp3']},
   {name: 'Depeche Mode', urls: ['https://streaming.exclusive.radio/er/depechemode/icecast.audio']},
   {name: 'Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8']},
   {name: 'Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8']},
@@ -3970,8 +4264,6 @@ $HtmlShell = @'
   {name: 'Indie Beats', urls: ['https://radio.hearme.fm:8352/stream']},
   {name: 'Instrumental radio', urls: ['https://instrume-radiohosting.radioca.st/stream']},
   {name: 'It\'s 80', urls: ['https://securestream.cuelightsmedia.com.au/listen/80s/low.aac']},
-  {name: 'Italia Dance Music', urls: ['https://sr2.inmystream.it:18032/stream']},
-  {name: 'Italo Dance FM', urls: ['https://italodancefm.radioca.st/;']},
   {name: 'Jazz Christmas', urls: ['https://jazzchristmas.stream.laut.fm/jazzchristmas?uuid=15b6530d-c0c9-8e15-dab8-1441e62f6a5f']},
   {name: 'Jazz House', urls: ['https://radio.hearme.fm:8354/stream']},
   {name: 'Jungle Radio', urls: ['https://radio.hearme.fm:8356/stream']},
@@ -3996,20 +4288,15 @@ $HtmlShell = @'
   {name: 'Pink Floyd', urls: ['https://streaming.exclusive.radio/er/pinkfloyd/icecast.audio']},
   {name: 'Q8 Radio', urls: ['https://nr15.newradio.it:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/stream?ext=.mp3', 'http://152.228.228.253:9132/']},
   {name: 'Queen', urls: ['https://streaming.exclusive.radio/er/queen/icecast.audio']},
-  {name: 'Radio 60 70 80', urls: ['https://ice.studiopiu.net/radioplayer607080.aac']},
   {name: 'Radio 101', urls: ['https://icecast.unitedradio.it/r101_mp3']},
   {name: 'Radio 105', urls: ['https://icecast.unitedradio.it/Radio105rp.aac']},
   {name: 'Radio Balla Balla', urls: ['https://ice15.fluidstream.net/ballaballa.aac?FLID=7']},
-  {name: 'Radio Canale Italia', urls: ['https://rci.canaleitalia.tv:8007']},
-  {name: 'Radio Canale Italia Plus', urls: ['http://rci.canaleitalia.tv:8005']},
   {name: 'Radio Company Reggaeton', urls: ['https://sphera.fluidstream.eu/companyreggaetown.mp3?FLID=6']},
   {name: 'Radio Country Live', urls: ['https://streaming.radiostreamlive.com/radiocountrylive_devices']},
   {name: 'Radio Cuore', urls: ['https://stream10.xdevel.com/audio32s975552-1839/stream/icecast.audio']},
   {name: 'Radio Dee Jay', urls: ['https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8']},
   {name: 'Radio Freccia', urls: ['https://streamcdnf24-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S3160845/D6MENOraq6Qy/playlist_audio.m3u8']},
-  {name: 'Radio FS News', urls: ['https://fsnmob.newradio.it/stream']},
   {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir'},
-  {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3']},
   {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices']},
   {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac']},
   {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6']},
@@ -4020,7 +4307,6 @@ $HtmlShell = @'
   {name: 'Radio Love Live', urls: ['https://streaming.radiostreamlive.com/radiolovelive_devices']},
   {name: 'Radio Mambo', urls: ['https://mambo.newradio.it/stream']},
   {name: 'Radio Miami Beach Live', urls: ['https://streaming.radiostreamlive.com/miamibeachradio_devices']},
-  {name: 'Radio Milano International', urls: ['https://icy.unitedradio.it/um096.aac']},
   {name: 'Radio Musica Latina', urls: ['https://nrf1.newradio.it:9806/stream']},
   {name: 'Radio New York Live', urls: ['https://streaming.radiostreamlive.com/radionylive_devices']},
   {name: 'Radio North Pole', urls: ['https://streaming.radiostreamlive.com/radionorthpole_devices']},
@@ -4035,7 +4321,6 @@ $HtmlShell = @'
   {name: 'Radio Zeta', urls: ['https://streamcdnf29-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S9346184/clhI2IJWRnn7/chunklist_b192000.m3u8']},
   {name: 'Rai Isoradio', urls: ['https://icecdn-19d24861e90342cc8decb03c24c8a419.msvdn.net/icecastRelay/S88230050/W3T2uXpEeCuN/icecast']},
   {name: 'RDS', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds'},
-  {name: 'RDS Next', urls: ['https://audionext.rds.radio/chunklist.m3u8']},
   {name: 'Reiki Radio', urls: ['https://radio.hearme.fm:8168/stream']},
   {name: 'Relax Instrumental', urls: ['https://edge05.cdn.bitflip.ee:8888/instrumental?_i=681cdfe1']},
   {name: 'Relax SPA', urls: ['https://edge04.cdn.bitflip.ee:8888/spa?_i=681cffe1', 'https://edge05.cdn.bitflip.ee:8888/spa?_i=681cc2e2']},
@@ -4045,7 +4330,6 @@ $HtmlShell = @'
   {name: 'RMC Fitness', urls: ['https://icy.unitedradio.it/rmcweb023']},
   {name: 'RMC Greatest Artists', urls: ['https://icy.unitedradio.it/rmcweb007']},
   {name: 'RMC Jazz', urls: ['https://icy.unitedradio.it/rmcweb019']},
-  {name: 'RMC Latin in Love', urls: ['https://icy.unitedradio.it/rmcweb024']},
   {name: 'RMC Love Song', urls: ['https://icy.unitedradio.it/rmcweb006']},
   {name: 'Rolling Stones', urls: ['https://streaming.exclusive.radio/er/rollingstones/icecast.audio']},
   {name: 'Romantic Vibes', urls: ['https://romantic.streeemer.com/listen/romantic/radio.aac']},
@@ -5005,6 +5289,12 @@ $HtmlPageLight = @'
   .ns-lane .ce .cn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .ipf { font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; }
   .ipf:not(:empty) { margin-right: 0.35em; }
+  .g3 { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 3px; }
+  .g3s { display: inline-flex; flex-wrap: nowrap; gap: 5px; margin: 0 8px 0 0; vertical-align: middle; }
+  .g3c { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; padding-bottom: 1px; border-bottom: 2px solid transparent; }
+  .g3c.diff { border-bottom-color: #ffb300; }
+  .g3c .ipf, .g3c .ipf:not(:empty) { margin-right: 0; }
+  .g3t { font-family: inherit; font-size: 0.62em; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--dim); }
   .ns-lane .ce .cv { flex: 0 0 auto; font-size: 0.85em; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.05em; }
   .ns-lane .ce .cq { flex: 0 0 auto; font-size: 0.78em; opacity: 0.8; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; line-height: 1.35; }
   .ns-lane .ce .cx { flex: 0 0 auto; font-size: 0.85em; opacity: 0.9; font-weight: 700; }
@@ -5189,7 +5479,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -5278,7 +5568,7 @@ $HtmlPageLight = @'
       </div>
     </div>
   </div>
-  <footer id="foot">Aggiornamento in tempo reale ogni secondo - Bandierina = paese stimato del server del dominio (IP geolocalizzato offline con DB-IP.com, CC BY 4.0; grafica bandiere Twemoji, CC BY 4.0)</footer>
+  <footer id="foot">Aggiornamento in tempo reale ogni secondo - Bandierina = paese stimato del server del dominio (IP geolocalizzato offline con DB-IP.com, CC BY 4.0; grafica bandiere Twemoji, CC BY 4.0; IPinfo.io; This product includes GeoLite2 data created by MaxMind, available from maxmind.com)</footer>
 </div>
 
 <script>
@@ -5691,8 +5981,8 @@ $HtmlPageLight = @'
   function ipgIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG[k] = m[k]; } }
   function ipgLan(ip) {
     ip = String(ip || '').replace(/^\[|\]$/g, '');
-    var m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
-    if (m) { var a = +m[1], b = +m[2]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127); }
+    var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/.exec(ip);
+    if (m) { var a = +m[1], b = +m[2], c3 = +m[3]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) || (a === 192 && b === 0 && (c3 === 0 || c3 === 2)) || (a === 198 && (b === 18 || b === 19)) || (a === 198 && b === 51 && c3 === 100) || (a === 203 && b === 0 && c3 === 113); }
     if (ip.indexOf(':') >= 0) { var l = ip.toLowerCase(); return l === '::1' || l === '::' || /^fe[89ab]/.test(l) || /^f[cd]/.test(l); }
     return false;
   }
@@ -5713,6 +6003,52 @@ $HtmlPageLight = @'
     if (!ip) return '';
     ipgSet(s, ip, cc, est);
     return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
+  }
+  /* [v1107.11] Tre provider (IPinfo, MaxMind, DB-IP): ip_geo3 = { indirizzo: 'IPinfo|MaxMind|DB-IP' }, codice a 2 lettere, '-' = non determinabile, '?' = in attesa */
+  var IPG3 = {}, IPG3N = ['IPinfo', 'MaxMind', 'DB-IP'], IPG3L = ['I', 'M', 'D'];
+  var IPG3A = {};   /* [v1111.2] ip_asn = { indirizzo: 'ASxxxx Operatore' } */
+  function ipg3AIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG3A[k] = m[k]; } }
+  function ipg3Org(ip) {
+    var k = String(ip || '').replace(/^\[|\]$/g, ''), i = k.indexOf('%');
+    if (i > 0) k = k.substring(0, i);
+    var v = IPG3A[k.toLowerCase()];
+    if (typeof v !== 'string' || !v) return '';
+    return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function ipg3In(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG3[k] = m[k]; } }
+  function ipg3Parts(ip) {
+    var k = String(ip || '').replace(/^\[|\]$/g, ''), i = k.indexOf('%');
+    if (i > 0) k = k.substring(0, i);
+    var v = IPG3[k.toLowerCase()];
+    if (typeof v !== 'string') return null;
+    var p = v.split('|');
+    return p.length === 3 ? p : null;
+  }
+  function ipg3Cells(p, abbr, org) {
+    var h = '';
+    for (var i = 0; i < 3; i++) {
+      var c = p[i], ok = /^[A-Z]{2}$/.test(c), peers = [];
+      for (var j = 0; j < 3; j++) { if (j !== i && /^[A-Z]{2}$/.test(p[j])) peers.push(p[j]); }
+      var diff = ok && peers.length > 0 && peers.indexOf(c) < 0;
+      var g = ok ? ipgChar(c) : (c === '?' ? '\u2026' : '\uD83C\uDF10');
+      var tip = IPG3N[i] + ': ' + (ok ? c : (c === '?' ? 'in attesa' : 'paese non determinabile')) + (diff ? ' (diverso dagli altri due provider)' : '') + (org && org.charAt(0) !== '!' ? '\nOperatore (ASN): ' + org : '') + (org && org.charAt(0) === '!' && i === 0 && !ok ? '\nMotivo: ' + org.substring(1) : '');
+      h += '<span class="g3c' + (diff ? ' diff' : '') + '" title="' + tip + '"><span class="ipf">' + g + '</span><span class="g3t">' + (abbr ? IPG3L[i] : IPG3N[i]) + '</span></span>';
+    }
+    return h;
+  }
+  function ipg3Block(ip, cc, est) {
+    if (!ip) return '';
+    if (ipgLan(ip)) return ipgHtml(ip);
+    var p = ipg3Parts(ip);
+    if (!p) return ipgHtml(ip, cc, est);
+    return '<div class="g3">' + ipg3Cells(p, false, ipg3Org(ip)) + '</div>';
+  }
+  function ipg3Inline(ip) {
+    if (!ip) return '';
+    if (ipgLan(ip)) return ipgHtml(ip);
+    var p = ipg3Parts(ip);
+    if (!p) return ipgHtml(ip, undefined, true);
+    return '<span class="g3 g3s">' + ipg3Cells(p, true, ipg3Org(ip)) + '</span>';
   }
   function ipgFlush() {
     if (!ipgPend.length) return;
@@ -5876,6 +6212,8 @@ $HtmlPageLight = @'
   }
   function nsUpdate(d) {
     try { ipgIn(d.ip_geo); } catch (e) {}
+    try { ipg3In(d.ip_geo3); } catch (e) {}
+    try { ipg3AIn(d.ip_asn); } catch (e) {}
     nsPotUpdate(d);
     var n = d.net_speed;
     if (n && n.ok) {
@@ -5888,18 +6226,18 @@ $HtmlPageLight = @'
     }
     var ip = d.connettivita_ip;
     if (ip) {
-      nsSet('nsPub', ip.ipv4_wan_ok ? ipgHtml(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
+      nsSet('nsPub', ip.ipv4_wan_ok ? ipg3Block(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
       nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
       // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
       var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-      nsSet('nsV4', l4.length ? l4.map(function (x) { return ipgHtml(x) + nsEsc(x); }).join('<br>') : 'N/D');
+      nsSet('nsV4', l4.length ? l4.map(function (x) { return ipg3Block(x) + nsEsc(x); }).join('<br>') : 'N/D');
       nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
       var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
       var a6 = [];
       if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
       l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
       if (a6.length) {
-        nsSet('nsV6', a6.map(function (x) { return ipgHtml(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x); }).join('<br>'));
+        nsSet('nsV6', a6.map(function (x) { return '<div>' + ipg3Block(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x) + '</div>'; }).join(''));
         nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
       } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
     }
@@ -5918,7 +6256,7 @@ $HtmlPageLight = @'
     var c = document.getElementById('nsDnsC');
     if (win) {
       c.className = 'ns-c win';
-      nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + ipgHtml(win.ip, undefined, true) + nsEsc(win.ip));
+      nsSet('nsDns', ipg3Block(win.ip, undefined, true) + nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
       nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
     } else {
       c.className = rad.length ? 'ns-c bad' : 'ns-c';
@@ -6633,7 +6971,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -6686,6 +7024,12 @@ $HtmlPage = @'
   /*FLAGFONT*/
   .ipf { font-family: "TwemojiFlags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; }
   .ipf:not(:empty) { margin-right: 0.35em; }
+  .g3 { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 3px; }
+  .g3s { display: inline-flex; flex-wrap: nowrap; gap: 5px; margin: 0 8px 0 0; vertical-align: middle; }
+  .g3c { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.1; padding-bottom: 1px; border-bottom: 2px solid transparent; }
+  .g3c.diff { border-bottom-color: #ffb300; }
+  .g3c .ipf, .g3c .ipf:not(:empty) { margin-right: 0; }
+  .g3t { font-family: inherit; font-size: 0.62em; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--dim); }
   /* ---------- Riga di rete: banda, IP, DNS del vincitore del radar ---------- */
   .netstrip { background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%); border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px 16px; margin: 0 0 18px; text-align: left; font-family: var(--font-ui); transition: opacity 0.4s; }
   .netstrip.stale { opacity: 0.45; filter: grayscale(0.7); }
@@ -7479,7 +7823,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.1 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -7774,7 +8118,7 @@ $HtmlPage = @'
             <!-- Testi delle intestazioni snelliti -->
             <th>Stato</th>
             <th>Provider DoT</th>
-            <th>IP</th>
+            <th title="Bandierine del paese: I = IPinfo, M = MaxMind, D = DB-IP">IP <span style="font-weight:normal;font-size:0.8em;">(I = IPinfo, M = MaxMind, D = DB-IP)</span></th>
             <th>Ms</th>
             <th>Porta 853</th>
           </tr>
@@ -9249,8 +9593,8 @@ var IPG = {}, ipgPend = [];
 function ipgIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG[k] = m[k]; } }
 function ipgLan(ip) {
   ip = String(ip || '').replace(/^\[|\]$/g, '');
-  var m = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
-  if (m) { var a = +m[1], b = +m[2]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127); }
+  var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/.exec(ip);
+  if (m) { var a = +m[1], b = +m[2], c3 = +m[3]; return a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) || (a === 192 && b === 0 && (c3 === 0 || c3 === 2)) || (a === 198 && (b === 18 || b === 19)) || (a === 198 && b === 51 && c3 === 100) || (a === 203 && b === 0 && c3 === 113); }
   if (ip.indexOf(':') >= 0) { var l = ip.toLowerCase(); return l === '::1' || l === '::' || /^fe[89ab]/.test(l) || /^f[cd]/.test(l); }
   return false;
 }
@@ -9272,6 +9616,52 @@ function ipgHtml(ip, cc, est) {
   ipgSet(s, ip, cc, est);
   return '<span class="ipf" title="' + s.title.replace(/"/g, '&quot;') + '">' + s.textContent + '</span>';
 }
+/* [v1107.11] Tre provider (IPinfo, MaxMind, DB-IP): ip_geo3 = { indirizzo: 'IPinfo|MaxMind|DB-IP' }, codice a 2 lettere, '-' = non determinabile, '?' = in attesa */
+var IPG3 = {}, IPG3N = ['IPinfo', 'MaxMind', 'DB-IP'], IPG3L = ['I', 'M', 'D'];
+var IPG3A = {};   /* [v1111.2] ip_asn = { indirizzo: 'ASxxxx Operatore' } */
+function ipg3AIn(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG3A[k] = m[k]; } }
+function ipg3Org(ip) {
+  var k = String(ip || '').replace(/^\[|\]$/g, ''), i = k.indexOf('%');
+  if (i > 0) k = k.substring(0, i);
+  var v = IPG3A[k.toLowerCase()];
+  if (typeof v !== 'string' || !v) return '';
+  return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+function ipg3In(m) { if (!m) return; for (var k in m) { if (Object.prototype.hasOwnProperty.call(m, k)) IPG3[k] = m[k]; } }
+function ipg3Parts(ip) {
+  var k = String(ip || '').replace(/^\[|\]$/g, ''), i = k.indexOf('%');
+  if (i > 0) k = k.substring(0, i);
+  var v = IPG3[k.toLowerCase()];
+  if (typeof v !== 'string') return null;
+  var p = v.split('|');
+  return p.length === 3 ? p : null;
+}
+function ipg3Cells(p, abbr, org) {
+  var h = '';
+  for (var i = 0; i < 3; i++) {
+    var c = p[i], ok = /^[A-Z]{2}$/.test(c), peers = [];
+    for (var j = 0; j < 3; j++) { if (j !== i && /^[A-Z]{2}$/.test(p[j])) peers.push(p[j]); }
+    var diff = ok && peers.length > 0 && peers.indexOf(c) < 0;
+    var g = ok ? ipgChar(c) : (c === '?' ? '\u2026' : '\uD83C\uDF10');
+    var tip = IPG3N[i] + ': ' + (ok ? c : (c === '?' ? 'in attesa' : 'paese non determinabile')) + (diff ? ' (diverso dagli altri due provider)' : '') + (org && org.charAt(0) !== '!' ? '\nOperatore (ASN): ' + org : '') + (org && org.charAt(0) === '!' && i === 0 && !ok ? '\nMotivo: ' + org.substring(1) : '');
+    h += '<span class="g3c' + (diff ? ' diff' : '') + '" title="' + tip + '"><span class="ipf">' + g + '</span><span class="g3t">' + (abbr ? IPG3L[i] : IPG3N[i]) + '</span></span>';
+  }
+  return h;
+}
+function ipg3Block(ip, cc, est) {
+  if (!ip) return '';
+  if (ipgLan(ip)) return ipgHtml(ip);
+  var p = ipg3Parts(ip);
+  if (!p) return ipgHtml(ip, cc, est);
+  return '<div class="g3">' + ipg3Cells(p, false, ipg3Org(ip)) + '</div>';
+}
+function ipg3Inline(ip) {
+  if (!ip) return '';
+  if (ipgLan(ip)) return ipgHtml(ip);
+  var p = ipg3Parts(ip);
+  if (!p) return ipgHtml(ip, undefined, true);
+  return '<span class="g3 g3s">' + ipg3Cells(p, true, ipg3Org(ip)) + '</span>';
+}
 function ipgFlush() {
   if (!ipgPend.length) return;
   var keep = [];
@@ -9285,6 +9675,8 @@ function ipgFlush() {
 }
 function nsUpdate(d) {
   try { ipgIn(d.ip_geo); } catch (e) {}
+    try { ipg3In(d.ip_geo3); } catch (e) {}
+    try { ipg3AIn(d.ip_asn); } catch (e) {}
   nsPotUpdate(d);
   var n = d.net_speed;
   if (n && n.ok) {
@@ -9297,18 +9689,18 @@ function nsUpdate(d) {
   }
   var ip = d.connettivita_ip;
   if (ip) {
-    nsSet('nsPub', ip.ipv4_wan_ok ? ipgHtml(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
+    nsSet('nsPub', ip.ipv4_wan_ok ? ipg3Block(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
     nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
     // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
     var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-    nsSet('nsV4', l4.length ? l4.map(function (x) { return ipgHtml(x) + nsEsc(x); }).join('<br>') : 'N/D');
+    nsSet('nsV4', l4.length ? l4.map(function (x) { return ipg3Block(x) + nsEsc(x); }).join('<br>') : 'N/D');
     nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
     var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
     var a6 = [];
     if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
     l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
     if (a6.length) {
-      nsSet('nsV6', a6.map(function (x) { return ipgHtml(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x); }).join('<br>'));
+      nsSet('nsV6', a6.map(function (x) { return '<div>' + ipg3Block(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x) + '</div>'; }).join(''));
       nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
     } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
   }
@@ -9327,7 +9719,7 @@ function nsUpdate(d) {
   var c = document.getElementById('nsDnsC');
   if (win) {
     c.className = 'ns-c win';
-    nsSet('nsDns', nsEsc(win.tag || 'Upstream') + ' ' + ipgHtml(win.ip, undefined, true) + nsEsc(win.ip));
+    nsSet('nsDns', ipg3Block(win.ip, undefined, true) + nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
     nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
   } else {
     c.className = rad.length ? 'ns-c bad' : 'ns-c';
@@ -9919,6 +10311,8 @@ async function refresh(forceVersions) {
     const tbodyRadar = document.querySelector('#tabellaRadar tbody');
     tbodyRadar.innerHTML = '';
     ipgIn(d.ip_geo);
+    ipg3In(d.ip_geo3);
+    ipg3AIn(d.ip_asn);
     let radar = d.upstream_radar || [];
     if (!Array.isArray(radar)) { radar = [radar]; }
 
@@ -9936,7 +10330,7 @@ async function refresh(forceVersions) {
         const stText = r.ok ? '<span class="esito-ok">PORTA 853 OK</span>' : '<span class="esito-warn">IRRAGGIUNGIBILE</span>';
         const msText = r.ok ? r.ms + ' ms' : 'TIMEOUT';
 
-        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${ipgHtml(r.ip, undefined, true)}${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="color:${rc}; font-weight:bold;">${msText}</td><td>${stText}</td>`;
+        tr.innerHTML = `<td>${stIcon}</td><td style="font-weight:bold;">${tagHtml}</td><td>${ipg3Inline(r.ip)}${r.ip || '-'}:${r.port || '853'}</td><td class="latency" style="color:${rc}; font-weight:bold;">${msText}</td><td>${stText}</td>`;
         tbodyRadar.appendChild(tr);
       });
     }
