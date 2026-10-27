@@ -4383,6 +4383,7 @@ $HtmlShell = @'
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
   })();
   // Mirror ball con raggi a 360 gradi nella barra radio: gira e proietta i fasci solo in riproduzione
+  // [v1111.6] due palle: a sinistra in senso orario, a destra (specchiata) in senso antiorario
   (function () {
     var cv = document.getElementById('radioDisco');
     if (!cv) return;
@@ -4390,23 +4391,24 @@ $HtmlShell = @'
     var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var LV = [-0.506, 0.557, 0.658];
     function hash(i, j) { var s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s - Math.floor(s); }
-    function pt(a, th, rot, cy) {
+    // [v1111.6] pt/ball/beams ricevono il centro cx e il verso dir (+1 = orario, la palla di sinistra; -1 = antiorario, la palla di destra)
+    function pt(a, th, rot, cx, cy) {
       var ph = a + rot, nx = Math.cos(th) * Math.sin(ph), ny = Math.sin(th), nz = Math.cos(th) * Math.cos(ph);
-      return {x: CX + R * nx, y: cy - R * ny, nx: nx, ny: ny, nz: nz};
+      return {x: cx + R * nx, y: cy - R * ny, nx: nx, ny: ny, nz: nz};
     }
-    function ball(cy, time) {
-      var rot = time * 0.9, i, j, k, g = x.createRadialGradient(CX, cy, R * 0.8, CX, cy, R * 1.9);
+    function ball(cx, cy, time, dir) {
+      var rot = time * 0.9 * dir, i, j, k, g = x.createRadialGradient(cx, cy, R * 0.8, cx, cy, R * 1.9);
       g.addColorStop(0, 'rgba(200,210,255,0.35)'); g.addColorStop(1, 'rgba(200,210,255,0)');
-      x.fillStyle = g; x.beginPath(); x.arc(CX, cy, R * 1.9, 0, 7); x.fill();
-      x.fillStyle = '#111'; x.beginPath(); x.arc(CX, cy, R, 0, 7); x.fill();
+      x.fillStyle = g; x.beginPath(); x.arc(cx, cy, R * 1.9, 0, 7); x.fill();
+      x.fillStyle = '#111'; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill();
       for (i = 0; i < LAT; i++) {
         var t0 = -Math.PI / 2 + Math.PI * i / LAT, t1 = -Math.PI / 2 + Math.PI * (i + 1) / LAT, tm = (t0 + t1) / 2;
         for (j = 0; j < LON; j++) {
-          var a0 = 2 * Math.PI * j / LON, a1 = 2 * Math.PI * (j + 1) / LON, c = pt((a0 + a1) / 2, tm, rot, cy);
+          var a0 = 2 * Math.PI * j / LON, a1 = 2 * Math.PI * (j + 1) / LON, c = pt((a0 + a1) / 2, tm, rot, cx, cy);
           if (c.nz <= 0.02) continue;
-          var h = hash(i, j), dif = Math.max(0, c.nx * LV[0] + c.ny * LV[1] + c.nz * LV[2]);
+          var h = hash(i, j), dif = Math.max(0, (c.nx * dir) * LV[0] + c.ny * LV[1] + c.nz * LV[2]);
           var tw = run ? Math.pow(0.5 + 0.5 * Math.sin(time * 3.2 + h * 60), 14) : 0;
-          var v = Math.round(40 + 110 * dif + 60 * c.nz * h), p = [pt(a0, t0, rot, cy), pt(a1, t0, rot, cy), pt(a1, t1, rot, cy), pt(a0, t1, rot, cy)];
+          var v = Math.round(40 + 110 * dif + 60 * c.nz * h), p = [pt(a0, t0, rot, cx, cy), pt(a1, t0, rot, cx, cy), pt(a1, t1, rot, cx, cy), pt(a0, t1, rot, cx, cy)];
           x.beginPath(); x.moveTo(p[0].x, p[0].y);
           for (k = 1; k < 4; k++) x.lineTo(p[k].x, p[k].y);
           x.closePath(); x.fillStyle = 'rgb(' + v + ',' + v + ',' + Math.min(255, v + 25) + ')'; x.fill();
@@ -4414,31 +4416,36 @@ $HtmlShell = @'
           x.strokeStyle = 'rgba(0,0,0,0.55)'; x.lineWidth = 0.4; x.stroke();
         }
       }
-      var s = x.createRadialGradient(CX - R * 0.38, cy - R * 0.42, 0, CX - R * 0.38, cy - R * 0.42, R * 0.5);
+      var hx = cx - R * 0.38 * dir, s = x.createRadialGradient(hx, cy - R * 0.42, 0, hx, cy - R * 0.42, R * 0.5);
       s.addColorStop(0, 'rgba(255,255,255,0.8)'); s.addColorStop(1, 'rgba(255,255,255,0)');
-      x.fillStyle = s; x.beginPath(); x.arc(CX, cy, R, 0, 7); x.fill();
+      x.fillStyle = s; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.fill();
     }
-    function beams(cy, time) {
+    function beams(cx, cy, time, dir) {
       var D = Math.hypot(W, H), k;
       x.save(); x.globalCompositeOperation = 'lighter';
       for (k = 0; k < BEAMS; k++) {
-        var a = time * 0.55 + k * 2 * Math.PI / BEAMS, w = 0.035 + 0.012 * Math.sin(time * 1.3 + k), hue = (k * 30 + time * 35) % 360;
-        var g = x.createLinearGradient(CX, cy, CX + Math.cos(a) * D, cy + Math.sin(a) * D);
+        var a = time * 0.55 * dir + k * 2 * Math.PI / BEAMS, w = 0.035 + 0.012 * Math.sin(time * 1.3 + k), hue = (k * 30 + time * 35) % 360;
+        var g = x.createLinearGradient(cx, cy, cx + Math.cos(a) * D, cy + Math.sin(a) * D);
         g.addColorStop(0, 'hsla(' + hue + ',95%,65%,0.38)'); g.addColorStop(1, 'hsla(' + hue + ',95%,65%,0)');
-        x.fillStyle = g; x.beginPath(); x.moveTo(CX, cy);
-        x.lineTo(CX + Math.cos(a - w) * D, cy + Math.sin(a - w) * D); x.lineTo(CX + Math.cos(a + w) * D, cy + Math.sin(a + w) * D);
+        x.fillStyle = g; x.beginPath(); x.moveTo(cx, cy);
+        x.lineTo(cx + Math.cos(a - w) * D, cy + Math.sin(a - w) * D); x.lineTo(cx + Math.cos(a + w) * D, cy + Math.sin(a + w) * D);
         x.closePath(); x.fill();
         var dx = Math.cos(a), dy = Math.sin(a), tt = 1e9;
-        if (dx > 1e-4) tt = Math.min(tt, (W - CX) / dx); else if (dx < -1e-4) tt = Math.min(tt, -CX / dx);
+        if (dx > 1e-4) tt = Math.min(tt, (W - cx) / dx); else if (dx < -1e-4) tt = Math.min(tt, -cx / dx);
         if (dy > 1e-4) tt = Math.min(tt, (H - cy) / dy); else if (dy < -1e-4) tt = Math.min(tt, -cy / dy);
-        var px = CX + dx * tt, py = cy + dy * tt, sr = Math.max(4, H * 0.09) * (0.7 + tt / D * 1.2), vert = Math.abs(dy) > Math.abs(dx);
+        var px = cx + dx * tt, py = cy + dy * tt, sr = Math.max(4, H * 0.09) * (0.7 + tt / D * 1.2), vert = Math.abs(dy) > Math.abs(dx);
         var sg = x.createRadialGradient(px, py, 0, px, py, sr);
         sg.addColorStop(0, 'hsla(' + hue + ',100%,80%,0.9)'); sg.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
         x.fillStyle = sg; x.beginPath(); x.ellipse(px, py, sr * (vert ? 1.8 : 0.8), sr * (vert ? 0.8 : 1.8), 0, 0, 7); x.fill();
       }
       x.restore();
     }
-    function draw() { x.clearRect(0, 0, W, H); if (run) beams(H / 2, t); ball(H / 2, t); }
+    function draw() {
+      var cxr = W - CX;   // [v1111.6] seconda mirror ball a destra, specchiata e in senso antiorario
+      x.clearRect(0, 0, W, H);
+      if (run) { beams(CX, H / 2, t, 1); beams(cxr, H / 2, t, -1); }
+      ball(CX, H / 2, t, 1); ball(cxr, H / 2, t, -1);
+    }
     function size() {
       var d = Math.min(window.devicePixelRatio || 1, 2);
       W = cv.clientWidth; H = cv.clientHeight; if (!W || !H) return;
@@ -5566,7 +5573,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -7063,7 +7070,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7920,7 +7927,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
