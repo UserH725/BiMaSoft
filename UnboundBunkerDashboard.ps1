@@ -4060,6 +4060,8 @@ $HtmlShell = @'
   #radioNotes .rn { position: absolute; top: 40px; line-height: 1; will-change: transform, opacity; opacity: 0; animation-name: rnUp; animation-timing-function: ease-out; animation-iteration-count: infinite; }
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 15% { opacity: 0.85; } 100% { transform: translateY(-64px) rotate(14deg); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #radioNotes { display: none; } }
+  #radioDisco { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+  @media (max-width: 760px) { #radioDisco { display: none; } }
   #radioBtn { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.85); background: linear-gradient(135deg, #ff2d95, #ff9500, #ffe600, #2dff7a, #00c8ff, #7a3dff, #ff2d95); background-size: 400% 400%; animation: rbFlow 5s linear infinite, rbGlow 2.4s ease-in-out infinite; color: #fff; font-size: 20px; text-shadow: 0 1px 3px rgba(0,0,0,0.65); cursor: pointer; padding: 0; line-height: 1; transition: transform .15s ease; }
   #radioBtn:hover { transform: scale(1.12); animation-duration: 2s, 1.2s; }
   #radioBtn:active { transform: scale(0.94); }
@@ -4180,6 +4182,7 @@ $HtmlShell = @'
 <body>
 <div id="radioBar">
   <div id="radioNotes" aria-hidden="true"></div>
+  <canvas id="radioDisco" aria-hidden="true"></canvas>
   <button id="radioBtn" type="button" title="Play / Pausa">&#9654;</button>
   <div id="radioViz" aria-hidden="true"></div>
   <span id="radioState" class="buf"><span class="rs-led"><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-ring"></i><i class="rs-dot"></i></span><span class="rs-tx">connessione...</span></span>
@@ -4379,6 +4382,84 @@ $HtmlShell = @'
     build();
     window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(build, 300); });
   })();
+  // Mirror ball con raggi a 360 gradi nella barra radio: gira e proietta i fasci solo in riproduzione
+  (function () {
+    var cv = document.getElementById('radioDisco');
+    if (!cv) return;
+    var LAT = 11, LON = 24, BEAMS = 12, CX = 34, R = 20, run = false, t = 0, last = 0, raf = 0, W = 0, H = 0, x = cv.getContext('2d');
+    var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var LV = [-0.506, 0.557, 0.658];
+    function hash(i, j) { var s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s - Math.floor(s); }
+    function pt(a, th, rot, cy) {
+      var ph = a + rot, nx = Math.cos(th) * Math.sin(ph), ny = Math.sin(th), nz = Math.cos(th) * Math.cos(ph);
+      return {x: CX + R * nx, y: cy - R * ny, nx: nx, ny: ny, nz: nz};
+    }
+    function ball(cy, time) {
+      var rot = time * 0.9, i, j, k, g = x.createRadialGradient(CX, cy, R * 0.8, CX, cy, R * 1.9);
+      g.addColorStop(0, 'rgba(200,210,255,0.35)'); g.addColorStop(1, 'rgba(200,210,255,0)');
+      x.fillStyle = g; x.beginPath(); x.arc(CX, cy, R * 1.9, 0, 7); x.fill();
+      x.fillStyle = '#111'; x.beginPath(); x.arc(CX, cy, R, 0, 7); x.fill();
+      for (i = 0; i < LAT; i++) {
+        var t0 = -Math.PI / 2 + Math.PI * i / LAT, t1 = -Math.PI / 2 + Math.PI * (i + 1) / LAT, tm = (t0 + t1) / 2;
+        for (j = 0; j < LON; j++) {
+          var a0 = 2 * Math.PI * j / LON, a1 = 2 * Math.PI * (j + 1) / LON, c = pt((a0 + a1) / 2, tm, rot, cy);
+          if (c.nz <= 0.02) continue;
+          var h = hash(i, j), dif = Math.max(0, c.nx * LV[0] + c.ny * LV[1] + c.nz * LV[2]);
+          var tw = run ? Math.pow(0.5 + 0.5 * Math.sin(time * 3.2 + h * 60), 14) : 0;
+          var v = Math.round(40 + 110 * dif + 60 * c.nz * h), p = [pt(a0, t0, rot, cy), pt(a1, t0, rot, cy), pt(a1, t1, rot, cy), pt(a0, t1, rot, cy)];
+          x.beginPath(); x.moveTo(p[0].x, p[0].y);
+          for (k = 1; k < 4; k++) x.lineTo(p[k].x, p[k].y);
+          x.closePath(); x.fillStyle = 'rgb(' + v + ',' + v + ',' + Math.min(255, v + 25) + ')'; x.fill();
+          if (tw > 0.05) { x.fillStyle = 'hsla(' + ((h * 360 + time * 40) % 360) + ',90%,75%,' + Math.min(1, tw * c.nz * 1.2) + ')'; x.fill(); }
+          x.strokeStyle = 'rgba(0,0,0,0.55)'; x.lineWidth = 0.4; x.stroke();
+        }
+      }
+      var s = x.createRadialGradient(CX - R * 0.38, cy - R * 0.42, 0, CX - R * 0.38, cy - R * 0.42, R * 0.5);
+      s.addColorStop(0, 'rgba(255,255,255,0.8)'); s.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = s; x.beginPath(); x.arc(CX, cy, R, 0, 7); x.fill();
+    }
+    function beams(cy, time) {
+      var D = Math.hypot(W, H), k;
+      x.save(); x.globalCompositeOperation = 'lighter';
+      for (k = 0; k < BEAMS; k++) {
+        var a = time * 0.55 + k * 2 * Math.PI / BEAMS, w = 0.035 + 0.012 * Math.sin(time * 1.3 + k), hue = (k * 30 + time * 35) % 360;
+        var g = x.createLinearGradient(CX, cy, CX + Math.cos(a) * D, cy + Math.sin(a) * D);
+        g.addColorStop(0, 'hsla(' + hue + ',95%,65%,0.38)'); g.addColorStop(1, 'hsla(' + hue + ',95%,65%,0)');
+        x.fillStyle = g; x.beginPath(); x.moveTo(CX, cy);
+        x.lineTo(CX + Math.cos(a - w) * D, cy + Math.sin(a - w) * D); x.lineTo(CX + Math.cos(a + w) * D, cy + Math.sin(a + w) * D);
+        x.closePath(); x.fill();
+        var dx = Math.cos(a), dy = Math.sin(a), tt = 1e9;
+        if (dx > 1e-4) tt = Math.min(tt, (W - CX) / dx); else if (dx < -1e-4) tt = Math.min(tt, -CX / dx);
+        if (dy > 1e-4) tt = Math.min(tt, (H - cy) / dy); else if (dy < -1e-4) tt = Math.min(tt, -cy / dy);
+        var px = CX + dx * tt, py = cy + dy * tt, sr = Math.max(4, H * 0.09) * (0.7 + tt / D * 1.2), vert = Math.abs(dy) > Math.abs(dx);
+        var sg = x.createRadialGradient(px, py, 0, px, py, sr);
+        sg.addColorStop(0, 'hsla(' + hue + ',100%,80%,0.9)'); sg.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        x.fillStyle = sg; x.beginPath(); x.ellipse(px, py, sr * (vert ? 1.8 : 0.8), sr * (vert ? 0.8 : 1.8), 0, 0, 7); x.fill();
+      }
+      x.restore();
+    }
+    function draw() { x.clearRect(0, 0, W, H); if (run) beams(H / 2, t); ball(H / 2, t); }
+    function size() {
+      var d = Math.min(window.devicePixelRatio || 1, 2);
+      W = cv.clientWidth; H = cv.clientHeight; if (!W || !H) return;
+      cv.width = Math.round(W * d); cv.height = Math.round(H * d); x.setTransform(d, 0, 0, d, 0, 0); draw();
+    }
+    function loop(ts) {
+      raf = 0;
+      if (!run || document.hidden || reduce) return;
+      if (!last) last = ts;
+      if (ts - last >= 33) { t += (ts - last) / 1000; last = ts; draw(); }
+      raf = requestAnimationFrame(loop);
+    }
+    window.rdDiscoSet = function (p) {
+      p = !!p; if (p === run) return;
+      run = p; last = 0;
+      if (run && !reduce) { if (!raf) raf = requestAnimationFrame(loop); } else draw();
+    };
+    document.addEventListener('visibilitychange', function () { last = 0; if (run && !reduce && !raf) raf = requestAnimationFrame(loop); });
+    window.addEventListener('resize', size);
+    size();
+  })();
   var STREAMS = RADIO_STATIONS[0].urls;
   var sIdx = 0;
   var au = document.getElementById('radioAudio'), btn = document.getElementById('radioBtn');
@@ -4394,6 +4475,7 @@ $HtmlShell = @'
   function setSt(cls, txt) { st.className = cls; st.querySelector('.rs-tx').textContent = txt; }
   function setUi(playing, msg) {
     btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+    if (window.rdDiscoSet) window.rdDiscoSet(playing);
     if (playing) setSt('on', msg);
     else if (/connessione/.test(msg)) setSt('buf', msg);
     else setSt('off', msg === 'in pausa' ? 'off line' : msg);
