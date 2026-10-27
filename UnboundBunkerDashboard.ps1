@@ -5355,6 +5355,11 @@ $HtmlPageLight = @'
   .ns-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
   .ns-dot.ok { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
   .ns-dot.bad { background: #ff5c5c; }
+  .ns-dr + .ns-dr { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--border); }
+  .ns-dl { display: flex; align-items: baseline; gap: 6px; }
+  .ns-dn { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
+  .ns-dt { flex: 1 1 auto; min-width: 0; }
+  .ns-dm { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
   /* Classifica bandierine: fila orizzontale (a capo su piu' righe) sopra ciascun log - sinistra/sopra Download, destra/sopra Upload */
@@ -5479,7 +5484,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -6251,13 +6256,18 @@ $HtmlPageLight = @'
     }
     var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
     rad = rad || [];
-    var win = null, okN = 0;
-    rad.forEach(function (r) { if (r && r.ok) { okN++; if (!win || r.ms < win.ms) win = r; } });
+    var okL = [];
+    rad.forEach(function (r) { if (r && r.ok) okL.push(r); });
+    okL.sort(function (a, b) { return a.ms - b.ms; });   /* [v1111.5] i 2 resolver piu' veloci del radar */
+    var okN = okL.length, win = okL[0] || null;
     var c = document.getElementById('nsDnsC');
     if (win) {
       c.className = 'ns-c win';
-      nsSet('nsDns', ipg3Block(win.ip, undefined, true) + nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
-      nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
+      nsSet('nsDns', okL.slice(0, 2).map(function (r, i) {
+        return '<div class="ns-dr">' + ipg3Block(r.ip, undefined, true) +
+          '<div class="ns-dl"><span class="ns-dn">' + (i + 1) + '&deg;</span><span class="ns-dt">' + nsEsc(r.tag || 'Upstream') + ' ' + nsEsc(r.ip) + '</span><span class="ns-dm">' + Math.round(r.ms) + ' ms</span></div></div>';
+      }).join(''));
+      nsSet('nsDnsS', '<span class="ns-dot ok"></span>radar \u00b7 ' + okN + '/' + rad.length);
     } else {
       c.className = rad.length ? 'ns-c bad' : 'ns-c';
       nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
@@ -6971,7 +6981,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7090,6 +7100,11 @@ $HtmlPage = @'
   .ns-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--dim); }
   .ns-dot.ok { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }
   .ns-dot.bad { background: #ff5c5c; }
+  .ns-dr + .ns-dr { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--border); }
+  .ns-dl { display: flex; align-items: baseline; gap: 6px; }
+  .ns-dn { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
+  .ns-dt { flex: 1 1 auto; min-width: 0; }
+  .ns-dm { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } }
 
@@ -7823,7 +7838,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.4 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.5 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -9714,13 +9729,18 @@ function nsUpdate(d) {
   }
   var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
   rad = rad || [];
-  var win = null, okN = 0;
-  rad.forEach(function (r) { if (r && r.ok) { okN++; if (!win || r.ms < win.ms) win = r; } });
+  var okL = [];
+  rad.forEach(function (r) { if (r && r.ok) okL.push(r); });
+  okL.sort(function (a, b) { return a.ms - b.ms; });   /* [v1111.5] i 2 resolver piu' veloci del radar */
+  var okN = okL.length, win = okL[0] || null;
   var c = document.getElementById('nsDnsC');
   if (win) {
     c.className = 'ns-c win';
-    nsSet('nsDns', ipg3Block(win.ip, undefined, true) + nsEsc(win.tag || 'Upstream') + ' ' + nsEsc(win.ip));
-    nsSet('nsDnsS', '<span class="ns-dot ok"></span>vincitore radar \u00b7 ' + Math.round(win.ms) + ' ms \u00b7 ' + okN + '/' + rad.length);
+    nsSet('nsDns', okL.slice(0, 2).map(function (r, i) {
+      return '<div class="ns-dr">' + ipg3Block(r.ip, undefined, true) +
+        '<div class="ns-dl"><span class="ns-dn">' + (i + 1) + '&deg;</span><span class="ns-dt">' + nsEsc(r.tag || 'Upstream') + ' ' + nsEsc(r.ip) + '</span><span class="ns-dm">' + Math.round(r.ms) + ' ms</span></div></div>';
+    }).join(''));
+    nsSet('nsDnsS', '<span class="ns-dot ok"></span>radar \u00b7 ' + okN + '/' + rad.length);
   } else {
     c.className = rad.length ? 'ns-c bad' : 'ns-c';
     nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
