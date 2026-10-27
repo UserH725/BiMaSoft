@@ -1976,74 +1976,177 @@
       c.strokeStyle = 'rgba(255,255,255,.8)'; c.lineWidth = 1.2;
       c.beginPath(); c.moveTo(x - sz * 1.6, y); c.lineTo(x + sz * 1.6, y); c.moveTo(x, y - sz * 1.6); c.lineTo(x, y + sz * 1.6); c.stroke();
     }
-    /* mirror ball al posto del disco: dietro ai contenuti (sfondo e sovraimpressione), in trasparenza leggera */
-    var BN = 16, bcv = document.getElementById('ballBg'), bcx = bcv && bcv.getContext('2d'), bDirty = false;
+/* mirror ball iper-realistica: shading 3D, raggi volumetrici e lens flare dinamici */
+    var BN = 40, bcv = document.getElementById('ballBg'), bcx = bcv && bcv.getContext('2d'), bDirty = false;
+    
     function ball(c, bx, by, R, L, t) {
-      var rot = t * 0.28, ct = Math.cos(0.3), st = Math.sin(0.3), NL = 10, NO = 20, pl = 0.65 + beat * 0.5,
+      // 1. Rotazione 360° e tilt asse X
+      var rotY = t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15;
+      var ct = Math.cos(rotX), st = Math.sin(rotX);
+      
+      // 2. Griglia ad alta densità
+      var NL = 20, NO = 40, pl = 0.65 + beat * 0.5,
           k, m, a, len, hue, al, x0, y0, x1, y1, g, u, px, py, i2, j, la0, la1, lo0, lo1, tc, q, sh, sp, cxx, cyy, e, gl = [];
+          
       function P(la, lo) {
-        var x = Math.cos(la) * Math.sin(lo + rot), y = Math.sin(la), z = Math.cos(la) * Math.cos(lo + rot);
+        var x = Math.cos(la) * Math.sin(lo + rotY);
+        var y = Math.sin(la);
+        var z = Math.cos(la) * Math.cos(lo + rotY);
         return [x, y * ct - z * st, y * st + z * ct];
       }
+      
+      // Coordinate della luce 3D per l'ombreggiatura
+      var lightX = 0.6, lightY = -0.5, lightZ = 0.7; 
+      var backLightX = -0.7, backLightY = 0.4, backLightZ = -0.4;
+
       c.globalAlpha = act; c.globalCompositeOperation = 'lighter';
       hue = (t * 30) % 360;
-      g = c.createRadialGradient(bx, by, R * 0.8, bx, by, R * 3);
-      g.addColorStop(0, 'hsla(' + hue + ',100%,70%,' + (0.28 + beat * 0.25) + ')'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
-      c.fillStyle = g; c.beginPath(); c.arc(bx, by, R * 3, 0, 6.3); c.fill();
+      
+      // 3. Aura ambientale profonda
+      g = c.createRadialGradient(bx, by, R * 0.5, bx, by, R * 4);
+      g.addColorStop(0, 'hsla(' + hue + ',100%,65%,' + (0.35 + pl * 0.25) + ')'); 
+      g.addColorStop(1, 'hsla(' + (hue + 40) % 360 + ',100%,50%,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(bx, by, R * 4, 0, 6.3); c.fill();
+      
       c.lineCap = 'round';
+      
+      // 4. Raggi luminosi multi-livello (Core intenso + Glow diffuso)
       for (k = 0; k < BN; k++) {
-        a = t * 0.45 + k * 6.2832 / BN + Math.sin(t * 0.7 + k * 1.3) * 0.1;
-        len = L * (0.6 + 0.4 * Math.abs(Math.sin(t * 0.35 + k * 2.1)));
-        hue = (t * 30 + k * 360 / BN) % 360;
-        al = (0.45 + 0.45 * pl) * (0.7 + 0.3 * Math.sin(t * 1.3 + k * 0.9));
+        a = t * -0.35 + k * 6.2832 / BN; 
+        len = L * (0.55 + 0.45 * Math.sin(t * 0.8 + k * 2.1));
+        var rHue = (t * 20 + k * 360 / BN) % 360;
+        
+        // Flicker (sfarfallio del raggio)
+        var flicker = 0.7 + 0.3 * Math.sin(t * 15 + k * 13);
+        al = (0.2 + 0.3 * pl) * (0.5 + 0.5 * Math.sin(t * 1.5 + k * 1.1)) * flicker;
+        
         x0 = bx + Math.cos(a) * R * 0.9; y0 = by + Math.sin(a) * R * 0.9;
         x1 = bx + Math.cos(a) * (R + len); y1 = by + Math.sin(a) * (R + len);
+        
         g = c.createLinearGradient(x0, y0, x1, y1);
-        g.addColorStop(0, 'hsla(' + hue + ',100%,72%,' + al + ')'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
-        px = Math.cos(a + 1.5708) * len * 0.03; py = Math.sin(a + 1.5708) * len * 0.03;
+        g.addColorStop(0, 'hsla(' + rHue + ',100%,80%,' + al + ')'); 
+        g.addColorStop(1, 'hsla(' + rHue + ',100%,50%,0)');
+        
+        // Glow (raggio largo fumoso)
+        px = Math.cos(a + 1.5708) * len * 0.07; py = Math.sin(a + 1.5708) * len * 0.07;
         c.fillStyle = g; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1 + px, y1 + py); c.lineTo(x1 - px, y1 - py); c.closePath();
-        c.globalAlpha = act * 0.35; c.fill(); c.globalAlpha = act;
-        c.strokeStyle = g; c.lineWidth = Math.max(2, R * 0.03); c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
-        for (m = 0; m < 2; m++) {
-          u = (t * 0.22 + k * 0.37 + m * 0.5) % 1;
-          c.fillStyle = 'hsla(' + hue + ',100%,80%,' + ((1 - u) * 0.85) + ')';
-          c.beginPath(); c.arc(bx + Math.cos(a) * (R + u * len), by + Math.sin(a) * (R + u * len), 1.5 + (1 - u) * 2.5, 0, 6.3); c.fill();
+        c.globalAlpha = act * 0.3; c.fill(); 
+        
+        // Core (raggio laser interno)
+        c.globalAlpha = act * 0.75;
+        c.strokeStyle = g; c.lineWidth = Math.max(1.5, R * 0.015); 
+        c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+        
+        // Particelle (pulviscolo che ondeggia nel raggio)
+        c.globalAlpha = act;
+        for (m = 0; m < 3; m++) {
+          u = (t * 0.15 + k * 0.23 + m * 0.35) % 1;
+          var sparkA = a + Math.sin(t * 2.5 + k + m) * 0.04; // Zig-zag
+          c.fillStyle = 'hsla(' + rHue + ',100%,95%,' + ((1 - u) * Math.pow(flicker, 2)) + ')';
+          c.beginPath(); 
+          c.arc(bx + Math.cos(sparkA) * (R + u * len), by + Math.sin(sparkA) * (R + u * len), 0.8 + (1 - u) * 2.2, 0, 6.3); 
+          c.fill();
         }
       }
-      c.lineCap = 'butt';
+      
       c.globalCompositeOperation = 'source-over';
-      c.fillStyle = '#14141b'; c.beginPath(); c.arc(bx, by, R, 0, 6.3); c.fill();
+      
+      // Sfera di base (sfondo dietro le tessere, crea lo spessore scuro e profondo)
+      var baseG = c.createRadialGradient(bx - R*0.3, by - R*0.3, 0, bx, by, R);
+      baseG.addColorStop(0, '#1b1d26');
+      baseG.addColorStop(1, '#020204');
+      c.fillStyle = baseG; c.beginPath(); c.arc(bx, by, R, 0, 6.3); c.fill();
+      
+      // 5. Specchietti con Modello di Illuminazione 3D (Phong Shading)
       for (i2 = 0; i2 < NL; i2++) {
         la0 = -1.5708 + i2 * 3.1416 / NL; la1 = la0 + 3.1416 / NL;
         for (j = 0; j < NO; j++) {
           lo0 = j * 6.2832 / NO; lo1 = lo0 + 6.2832 / NO;
           tc = P((la0 + la1) / 2, (lo0 + lo1) / 2);
-          if (tc[2] < 0.04) continue;
+          
+          if (tc[2] < 0.01) continue; // Nascondi facce dietro la sfera
+          
           q = [P(la0, lo0), P(la0, lo1), P(la1, lo1), P(la1, lo0)];
-          sh = Math.max(0, -tc[0] * 0.45 + tc[1] * 0.5 + tc[2] * 0.7);
-          sp = Math.sin(t * (1.5 + ((i2 * 7 + j * 13) % 5) * 0.5) + i2 * 2.3 + j * 1.7);
           cxx = bx + tc[0] * R; cyy = by - tc[1] * R;
-          if (sp > 0.93 || (beat > 0.6 && sp > 0.55)) {
-            hue = (t * 40 + j * 18 + i2 * 30) % 360;
-            c.fillStyle = 'hsl(' + Math.round(hue) + ',100%,68%)';
-            if (sp > 0.97) gl.push([cxx, cyy, hue]);
-          } else c.fillStyle = 'hsl(220,12%,' + (20 + sh * 52 + ((i2 + j) & 1) * 5).toFixed(1) + '%)';
+          
+          // Luce diffusa (Calcolo normale vs Vettore luce)
+          var dotLight = Math.max(0, tc[0] * lightX + tc[1] * lightY + tc[2] * lightZ);
+          var dotBack = Math.max(0, tc[0] * backLightX + tc[1] * backLightY + tc[2] * backLightZ);
+          
+          // Punto di luce speculare accecante
+          var specular = Math.pow(dotLight, 16);
+          
+          // Calcolo colori vetro
+          var tileHue = (t * 15 + j * 5) % 360;
+          var lum = 12 + dotLight * 48 + dotBack * 20 + ((i2 + j) & 1) * 7;
+          var sat = 15 + dotLight * 35;
+          
+          // Pattern ritmico (i tasselli si accendono casualmente col beat)
+          sp = Math.sin(t * (2.2 + ((i2 * 3 + j * 7) % 11) * 0.3) + i2 * 2.5 + j * 1.8);
+          if (sp > 0.94 || (beat > 0.5 && sp > 0.55)) {
+            var fHue = (t * 40 + j * 20 + i2 * 30) % 360;
+            c.fillStyle = 'hsl(' + Math.round(fHue) + ', 95%, ' + Math.min(100, lum + 40) + '%)';
+            // Registra lens flare (tipo 1 = base, tipo 2 = speculare)
+            if (sp > 0.97 || specular > 0.6) gl.push([cxx, cyy, fHue, specular > 0.6 ? 2 : 1]);
+          } else {
+            // Fusione del colore vetro con il bianco del riflesso diretto
+            if (specular > 0.3) {
+               c.fillStyle = 'hsl(' + tileHue + ', ' + sat + '%, ' + Math.min(100, lum + specular * 60) + '%)';
+            } else {
+               c.fillStyle = 'hsl(' + tileHue + ', ' + sat + '%, ' + lum + '%)';
+            }
+          }
+          
           c.beginPath();
           for (e = 0; e < 4; e++) {
-            px = cxx + (bx + q[e][0] * R - cxx) * 0.88; py = cyy + (by - q[e][1] * R - cyy) * 0.88;
+            // Effetto prospettico dello spessore (ruba spazio ai bordi esterni)
+            var scale = 0.95 - (1 - tc[2]) * 0.055; 
+            px = cxx + (bx + q[e][0] * R - cxx) * scale; 
+            py = cyy + (by - q[e][1] * R - cyy) * scale;
             if (e) c.lineTo(px, py); else c.moveTo(px, py);
           }
           c.closePath(); c.fill();
         }
       }
+      
       c.globalCompositeOperation = 'lighter';
-      g = c.createRadialGradient(bx - R * 0.4, by - R * 0.45, 0, bx - R * 0.4, by - R * 0.45, R * 0.55);
-      g.addColorStop(0, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      // 6. Nebbia diffusa sull'emisfero frontale
+      g = c.createRadialGradient(bx - R * 0.2, by - R * 0.2, 0, bx, by, R * 1.1);
+      g.addColorStop(0, 'rgba(255,255,255,.3)'); 
+      g.addColorStop(0.5, 'rgba(150,200,255,.1)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
       c.fillStyle = g; c.beginPath(); c.arc(bx, by, R, 0, 6.3); c.fill();
-      for (k = 0; k < gl.length && k < 4; k++) glint(gl[k][0], gl[k][1], R * 0.16, gl[k][2], c);
+      
+      // 7. Lens Flares (Bagliori stellari)
+      for (k = 0; k < gl.length && k < 8; k++) {
+        var gx = gl[k][0], gy = gl[k][1], ghue = gl[k][2], gtype = gl[k][3];
+        var gsz = R * (gtype === 2 ? 0.35 : 0.16); // I flares sui riflessi speculari sono enormi
+        
+        var lg = c.createRadialGradient(gx, gy, 0, gx, gy, gsz);
+        lg.addColorStop(0, 'rgba(255,255,255,1)'); 
+        lg.addColorStop(0.2, 'hsla(' + ghue + ',100%,80%,.7)'); 
+        lg.addColorStop(1, 'hsla(' + ghue + ',100%,60%,0)');
+        
+        c.fillStyle = lg; c.beginPath(); c.arc(gx, gy, gsz, 0, 6.3); c.fill();
+        
+        // Stella a croce orizzontale/verticale
+        c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = gtype === 2 ? 2.5 : 1.2;
+        c.beginPath(); 
+        c.moveTo(gx - gsz * 1.5, gy); c.lineTo(gx + gsz * 1.5, gy); 
+        c.moveTo(gx, gy - gsz * 1.5); c.lineTo(gx, gy + gsz * 1.5); 
+        c.stroke();
+        
+        // Raggi diagonali extra per il super-flare speculare
+        if (gtype === 2) {
+           c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1;
+           c.beginPath(); 
+           c.moveTo(gx - gsz * 0.8, gy - gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy + gsz * 0.8); 
+           c.moveTo(gx - gsz * 0.8, gy + gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy - gsz * 0.8); 
+           c.stroke();
+        }
+      }
       c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
-    }
-    /* centrata in orizzontale, vicino al bordo inferiore; diametro proporzionale al lato corto dello schermo */
+    }    /* centrata in orizzontale, vicino al bordo inferiore; diametro proporzionale al lato corto dello schermo */
     function balls(t) {
       if (!bcx) return;
       bcx.clearRect(0, 0, W, H);
