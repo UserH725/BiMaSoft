@@ -1991,6 +1991,35 @@
 /* mirror ball iper-realistica: shading 3D, raggi volumetrici e lens flare dinamici */
     var BN = 40, bcv = document.getElementById('ballBg'), bcx = bcv && bcv.getContext('2d'), bDirty = false;
     
+    /* due luci dietro la mirror ball: nascono circa dal centro della palla (coperte dalla sfera) e ruotano lente, anche di 360°,
+       con velocità e verso che cambiano senza ordine; le due luci sono indipendenti */
+    var bbm = [{ a: 0, w: 0, wt: 0.3, nm: 0, hue: 46, sat: 100, lum: 58, lumC: 82, hs: 0 },
+      { a: 3.1, w: 0, wt: -0.25, nm: 0, hue: 42, sat: 22, lum: 92, lumC: 100, hs: 0 },
+      { a: 1.3, w: 0, wt: -0.35, nm: 0, hue: 46, sat: 100, lum: 58, lumC: 82, hs: 0 },
+      { a: 4.4, w: 0, wt: 0.2, nm: 0, hue: 200, sat: 100, lum: 58, lumC: 80, hs: 22 },
+      { a: 5.5, w: 0, wt: 0.28, nm: 0, hue: 42, sat: 22, lum: 92, lumC: 100, hs: 0 }], bbT = 0;
+    function ballBeams(c, bx, by, L, t) {
+      var dt = bbT ? Math.min(0.1, t - bbT) : 0, Lb = L * 1.7, wd = 0.1, mult = [1, 0.68, 0.42, 0.2], k, o, a, q, w, px, py, x1, y1, al, g;
+      bbT = t;
+      for (k = 0; k < bbm.length; k++) {
+        o = bbm[k];
+        if (o.hs) o.hue = (o.hue + o.hs * dt) % 360;
+        if (t >= o.nm) { o.wt = rnd(0.12, 0.45) * (Math.random() < 0.5 ? -1 : 1); o.nm = t + rnd(3, 9); }
+        o.w += (o.wt - o.w) * (1 - Math.pow(0.985, dt * 60));
+        o.a += o.w * dt;
+        a = o.a;
+        x1 = bx + Math.sin(a) * Lb; y1 = by - Math.cos(a) * Lb;
+        for (q = 0; q < 4; q++) {
+          w = wd * mult[q]; px = Math.cos(a) * Lb * w; py = Math.sin(a) * Lb * w;
+          al = 0.16 * (q > 1 ? 1.15 : 1);
+          g = c.createLinearGradient(bx, by, x1, y1);
+          g.addColorStop(0, 'hsla(' + o.hue + ',' + o.sat + '%,' + (q > 1 ? o.lumC : o.lum) + '%,' + al + ')');
+          g.addColorStop(0.55, 'hsla(' + o.hue + ',' + o.sat + '%,' + o.lum + '%,' + (al * 0.4) + ')');
+          g.addColorStop(1, 'hsla(' + o.hue + ',' + o.sat + '%,' + o.lum + '%,0)');
+          c.fillStyle = g; c.beginPath(); c.moveTo(bx, by); c.lineTo(x1 + px, y1 + py); c.lineTo(x1 - px, y1 - py); c.closePath(); c.fill();
+        }
+      }
+    }
     function ball(c, bx, by, R, L, t) {
       // 1. Rotazione 360° e tilt asse X
       var rotY = t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15;
@@ -2063,6 +2092,7 @@
       
       c.globalCompositeOperation = 'source-over';
       
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha = act; ballBeams(c, bx, by, L, t); c.globalCompositeOperation = 'source-over';
       // Sfera di base (sfondo dietro le tessere, crea lo spessore scuro e profondo)
       var baseG = c.createRadialGradient(bx - R*0.3, by - R*0.3, 0, bx, by, R);
       baseG.addColorStop(0, '#1b1d26');
@@ -2171,6 +2201,64 @@
       bDirty = false;
       if (bcx) bcx.clearRect(0, 0, W, H);
     }
+    /* luci da palco a incandescenza (non LED), senza legame con la musica e senza pulsazioni:
+       - 8 fasci morbidi da un unico punto centrale in alto, verso destra e sinistra, che oscillano senza regola, ognuno con tempi e verso propri
+       - 2 fari larghi a metà tra il centro e gli angoli (1/4 e 3/4), giallo e bianco alternati, che spazzano lenti da destra a sinistra e ritorno, non sincronizzati */
+    var stgN = 8, stg = [], swp = [], stgJ, stgO;
+    function stgKind() { var r = Math.random(); return r < 0.28 ? 0 : (r < 0.56 ? 1 : 2); }
+    for (stgJ = 0; stgJ < stgN; stgJ++) {
+      stgO = { side: stgJ % 2 ? 1 : -1, dir: ((stgJ >> 1) % 2) ? 1 : -1, kind: [0, 1, 2, 2, 1, 0, 2, 2][stgJ], h0: Math.random() * 360, hs: rnd(10, 40) * (Math.random() < 0.5 ? -1 : 1),
+               bs: 0, bt: 0, amp: rnd(0.35, 0.75), f1: rnd(0.3, 0.8), f2: rnd(0.8, 1.7), p1: Math.random() * 6.28, p2: Math.random() * 6.28,
+               wd: rnd(0.035, 0.07), pw: rnd(0.85, 1.15), nm: rnd(2, 6), nk: rnd(6, 16) };
+      stgO.bs = stgO.bt = stgO.side * rnd(0.25, 0.9);
+      stg.push(stgO);
+    }
+    for (stgJ = 0; stgJ < 2; stgJ++) swp.push({ x: stgJ ? 0.75 : 0.25, p: Math.random() * 6.28, f: stgJ ? 0.17 : 0.23, amp: stgJ ? 0.8 : 0.9, pc: Math.random() * 6.28, fc: stgJ ? 0.12 : 0.16, wd: stgJ ? 0.34 : 0.30 });
+    /* cono morbido: quattro passate sempre più strette e luminose, come un faro con foschia, più lampada calda alla sorgente */
+    function stgCone(x0, a, wd, base, hue, sat, lum, lumC, L, lr) {
+      var mult = [1, 0.68, 0.42, 0.2], q, w, px, py, al, g, x1 = x0 + Math.sin(a) * L, y1 = -4 + Math.cos(a) * L;
+      for (q = 0; q < 4; q++) {
+        w = wd * mult[q]; px = Math.cos(a) * L * w; py = -Math.sin(a) * L * w;
+        al = Math.min(0.9, base * (q > 1 ? 1.15 : 1));
+        g = cx.createLinearGradient(x0, -4, x1, y1);
+        g.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + (q > 1 ? lumC : lum) + '%,' + al + ')');
+        g.addColorStop(0.55, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,' + (al * 0.4) + ')');
+        g.addColorStop(1, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,0)');
+        cx.fillStyle = g; cx.beginPath(); cx.moveTo(x0, -4); cx.lineTo(x1 + px, y1 + py); cx.lineTo(x1 - px, y1 - py); cx.closePath(); cx.fill();
+      }
+      lr = lr || 7;
+      g = cx.createRadialGradient(x0, 0, 0, x0, 0, lr);
+      g.addColorStop(0, 'rgba(255,248,225,.6)'); g.addColorStop(0.3, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,.35)'); g.addColorStop(1, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,0)');
+      cx.fillStyle = g; cx.beginPath(); cx.arc(x0, 0, lr, 0, 6.3); cx.fill();
+    }
+    function drawStage(t, dt, L) {
+      var o, a, k, m, hue, sat, lum, lumC;
+      for (k = 0; k < stgN; k++) {
+        o = stg[k];
+        if (t >= o.nm) {
+          o.bt = o.side * rnd(0.2, 0.95); o.f1 = rnd(0.3, 0.8); o.f2 = rnd(0.8, 1.7); o.amp = rnd(0.35, 0.75);
+          if (Math.random() < 0.4) o.dir = -o.dir;
+          o.nm = t + rnd(3, 9);
+        }
+        if (t >= o.nk) { o.kind = stgKind(); o.hs = rnd(10, 40) * (Math.random() < 0.5 ? -1 : 1); o.nk = t + rnd(6, 18); }
+        o.p1 += o.f1 * o.dir * dt; o.p2 += o.f2 * o.dir * dt;
+        o.bs += (o.bt - o.bs) * (1 - Math.pow(0.97, dt * 60));
+        a = o.bs + o.amp * (0.65 * Math.sin(o.p1) + 0.35 * Math.sin(o.p2));
+        a = Math.max(-1.45, Math.min(1.45, a));
+        if (o.kind === 0) { hue = 46; sat = 100; lum = 58; lumC = 82; }
+        else if (o.kind === 1) { hue = 42; sat = 22; lum = 92; lumC = 100; }
+        else { hue = ((t * o.hs + o.h0) % 360 + 360) % 360; sat = 100; lum = 58; lumC = 80; }
+        stgCone(W / 2, a, o.wd, o.pw * 0.13, hue, sat, lum, lumC, L);
+      }
+      for (k = 0; k < 2; k++) {
+        o = swp[k];
+        o.p += o.f * dt; o.pc += o.fc * dt;
+        a = o.amp * Math.sin(o.p);
+        m = ease(0.5 + 0.75 * Math.sin(o.pc));
+        hue = 46 - 4 * m; sat = 100 - 78 * m; lum = 58 + 34 * m; lumC = 82 + 18 * m;
+        stgCone(o.x * W, a, o.wd, 0.09, hue, sat, lum, lumC, L, 14);
+      }
+    }
     function draw(t, dt) {
       var L = Math.hypot(W, H), pulse = 0.65 + beat * 0.5, e, o, u, env, a, hue, x0, y0, x1, y1, x2, y2, xm, ym, al, g, g2, px, py, f, b, rr, gg, hh, d, sp0 = 0.2;
       cx.clearRect(0, 0, W, H);
@@ -2212,6 +2300,7 @@
         cx.strokeStyle = g; cx.lineWidth = f ? 3 : 1.6; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(xm, ym); cx.stroke();
         glint(x0, y0 + 2, (f ? 16 : 8) + beat * 8, hue);
       }
+      drawStage(t, dt, L);
       for (i = 0; i < bk.length; i++) {
         b = bk[i]; b.y -= b.vy * dt / H; b.x += Math.sin(t * b.sw + b.ph) * 0.0003;
         if (b.y < -0.05) { b.y = 1.05; b.x = Math.random(); }
