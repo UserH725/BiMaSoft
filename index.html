@@ -343,6 +343,18 @@
   /* mirror ball al posto del disco (solo a luci accese): dietro ai contenuti, in trasparenza leggera */
   #bgDisc { transition: opacity .8s ease; }
   body.ball-on #bgDisc { opacity: 0; }
+  /* a luci discoteca accese: nasconde l'elenco/griglia delle radio e blocca lo scroll; l'intestazione con gli orologi resta visibile */
+  main { transition: opacity .6s ease, visibility 0s linear 0s; }
+  body.disco-on main { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .6s ease, visibility 0s linear .6s; }
+  html:has(body.disco-on) { overflow: hidden; }
+  /* riquadro della radio selezionata: dimensioni e caratteri dimezzati */
+  #ov .ovc { gap: 6px; padding: 10px; }
+  #ov .ovc-disc { width: min(70vw, 70vh, 140px); height: min(70vw, 70vh, 140px); }
+  #ovName { font-size: clamp(14px, 3.3vw, 19px); }
+  #ovSong { margin-top: 6px; font-size: clamp(10px, 2.1vw, 11px); }
+  #ovBadge { gap: 4px; margin-bottom: 5px; padding: 3px 7px 3px 5px; border-width: 1px; border-radius: 4px; font-size: 9px; }
+  #ovBadge svg { width: 12px; height: 12px; }
+  #ovInitBufWrap { max-width: 140px; height: 5px; margin-top: 4px; }
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 </style>
@@ -1427,7 +1439,7 @@
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovSongTx = document.getElementById('ovSongTx'), ovName = document.getElementById('ovName'), ovNameTx = document.getElementById('ovNameTx');
   var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
-    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, 560), h = Math.max(200, Math.min(vh - hb - 24, 340));
+    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, Math.max(200, Math.min(vw - 24, 560) / 2)), h = Math.max(100, Math.min(vh - hb - 12, 170));
     ovEl.style.setProperty('--hh', hb + 'px');
     return { top: hb + (vh - hb - h) / 2, left: (vw - w) / 2, width: w, height: h };
   }
@@ -1922,11 +1934,11 @@
       return s / (80 * 255);
     }
     /* modalità relax: il bordo della pagina si illumina con un gradiente sfumato che respira, con colori che scorrono */
-    var rlM = null, rlL = null, rlW = 0, rlH = 0;
-    function drawRelax(t) {
+    var rlM = null, rlL = null, rlW = 0, rlH = 0, rlE = 0;
+    function drawRelax(t, keep) {
       var e = Math.max(28, Math.min(70, Math.min(W, H) * 0.07)), gain = 0.75 + lvA * 0.6, q, g, k;
-      if (!rlM || rlW !== W || rlH !== H) {
-        rlW = W; rlH = H;
+      if (!rlM || rlW !== W || rlH !== H || rlE !== e) {
+        rlW = W; rlH = H; rlE = e;
         rlM = document.createElement('canvas'); rlM.width = W; rlM.height = H;
         rlL = document.createElement('canvas'); rlL.width = W; rlL.height = H;
         q = rlM.getContext('2d');
@@ -1947,7 +1959,7 @@
       }
       q.fillStyle = g; q.fillRect(0, 0, W, H);
       q.globalCompositeOperation = 'destination-in'; q.drawImage(rlM, 0, 0);
-      cx.clearRect(0, 0, W, H);
+      if (!keep) cx.clearRect(0, 0, W, H);
       cx.globalAlpha = Math.min(1, act * (0.5 + 0.2 * Math.sin(t * 1.1)) * gain);
       cx.globalCompositeOperation = 'lighter';
       cx.drawImage(rlL, 0, 0, W, H);
@@ -2233,7 +2245,8 @@
       var live = analyse(t);
       if (!live && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
-      if (modeR) { lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05; drawRelax(t); balls(t); } else { draw(t, dt); balls(t); }
+      lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05;
+      if (modeR) { drawRelax(t); balls(t); } else { draw(t, dt); drawRelax(t, true); balls(t); }
     }
     window.addEventListener('resize', size);
     size();
