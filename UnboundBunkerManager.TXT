@@ -58,7 +58,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1111.1"
+set "LOCAL_VER=1111.2"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -3136,6 +3136,8 @@ if not exist "%UB_DIR%" (
     exit /b
 )
 
+set "ABU_UH_ST=SKIP"
+set "ABU_TF_ST=SKIP"
 set "CHANGED=0"
 
 :: Rotazione backup prima del download, stesso pattern del refresh biorario
@@ -3160,6 +3162,7 @@ if not errorlevel 1 (
             move /y "%URLHAUS%.tmp" "%URLHAUS%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+            set "ABU_UH_ST=OK"
             call :LOGSTEP "REFRESH-ABUSECH" "[      OK      ] abuse.ch URLhaus - RPZ aggiornato: !DT_URLHAUS!!URLHAUSR_TRYNOTE!"
         ) else (
             del /f /q "%URLHAUS%.tmp" >nul 2>&1
@@ -3174,8 +3177,10 @@ if not errorlevel 1 (
     if exist "%URLHAUS_BAK%" (
         copy /y "%URLHAUS_BAK%" "%URLHAUS%" >nul 2>&1
         call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        set "ABU_UH_ST=WARN"
         call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch URLhaus non scaricato, ripristinato dal backup: !DT_URLHAUS!"
     ) else (
+        set "ABU_UH_ST=ERR"
         call :LOGSTEP "REFRESH-ABUSECH" "[ERR ] abuse.ch URLhaus non scaricabile e nessun backup disponibile!"
     )
 )
@@ -3197,6 +3202,7 @@ if not errorlevel 1 (
             move /y "%THREATFOX%.tmp" "%THREATFOX%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+            set "ABU_TF_ST=OK"
             call :LOGSTEP "REFRESH-ABUSECH" "[      OK      ] abuse.ch ThreatFox - RPZ aggiornato: !DT_THREATFOX!!THREATFOXR_TRYNOTE!"
         ) else (
             del /f /q "%THREATFOX%.tmp" >nul 2>&1
@@ -3211,8 +3217,10 @@ if not errorlevel 1 (
     if exist "%THREATFOX_BAK%" (
         copy /y "%THREATFOX_BAK%" "%THREATFOX%" >nul 2>&1
         call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        set "ABU_TF_ST=WARN"
         call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch ThreatFox non scaricato, ripristinato dal backup: !DT_THREATFOX!"
     ) else (
+        set "ABU_TF_ST=ERR"
         call :LOGSTEP "REFRESH-ABUSECH" "[ERR ] abuse.ch ThreatFox non scaricabile e nessun backup disponibile!"
     )
 )
@@ -3237,6 +3245,10 @@ if "!CHANGED!"=="1" (
     :: [FIX] Ripristina comunque il DNS su 127.0.0.1:
     call :DNS_FALLBACK_OFF
 )
+
+:: [NOTIFICA-ABUSE] Notifica Telegram con il dettaglio rispetto al valore precedente
+:: (vedi :ABUSECH_NOTIFY): solo se una lista e' cambiata o il download e' fallito.
+call :ABUSECH_NOTIFY
 
 :: --- FORZATURA ASSOLUTA USCITA PULITA (0x0) ---
 cmd /c exit 0
@@ -3407,12 +3419,27 @@ if "!DASH_CLOUD_VER!"=="N/A" (
 :: riporta gia' la versione corretta.
 call :DASH_FORCE_UPDATE_REP
 
+:: [ELEMENTI-RPZ] Conteggio degli elementi di ogni lista RPZ e confronto con l'ultimo report
+:: biorario INVIATO CON SUCCESSO (baseline in %UB_DIR%\rpz_counts_report.json). Chiamata
+:: PowerShell separata: la riga di invio sotto e' vicina al limite di 8191 caratteri di
+:: cmd.exe, quindi qui si prepara solo un file temporaneo con le stringhe pronte
+:: (" su `N` elementi (+/- delta)") che la riga di invio legge. La baseline viene
+:: aggiornata solo se l'invio riesce, cosi' il delta e' sempre rispetto all'ultimo
+:: report realmente ricevuto. Spamhaus = somma DROP v4 + v6.
+set "EL_TMP=%TEMP%\ub_rpz_el.txt"
+set "EL_PEND=%TEMP%\ub_rpz_counts_pending.json"
+if exist "!EL_TMP!" del /f /q "!EL_TMP!" >nul 2>&1
+if exist "!EL_PEND!" del /f /q "!EL_PEND!" >nul 2>&1
+powershell -NoProfile -Command "$ic = [System.Globalization.CultureInfo]::InvariantCulture; $cntFile = '!UB_DIR!\rpz_counts_report.json'; $prev = $null; if (Test-Path -LiteralPath $cntFile) { try { $prev = Get-Content -LiteralPath $cntFile -Raw | ConvertFrom-Json } catch { $prev = $null } }; $lists = [ordered]@{ proplus = @('!HZ_PRO_PLUS!'); tif = @('!HZ_TIF!'); tifips = @('!HZ_TIF_IPS!'); spam = @('!SH_DROP!', '!SH_DROP6!'); dyndns = @('!HZ_DYNDNS!'); hoster = @('!HZ_HOSTER!'); spamtlds = @('!HZ_SPAMTLDS!'); urlhaus = @('!URLHAUS!'); threatfox = @('!THREATFOX!') }; $cur = [ordered]@{}; $out = New-Object System.Collections.Generic.List[string]; foreach ($k in $lists.Keys) { $n = 0; foreach ($p in $lists[$k]) { try { if (Test-Path -LiteralPath $p) { $n += [Linq.Enumerable]::Count([System.IO.File]::ReadLines($p)) } } catch {} }; $cur[$k] = $n; $s = ' su `' + ([long]$n).ToString('N0', $ic).Replace(',', '.') + '` elementi'; if ($prev -and ($prev.PSObject.Properties.Name -contains $k)) { $d = [long]$n - [long]$prev.$k; if ($d -gt 0) { $s += ' (▲ +' + $d.ToString('N0', $ic).Replace(',', '.') + ')' } elseif ($d -lt 0) { $s += ' (▼ -' + ([math]::Abs($d)).ToString('N0', $ic).Replace(',', '.') + ')' } else { $s += ' (= invariata)' } } else { $s += ' (primo rilevamento)' }; $out.Add($k + '|' + $s) }; [System.IO.File]::WriteAllLines('!EL_TMP!', $out, (New-Object System.Text.UTF8Encoding($false))); $cur | ConvertTo-Json | Out-File -LiteralPath '!EL_PEND!' -Encoding utf8" >nul 2>&1
+
 :: --- Composizione e invio del report su Telegram (con 2 tentativi e log errori) ---
-powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $dUrlhaus = Get-DomDet @('urlhaus'); $dThreatFox = Get-DomDet @('threatfox'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $msg = '📊 *UNBOUND BUNKER CERBERO - REPORT BIORARIO*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '=============================================' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER!/Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER!/Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER!/Cloud v!SVC_VER!' + [char]10 + '• *Dashboard.:* Locale v!DASH_LOCAL_VER!/Cloud v!DASH_CLOUD_VER!' + [char]10 + '=============================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '=============================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus.........: `!BLK_PROPLUS!` blocchi' + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF..............: `!BLK_TIF!` blocchi' + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS..........: `!BLK_TIFIPS!` blocchi' + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6)...: `!SPAM_TOT!` blocchi' + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS...........: `!BLK_DYNDNS!` blocchi' + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster...: `!BLK_HOSTER!` blocchi' + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs.: `!BLK_SPAMTLDS!` blocchi' + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '• 🦠 abuse.ch URLhaus........: `!BLK_URLHAUS!` blocchi' + $(if ($dUrlhaus) { [char]10 + $dUrlhaus } else { '' }) + [char]10 + '• 🕸️ abuse.ch ThreatFox......: `!BLK_THREATFOX!` blocchi' + $(if ($dThreatFox) { [char]10 + $dThreatFox } else { '' }) + [char]10 + '=============================================' + [char]10 + '!IPV4_LINE!' + [char]10 + '!IPV6_LINE!' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $tq = [double]!TOT_QUERIES!; $ch = [double]!TOT_CACHEHITS!; $blkTot = !BLK_TOT!; $rpzLogPath = '!RPZ_LOG!'; $rpzLines = $null; if (Test-Path $rpzLogPath) { $rpzLines = Get-Content $rpzLogPath }; function Get-DomDet { param($tags) if (-not $rpzLines) { return '' }; $rx = [regex]('\[(' + ($tags -join '|') + ')\]\s+(\S+)\s+rpz-nxdomain'); $doms = foreach ($ln in $rpzLines) { $mm = $rx.Match($ln); if ($mm.Success) { $mm.Groups[2].Value.TrimEnd('.') } }; if (-not $doms) { return '' }; $grp = $doms | Group-Object | Sort-Object Count -Descending; ($grp | ForEach-Object { $dn = $_.Name; if ($dn.StartsWith('*.')) { $dn = $dn.Substring(2) + ' (wildcard)' }; $dn = $dn -replace '[*_\[\]`]', ''; '↳ (' + $_.Count + ') ' + $dn }) -join [char]10 }; $dProplus = Get-DomDet @('hagezi-pro-plus'); $dTif = Get-DomDet @('hagezi-tif'); $dTifIps = Get-DomDet @('hagezi-tif-ips'); $dSpam = Get-DomDet @('spamhaus-drop-v4','spamhaus-drop-v6'); $dDynDns = Get-DomDet @('hagezi-dyndns'); $dHoster = Get-DomDet @('hagezi-hoster'); $dSpamTlds = Get-DomDet @('hagezi-spamtlds'); $dUrlhaus = Get-DomDet @('urlhaus'); $dThreatFox = Get-DomDet @('threatfox'); $ic = [System.Globalization.CultureInfo]::InvariantCulture; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; if ($tq -gt 0) { $pctBlk = ($blkTot / $tq) * 100 } else { $pctBlk = 0 }; if ($tq -gt 0) { $pctCache = ($ch / $tq) * 100 } else { $pctCache = 0 }; $pctBlkStr = $pctBlk.ToString('F1', $ic).Replace('.', ','); $pctCacheStr = $pctCache.ToString('F1', $ic).Replace('.', ','); $el = @{}; $elF = '!EL_TMP!'; if (Test-Path -LiteralPath $elF) { try { foreach ($ln in [System.IO.File]::ReadAllLines($elF, [System.Text.Encoding]::UTF8)) { $p = $ln.IndexOf('|'); if ($p -gt 0) { $el[$ln.Substring(0, $p)] = $ln.Substring($p + 1) } } } catch {} }; $msg = '📊 *UNBOUND BUNKER CERBERO - REPORT BIORARIO*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '=============================================' + [char]10 + '📅 Data: !RPT_DT!' + [char]10 + '=============================================' + [char]10 + 'Setup PC:' + [char]10 + '• *RAM Rilevata:* !TOTAL_RAM_GB! GB (!PROFILE_NAME!)' + [char]10 + '*VERSIONI INSTALLATE VS CLOUD:*' + [char]10 + '• *Unbound...:* Locale v!UB_LOCAL_VER!/Cloud v!UB_CLOUD_VER!' + [char]10 + '• *Script BAT:* Locale v!LOCAL_VER!/Cloud v!CLOUD_VER!' + [char]10 + '• *File CONF.:* Locale v!LOCAL_SVC_VER!/Cloud v!SVC_VER!' + [char]10 + '• *Dashboard.:* Locale v!DASH_LOCAL_VER!/Cloud v!DASH_CLOUD_VER!' + [char]10 + '=============================================' + [char]10 + '🔍 Query Totali: `' + [int]$tq + '`' + [char]10 + '⚡ Efficienza Cache RAM: `' + $pctCacheStr + '%%`' + [char]10 + '=============================================' + [char]10 + '🏆 ATTIVITA'' E CONTROLLI DI SICUREZZA:' + [char]10 + '🛡️ Totale Bloccate: `' + $blkTot + '` (' + $pctBlkStr + '%%)' + [char]10 + '🏆 Dettaglio intervento liste di Blocco RPZ:' + [char]10 + '• 🥇 HaGeZi Pro Plus.........: `!BLK_PROPLUS!` blocchi' + $el['proplus'] + $(if ($dProplus) { [char]10 + $dProplus } else { '' }) + [char]10 + '• 🥈 HaGeZi TIF..............: `!BLK_TIF!` blocchi' + $el['tif'] + $(if ($dTif) { [char]10 + $dTif } else { '' }) + [char]10 + '• 🥉 HaGeZi TIF-IPS..........: `!BLK_TIFIPS!` blocchi' + $el['tifips'] + $(if ($dTifIps) { [char]10 + $dTifIps } else { '' }) + [char]10 + '• 🛡️ Spamhaus DROP (v4/v6)...: `!SPAM_TOT!` blocchi' + $el['spam'] + $(if ($dSpam) { [char]10 + $dSpam } else { '' }) + [char]10 + '• 🌐 HaGeZi DynDNS...........: `!BLK_DYNDNS!` blocchi' + $el['dyndns'] + $(if ($dDynDns) { [char]10 + $dDynDns } else { '' }) + [char]10 + '• 📦 HaGeZi Badware Hoster...: `!BLK_HOSTER!` blocchi' + $el['hoster'] + $(if ($dHoster) { [char]10 + $dHoster } else { '' }) + [char]10 + '• 🚫 HaGeZi Most Abused TLDs.: `!BLK_SPAMTLDS!` blocchi' + $el['spamtlds'] + $(if ($dSpamTlds) { [char]10 + $dSpamTlds } else { '' }) + [char]10 + '• 🦠 abuse.ch URLhaus........: `!BLK_URLHAUS!` blocchi' + $el['urlhaus'] + $(if ($dUrlhaus) { [char]10 + $dUrlhaus } else { '' }) + [char]10 + '• 🕸️ abuse.ch ThreatFox......: `!BLK_THREATFOX!` blocchi' + $el['threatfox'] + $(if ($dThreatFox) { [char]10 + $dThreatFox } else { '' }) + [char]10 + '=============================================' + [char]10 + '!IPV4_LINE!' + [char]10 + '!IPV6_LINE!' + [char]10 + '!ENGINE_LINE!'; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $uri = $proxyUrl; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $lastErr = $null; $ok = $false; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $uri -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $ex = $_.Exception; $parts = New-Object System.Collections.Generic.List[string]; $parts.Add($ex.GetType().FullName); if ($ex.Message) { $parts.Add($ex.Message) }; if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $parts.Add('Body: ' + $_.ErrorDetails.Message) } elseif ($ex.Response) { try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $parts.Add('Body: ' + $sr.ReadToEnd()) } catch {} }; $lastErr = ($parts -join ' | '); Start-Sleep -Milliseconds 800 } }; if (-not $ok) { $logLine = '[' + (Get-Date) + '] Invio report biorario fallito dopo 2 tentativi: ' + $lastErr; $logLine | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- MSG INVIATO (debug) ---' | Out-File '!TG_LOG!' -Append -Encoding utf8; $msg | Out-File '!TG_LOG!' -Append -Encoding utf8; '--- FINE MSG (bytes UTF8: ' + ([System.Text.Encoding]::UTF8.GetByteCount($msg)) + ') ---' | Out-File '!TG_LOG!' -Append -Encoding utf8 }; if ($ok) { try { Copy-Item -LiteralPath '!EL_PEND!' -Destination '!UB_DIR!\rpz_counts_report.json' -Force } catch {} }" >nul 2>>"!TG_LOG!"
 :: [FIX-TG] Conferma incondizionata che il blocco di invio e' stato
 :: eseguito (a prescindere dall'esito), per distinguere in futuro un
 :: mancato invio da un blocco mai raggiunto.
 echo [%date% %time%] Report biorario: blocco invio eseguito (v. telegram_error.log per eventuali errori) >> "%UB_DIR%\report_biorario_debug.log"
+if exist "!EL_TMP!" del /f /q "!EL_TMP!" >nul 2>&1
+if exist "!EL_PEND!" del /f /q "!EL_PEND!" >nul 2>&1
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 
 :: [DASHBOARD LIVE] Accumulatore di sessione chirurgico (sola AGGIUNTA in append: legge le variabili gia' calcolate sopra, non modifica nulla, scrive PRIMA dello svuotamento log)
@@ -4726,6 +4753,32 @@ powershell -NoProfile -Command "$ord = @('F1','F2','F3','F4','F5','F6','F7','F8'
 
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b
+
+:: ==================================================================
+:: SUBROUTINE: NOTIFICA TELEGRAM EVENTO ABUSE.CH (URLhaus / ThreatFox)
+:: Chiamata a fine :REFRESH_ABUSECH_ONLY. Per ogni lista mostra stato (aggiornata /
+:: invariata / ripristinata dal backup / non scaricabile), numero di elementi, valore
+:: precedente (copia .bak1 fatta prima del download) e differenza; se la lista e'
+:: stata aggiornata anche quante voci sono state aggiunte e rimosse. Non invia nulla
+:: se entrambe le liste sono invariate. Un avviso di fallimento identico al precedente
+:: non viene ripetuto (stato in abuse_notify_state.txt) per non inondare Telegram.
+:: ==================================================================
+:ABUSECH_NOTIFY
+if "!ABU_UH_ST!!ABU_TF_ST!"=="SKIPSKIP" (
+    if exist "%UB_DIR%\abuse_notify_state.txt" del /f /q "%UB_DIR%\abuse_notify_state.txt" >nul 2>&1
+    exit /b 0
+)
+set "TG_LOG=%UB_DIR%\telegram_error.log"
+set "TG_DNS_RESET=0"
+powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('script.google.com') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    echo [%date% %time%] DNS locale non risolve script.google.com - fallback a 1.1.1.1 attivato per notifica abuse.ch >> "%TG_LOG%"
+    call :DNS_FALLBACK_ON
+    set "TG_DNS_RESET=1"
+)
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $st = '!ABU_UH_ST!/!ABU_TF_ST!'; $stF = '!UB_DIR!\abuse_notify_state.txt'; $lastSt = ''; if (Test-Path -LiteralPath $stF) { try { $lastSt = (Get-Content -LiteralPath $stF -Raw).Trim() } catch {} }; $st | Out-File -LiteralPath $stF -Encoding ascii; if (($st -notmatch 'OK') -and ($st -eq $lastSt)) { exit 0 }; function Fmt { param($n) ([long]$n).ToString('N0', $ic).Replace(',', '.') }; function Get-Cnt { param($p) $n = 0; try { if (Test-Path -LiteralPath $p) { $n = [Linq.Enumerable]::Count([System.IO.File]::ReadLines($p)) } } catch {}; $n }; function Get-KeySet { param($p) $h = [System.Collections.Generic.HashSet[string]]::new(); try { if (Test-Path -LiteralPath $p) { foreach ($l in [System.IO.File]::ReadLines($p)) { $t = $l.Trim(); if ($t.Length -gt 0) { $f1 = $t.Substring(0, 1); if (($f1 -ne ';') -and ($f1 -ne '$') -and ($f1 -ne '@')) { [void]$h.Add($t) } } } } } catch {}; return ,$h }; function Get-Blk { param($name, $emoji, $file, $bak, $stt) $now = Get-Cnt $file; $s = $emoji + ' *' + $name + '*: '; if ($stt -eq 'OK') { $s += '✅ aggiornata' } elseif ($stt -eq 'WARN') { $s += '⚠️ download fallito, ripristinato dal backup' } elseif ($stt -eq 'ERR') { $s += '🔴 non scaricabile, nessun backup' } else { $s += '⏭️ invariata' }; $s += [char]10 + '   Elementi: `' + (Fmt $now) + '`'; if (Test-Path -LiteralPath $bak) { $before = Get-Cnt $bak; $d = $now - $before; if ($d -gt 0) { $dl = '▲ +' + (Fmt $d) } elseif ($d -lt 0) { $dl = '▼ -' + (Fmt ([math]::Abs($d))) } else { $dl = '= invariata' }; $s += ' (prima `' + (Fmt $before) + '`, ' + $dl + ')'; if ($stt -eq 'OK') { $a = Get-KeySet $file; $b = Get-KeySet $bak; $add = [System.Collections.Generic.HashSet[string]]::new($a); $add.ExceptWith($b); $rem = [System.Collections.Generic.HashSet[string]]::new($b); $rem.ExceptWith($a); $s += [char]10 + '   Aggiunti: `' + (Fmt $add.Count) + '` - Rimossi: `' + (Fmt $rem.Count) + '`' } }; $s }; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; $msg = '🦠 *UNBOUND BUNKER CERBERO - EVENTO ABUSE.CH*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '📅 Data: ' + (Get-Date).ToString('dd.MM.yyyy - HH:mm') + [char]10 + '=============================================' + [char]10 + (Get-Blk 'abuse.ch URLhaus' '🦠' '!URLHAUS!' '!URLHAUS_BAK!' '!ABU_UH_ST!') + [char]10 + (Get-Blk 'abuse.ch ThreatFox' '🕸️' '!THREATFOX!' '!THREATFOX_BAK!' '!ABU_TF_ST!'); $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $ok = $false; $lastErr = ''; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $proxyUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { ('[' + (Get-Date) + '] Invio notifica abuse.ch fallito dopo 2 tentativi: ' + $lastErr) | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
+exit /b 0
 
 :: ==================================================================
 :: SUBROUTINE CHIRURGICA: Conteggio righe RPZ istantaneo (Memoria Zero)
