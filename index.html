@@ -2189,11 +2189,59 @@
       }
       c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
     }    /* centrata in orizzontale, vicino al bordo inferiore; diametro proporzionale al lato corto dello schermo */
+    /* pulsazione della mirror ball + onde circolari che si espandono a tempo di basso:
+       a ogni colpo di cassa (fronte di salita di `beat`) la palla "gonfia" e rilascia un anello luminoso verso l'esterno */
+    var waves = [], pBeat = 0, bPulse = 0, bPrevT = 0;
+    function shockwaves(c, bx, by, R, t) {
+      var maxR = Math.hypot(Math.max(bx, W - bx), by) * 1.05, i3, w, u, e, r, bw, al, g, hue, dur = 1.5;
+      c.globalCompositeOperation = 'lighter';
+      for (i3 = waves.length - 1; i3 >= 0; i3--) {
+        w = waves[i3]; u = (t - w.t0) / dur;
+        if (u >= 1) { waves.splice(i3, 1); continue; }
+        e = 1 - Math.pow(1 - u, 2.2);                       // parte veloce e rallenta (ease-out)
+        r = R * 1.02 + (maxR - R) * e;
+        bw = R * (0.2 * (1 - u) + 0.04) * w.s;              // anello largo all'inizio, sempre più sottile
+        al = Math.pow(1 - u, 2) * 0.4 * Math.min(1, 0.55 + w.s * 0.4);
+        hue = (w.h + u * 60) % 360;
+        c.globalAlpha = act;
+        g = c.createRadialGradient(bx, by, Math.max(0, r - bw), bx, by, r + bw);
+        g.addColorStop(0, 'hsla(' + hue + ',100%,60%,0)');
+        g.addColorStop(0.7, 'hsla(' + hue + ',100%,65%,' + (al * 0.45) + ')');
+        g.addColorStop(0.9, 'hsla(' + hue + ',100%,85%,' + (al * 0.6) + ')');
+        g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        c.fillStyle = g; c.beginPath(); c.arc(bx, by, r + bw, 0, 6.3); c.fill();
+        // filo luminoso sul fronte dell'onda
+        c.strokeStyle = 'hsla(' + hue + ',100%,90%,' + (al * 0.5) + ')';
+        c.lineWidth = Math.max(0.8, 2 * (1 - u) * w.s);
+        c.beginPath(); c.arc(bx, by, r, 0, 6.3); c.stroke();
+      }
+      c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    }
     function balls(t) {
       if (!bcx) return;
       bcx.clearRect(0, 0, W, H);
-      var R = Math.min(W, H) * 0.21;
-      ball(bcx, W / 2, H - R - Math.max(14, H * 0.04), R, Math.hypot(W, H) * 0.6, t);
+      var R0 = Math.min(W, H) * 0.21, bx = W / 2, by = H - R0 - Math.max(14, H * 0.04), dt = bPrevT ? Math.min(0.1, t - bPrevT) : 0.033, hg, R;
+      bPrevT = t;
+      // rilevamento colpo di basso: fronte di salita di `beat`
+      if (beat > pBeat + 0.5) {
+        bPulse = 1;
+        waves.push({ t0: t, h: (t * 30) % 360, s: 0.8 + Math.min(0.5, beat * 0.3) });
+        if (waves.length > 6) waves.shift();
+      }
+      pBeat = beat;
+      bPulse *= Math.pow(0.88, dt * 60);                    // rilascio morbido
+      R = R0 * (1 + 0.085 * bPulse);                        // la palla pulsa
+      shockwaves(bcx, bx, by, R, t);
+      // alone che si accende al colpo
+      if (bPulse > 0.02) {
+        bcx.globalCompositeOperation = 'lighter'; bcx.globalAlpha = act;
+        hg = bcx.createRadialGradient(bx, by, R * 0.8, bx, by, R * 1.9);
+        hg.addColorStop(0, 'hsla(' + ((t * 30) % 360) + ',100%,75%,' + (0.5 * bPulse) + ')');
+        hg.addColorStop(1, 'hsla(' + ((t * 30 + 40) % 360) + ',100%,60%,0)');
+        bcx.fillStyle = hg; bcx.beginPath(); bcx.arc(bx, by, R * 1.9, 0, 6.3); bcx.fill();
+        bcx.globalCompositeOperation = 'source-over'; bcx.globalAlpha = 1;
+      }
+      ball(bcx, bx, by, R, Math.hypot(W, H) * 0.6, t);
       bDirty = true;
     }
     function clrB() {
