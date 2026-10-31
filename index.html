@@ -2400,47 +2400,55 @@
        alcune alla volta, con dissolvenza, mentre ruotano, a volte in ordine progressivo (da sinistra, da destra, dal centro verso i lati,
        dai lati verso il centro) a volte in ordine casuale; a ogni passaggio si sceglie quante luci tengono accese (da 1 a tutte) e se ne accendono o spengono alcune per arrivarci */
     function mkSeq(n, minOn) {
-      var q = { n: n, minOn: minOn, lv: [], tg: [], q: [], nx: 0, started: false }, k;
-      for (k = 0; k < n; k++) { q.lv.push(0); q.tg.push(0); }
+      var q = { n: n, minOn: minOn, lv: [], tg: [], mk: [], q: [], nx: 0, started: false }, k;
+      for (k = 0; k < n; k++) { q.lv.push(0); q.tg.push(0); q.mk.push(1); }
       return q;
     }
     function seqRst(q) {
-      for (var k = 0; k < q.n; k++) { q.lv[k] = 0; q.tg[k] = 0; }
+      for (var k = 0; k < q.n; k++) { q.lv[k] = 0; q.tg[k] = 0; q.mk[k] = 1; }
       q.q = []; q.nx = 0; q.started = false;
     }
     function seqPlan(q, t, pos, all) {
-      var idx = [], k, j, c, md = Math.floor(Math.random() * 5), step = rnd(0.12, 0.5), onL = [], offL = [], tt = 0, cur, tgt;
+      var idx = [], k, j, c, md = Math.floor(Math.random() * 5), step = rnd(0.12, 0.5), onL = [], offL = [], tt = 0, cur, tgt, mx;
       function key(i) { return md === 0 ? pos[i] : (md === 1 ? -pos[i] : (md === 2 ? Math.abs(pos[i] - 0.5) : -Math.abs(pos[i] - 0.5))); }
       for (k = 0; k < q.n; k++) idx.push(k);
       if (md === 4) { for (k = idx.length - 1; k > 0; k--) { j = Math.floor(Math.random() * (k + 1)); c = idx[k]; idx[k] = idx[j]; idx[j] = c; } }
       else idx.sort(function (a, b) { return key(a) - key(b); });
       for (k = 0; k < idx.length; k++) (q.tg[idx[k]] ? onL : offL).push(idx[k]);
       cur = onL.length;
-      tgt = all ? q.n : q.minOn + Math.floor(Math.random() * (q.n - q.minOn + 1));
+      mx = Math.max(q.minOn, q.n - 1); tgt = all ? mx : q.minOn + Math.floor(Math.random() * (mx - q.minOn + 1));
       if (tgt > cur) { for (k = 0; k < tgt - cur; k++) { q.q.push({ t: t + tt, i: offL[k], v: 1 }); tt += step * rnd(0.7, 1.4); } }
       else if (tgt < cur) { for (k = 0; k < cur - tgt; k++) { q.q.push({ t: t + tt, i: onL[k], v: 0 }); tt += step * rnd(0.7, 1.4); } }
       else if (cur && offL.length) { q.q.push({ t: t, i: onL[0], v: 0 }, { t: t + step * 0.6, i: offL[0], v: 1 }); tt = step; }
       q.nx = t + tt + rnd(1.2, 3.2);
     }
     function seqUpd(q, t, dt, pos) {
-      var k, e;
+      var k, e, tg;
       if (!q.started) { q.started = true; seqPlan(q, t, pos, true); }
       else if (t >= q.nx) seqPlan(q, t, pos, false);
       for (k = q.q.length - 1; k >= 0; k--) { e = q.q[k]; if (t >= e.t) { q.tg[e.i] = e.v; q.q.splice(k, 1); } }
-      for (k = 0; k < q.n; k++) q.lv[k] += (q.tg[k] - q.lv[k]) * (1 - Math.exp(-dt * (q.tg[k] ? 5 : 3.5)));
+      for (k = 0; k < q.n; k++) { tg = rpOn ? q.mk[k] : q.tg[k]; q.lv[k] += (tg - q.lv[k]) * (1 - Math.exp(-dt * (tg ? (rpOn ? 14 : 5) : (rpOn ? 7 : 3.5)))); }
     }
     var seqB = mkSeq(NB, 1), seqS = mkSeq(stgN, 2), seqT = mkSeq(4, 1), seqF = mkSeq(9, 1), seqG = mkSeq(9, 1), seqK = mkSeq(5, 1), posK = [], seqOff = true, posB = [], posS = [], posT = [0, 0.25, 0.75, 1], posF = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
     /* due fari di luce bianca dagli angoli inferiori, come i riflettori puntati verso il cielo all'esterno di una discoteca:
        i fasci si muovono sempre (salgono inclinati, si incrociano sopra il centro e tornano indietro) ma si vedono solo nei lampi;
-       ogni circa 6 secondi parte una serie di lampi, a rotazione: 2 lampi insieme, alternati, prima il destro poi il sinistro, prima il sinistro poi il destro */
-    var srch = [{ side: -1, p: 0.4, f: 0.21 }, { side: 1, p: 2.3, f: 0.17 }], srchNx = 0, srchI = 0, srchEv = [], srchSw = [null, null], srchSwNx = 0;
+       ogni 2-3 secondi circa parte una serie di lampi, sempre a tempo di bassi (un lampo a ogni colpo di cassa), a rotazione: 2 lampi insieme, alternati, destro e sinistro,
+       e anche fermi e puntati verso il centro (2 o 3 lampi, insieme o alternati) */
+    var srch = [{ side: -1, p: 0.4, f: 0.21 }, { side: 1, p: 2.3, f: 0.17 }], srchNx = 0, srchI = 0, srchEv = [], srchSw = [null, null], srchSwNx = 0, srchQ = [], srchPB = 0;
     function srchPlan(t) {
-      var P = srchI % 4, E = srchEv;
-      if (P === 0) { E.push({ t: t, k: 2, d: 0.32 }, { t: t + 0.5, k: 2, d: 0.32 }); }
-      else if (P === 1) { E.push({ t: t, k: 0, d: 0.24 }, { t: t + 0.28, k: 1, d: 0.24 }, { t: t + 0.56, k: 0, d: 0.24 }, { t: t + 0.84, k: 1, d: 0.24 }); }
-      else if (P === 2) { E.push({ t: t, k: 1, d: 0.42 }, { t: t + 0.5, k: 0, d: 0.42 }); }
-      else { E.push({ t: t, k: 0, d: 0.42 }, { t: t + 0.5, k: 1, d: 0.42 }); }
-      srchI++; srchNx = t + 6 + rnd(-0.4, 0.4);
+      var P = srchI % 6, n = 2 + (Math.random() < 0.5 ? 0 : 1);
+      if (P === 0) srchQ = [{ k: 2 }, { k: 2 }];
+      else if (P === 1) srchQ = [{ k: 0 }, { k: 1 }, { k: 0 }, { k: 1 }];
+      else if (P === 2) srchQ = [{ k: 2, st: 1 }, { k: 2, st: 1 }, { k: 2, st: 1 }].slice(0, n);
+      else if (P === 3) srchQ = [{ k: 1 }, { k: 0 }];
+      else if (P === 4) srchQ = [{ k: 0, st: 1 }, { k: 1, st: 1 }, { k: 2, st: 1 }];
+      else srchQ = [{ k: 0 }, { k: 1 }];
+      srchI++; srchNx = 1e9;
+    }
+    function srchStep(t) {
+      var q = srchQ.shift();
+      srchEv.push({ t: t, k: q.k, d: q.st ? 0.34 : 0.3, st: q.st, sa: Math.atan2(W / 2, H * 0.7) * rnd(0.94, 1.06) });
+      if (!srchQ.length) srchNx = t + rnd(1.6, 3);
     }
     /* un passaggio veloce: arco e verso casuali; se i due fasci usano lo stesso passaggio vanno sincronizzati, altrimenti ognuno ha il suo */
     function srchSwMk(t0, rt) {
@@ -2448,30 +2456,32 @@
       return { t: t0, rt: rt || 0, d: rt ? rnd(2.4, 3.2) : rnd(0.7, 1.1), s0: up ? rnd(-0.3, 0.1) : rnd(0.9, 1.3), s1: up ? rnd(0.9, 1.3) : rnd(-0.3, 0.1) };
     }
     function drawSearch(t, dt, L) {
-      var k, n, e, p, v, lk, sw, sa, o, a, x0, y0 = H + 4, x1, y1, Lb = L * 1.2, q, w, px, py, al, g, mult = [1, 0.7, 0.45, 0.22];
+      var be, fx, k, n, e, p, v, lk, sw, sa, o, a, x0, y0 = H + 4, x1, y1, Lb = L * 1.2, q, w, px, py, al, g, mult = [1, 0.7, 0.45, 0.22];
+      be = beat > srchPB + 0.4; srchPB = beat;
       if (!srchNx) srchNx = t + 1.5;
       if (t >= srchNx) srchPlan(t);
-      /* ogni circa 5 secondi un passaggio veloce: un solo fascio a caso (una corsa), oppure entrambi sincronizzati o non sincronizzati (andata e ritorno ripetuti 2 volte); verso e arco casuali */
-      if (!srchSwNx) srchSwNx = t + 3;
-      if (t >= srchSwNx) {
+      if (srchQ.length && be) srchStep(t);
+      /* ogni circa 3-4 secondi un passaggio veloce, che parte sul colpo di cassa: un solo fascio a caso (una corsa), oppure entrambi sincronizzati o non sincronizzati (andata e ritorno ripetuti 2 volte); verso e arco casuali */
+      if (!srchSwNx) srchSwNx = t + 2.5;
+      if (t >= srchSwNx && (be || t >= srchSwNx + 1)) {
         srchSw = [null, null];
         v = Math.random();
         if (v < 0.4) srchSw[Math.random() < 0.5 ? 0 : 1] = srchSwMk(t);
         else if (v < 0.7) { n = srchSwMk(t, 2); srchSw[0] = n; srchSw[1] = n; }
         else { srchSw[0] = srchSwMk(t, 2); srchSw[1] = srchSwMk(t + rnd(0, 0.5), 2); }
-        srchSwNx = t + 5 + rnd(-0.3, 0.3);
+        srchSwNx = t + 3.6 + rnd(-0.3, 0.3);
       }
       for (n = srchEv.length - 1; n >= 0; n--) { if (t > srchEv[n].t + srchEv[n].d) srchEv.splice(n, 1); }
       for (k = 0; k < 2; k++) {
         o = srch[k]; o.p += o.f * dt;
-        lk = 0;
+        lk = 0; fx = null;
         for (n = 0; n < srchEv.length; n++) {
           e = srchEv[n];
           if (e.k !== 2 && e.k !== k) continue;
           p = (t - e.t) / e.d;
           if (p < 0 || p >= 1) continue;
           v = p < 0.1 ? p / 0.1 : Math.pow(1 - (p - 0.1) / 0.9, 1.6);
-          if (v > lk) lk = v;
+          if (v > lk) { lk = v; fx = e.st ? e.sa : null; }
         }
         sa = null;
         if (srchSw[k]) {
@@ -2485,12 +2495,12 @@
               sw = Math.min(1, Math.sin(p * Math.PI) * 1.8);
               sa = srchSw[k].s0 + (srchSw[k].s1 - srchSw[k].s0) * p;
             }
-            if (sw > lk) lk = sw;
+            if (sw > lk) { lk = sw; fx = null; }
           }
         }
         if (lk < 0.004) continue;
         cx.globalAlpha = act * lk;
-        a = o.side * -1 * (sa !== null ? sa : 0.38 + 0.6 * Math.sin(o.p));
+        a = o.side * -1 * (fx !== null ? fx : (sa !== null ? sa : 0.38 + 0.6 * Math.sin(o.p)));
         x0 = o.side < 0 ? -2 : W + 2;
         x1 = x0 + Math.sin(a) * Lb; y1 = y0 - Math.cos(a) * Lb;
         for (q = 0; q < 4; q++) {
@@ -2537,6 +2547,87 @@
       }
       cx.globalAlpha = act;
     }
+    /* fasi a tempo di bassi con pochi fasci a caso: ogni tanto (per 5-10 secondi) si accendono solo 3-6 fasci scelti a caso tra tutti i gruppi
+       (mai più di 2 per gruppo, quindi mai tutti insieme), e a ogni colpo di cassa (o ogni due) la combinazione cambia in modo casuale;
+       poi si torna alle sequenze normali, dove in ogni gruppo resta sempre almeno un fascio spento */
+    var rpOn = false, rpNx = 0, rpPB = 0, rpHold = 0, rpGr = [];
+    function rpPick() {
+      var m = 3 + Math.floor(Math.random() * 4), per = [], gi, k, g, tries = 0;
+      for (gi = 0; gi < rpGr.length; gi++) { per.push(0); for (k = 0; k < rpGr[gi].n; k++) rpGr[gi].mk[k] = 0; }
+      while (m > 0 && tries++ < 60) {
+        gi = Math.floor(Math.random() * rpGr.length); g = rpGr[gi];
+        if (per[gi] >= 2) continue;
+        k = Math.floor(Math.random() * g.n);
+        if (g.mk[k]) continue;
+        g.mk[k] = 1; per[gi]++; m--;
+      }
+    }
+    function rpUpdate(t) {
+      var be = beat > rpPB + 0.4;
+      rpPB = beat;
+      if (!rpGr.length) rpGr = [seqB, seqS, seqT, seqF, seqG, seqK, seqC, seqM];
+      if (!rpNx) rpNx = t + rnd(6, 12);
+      if (t >= rpNx) {
+        rpOn = !rpOn; rpHold = 0;
+        rpNx = t + (rpOn ? rnd(5, 10) : rnd(8, 16));
+        if (rpOn) rpPick();
+      }
+      if (rpOn && be) {
+        if (rpHold > 0) rpHold--;
+        else { rpPick(); rpHold = Math.random() < 0.5 ? 0 : 1; }
+      }
+    }
+    /* tenda di raggi: 14 raggi verticali sottili dal margine superiore del riquadro sotto l'intestazione, con un inseguimento di luce da sinistra a destra e colori che scorrono;
+       come gli altri gruppi si accendono e spengono a sequenza */
+    var seqC = mkSeq(14, 3), posC = [], seqM = mkSeq(6, 1), posM = [0, 0.08, 0.16, 0.84, 0.92, 1], mlA = [0, 3.1], mlSp = [0.8, -0.8], mlT = [0.8, -0.8], mlNx = [0, 0], cj;
+    for (cj = 0; cj < 14; cj++) posC.push((cj + 0.5) / 14);
+    function drawCurtain(t, dt, L, pulse) {
+      var n = 14, i, x, d, ch, la, hue, g, y0 = Math.max(0, Math.min(H * 0.5, fanY)) + 2, Lc = (H - y0) * 0.95, ph = (t * 6.5) % n, al = Math.min(1, 0.55 + 0.4 * pulse);
+      seqUpd(seqC, t, dt, posC);
+      cx.lineCap = 'round';
+      for (i = 0; i < n; i++) {
+        la = act * seqC.lv[i]; if (la < 0.004) continue;
+        d = ((ph - i) % n + n) % n; ch = d < 5 ? 1 - d / 5 : 0;
+        x = (i + 0.5) * W / n; hue = ((i * 25 + t * 30) % 360 + 360) % 360;
+        g = cx.createLinearGradient(x, y0, x, y0 + Lc);
+        g.addColorStop(0, 'hsla(' + hue + ',100%,' + (ch > 0.5 ? 82 : 66) + '%,' + al + ')');
+        g.addColorStop(0.6, 'hsla(' + hue + ',100%,62%,' + (al * 0.4) + ')');
+        g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+        cx.strokeStyle = g;
+        cx.globalAlpha = la * (0.12 + 0.88 * ch) * 0.28; cx.lineWidth = 8; cx.beginPath(); cx.moveTo(x, y0); cx.lineTo(x, y0 + Lc); cx.stroke();
+        cx.globalAlpha = la * (0.15 + 0.85 * ch); cx.lineWidth = 1.6; cx.beginPath(); cx.moveTo(x, y0); cx.lineTo(x, y0 + Lc); cx.stroke();
+        if (ch > 0.4) { cx.globalAlpha = la * ch; glint(x, y0, 5 + beat * 4, hue); }
+      }
+      cx.globalAlpha = act;
+    }
+    /* mulini laterali: dal centro del bordo sinistro e di quello destro partono 3 bracci rotanti, uno in senso orario e l'altro antiorario;
+       velocità e verso cambiano ogni tanto in modo indipendente */
+    function drawMills(t, dt, L, pulse) {
+      var s, k, a, x0, y0 = H / 2, x1, y1, hue, g, la, sum, Lm = Math.min(L * 0.6, Math.max(W * 0.85, H * 0.45)), al = Math.min(1, 0.55 + 0.4 * pulse);
+      seqUpd(seqM, t, dt, posM);
+      cx.lineCap = 'round';
+      for (s = 0; s < 2; s++) {
+        if (t >= mlNx[s]) { mlT[s] = rnd(0.4, 1.0) * (Math.random() < 0.5 ? 1 : -1); mlNx[s] = t + rnd(4, 10); }
+        mlSp[s] += (mlT[s] - mlSp[s]) * (1 - Math.exp(-dt * 0.8));
+        mlA[s] += mlSp[s] * dt;
+        x0 = s ? W + 2 : -2; sum = 0;
+        for (k = 0; k < 3; k++) {
+          la = act * seqM.lv[s * 3 + k]; sum += seqM.lv[s * 3 + k]; if (la < 0.004) continue;
+          a = mlA[s] + k * 2.0944 + (s ? Math.PI : 0);
+          x1 = x0 + Math.cos(a) * Lm; y1 = y0 + Math.sin(a) * Lm;
+          hue = (((s ? 320 : 190) + k * 20 + t * 20) % 360 + 360) % 360;
+          g = cx.createLinearGradient(x0, y0, x1, y1);
+          g.addColorStop(0, 'hsla(' + hue + ',100%,70%,' + al + ')');
+          g.addColorStop(0.7, 'hsla(' + hue + ',100%,62%,' + (al * 0.45) + ')');
+          g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
+          cx.strokeStyle = g;
+          cx.globalAlpha = la * 0.28; cx.lineWidth = 10; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
+          cx.globalAlpha = la; cx.lineWidth = 2.2; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
+        }
+        if (sum > 0.05) { cx.globalAlpha = act * Math.min(1, sum / 3 * 1.5); glint(x0, y0, 9 + beat * 6, ((s ? 320 : 190) + t * 20) % 360); }
+      }
+      cx.globalAlpha = act;
+    }
     function drawStage(t, dt, L) {
       var o, a, k, m, hue, sat, lum, lumC;
       for (k = 0; k < stgN; k++) {
@@ -2573,7 +2664,8 @@
       cx.clearRect(0, 0, W, H);
       cx.globalAlpha = act;
       cx.globalCompositeOperation = 'lighter';
-      if (seqOff) { seqOff = false; srchNx = 0; srchI = 0; srchEv = []; srchSw = [null, null]; srchSwNx = 0; seqRst(seqB); seqRst(seqS); seqRst(seqT); seqRst(seqF); seqRst(seqG); seqRst(seqK); }
+      if (seqOff) { seqOff = false; rpOn = false; rpNx = 0; srchNx = 0; srchI = 0; srchEv = []; srchQ = []; srchSw = [null, null]; srchSwNx = 0; seqRst(seqB); seqRst(seqS); seqRst(seqT); seqRst(seqF); seqRst(seqG); seqRst(seqK); seqRst(seqC); seqRst(seqM); }
+      rpUpdate(t);
       for (e = 0; e < NB; e++) posB[e] = bm[e].x;
       for (e = 0; e < stgN; e++) posS[e] = 0.5 + Math.max(-1, Math.min(1, stg[e].bs)) * 0.5;
       seqUpd(seqB, t, dt, posB); seqUpd(seqS, t, dt, posS); seqUpd(seqT, t, dt, posT); seqUpd(seqF, t, dt, posF); seqUpd(seqG, t, dt, posF);
@@ -2620,6 +2712,8 @@
       drawFan(t, L, pulse);
       drawSearch(t, dt, L);
       drawStage(t, dt, L);
+      drawCurtain(t, dt, L, pulse);
+      drawMills(t, dt, L, pulse);
       for (i = 0; i < bk.length; i++) {
         b = bk[i]; b.y -= b.vy * dt / H; b.x += Math.sin(t * b.sw + b.ph) * 0.0003;
         if (b.y < -0.05) { b.y = 1.05; b.x = Math.random(); }
@@ -2654,7 +2748,7 @@
       if (!live && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
       lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05;
-      if (modeR) { drawRelax(t); balls(t); } else { draw(t, dt); drawRelax(t, true); balls(t); }
+      if (modeR) { rpOn = false; rpNx = 0; drawRelax(t); balls(t); } else { draw(t, dt); drawRelax(t, true); balls(t); }
     }
     window.addEventListener('resize', size);
     size();
