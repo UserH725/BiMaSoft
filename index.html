@@ -2393,6 +2393,44 @@
       g.addColorStop(0, 'rgba(255,248,225,.6)'); g.addColorStop(0.3, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,.35)'); g.addColorStop(1, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,0)');
       cx.fillStyle = g; cx.beginPath(); cx.arc(x0, 0, lr, 0, 6.3); cx.fill();
     }
+    /* accensione a sequenza: ogni gruppo di luci (fasci dal basso, fasci dal centro in alto, 4 faretti in alto) si accende e si spegne
+       un elemento dopo l'altro, con dissolvenza, a volte in ordine progressivo (da sinistra, da destra, dal centro verso i lati,
+       dai lati verso il centro) a volte in ordine casuale; tra una sequenza e l'altra restano sempre alcune luci accese */
+    function mkSeq(n, minOn) {
+      var q = { n: n, minOn: minOn, lv: [], tg: [], q: [], nx: 0, started: false }, k;
+      for (k = 0; k < n; k++) { q.lv.push(0); q.tg.push(0); }
+      return q;
+    }
+    function seqRst(q) {
+      for (var k = 0; k < q.n; k++) { q.lv[k] = 0; q.tg[k] = 0; }
+      q.q = []; q.nx = 0; q.started = false;
+    }
+    function seqPlan(q, t, pos, all) {
+      var idx = [], k, j, c, md = Math.floor(Math.random() * 5), step = rnd(0.12, 0.5), onL = [], offL = [], tt = 0, up;
+      function key(i) { return md === 0 ? pos[i] : (md === 1 ? -pos[i] : (md === 2 ? Math.abs(pos[i] - 0.5) : -Math.abs(pos[i] - 0.5))); }
+      for (k = 0; k < q.n; k++) idx.push(k);
+      if (md === 4) { for (k = idx.length - 1; k > 0; k--) { j = Math.floor(Math.random() * (k + 1)); c = idx[k]; idx[k] = idx[j]; idx[j] = c; } }
+      else idx.sort(function (a, b) { return key(a) - key(b); });
+      for (k = 0; k < idx.length; k++) (q.tg[idx[k]] ? onL : offL).push(idx[k]);
+      if (all) up = true;
+      else if (!offL.length) up = false;
+      else if (onL.length <= q.minOn) up = true;
+      else up = Math.random() < 0.55;
+      if (up) { for (k = 0; k < offL.length; k++) { q.q.push({ t: t + tt, i: offL[k], v: 1 }); tt += step * rnd(0.7, 1.4); } }
+      else {
+        c = 1 + Math.floor(Math.random() * (onL.length - q.minOn));
+        for (k = 0; k < c; k++) { q.q.push({ t: t + tt, i: onL[k], v: 0 }); tt += step * rnd(0.7, 1.4); }
+      }
+      q.nx = t + tt + rnd(2.5, 7);
+    }
+    function seqUpd(q, t, dt, pos) {
+      var k, e;
+      if (!q.started) { q.started = true; seqPlan(q, t, pos, true); }
+      else if (t >= q.nx) seqPlan(q, t, pos, false);
+      for (k = q.q.length - 1; k >= 0; k--) { e = q.q[k]; if (t >= e.t) { q.tg[e.i] = e.v; q.q.splice(k, 1); } }
+      for (k = 0; k < q.n; k++) q.lv[k] += (q.tg[k] - q.lv[k]) * (1 - Math.exp(-dt * (q.tg[k] ? 5 : 3.5)));
+    }
+    var seqB = mkSeq(NB, 2), seqS = mkSeq(stgN, 3), seqT = mkSeq(4, 1), seqOff = true, posB = [], posS = [], posT = [0, 0.25, 0.75, 1];
     function drawStage(t, dt, L) {
       var o, a, k, m, hue, sat, lum, lumC;
       for (k = 0; k < stgN; k++) {
@@ -2410,7 +2448,8 @@
         if (o.kind === 0) { hue = 46; sat = 100; lum = 58; lumC = 82; }
         else if (o.kind === 1) { hue = 42; sat = 22; lum = 92; lumC = 100; }
         else { hue = ((t * o.hs + o.h0) % 360 + 360) % 360; sat = 100; lum = 58; lumC = 80; }
-        stgCone(W / 2, a, o.wd, o.pw * 0.13, hue, sat, lum, lumC, L);
+        cx.globalAlpha = act * seqS.lv[k];
+        if (cx.globalAlpha > 0.004) stgCone(W / 2, a, o.wd, o.pw * 0.13, hue, sat, lum, lumC, L);
       }
       for (k = 0; k < 2; k++) {
         o = swp[k];
@@ -2418,38 +2457,47 @@
         a = o.amp * Math.sin(o.p);
         m = ease(0.5 + 0.75 * Math.sin(o.pc));
         hue = 46 - 4 * m; sat = 100 - 78 * m; lum = 58 + 34 * m; lumC = 82 + 18 * m;
-        stgCone(o.x * W, a, o.wd, 0.09, hue, sat, lum, lumC, L, 14);
+        cx.globalAlpha = act * seqT.lv[k ? 2 : 1];
+        if (cx.globalAlpha > 0.004) stgCone(o.x * W, a, o.wd, 0.09, hue, sat, lum, lumC, L, 14);
       }
+      cx.globalAlpha = act;
     }
     function draw(t, dt) {
-      var L = Math.hypot(W, H), pulse = 0.65 + beat * 0.5, e, o, u, env, a, hue, x0, y0, x1, y1, x2, y2, xm, ym, al, g, g2, px, py, f, b, rr, gg, hh, d, sp0 = 0.2;
+      var L = Math.hypot(W, H), pulse = 0.65 + beat * 0.5, la, e, o, u, env, a, hue, x0, y0, x1, y1, x2, y2, xm, ym, al, g, g2, px, py, f, b, rr, gg, hh, d, sp0 = 0.2;
       cx.clearRect(0, 0, W, H);
       cx.globalAlpha = act;
       cx.globalCompositeOperation = 'lighter';
+      if (seqOff) { seqOff = false; seqRst(seqB); seqRst(seqS); seqRst(seqT); }
+      for (e = 0; e < NB; e++) posB[e] = bm[e].x;
+      for (e = 0; e < stgN; e++) posS[e] = 0.5 + Math.max(-1, Math.min(1, stg[e].bs)) * 0.5;
+      seqUpd(seqB, t, dt, posB); seqUpd(seqS, t, dt, posS); seqUpd(seqT, t, dt, posT);
       /* fasci dal basso: direzione, posizione e velocità casuali a ogni passaggio */
       for (e = 0; e < NB; e++) {
         o = bm[e]; u = (t - o.t0) * o.sp;
         if (u >= 1) { o.t0 = t; o.dir = Math.random() < 0.5 ? 1 : -1; o.x = Math.random(); o.sp = 0.05 + Math.random() * 0.09; u = 0; }
         env = Math.sin(u * Math.PI); f = stb(o, t);
+        la = act * seqB.lv[e]; if (la < 0.004) continue; cx.globalAlpha = la;
         a = -Math.PI / 2 + o.dir * (o.w - 2 * o.w * u); hue = (t * 35 + o.h) % 360;
         x0 = o.x * W; y0 = H + 6; x1 = x0 + Math.cos(a) * L; y1 = y0 + Math.sin(a) * L;
         al = (0.35 + 0.45 * pulse) * (0.25 + 0.75 * env); if (f) al = Math.min(1, al * 2.2 + 0.2);
         g = cx.createLinearGradient(x0, y0, x1, y1);
         g.addColorStop(0, 'hsla(' + hue + ',100%,' + (f ? 90 : 65) + '%,' + al + ')'); g.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
         cx.strokeStyle = g; cx.lineWidth = f ? 3.6 : 2.2; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1); cx.stroke();
-        cx.globalAlpha = act * (f ? 0.4 : 0.22); cx.lineWidth = f ? 16 : 10; cx.stroke(); cx.globalAlpha = act;
+        cx.globalAlpha = la * (f ? 0.4 : 0.22); cx.lineWidth = f ? 16 : 10; cx.stroke(); cx.globalAlpha = la;
         px = Math.cos(a + Math.PI / 2) * L * 0.045; py = Math.sin(a + Math.PI / 2) * L * 0.045;
         g2 = cx.createLinearGradient(x0, y0, x1, y1);
         g2.addColorStop(0, 'hsla(' + hue + ',100%,60%,' + (al * 0.22) + ')'); g2.addColorStop(1, 'hsla(' + hue + ',100%,60%,0)');
         cx.fillStyle = g2; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1 + px, y1 + py); cx.lineTo(x1 - px, y1 - py); cx.closePath(); cx.fill();
         glint(x0, H - 2, (f ? 12 : 6) + beat * 8 + Math.sin(t * 4 + e) * 2, hue);
       }
+      cx.globalAlpha = act;
       /* coni larghi dagli angoli alti: ogni tanto si spostano, ciascuno con i suoi tempi */
       for (e = 0; e < 2; e++) {
         o = cn[e];
         if (t >= o.nm) { o.from = o.cur; do { o.to = rnd(0.2, 1.4); } while (Math.abs(o.to - o.from) < 0.5); o.t0 = t; o.dur = rnd(1.2, 2.8); o.nm = t + o.dur + rnd(2, 7); }
         o.cur = o.from + (o.to - o.from) * ease((t - o.t0) / o.dur);
         f = stb(o, t);
+        la = act * seqT.lv[e ? 3 : 0]; if (la < 0.004) continue; cx.globalAlpha = la;
         a = o.side < 0 ? o.cur : Math.PI - o.cur;
         x0 = o.side < 0 ? -4 : W + 4; y0 = -4; hue = (t * 25 + o.h) % 360;
         al = Math.min(0.85, (0.28 + 0.3 * pulse) * (f ? 2.4 : 1));
@@ -2462,6 +2510,7 @@
         cx.strokeStyle = g; cx.lineWidth = f ? 3 : 1.6; cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(xm, ym); cx.stroke();
         glint(x0, y0 + 2, (f ? 16 : 8) + beat * 8, hue);
       }
+      cx.globalAlpha = act;
       drawStage(t, dt, L);
       for (i = 0; i < bk.length; i++) {
         b = bk[i]; b.y -= b.vy * dt / H; b.x += Math.sin(t * b.sw + b.ph) * 0.0003;
@@ -2491,7 +2540,7 @@
       if (clk) clk.classList.toggle('relax-on', relaxOn);
       act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
       clockBg(t, wantD);
-      if (act < 0.01) { if (!cleared) { cx.clearRect(0, 0, W, H); clrB(); cleared = true; } return; }
+      if (act < 0.01) { seqOff = true; if (!cleared) { cx.clearRect(0, 0, W, H); clrB(); cleared = true; } return; }
       cleared = false;
       var live = analyse(t);
       if (!live && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
