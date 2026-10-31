@@ -2027,29 +2027,68 @@
     var WORDS = ['Mauro', 'Asia', 'Antonella', 'Dance', 'Party', 'Music'], WS = 8, WNL = 20, WNO = 40,
         wMasks = {}, wAct = [], wNext = 0, wLast = -1, wBands = [0.1, 0.36, 0.62];
     function wordMask(str) {
-      if (wMasks[str]) return wMasks[str];
-      var cv2 = document.createElement('canvas'), x, d, i, j, mnx = 1e9, mxx = -1, mny = 1e9, mxy = -1, w, h, m;
-      cv2.width = 420; cv2.height = 56; x = cv2.getContext('2d');
-      x.font = '900 38px Arial Black, Arial, Helvetica, sans-serif'; x.textBaseline = 'alphabetic';
-      x.scale(0.56, 1); x.fillStyle = '#fff'; x.fillText(str, 4, 42);
-      d = x.getImageData(0, 0, 420, 56).data;
-      for (j = 0; j < 56; j++) for (i = 0; i < 420; i++) if (d[(j * 420 + i) * 4 + 3] > 110) {
+      var dyn = WORDS.indexOf(str) < 0;
+      if (!dyn && wMasks[str]) return wMasks[str];
+      var CW = 420, CH = 120, MAXW = 135, cfgs = [[38, 1, 0.56], [28, 2, 0.5], [21, 3, 0.5]],
+          fam = 'px Arial Black, Arial, Helvetica, sans-serif', cv2 = document.createElement('canvas'), x, d, i, j, k, ci, cfg, lines = null,
+          mnx = 1e9, mxx = -1, mny = 1e9, mxy = -1, w, h, m, s = String(str).replace(/\s+/g, ' ').trim();
+      cv2.width = CW; cv2.height = CH; x = cv2.getContext('2d');
+      function wrap(txt, fs, ml, sx) {
+        var ws = txt.split(' '), out = [], line = '', t2, q;
+        x.font = '900 ' + fs + fam;
+        for (q = 0; q < ws.length; q++) {
+          t2 = line ? line + ' ' + ws[q] : ws[q];
+          if (x.measureText(t2).width * sx <= MAXW) line = t2;
+          else {
+            if (line) out.push(line);
+            line = ws[q];
+            if (x.measureText(line).width * sx > MAXW) return null;
+          }
+        }
+        if (line) out.push(line);
+        return out.length <= ml ? out : null;
+      }
+      for (ci = 0; ci < cfgs.length && !lines; ci++) { cfg = cfgs[ci]; lines = wrap(s, cfg[0], cfg[1], cfg[2]); }
+      if (!lines) {   // troppo lungo anche in 3 righe: accorcia con i puntini
+        while (!lines && s.length > 3) { s = s.replace(/…$/, '').slice(0, -1).trim() + '…'; lines = wrap(s, cfg[0], cfg[1], cfg[2]); }
+        if (!lines) return wordMask('Music');
+      }
+      x.font = '900 ' + cfg[0] + fam; x.textBaseline = 'alphabetic'; x.textAlign = 'center';
+      x.scale(cfg[2], 1); x.fillStyle = '#fff';
+      for (k = 0; k < lines.length; k++) x.fillText(lines[k], CW / (2 * cfg[2]), cfg[0] * 1.05 + 4 + k * cfg[0] * 1.12);
+      d = x.getImageData(0, 0, CW, CH).data;
+      for (j = 0; j < CH; j++) for (i = 0; i < CW; i++) if (d[(j * CW + i) * 4 + 3] > 110) {
         if (i < mnx) mnx = i; if (i > mxx) mxx = i; if (j < mny) mny = j; if (j > mxy) mxy = j;
       }
+      if (mxx < 0) return wordMask('Music');
       w = mxx - mnx + 1; h = mxy - mny + 1; m = new Uint8Array(w * h);
-      for (j = 0; j < h; j++) for (i = 0; i < w; i++) m[j * w + i] = d[((j + mny) * 420 + i + mnx) * 4 + 3] > 110 ? 1 : 0;
-      return (wMasks[str] = { m: m, w: w, h: h });
+      for (j = 0; j < h; j++) for (i = 0; i < w; i++) m[j * w + i] = d[((j + mny) * CW + i + mnx) * 4 + 3] > 110 ? 1 : 0;
+      m = { m: m, w: w, h: h };
+      if (!dyn) wMasks[str] = m;
+      return m;
+    }
+    /* sequenza: parola fissa, poi (alternando) nome della stazione o titolo del brano, poi parola fissa... */
+    var wSeq = 0, wDynT = 0;
+    function wordPick() {
+      var st = (typeof cur !== 'undefined' && cur >= 0 && STATIONS[cur]) ? String(STATIONS[cur].name || '').trim() : '',
+          sg = String(typeof song !== 'undefined' ? song : '').replace(/^\u266A\s*/, '').trim(), a, q, k;
+      if (wSeq++ % 2) {
+        a = (wDynT++ % 2) ? [sg, st] : [st, sg];
+        for (q = 0; q < 2; q++) if (a[q]) return a[q];
+      }
+      do { k = Math.floor(Math.random() * WORDS.length); } while (k === wLast);
+      wLast = k; return WORDS[k];
     }
     function wordsUpd(t) {
       var i, k, m, dur, free = [], u = Math.PI / (WNL * WS), lat, lon0;
       for (i = wAct.length - 1; i >= 0; i--) if (t - wAct[i].t0 > wAct[i].dur) wAct.splice(i, 1);
       if (t < wNext || wAct.length >= 1) return;
-      do { k = Math.floor(Math.random() * WORDS.length); } while (k === wLast);
-      wLast = k; m = wordMask(WORDS[k]);
-      for (i = 0; i < wBands.length; i++) if (!wAct.some(function (a) { return a.b === wBands[i]; })) free.push(wBands[i]);
+      m = wordMask(wordPick());
+      for (i = 0; i < wBands.length; i++) if (!wAct.some(function (a) { return a.b === wBands[i]; }) && Math.abs(wBands[i]) + m.h * u / 2 <= 1.15) free.push(wBands[i]);
+      if (!free.length) free.push(wBands[0]);
       lat = free[Math.floor(Math.random() * free.length)];
-      dur = rnd(6, 8);
-      lon0 = -(0.45 * (t + dur / 2)) + rnd(-0.35, 0.35);   // al centro della vita della parola si trova di fronte
+      dur = m.h > 40 ? rnd(8, 9.5) : rnd(6, 8);
+      lon0 = (0.45 * (t + dur / 2)) + rnd(-0.35, 0.35);   // al centro della vita della parola si trova di fronte
       wAct.push({ m: m, t0: t, dur: dur, b: lat, h0: Math.random() * 360,
         c0: Math.round((lon0 - m.w * u / 2) / u), r0: Math.round((lat - m.h * u / 2 + Math.PI / 2) / u) });
       wNext = t + dur + rnd(0.4, 1.2);
@@ -2067,7 +2106,7 @@
     function bi(A, a, b) { return (1 - b) * ((1 - a) * A[0] + a * A[1]) + b * ((1 - a) * A[3] + a * A[2]); }
     function ball(c, bx, by, R, L, t) {
       // 1. Rotazione 360° e tilt asse X
-      var rotY = t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15;
+      var rotY = -t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15;
       var ct = Math.cos(rotX), st = Math.sin(rotX), X4 = [0, 0, 0, 0], Y4 = [0, 0, 0, 0], textPts = [];
       wordsUpd(t); t_now = t;
       
