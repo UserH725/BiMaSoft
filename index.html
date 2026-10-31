@@ -1890,13 +1890,14 @@
       else if (cOn && cb < 0.02) { cOn = false; bgc.setAttribute('fill', '#0b0b0b'); }
       else if (cOn) bgc.setAttribute('fill', clockFill(t));
     }
-    var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0, nbOn = false, lastBass = 0, bq = [];
+    var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0, nbOn = false, lastBass = 0, bq = [], sigSeen = false;
     function hookAudio(retry) {
+      sigSeen = false;
       try {
         var cs = au.captureStream || au.mozCaptureStream, AC = window.AudioContext || window.webkitAudioContext, z, st;
         if (!cs || !AC) return;
         if (!actx) {
-          actx = new AC(); an = actx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.5;
+          actx = new AC(); an = actx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.5; an.minDecibels = -100; an.maxDecibels = 0;
           z = actx.createGain(); z.gain.value = 0; an.connect(z); z.connect(actx.destination);
           fd = new Uint8Array(an.frequencyBinCount);
         }
@@ -1917,11 +1918,11 @@
       if (!an || !srcN) { nbOn = false; return false; }
       an.getByteFrequencyData(fd);
       for (k = 1; k < 60; k++) s += fd[k];
-      if (s > 60) lastSig = t;
-      if (t - lastSig > 1.5) { nbOn = true; return false; }
-      b = (fd[1] + fd[2] + fd[3]) / 3; e = b / 255;
+      if (s > 40) { lastSig = t; sigSeen = true; }
+      if (t - lastSig > 1.5) { nbOn = sigSeen; return false; }
+      b = Math.max((fd[1] + fd[2] + fd[3]) / 3, (fd[3] + fd[4] + fd[5] + fd[6]) / 4 * 0.9); e = b / 255;
       bAvg += (e - bAvg) * 0.04;
-      if (e > 0.3 && e > bAvg * 1.22 + 0.06 && t - lastB > 0.2) { lastB = t; beat = 1; bq.push(t); while (bq.length && t - bq[0] > 3) bq.shift(); if (bq.length >= 2) lastBass = t; if (e > 0.7 && Math.random() < 0.4) flashOn(t); }
+      if (e > 0.25 && e > bAvg * 1.1 + 0.05 && t - lastB > 0.26) { lastB = t; beat = 1; bq.push(t); while (bq.length && t - bq[0] > 3) bq.shift(); if (bq.length >= 2) lastBass = t; if (e > 0.6 && Math.random() < 0.4) flashOn(t); }
       nbOn = t - lastBass > 2.5;
       return true;
     }
