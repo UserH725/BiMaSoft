@@ -535,7 +535,7 @@
     {name: 'Queen', urls: ['https://streaming.exclusive.radio/er/queen/icecast.audio']},
     {name: 'Radio 60 70 80', urls: ['https://ice.studiopiu.net/radioplayer607080.aac']},
     {name: 'Radio 101', urls: ['https://icecast.unitedradio.it/r101_mp3']},
-    {name: 'Radio 105', urls: ['https://icecast.unitedradio.it/Radio105rp.aac'], info: 'https://www.105.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficy.unitedradio.it%2FRadio105.aac', infoFmt: 'json'},
+    {name: 'Radio 105', urls: ['https://icecast.unitedradio.it/Radio105rp.aac'], info: 'https://www.105.net/wp-json/mediaset-mediaplayer/v1/getStreamInfo?stream=https%3A%2F%2Ficecast.unitedradio.it%2FRadio105.aac', infoFmt: 'json'},
     {name: 'Radio Balla Balla', urls: ['https://ice15.fluidstream.net/ballaballa.aac?FLID=7']},
     {name: 'Radio Canale Italia', urls: ['https://rci.canaleitalia.tv:8007']},
     {name: 'Radio Canale Italia Plus', urls: ['http://rci.canaleitalia.tv:8005']},
@@ -1170,11 +1170,23 @@
     if (s === song) return;
     song = s; updateNow(); setMedia();
   }
+  /* st.info può essere un solo indirizzo o un elenco di alternative: si prova in ordine (partendo da quella che ha funzionato l'ultima volta) e si usa la prima che dà un brano */
+  function infoTry(st) {
+    var list = Array.isArray(st.info) ? st.info : [st.info], n = list.length, start = st._ii || 0, empty = false, lastErr = null;
+    return (function t(k) {
+      if (k >= n) { if (empty) return ''; throw lastErr || new Error('info'); }
+      var i = (start + k) % n, u = list[i];
+      return (st.infoFmt ? fetchInfo(u) : fetchText(u, /\.m3u8(\?|$)/i.test(u))).then(st.infoFmt === 'dash' ? parseDash : parseInfo).then(function (r) {
+        if (r) { st._ii = i; return r; }
+        empty = true; return t(k + 1);
+      }, function (e) { lastErr = e; return t(k + 1); });
+    })(0);
+  }
   function pollSong() {
     if (!wantPlay || nowSt.className !== 'on' || cur < 0 || polling) return;
     var st = STATIONS[cur], u = cands[uIdx] || '', g = gen, om = u.match(/^(https?:\/\/[^\/]+)/i), o = om ? om[1] : '', key = o + '|' + cur, tasks = [], m;
     if (meta.o !== key) meta = { o: key, kind: '', fails: 0, t: 0 };
-    if (st.info) tasks.push({ k: 'info', f: function () { return (st.infoFmt ? fetchInfo(st.info) : fetchText(st.info, /\.m3u8(\?|$)/i.test(st.info))).then(st.infoFmt === 'dash' ? parseDash : parseInfo); } });
+    if (st.info) tasks.push({ k: 'info', f: function () { return infoTry(st); } });
     if (o && !/\.m3u8(\?|$)/i.test(u)) {
       m = u.match(/^(https?:\/\/[^\/]+)\/listen\/([^\/?#]+)\//i);
       if (m) tasks.push({ k: 'azura', f: function () { return fetchText(m[1] + '/api/nowplaying/' + m[2]).then(parseInfo); } });
