@@ -429,7 +429,7 @@
   </div>
   <ul id="list"></ul>
   <p id="none" hidden="">Nessuna radio trovata. Prova con un altro nome.</p>
-  <div id="ver">&copy; Mauro Bigoni - v.1111.23</div>
+  <div id="ver">&copy; Mauro Bigoni - v.1111.25</div>
 </main>
 
 <canvas id="disco" aria-hidden="true"></canvas>
@@ -569,8 +569,8 @@
     {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir'},
     {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3'], info: 'https://titoli.fluidstream.it/grradio/titoliGR7.txt', infoFmt: 'dash'},
     {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices']},
-    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac']},
-    {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6']},
+    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs', infoFmt: 'json', icyFirst: true},
+    {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6'], info: 'https://prod.radio-api.net/stations/radiokisskisslatina/songs', infoFmt: 'json', icyFirst: true},
     {name: 'Radio Kiss Kiss San Valentino', urls: ['https://kk.fluidstream.eu/kk_sanvalentino.mp3?FLID=6']},
     {name: 'Radio Kiss Kiss Sanremo', urls: ['https://kk.fluidstream.eu/kk_sanremo.mp3?FLID=6']},
     {name: 'Radio Liscio', urls: ['https://ssl.audio1.meway.tv/proxy/radioliscio?mp=/stream']},
@@ -1234,6 +1234,16 @@
     }
     /* server Shoutcast condiviso (es. RTL102.5): le pagine di stato riguardano tutto il server e danno il brano di un altro flusso; si usa solo il titolo dentro lo stream, altrimenti nessun brano */
     if (/^https?:\/\/streamingv2\.shoutcast\.com/i.test(o)) tasks = tasks.filter(function (x) { return x.k === 'icy'; });
+    /* icyFirst (es. Radio Kiss Kiss): brano in corso letto dallo stream; se lo stream non ne dà uno, si ripiega sul primo dell'elenco dell'indirizzo info (lo stream si ritenta ogni 60 s) */
+    if (st.icyFirst && st.info) {
+      var icyT = tasks.filter(function (x) { return x.k === 'icy'; })[0], infT = tasks.filter(function (x) { return x.k === 'info'; })[0];
+      tasks = [];
+      if (icyT && !(st._icyFail && Date.now() - st._icyFail < 60000)) {
+        tasks.push({ k: 'icy', f: function () { return icyT.f().then(function (r) { if (!r) throw new Error('icy vuoto'); st._icyFail = 0; return r; }, function (e) { st._icyFail = Date.now(); throw e; }); } });
+      }
+      if (infT) tasks.push(infT);
+      meta.kind = ''; meta.fails = 0;
+    }
     if (meta.kind) tasks = tasks.filter(function (x) { return x.k === meta.kind; });
     else if (meta.fails >= 3 && Date.now() - meta.t < 60000) return;
     if (!tasks.length) return;
@@ -1250,7 +1260,7 @@
   }
   au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
   setInterval(function () {
-    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.info) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
+    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.info && !st.icyFirst) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
     if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
   }, 1000);
 
