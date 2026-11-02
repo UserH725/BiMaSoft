@@ -834,7 +834,7 @@
     song = '';
     store('radioLast', STATIONS[i].name);
     setMedia();
-    if (autoplay) { userWants = true; wantPlay = true; start(); } else { setSt('off', 'pronta'); }
+    if (autoplay) { userWants = true; wantPlay = true; start(); lastPoll = Date.now(); pollSong(); } else { setSt('off', 'pronta'); }
   }
   function stop() { wantPlay = false; song = ''; ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
   function step(d) {
@@ -1122,7 +1122,22 @@
     var j, k, keys, v, r, az, p;
     if (txt.charAt(0) !== '{' && txt.charAt(0) !== '[') return cleanSong(txt.split(/\r?\n/)[0]);
     j = JSON.parse(txt);
-    if (Array.isArray(j)) j = j[0];
+    /* elenco brani (es. prod.radio-api.net/stations/<id>/songs): il primo elemento è il brano in corso; l'elenco può essere diretto o dentro songs/items/data/... */
+    var lst = Array.isArray(j) ? j : null, wk = ['songs', 'items', 'data', 'tracks', 'history', 'playlist', 'results'], wi;
+    if (!lst && j && typeof j === 'object') {
+      for (wi = 0; wi < wk.length; wi++) { if (Array.isArray(j[wk[wi]])) { lst = j[wk[wi]]; break; } }
+      if (!lst && j.data && typeof j.data === 'object') { for (wi = 0; wi < wk.length; wi++) { if (Array.isArray(j.data[wk[wi]])) { lst = j.data[wk[wi]]; break; } } }
+    }
+    if (lst) {
+      var it = lst[0];
+      if (it && typeof it === 'object') {
+        var ti2 = S(it.rawInfo) || S(it.title) || S(it.songTitle) || S(it.song_title) || S(it.trackTitle) || S(it.track) || S(it.song) || S(it.name),
+            ar2 = it.artist && typeof it.artist === 'object' ? S(it.artist.name) : (S(it.artist) || S(it.artistName) || S(it.artist_name));
+        if (ti2) return cleanSong(ar2 && ti2.toLowerCase().indexOf(ar2.toLowerCase()) < 0 ? ar2 + ' - ' + ti2 : ti2);
+        j = it;
+      } else if (typeof it === 'string') return cleanSong(it);
+      else return '';
+    }
     if (!j || typeof j !== 'object') return '';
     if (typeof j.raw === 'string' && j.raw.indexOf('~') >= 0) {
       p = j.raw.split('~');
@@ -1220,7 +1235,8 @@
     })(0);
   }
   function pollSong() {
-    if (!wantPlay || nowSt.className !== 'on' || cur < 0 || polling) return;
+    if (!wantPlay || cur < 0 || polling) return;
+    if (nowSt.className !== 'on' && !STATIONS[cur].info) return;
     var st = STATIONS[cur], u = cands[uIdx] || '', g = gen, om = u.match(/^(https?:\/\/[^\/]+)/i), o = om ? om[1] : '', key = o + '|' + cur, tasks = [], m;
     if (meta.o !== key) meta = { o: key, kind: '', fails: 0, t: 0 };
     if (st.info) tasks.push({ k: 'info', f: function () { return infoTry(st); } });
@@ -1234,14 +1250,14 @@
     }
     /* server Shoutcast condiviso (es. RTL102.5): le pagine di stato riguardano tutto il server e danno il brano di un altro flusso; si usa solo il titolo dentro lo stream, altrimenti nessun brano */
     if (/^https?:\/\/streamingv2\.shoutcast\.com/i.test(o)) tasks = tasks.filter(function (x) { return x.k === 'icy'; });
-    /* icyFirst (es. Radio Kiss Kiss): brano in corso letto dallo stream; se lo stream non ne dà uno, si ripiega sul primo dell'elenco dell'indirizzo info (lo stream si ritenta ogni 60 s) */
+    /* icyFirst (es. Radio Kiss Kiss): si legge subito l'elenco dell'indirizzo info (il primo è il brano in onda) a ogni giro; se non dà nulla si ripiega sul titolo dentro lo stream (ritentato al massimo ogni 60 s) */
     if (st.icyFirst && st.info) {
       var icyT = tasks.filter(function (x) { return x.k === 'icy'; })[0], infT = tasks.filter(function (x) { return x.k === 'info'; })[0];
       tasks = [];
+      if (infT) tasks.push({ k: 'info', f: function () { return infT.f().then(function (r) { if (!r) throw new Error('info vuoto'); return r; }); } });
       if (icyT && !(st._icyFail && Date.now() - st._icyFail < 60000)) {
         tasks.push({ k: 'icy', f: function () { return icyT.f().then(function (r) { if (!r) throw new Error('icy vuoto'); st._icyFail = 0; return r; }, function (e) { st._icyFail = Date.now(); throw e; }); } });
       }
-      if (infT) tasks.push(infT);
       meta.kind = ''; meta.fails = 0;
     }
     if (meta.kind) tasks = tasks.filter(function (x) { return x.k === meta.kind; });
@@ -1260,7 +1276,7 @@
   }
   au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
   setInterval(function () {
-    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.info && !st.icyFirst) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
+    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.icyFirst) ? 5000 : (st && st.info && !st.icyFirst) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
     if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
   }, 1000);
 
