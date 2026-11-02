@@ -1902,39 +1902,45 @@
       else if (cOn && cb < 0.02) { cOn = false; bgc.setAttribute('fill', '#0b0b0b'); }
       else if (cOn) bgc.setAttribute('fill', clockFill(t));
     }
-    var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0, nbOn = false, lastBass = 0, bq = [], sigSeen = false;
+    var au = document.getElementById('au'), actx = null, an = null, srcN = null, fd = null, lastSig = 0, bAvg = 0, lastB = 0, nbOn = false, lastBass = 0, bq = [], sigSeen = false, bFl = 0, bCe = 0, eP = 0, tA = 0;
     function hookAudio(retry) {
       sigSeen = false;
       try {
         var cs = au.captureStream || au.mozCaptureStream, AC = window.AudioContext || window.webkitAudioContext, z, st;
         if (!cs || !AC) return;
         if (!actx) {
-          actx = new AC(); an = actx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.5; an.minDecibels = -100; an.maxDecibels = 0;
+          actx = new AC(); an = actx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.25; an.minDecibels = -85; an.maxDecibels = -5;
           z = actx.createGain(); z.gain.value = 0; an.connect(z); z.connect(actx.destination);
           fd = new Uint8Array(an.frequencyBinCount);
         }
         if (actx.state === 'suspended') actx.resume();
         st = cs.call(au);
-        if (!st.getAudioTracks().length) { if (!retry) setTimeout(function () { hookAudio(true); }, 1000); return; }
+        if (!st.getAudioTracks().length) { if ((retry | 0) < 6) setTimeout(function () { hookAudio((retry | 0) + 1); }, 800); return; }
         if (srcN) { try { srcN.disconnect(); } catch (e) {} }
         srcN = actx.createMediaStreamSource(st); srcN.connect(an);
       } catch (e) { srcN = null; }
     }
-    if (au) au.addEventListener('playing', function () { hookAudio(false); });
+    if (au) au.addEventListener('playing', function () { hookAudio(0); });
     function flashOn(t) {
       var o = Math.random() < 0.7 ? bm[Math.floor(Math.random() * NB)] : cn[Math.floor(Math.random() * 2)];
       if (o.left === 0 && t >= (o.cool || 0)) { o.left = 2; o.s = t; o.cool = t + 1.2; }
     }
     function analyse(t) {
-      var b, s = 0, k, e;
+      var b, s = 0, k, e, dtA, th, up;
       if (!an || !srcN) { nbOn = false; return false; }
       an.getByteFrequencyData(fd);
       for (k = 1; k < 60; k++) s += fd[k];
       if (s > 40) { lastSig = t; sigSeen = true; }
       if (t - lastSig > 1.5) { nbOn = sigSeen; return false; }
       b = Math.max((fd[1] + fd[2] + fd[3]) / 3, (fd[3] + fd[4] + fd[5] + fd[6]) / 4 * 0.9); e = b / 255;
+      dtA = Math.min(0.1, Math.max(0.001, t - tA)); tA = t;
+      if (e < bFl) bFl = e; else bFl += (e - bFl) * Math.min(1, dtA * 1.2);
+      if (e > bCe) bCe = e; else bCe += (e - bCe) * Math.min(1, dtA * 1.2);
+      th = bFl + (bCe - bFl) * 0.55;
+      up = (bCe - bFl) > 0.05 && e > 0.12 && e > th && eP <= th;
+      eP = e;
       bAvg += (e - bAvg) * 0.04;
-      if (e > 0.25 && e > bAvg * 1.1 + 0.05 && t - lastB > 0.26) { lastB = t; beat = 1; bq.push(t); while (bq.length && t - bq[0] > 3) bq.shift(); if (bq.length >= 2) lastBass = t; if (e > 0.6 && Math.random() < 0.4) flashOn(t); }
+      if (up && t - lastB > 0.26) { lastB = t; beat = 1; bq.push(t); while (bq.length && t - bq[0] > 3) bq.shift(); if (bq.length >= 2) lastBass = t; if (e > bCe * 0.9 && Math.random() < 0.4) flashOn(t); }
       nbOn = t - lastBass > 2.5;
       return true;
     }
