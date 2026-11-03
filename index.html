@@ -18,7 +18,7 @@
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
-  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; height: 70px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; height: 92px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
@@ -57,7 +57,9 @@
   body.is-playing #nowEq { display: flex; }
   body.is-playing #nowIc { display: none; }
   #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
-  #nowName { font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
+  #btnCol { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  #btnCol #nowSt { margin-top: 0; }
+  #nowName { margin-top: 7px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
@@ -245,14 +247,14 @@
   #mtr { display: block; height: 26px; background: #000; }
   #meter { display: block; width: 100%; height: 26px; pointer-events: none; }
 
-  #btn { flex: 0 0 auto; position: relative; width: 46px; height: 46px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
-  #btn.is-on { box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(255,45,149,.45); }
+  #btn { --lc1: #ff7a70; --lc2: #e0261b; flex: 0 0 auto; position: relative; width: 46px; height: 46px; border-radius: 50%; border: 2px solid #2b2b2b; background: #0b0b0b; cursor: pointer; padding: 0; font-size: 0; line-height: 1; color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transition: transform .15s ease, box-shadow .3s ease; }
+  #btn.is-on { --lc1: #7dffb0; --lc2: #1fbf5f; box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(61,220,132,.55); }
   #btn:hover { transform: scale(1.08); }
   #btn:active { transform: scale(.94); }
   #btn::before { content: ""; position: absolute; inset: 0; border-radius: 50%; animation: discSpin 2.4s linear infinite; animation-play-state: paused;
     background:
       radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
-      radial-gradient(circle at center, #ff7ac0 0, #ff2d95 11px, #fff 11.5px 12.5px, transparent 13px),
+      radial-gradient(circle at center, var(--lc1) 0, var(--lc2) 11px, #fff 11.5px 12.5px, transparent 13px),
       conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
       repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px); }
   #btn.is-on::before { animation-play-state: running; }
@@ -397,14 +399,16 @@
 <div id="hdr">
 <header id="player" data-g="2" class="">
 <div class="pl">
+  <div id="btnCol">
   <button id="btn" type="button" aria-label="Play / Pausa">&#9654;</button>
+  <div id="nowSt" class="off" role="status" aria-live="polite">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
+  </div>
+  </div>
   <div id="now">
     <div id="nowRadioRow"><span id="nowIc" class="ic" aria-hidden="true">&#9654;</span><span id="nowEq" class="eq" aria-hidden="true"><i></i><i></i><i></i></span><img id="nowLg" alt="" hidden><div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div></div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
-    <div id="nowSt" class="off" role="status" aria-live="polite">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="nowTx">ON AIR</span>
-    </div>
   </div>
 </div>
 <div id="ana" aria-hidden="true">
