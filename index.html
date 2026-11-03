@@ -3218,18 +3218,56 @@
     }
 
     /* ---- schermate ---- */
+    /* limitatore tentativi: ogni 2 errori scatta un'attesa, 1 min la prima volta, poi raddoppia (1, 2, 4, 8 ... min, massimo 24 h); salvato in localStorage, si azzera con l'accesso riuscito */
+    var LK = 'radioPwLock', LK_MAX = 864e5;
+    function lkGet() {
+      var o = null;
+      try { o = JSON.parse(localStorage.getItem(LK) || 'null'); } catch (e) {}
+      if (!o || typeof o.n !== 'number' || typeof o.u !== 'number') o = { n: 0, u: 0 };
+      return o;
+    }
+    function lkSet(o) { try { localStorage.setItem(LK, JSON.stringify(o)); } catch (e) {} }
+    function lkLeft() { var l = lkGet().u - Date.now(); return l > LK_MAX ? LK_MAX : (l > 0 ? l : 0); }
+    function lkFail() {
+      var o = lkGet(); o.n++;
+      if (o.n % 2 === 0) o.u = Date.now() + Math.min(LK_MAX, 6e4 * Math.pow(2, o.n / 2 - 1));
+      lkSet(o);
+    }
+    function lkClear() { try { localStorage.removeItem(LK); } catch (e) {} }
+    function fmtLeft(ms) {
+      var s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+      s = s % 60;
+      return h ? h + ' h ' + pad(m) + ' min' : (m ? m + ' min ' + pad(s) + ' s' : s + ' s');
+    }
     function viewPwd() {
-      var pw;
+      var pw, tm = null;
       show('<h2>Accesso</h2><p>Inserisci la password per gestire le radio.</p><input id="mgPw" type="password" inputmode="numeric" autocomplete="off" placeholder="Password"><p class="mgE" id="mgE"></p><div class="mgB"><button id="mgNo" type="button" class="g">Annulla</button><button id="mgOk" type="button">Entra</button></div>');
       pw = $('mgPw');
+      function tick() {
+        var l = lkLeft(), ok = $('mgOk'), e = $('mgE');
+        if (!pw.isConnected || !ok || !e) { clearInterval(tm); tm = null; return; }
+        if (l > 0) { pw.disabled = true; ok.disabled = true; e.textContent = 'Troppi errori. Riprova tra ' + fmtLeft(l) + '.'; }
+        else {
+          clearInterval(tm); tm = null;
+          if (pw.disabled) { pw.disabled = false; ok.disabled = false; e.textContent = ''; pw.focus(); }
+        }
+      }
+      function arm() { if (!tm) tm = setInterval(tick, 500); tick(); }
       function go() {
-        var r = chk(pw.value.trim());
-        if (r > 0) viewMain();
-        else { $('mgE').textContent = r < 0 ? 'Accesso scaduto: serve una nuova versione del file.' : 'Password errata.'; pw.value = ''; pw.focus(); }
+        var r;
+        if (lkLeft() > 0) { arm(); return; }
+        r = chk(pw.value.trim());
+        if (r > 0) { lkClear(); viewMain(); return; }
+        pw.value = '';
+        if (r < 0) { $('mgE').textContent = 'Accesso scaduto: serve una nuova versione del file.'; pw.focus(); return; }
+        lkFail();
+        if (lkLeft() > 0) arm();
+        else { $('mgE').textContent = 'Password errata.'; pw.focus(); }
       }
       $('mgOk').onclick = go; $('mgNo').onclick = closeAll;
       pw.onkeydown = function (e) { if (e.key === 'Enter') go(); };
-      setTimeout(function () { pw.focus(); }, 50);
+      if (lkLeft() > 0) arm();
+      else setTimeout(function () { pw.focus(); }, 50);
     }
     function lgThumb(sp, n) {
       var u = stLogo(n), im;
