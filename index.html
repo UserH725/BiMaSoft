@@ -768,7 +768,7 @@
     unlockAudioContext();
     requestWakeLock();
     var g = ++gen, u = cands[uIdx];
-    song = ''; segSong = {};
+    segSong = {};
     if (!u) { setSt('err', 'nessun indirizzo disponibile'); return; }
     setSt('buf', tries ? 'riconnessione...' : 'connessione...');
     if (/\.m3u8(\?|$)/i.test(u)) {
@@ -804,7 +804,7 @@
     if (g !== gen || !wantPlay) return;
     tries++;
     if (cands.length && tries % cands.length === 0) scanRecord(cur, false);
-    if (tries >= 50) { wantPlay = false; song = ''; teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
+    if (tries >= 50) { wantPlay = false; songReset(); teardown(); haltAudio(); setSt('err', 'stream non raggiungibile'); return; }
     uIdx = (uIdx + 1) % cands.length;
     setSt('buf', navigator.onLine === false ? 'senza rete, attendo...' : 'riconnessione...');
     clearTimeout(retryT);
@@ -831,12 +831,12 @@
     cur = i; uIdx = 0; tries = 0;
     if (changed) alignCur();
     cands = candidates(STATIONS[i]);
-    song = '';
+    songReset();
     store('radioLast', STATIONS[i].name);
     setMedia();
     if (autoplay) { userWants = true; wantPlay = true; start(); lastPoll = Date.now(); pollSong(); } else { setSt('off', 'pronta'); }
   }
-  function stop() { wantPlay = false; song = ''; ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
+  function stop() { wantPlay = false; songReset(); ++gen; teardown(); haltAudio(); setSt('off', 'in pausa'); }
   function step(d) {
     if (!STATIONS.length) return;
     /* precedente / successiva seguono l'ordine mostrato in lista (non raggiungibili in fondo) */
@@ -1218,9 +1218,30 @@
     });
   }
 
+  /* brano in onda: cambia subito se la nuova info è diversa, se è uguale non si tocca nulla (SONG_HOLD = tenuta minima opzionale in ms); un'info vuota/non letta non cancella quello mostrato */
+  var SONG_HOLD = 0, EMPTY_HOLD = 60000, songAt = 0, pendSong = null, pendT = null, emptySince = 0;
+  function songReset() { song = ''; songAt = 0; pendSong = null; emptySince = 0; clearTimeout(pendT); pendT = null; }
+  function applySong(s) { pendSong = null; if (s === song) return; song = s; songAt = Date.now(); updateNow(); setMedia(); }
   function setSong(s) {
-    if (s === song) return;
-    song = s; updateNow(); setMedia();
+    s = (s === null || s === undefined) ? '' : String(s);
+    if (!s) {
+      /* vuoto: si mantiene il brano già scritto; si toglie solo se resta vuoto per un minuto (es. stacco/jingle prolungato) */
+      if (!song) return;
+      if (!emptySince) emptySince = Date.now();
+      if (Date.now() - emptySince >= EMPTY_HOLD) { emptySince = 0; clearTimeout(pendT); pendT = null; applySong(''); }
+      return;
+    }
+    emptySince = 0;
+    if (s === song) { pendSong = null; clearTimeout(pendT); pendT = null; return; }
+    var wait = song ? SONG_HOLD - (Date.now() - songAt) : 0;
+    if (wait > 0) {
+      if (pendSong === s) return;
+      pendSong = s; clearTimeout(pendT);
+      var g0 = gen;
+      pendT = setTimeout(function () { pendT = null; if (g0 === gen && pendSong !== null) applySong(pendSong); }, wait);
+      return;
+    }
+    applySong(s);
   }
   /* st.info può essere un solo indirizzo o un elenco di alternative: si prova in ordine (partendo da quella che ha funzionato l'ultima volta) e si usa la prima che dà un brano */
   function infoTry(st) {
@@ -1276,7 +1297,7 @@
   }
   au.addEventListener('playing', function () { setTimeout(function () { lastPoll = Date.now(); pollSong(); }, 1500); });
   setInterval(function () {
-    var st = cur >= 0 ? STATIONS[cur] : null, gap = (st && st.icyFirst) ? 5000 : (st && st.info && !st.icyFirst) || meta.kind === 'info' ? 3000 : (meta.kind === 'icy' ? 20000 : 10000);
+    var st = cur >= 0 ? STATIONS[cur] : null, gap = meta.kind === 'icy' ? 10000 : 3000;
     if (Date.now() - lastPoll >= gap) { lastPoll = Date.now(); pollSong(); }
   }, 1000);
 
