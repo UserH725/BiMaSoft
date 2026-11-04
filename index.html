@@ -50,7 +50,7 @@
   #nowLg { flex: 0 0 auto; width: 28px; height: 28px; margin: 0; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   #ovNameRow { display: flex; align-items: center; justify-content: center; gap: .3em; min-width: 0; }
   #ovNameRow #ovName { font-size: inherit; flex: 0 1 auto; min-width: 0; }
-  #ovLg { flex: 0 0 auto; width: 1.5em; height: 1.5em; margin: -.25em 0; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); }
+  #ovLg { display: block; width: 80px; height: 80px; margin: 0 auto 6px; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); }
   #nowLg[hidden], #ovLg[hidden] { display: none; }
   #nowIc { flex: 0 0 22px; width: 22px; text-align: center; color: #4fb3ff; font-size: 14px; }
   #nowEq { display: none; }
@@ -458,7 +458,8 @@
     <div class="ovc-disc" aria-hidden="true"></div>
     <div class="ovi">
       <div id="ovBadge" data-s="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="1.8" fill="currentColor" stroke="none"/><path d="M12 12.5V21M9 21h6"/><path class="w w1" d="M8.6 6.6a4.8 4.8 0 0 0 0 6.8M15.4 6.6a4.8 4.8 0 0 1 0 6.8"/><path class="w w2" d="M5.8 3.8a8.8 8.8 0 0 0 0 12.4M18.2 3.8a8.8 8.8 0 0 1 0 12.4"/></svg><span id="ovBadgeTx">OFF AIR</span></div>
-      <div id="ovNameRow"><img id="ovLg" alt="" hidden><div id="ovName"><span id="ovNameTx"></span></div></div>
+      <img id="ovLg" alt="" hidden>
+      <div id="ovNameRow"><div id="ovName"><span id="ovNameTx"></span></div></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
       <div id="ovSong"><span id="ovSongTx"></span></div>
     </div>
@@ -1616,7 +1617,7 @@
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovSongTx = document.getElementById('ovSongTx'), ovName = document.getElementById('ovName'), ovNameTx = document.getElementById('ovNameTx');
   var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
-    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, Math.max(200, Math.min(vw - 24, 560) / 2)), h = Math.max(100, Math.min(vh - hb - 12, 170));
+    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, Math.max(200, Math.min(vw - 24, 560) / 2)), h = Math.max(100, Math.min(vh - hb - 12, 230));
     ovEl.style.setProperty('--hh', hb + 'px');
     return { top: hb + (vh - hb - h) / 2, left: (vw - w) / 2, width: w, height: h };
   }
