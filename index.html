@@ -18,7 +18,7 @@
   :focus-visible { outline: 2px solid #4fb3ff; outline-offset: 2px; }
 
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
-  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; height: 92px; padding: 0 16px; padding-top: env(safe-area-inset-top, 0px); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+  #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; min-height: 92px; padding: 6px 16px; padding-top: calc(6px + env(safe-area-inset-top, 0px)); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
   #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
@@ -45,9 +45,9 @@
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #nowRadio {   font-family: 'Cabin', sans-serif;   font-style: italic;   font-weight: 700;   font-size: 17px;   line-height: 1.15;   color: #ffe600;   white-space: nowrap;   overflow: hidden; }
   #nowRadio span, #ovName span, #ovSong span { display: inline-block; }
-  #nowRadioRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  #nowRadioRow #nowRadio { flex: 1 1 auto; min-width: 0; }
-  #nowLg { flex: 0 0 auto; width: 28px; height: 28px; margin: -4px 0; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  /* riga 1: immagine "musica in corso" + logo radio; riga 2: nome radio; riga 3: brano */
+  #nowRadioRow { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 3px; }
+  #nowLg { flex: 0 0 auto; width: 28px; height: 28px; margin: 0; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   #ovNameRow { display: flex; align-items: center; justify-content: center; gap: .3em; min-width: 0; }
   #ovNameRow #ovName { font-size: inherit; flex: 0 1 auto; min-width: 0; }
   #ovLg { flex: 0 0 auto; width: 1.5em; height: 1.5em; margin: -.25em 0; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); }
@@ -59,7 +59,7 @@
   #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   #btnCol { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 5px; }
   #btnCol #nowSt { margin-top: 0; }
-  #nowName { margin-top: 7px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
+  #nowName { margin-top: 4px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
@@ -406,7 +406,8 @@
   </div>
   </div>
   <div id="now">
-    <div id="nowRadioRow"><span id="nowIc" class="ic" aria-hidden="true">&#9654;</span><span id="nowEq" class="eq" aria-hidden="true"><i></i><i></i><i></i></span><img id="nowLg" alt="" hidden><div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div></div>
+    <div id="nowRadioRow"><span id="nowIc" class="ic" aria-hidden="true">&#9654;</span><span id="nowEq" class="eq" aria-hidden="true"><i></i><i></i><i></i></span><img id="nowLg" alt="" hidden></div>
+    <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
   </div>
