@@ -174,12 +174,12 @@
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
   #ck .dg { position: relative; display: inline-block; width: 1ch; height: 1.15em; overflow: hidden; vertical-align: top; }
   #ck .dg > span { position: absolute; left: 0; top: 0; width: 100%; text-align: center; }
-  #clock #cd { display: block; font-size: 10px; color: #cfcfcf; white-space: nowrap; }
+  #clock #cd { display: block; font-size: 11.5px; color: #cfcfcf; white-space: nowrap; }
   
-  #netStat { display: block; font-size: 10px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
+  #netStat { display: block; font-size: 11.5px; font-weight: 600; color: #8ab4f8; white-space: nowrap; margin-top: 1px; }
   #netStat span { font-variant-numeric: tabular-nums; }
-  #netCon { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 2px; font-size: 10px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
-  #netDot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+  #netCon { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 2px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
+  #netDot { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: #777; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
   #netCon.ok #netDot { background: #2ee66b; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #2ee66b; animation: netBl 1s steps(2, end) infinite; }
   #netCon.ko #netDot { background: #ff3b30; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 6px #ff3b30; animation: netBl 1s steps(2, end) infinite; }
   #netCon.ok #netLbl { color: #7dffa5; }
@@ -187,7 +187,7 @@
   @keyframes netBl { 50% { opacity: .35; } }
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  #rc #clock b { font-size: 17px; }
+  #rc #clock b { font-size: 19.5px; }
   #ana { flex: 0 0 auto; width: 54px; height: 54px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
@@ -3451,6 +3451,30 @@
     ver.addEventListener('click', function (e) { e.stopPropagation(); viewPwd(); });
     ver.addEventListener('keydown', function (e) { if (e.key === 'Enter') viewPwd(); });
     document.addEventListener('keydown', function (e) { if (!mgr.hidden && e.key === 'Escape') closeAll(); });
+  })();
+
+  /* badge ON AIR in intestazione: piroetta sull'asse orizzontale centrale all'apertura, a ogni cambio di stato e poi ogni 15 secondi */
+  (function () {
+    var badge = document.getElementById('nowSt');
+    if (!badge || !badge.animate) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var anim = null, timer = null;
+    function state() { return badge.classList.contains('on') ? 'on' : badge.classList.contains('buf') ? 'buf' : badge.classList.contains('err') ? 'err' : 'off'; }
+    var last = state();
+    function spin() {
+      if (anim) anim.cancel();
+      anim = badge.animate(
+        [{ transform: 'perspective(400px) rotateX(0deg)' }, { transform: 'perspective(400px) rotateX(360deg)' }],
+        { duration: 1000, easing: 'cubic-bezier(.45,.05,.25,1)' }
+      );
+      clearInterval(timer);
+      timer = setInterval(spin, 15000);
+    }
+    new MutationObserver(function () {
+      var s = state();
+      if (s !== last) { last = s; spin(); }
+    }).observe(badge, { attributes: true, attributeFilter: ['class'] });
+    spin();
   })();
 </script>
 </body>
