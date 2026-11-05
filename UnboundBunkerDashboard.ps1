@@ -439,7 +439,6 @@ function Start-LineSpeedTest {
         return 'error'
     }
 }
-
 function Get-LinePotential {
     try {
         $now = Get-Date
@@ -453,9 +452,7 @@ function Get-LinePotential {
             $script:LpCacheTime = [DateTime]::MinValue
         }
 
-        # Rilevamento della fine delle fasi pianificate (AbuseCh30m e 2h), controllo al massimo ogni 3 s.
-        # Appena una fase risulta in esecuzione si segna "in attesa"; quando nessuna e' piu' in esecuzione
-        # da almeno $script:LpSettleSec secondi parte il test (se l'ultima misura e' abbastanza vecchia).
+        # Rilevamento della fine delle fasi pianificate (AbuseCh30m e 2h)
         if (($now - $script:LpCheckTime).TotalSeconds -ge 3) {
             $script:LpCheckTime = $now
             $live    = Get-BunkerTasksLiveState
@@ -481,6 +478,25 @@ function Get-LinePotential {
 
         if ($script:LpCache -and ($now - $script:LpCacheTime).TotalSeconds -lt 5) { return $script:LpCache }
 
+        # Raccolta dati volume di traffico cumulativo dalle schede di rete attive
+        $totRxBytes = 0
+        $totTxBytes = 0
+        try {
+            foreach ($nic in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+                if ($nic.OperationalStatus.ToString() -ne 'Up') { continue }
+                $nt = $nic.NetworkInterfaceType.ToString()
+                if ($nt -eq 'Loopback' -or $nt -eq 'Tunnel') { continue }
+                if (($nic.Name + ' ' + $nic.Description) -match 'Virtual|vEthernet|VPN|Hyper-V|VMware|VirtualBox|Bluetooth|Pseudo|TAP-Windows|Wintun|WireGuard|Teredo|ISATAP|Loopback') { continue }
+                $st = $nic.GetIPStatistics()
+                $totRxBytes += $st.BytesReceived
+                $totTxBytes += $st.BytesSent
+            }
+        } catch {}
+
+        # Formattazione dati trasferiti
+        $downDataMb = [math]::Round($totRxBytes / 1MB, 1)
+        $upDataMb   = [math]::Round($totTxBytes / 1MB, 1)
+
         $inCorso = [bool](Test-Path -LiteralPath $script:LpLockFile)
         $res = $null
         if (Test-Path -LiteralPath $script:LpFile) {
@@ -488,26 +504,56 @@ function Get-LinePotential {
                 $j = Get-Content -LiteralPath $script:LpFile -Raw -ErrorAction Stop | ConvertFrom-Json
                 if ([double]$j.down_mbps -gt 0 -or [double]$j.up_mbps -gt 0) {
                     $quando = ([datetime]$j.ts).ToString('HH:mm')
-                    $testo  = 'misurato alle ' + $quando
-                    if ($inCorso) { $testo += ' · test in corso' }
-                    $res = @{ ok = $true; down_mbps = [double]$j.down_mbps; up_mbps = [double]$j.up_mbps; fonte = 'misura'; testo = $testo; in_corso = $inCorso }
+                    $testoDown = "misurato alle $quando"
+                    $testoUp   = "misurato alle $quando"
+                    if ($inCorso) { 
+                        $testoDown += ' · test in corso'
+                        $testoUp   += ' · test in corso'
+                    }
+                    $res = @{ 
+                        ok           = $true
+                        down_mbps    = [double]$j.down_mbps
+                        up_mbps      = [double]$j.up_mbps
+                        fonte        = 'misura'
+                        testo        = $testoDown
+                        testo_down   = $testoDown
+                        testo_up     = $testoUp
+                        bytes_down   = $totRxBytes
+                        bytes_up     = $totTxBytes
+                        mb_down      = $downDataMb
+                        mb_up        = $upDataMb
+                        in_corso     = $inCorso 
+                    }
                 }
             } catch {}
         }
         if (-not $res) {
             $nicMbps = Get-NicLinkMbps
             if ($nicMbps -gt 0) {
-                $testo = if ($inCorso) { 'solo velocità scheda di rete (non è la linea) · test in corso' } else { 'solo velocità scheda di rete (non è la linea) · nessuna misura valida' }
-                $res = @{ ok = $true; down_mbps = $nicMbps; up_mbps = $nicMbps; fonte = 'scheda'; testo = $testo; in_corso = $inCorso }
+                $testoBase = if ($inCorso) { 'solo velocità scheda di rete · test in corso' } else { 'solo velocità scheda di rete · nessuna misura valida' }
+                $res = @{ 
+                    ok           = $true
+                    down_mbps    = $nicMbps
+                    up_mbps      = $nicMbps
+                    fonte        = 'scheda'
+                    testo        = "$testoBase · dati ⬇ $downDataMb MB / ⬆ $upDataMb MB"
+                    testo_down   = $testoBase
+                    testo_up     = $testoBase
+                    bytes_down   = $totRxBytes
+                    bytes_up     = $totTxBytes
+                    mb_down      = $downDataMb
+                    mb_up        = $upDataMb
+                    in_corso     = $inCorso 
+                }
             } else {
-                $res = @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; in_corso = $inCorso }
+                $res = @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; testo_down = ''; testo_up = ''; bytes_down = 0; bytes_up = 0; mb_down = 0; mb_up = 0; in_corso = $inCorso }
             }
         }
         $script:LpCache     = $res
         $script:LpCacheTime = $now
         return $res
     } catch {}
-    return @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; in_corso = $false }
+    return @{ ok = $false; down_mbps = 0; up_mbps = 0; fonte = ''; testo = ''; testo_down = ''; testo_up = ''; bytes_down = 0; bytes_up = 0; mb_down = 0; mb_up = 0; in_corso = $false }
 }
 
 function Get-HardwareTier {
@@ -3477,6 +3523,13 @@ function Save-EmojiCounts {
     try {
         $sb = New-Object System.Text.StringBuilder
         [void]$sb.Append('pos' + "`t" + [string][int64]$script:LightConnPos + "`n")
+        
+        # Salvataggio volumi di traffico memorizzati (Download / Upload)
+        if ($script:LpCache) {
+            [void]$sb.Append('traffic' + "`t" + 'd' + "`t" + [string]$script:LpCache.bytes_down + "`n")
+            [void]$sb.Append('traffic' + "`t" + 'u' + "`t" + [string]$script:LpCache.bytes_up + "`n")
+        }
+
         foreach ($k in @('d', 'u')) {
             foreach ($e in @($script:LcFold[$k].GetEnumerator())) { [void]$sb.Append('F' + "`t" + $k + "`t" + $e.Key + "`t" + $e.Value + "`n") }
             foreach ($e in @($script:LcDomCnt[$k].GetEnumerator())) { [void]$sb.Append('P' + "`t" + $k + "`t" + $e.Key + "`t" + $e.Value + "`n") }
@@ -5355,7 +5408,7 @@ $HtmlPageLight = @'
   .ns-pot.fb { border-color: var(--border-strong); background: rgba(255,255,255,0.03); box-shadow: inset 3px 0 0 var(--dim); }
   .ns-pot-l { font-size: 0.82em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
   .ns-pot.run .ns-pot-l::after { content: ' \25CF'; color: #ffd600; animation: nsPotPulse 1.2s ease-in-out infinite; }
-  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 1px; line-height: 1.3; }
+  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 1px; line-height: 1.3; } .ns-pot-d { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 1.25em; font-weight: 700; letter-spacing: 0; white-space: nowrap; } .ns-pot-d.dn { color: #22d3ee; } .ns-pot-d.up { color: #ff8c1a; }
   .ns-pot-v { text-align: right; white-space: nowrap; }
   .ns-pot-v b { font-family: var(--font-mono); font-size: 1.7em; line-height: 1; color: var(--accent); letter-spacing: 0; }
   .ns-pot.fb .ns-pot-v b { color: var(--dim); }
@@ -6289,8 +6342,12 @@ $HtmlPageLight = @'
       if (p && p.ok && p[cfg[i][3]] > 0) {
         var pot = p[cfg[i][3]];
         v.textContent = String(Math.floor(pot));
-        var sub = nsEsc(p.testo);
+        var isD = (i === 0);
+        var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
         if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
+        var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
+        var tot = mb >= 1024 ? (mb / 1024).toFixed(2).replace('.', ',') + ' GB' : mb.toFixed(1).replace('.', ',') + ' MB';
+        sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'avvio del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + '</span>';
         s.innerHTML = sub;
         c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
       } else {
@@ -7137,7 +7194,7 @@ $HtmlPage = @'
   .ns-pot.fb { border-color: var(--border-strong); background: rgba(255,255,255,0.03); box-shadow: inset 3px 0 0 var(--dim); }
   .ns-pot-l { font-size: 0.82em; color: var(--dim); letter-spacing: 0.07em; text-transform: uppercase; }
   .ns-pot.run .ns-pot-l::after { content: ' \25CF'; color: #ffd600; animation: nsPotPulse 1.2s ease-in-out infinite; }
-  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 3px; line-height: 1.35; }
+  .ns-pot-s { font-size: 0.82em; color: var(--dim); margin-top: 3px; line-height: 1.35; } .ns-pot-d { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 1.25em; font-weight: 700; letter-spacing: 0; white-space: nowrap; } .ns-pot-d.dn { color: #22d3ee; } .ns-pot-d.up { color: #ff8c1a; }
   .ns-pot-v { text-align: right; white-space: nowrap; }
   .ns-pot-v b { font-family: var(--font-mono); font-size: 2.1em; line-height: 1; color: var(--accent); letter-spacing: 0; }
   .ns-pot.fb .ns-pot-v b { color: var(--dim); }
@@ -9677,8 +9734,12 @@ function nsPotUpdate(d) {
     if (p && p.ok && p[cfg[i][3]] > 0) {
       var pot = p[cfg[i][3]];
       v.textContent = String(Math.floor(pot));
-      var sub = nsEsc(p.testo);
+      var isD = (i === 0);
+      var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
       if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
+      var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
+      var tot = mb >= 1024 ? (mb / 1024).toFixed(2).replace('.', ',') + ' GB' : mb.toFixed(1).replace('.', ',') + ' MB';
+      sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'avvio del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + '</span>';
       s.innerHTML = sub;
       c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
     } else {
