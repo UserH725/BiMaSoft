@@ -52,6 +52,10 @@
   #ovNameRow #ovName { font-size: inherit; flex: 0 1 auto; min-width: 0; }
   #ovLg { display: block; width: 80px; height: 80px; margin: 0 auto 6px; object-fit: contain; filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); }
   #nowLg[hidden], #ovLg[hidden] { display: none; }
+  /* pulsazione del logo: un secondo si ingrandisce leggermente, il secondo dopo si rimpicciolisce, a rotazione */
+  #nowLg, #ovLg { animation: logoPulse 2s ease-in-out infinite; }
+  @keyframes logoPulse { 0%, 100% { scale: 1; } 50% { scale: 1.16; } }
+  @media (prefers-reduced-motion: reduce) { #nowLg, #ovLg { animation: none; } }
   #nowIc { flex: 0 0 22px; width: 22px; text-align: center; color: #4fb3ff; font-size: 14px; }
   #nowEq { display: none; }
   body.is-playing #nowEq { display: flex; }
@@ -3474,6 +3478,39 @@
       var s = state();
       if (s !== last) { last = s; spin(); }
     }).observe(badge, { attributes: true, attributeFilter: ['class'] });
+    spin();
+  })();
+
+  /* logo della radio (intestazione + scheda grande): piroetta sull'asse verticale (3 giri), leggero sorpasso, ritorno parziale morbido e assestamento.
+     Parte quando il logo compare (caricamento / cambio radio) e poi ogni 10 secondi */
+  (function () {
+    var logos = [document.getElementById('nowLg'), document.getElementById('ovLg')].filter(Boolean);
+    if (!logos.length || !logos[0].animate) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var timer = null, pending = null;
+    var P = 'perspective(500px) rotateY(';
+    var frames = [
+      { transform: P + '0deg)',    offset: 0,    easing: 'cubic-bezier(.45,.05,.2,1)' },   /* 3 giri: parte piano, accelera, rallenta */
+      { transform: P + '1130deg)', offset: 0.62, easing: 'cubic-bezier(.4,0,.3,1)' },      /* sorpasso di 50° oltre i 3 giri */
+      { transform: P + '1055deg)', offset: 0.80, easing: 'cubic-bezier(.4,0,.3,1)' },      /* ritorno indietro parziale */
+      { transform: P + '1080deg)', offset: 1 }                                              /* assestamento finale */
+    ];
+    function spin() {
+      logos.forEach(function (el) {
+        if (el.hidden) return;
+        if (el._spin) el._spin.cancel();
+        el._spin = el.animate(frames, { duration: 2800 });
+      });
+      clearInterval(timer);
+      timer = setInterval(spin, 10000);
+    }
+    function soon() { clearTimeout(pending); pending = setTimeout(spin, 60); }
+    logos.forEach(function (el) {
+      new MutationObserver(soon).observe(el, { attributes: true, attributeFilter: ['hidden', 'src'] });
+      el.addEventListener('load', soon);
+    });
+    var ov = document.getElementById('ov');
+    if (ov) new MutationObserver(soon).observe(ov, { attributes: true, attributeFilter: ['hidden', 'class'] });
     spin();
   })();
 </script>
