@@ -6346,7 +6346,7 @@ $HtmlPageLight = @'
         var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
         if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
         var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
-        var tot = mb >= 1024 ? (mb / 1024).toFixed(2).replace('.', ',') + ' GB' : mb.toFixed(1).replace('.', ',') + ' MB';
+        var gb = mb / 1024, tot = gb >= 1024 ? (gb / 1024).toFixed(2).replace('.', ',') + ' TB' : gb.toFixed(2).replace('.', ',') + ' GB';
         sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'avvio del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + '</span>';
         s.innerHTML = sub;
         c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
@@ -9738,7 +9738,7 @@ function nsPotUpdate(d) {
       var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
       if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
       var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
-      var tot = mb >= 1024 ? (mb / 1024).toFixed(2).replace('.', ',') + ' GB' : mb.toFixed(1).replace('.', ',') + ' MB';
+      var gb = mb / 1024, tot = gb >= 1024 ? (gb / 1024).toFixed(2).replace('.', ',') + ' TB' : gb.toFixed(2).replace('.', ',') + ' GB';
       sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'avvio del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + '</span>';
       s.innerHTML = sub;
       c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
