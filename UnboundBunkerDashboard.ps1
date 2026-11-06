@@ -564,6 +564,8 @@ function Get-LinePotential {
                         bytes_up     = $totTxBytes
                         mb_down      = $downDataMb
                         mb_up        = $upDataMb
+                        acc_down     = [int64]$accRx
+                        acc_up       = [int64]$accTx
                         in_corso     = $inCorso 
                     }
                 }
@@ -585,6 +587,8 @@ function Get-LinePotential {
                     bytes_up     = $totTxBytes
                     mb_down      = $downDataMb
                     mb_up        = $upDataMb
+                    acc_down     = [int64]$accRx
+                    acc_up       = [int64]$accTx
                     in_corso     = $inCorso 
                 }
             } else {
@@ -5513,6 +5517,27 @@ $HtmlPageLight = @'
   .ns-stc { max-width: 250px; margin: 2px auto 0; font-size: 0.66em; text-align: center; color: var(--dim); }
   #nsDSa { color: #22d3ee; } #nsUSa { color: #ff8c1a; }
   #nsPotDc:not(.fb) .ns-pot-v b { color: #22d3ee; } #nsPotUc:not(.fb) .ns-pot-v b { color: #ff8c1a; }
+  .ns-pot { flex-wrap: wrap; }
+  .ns-pot-a { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1 1 190px; min-width: 0; }
+  .ns-pot-c { --c: #22d3ee; flex: 0 1 226px; min-width: 200px; padding-left: 12px; border-left: 1px dashed var(--border-strong); }
+  #nsPotUc .ns-pot-c { --c: #ff8c1a; }
+  .ot-cap { font-size: 0.72em; color: var(--dim); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; white-space: nowrap; min-height: 1em; }
+  .ot-big { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-weight: 700; font-size: 20px; line-height: 1; color: var(--c); }
+  .ot-odo { display: inline-flex; align-items: baseline; }
+  .ot-d { display: inline-block; height: 1em; width: 0.62em; overflow: hidden; line-height: 1em; -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); }
+  .ot-s { display: block; will-change: transform; } .ot-s i { display: block; height: 1em; font-style: normal; text-align: center; }
+  .ot-c { display: inline-block; width: 0.3em; text-align: center; line-height: 1em; }
+  .ot-unit { font-size: 0.6em; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--c); transition: background 0.4s, color 0.4s; }
+  .ot-unit.fl { background: var(--c); color: #06101c; }
+  .ot-lad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 8px; }
+  .ot-lc { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+  .ot-lv { display: flex; justify-content: center; font-family: var(--font-mono); font-weight: 700; font-size: 12px; line-height: 1; color: var(--dim); transition: color 0.3s; }
+  .ot-lc.a .ot-lv, .ot-lc.p .ot-lv { color: var(--c); }
+  .ot-lc > span { width: 100%; text-align: center; font-family: var(--font-mono); font-weight: 600; font-size: 0.68em; padding: 1px 0; border-radius: 5px; border: 1px solid var(--border-strong); color: var(--dim); transition: all 0.3s; }
+  .ot-lc.a > span { color: #06101c; background: var(--c); border-color: var(--c); }
+  .ot-lc.p > span { color: var(--c); border-color: var(--c); }
+  .ot-bar { height: 4px; border-radius: 2px; background: var(--border-strong); margin-top: 7px; overflow: hidden; } .ot-bar i { display: block; height: 100%; background: var(--c); width: 0; }
+  .ot-rate { margin-top: 5px; font-family: var(--font-mono); font-size: 0.72em; color: var(--dim); white-space: nowrap; min-height: 1em; } .ot-rate b { color: var(--c); }
   .ns-tr { font-size: 0.72em; text-align: center; margin: 2px 0 0; min-height: 1.3em; }
   .ns-row { display: flex; justify-content: center; align-items: flex-start; gap: 14px; }
   .ns-a { flex: 0 1 215px; min-width: 0; }
@@ -5669,7 +5694,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -5691,8 +5716,8 @@ $HtmlPageLight = @'
   <div class="ns-meters">
     <div>
       <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
-        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
-        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
+        <div class="ns-pot-a"><div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div></div><div class="ns-pot-c" id="nsPotDt"></div>
       </div>
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
       <div class="ns-lane" id="nsLaneD" title="Risposte DNS servite al PC (dalla cache RAM, dalla rete o bloccate dallo scudo RPZ). Verde = consentita, rosso = NXDOMAIN o bloccata, giallo = errore del resolver (SERVFAIL). Il riquadro indica il tipo di query; grigio = verifica DNSSEC (DS/DNSKEY) non richiesta direttamente da un programma; 'dash' = traffico della dashboard stessa; xN = richieste identiche nello stesso istante unite"></div>
@@ -5702,8 +5727,8 @@ $HtmlPageLight = @'
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
-        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
-        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
+        <div class="ns-pot-a"><div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div></div><div class="ns-pot-c" id="nsPotUt"></div>
       </div>
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
       <div class="ns-lane" id="nsLaneU" title="Domande uscite davvero verso internet tramite i resolver upstream. Le risposte dalla cache RAM e i blocchi dello scudo RPZ non generano traffico in uscita e non compaiono qui. Il riquadro indica il tipo di query; grigio = verifica DNSSEC (DS/DNSKEY) non richiesta direttamente da un programma; 'dash' = traffico della dashboard stessa; xN = richieste identiche nello stesso istante unite; +N in alto a destra = eventi non mostrati negli ultimi 30 s"></div>
@@ -6375,10 +6400,95 @@ $HtmlPageLight = @'
     if (st) setTimeout(function () { st.textContent = ''; }, 30000);
   }
   (function () { var b = document.getElementById('btnForceLine'); if (b) b.addEventListener('click', forceLineTest); })();
+var OT_U = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'], OT_D = [0, 2, 2, 2, 3, 3, 3, 3, 3], OT = {}, OT_RUN = false;
+function otP(n) { return Math.pow(1024, n); }
+function otIdx(b) { var i = 0; while (i < 8 && b >= otP(i + 1)) i++; return i; }
+function otSm(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+function otOdo(host, nI) {
+  var strips = [], cols = [], nD = -1;
+  function build(nd) {
+    host.innerHTML = ''; strips = []; cols = []; nD = nd;
+    for (var i = 0; i < nI + nd; i++) {
+      if (i === nI) { var c = document.createElement('span'); c.className = 'ot-c'; c.textContent = ','; host.appendChild(c); }
+      var o = document.createElement('span'); o.className = 'ot-d';
+      var s = document.createElement('span'); s.className = 'ot-s';
+      s.innerHTML = '<i>0</i><i>1</i><i>2</i><i>3</i><i>4</i><i>5</i><i>6</i><i>7</i><i>8</i><i>9</i><i>0</i>';
+      o.appendChild(s); host.appendChild(o); strips.push(s); cols.push(o);
+    }
+  }
+  return {
+    set: function (val, nd) {
+      if (nd !== nD) build(nd);
+      var v = val * Math.pow(10, nd), n = nI + nd;
+      for (var j = 0; j < n; j++) {
+        var p10 = Math.pow(10, j), q = Math.floor(v / p10), dg = q % 10, pos;
+        if (j === 0) pos = v % 10; else pos = dg + otSm(((v % p10) / p10 - 0.8) / 0.2);
+        var k = n - 1 - j;
+        strips[k].style.transform = 'translateY(' + (-pos) + 'em)';
+        cols[k].style.opacity = (q === 0 && j > nd) ? '0.14' : '1';
+      }
+    }
+  };
+}
+function otInit(key) {
+  var root = document.getElementById(key === 'D' ? 'nsPotDt' : 'nsPotUt');
+  if (!root) return null;
+  if (root._ot) return root._ot;
+  var lc = '';
+  for (var k = 4; k >= 0; k--) lc += '<div class="ot-lc"><div class="ot-lv"><span class="ot-odo"></span></div><span>' + OT_U[k] + '</span></div>';
+  root.innerHTML = '<div class="ot-cap">&nbsp;</div><div class="ot-big"><span class="ot-odo ot-main"></span><span class="ot-unit">GB</span></div><div class="ot-lad">' + lc + '</div><div class="ot-bar"><i></i></div><div class="ot-rate">&nbsp;</div>';
+  root.title = 'Traffico totale ' + (key === 'D' ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche da inizio conteggio; sopravvive al riavvio della Dashboard e al reset di una scheda, si azzera allo spegnimento del PC. Sotto: valore per ogni unita (TB, GB, MB, KB, B)';
+  var s = { key: key, b: 0, d: 0, t: 0, r: 0, ready: false, last: -1, lt: 0, capTxt: '', rt: '',
+    cap: root.querySelector('.ot-cap'), unit: root.querySelector('.ot-unit'), bar: root.querySelector('.ot-bar i'), rate: root.querySelector('.ot-rate'),
+    chips: root.querySelectorAll('.ot-lc'), odo: otOdo(root.querySelector('.ot-main'), 4),
+    segs: [].map.call(root.querySelectorAll('.ot-lv .ot-odo'), function (o) { return otOdo(o, 4); }) };
+  root._ot = s; OT[key] = s;
+  if (!OT_RUN) { OT_RUN = true; requestAnimationFrame(otLoop); }
+  return s;
+}
+function otFeed(key, bytes, since) {
+  var s = otInit(key); if (!s || !(bytes >= 0)) return;
+  var now = performance.now();
+  var ct = (key === 'D' ? '&#11015; scaricati' : '&#11014; inviati') + (since ? ' dal ' + nsEsc(since) : '');
+  if (ct !== s.capTxt) { s.capTxt = ct; s.cap.innerHTML = ct; }
+  if (!s.ready) { s.b = bytes; s.d = bytes; s.t = now; s.r = 0; s.ready = true; return; }
+  if (bytes < s.b) { s.b = bytes; s.d = bytes; s.t = now; s.r = 0; return; }
+  if (bytes > s.b) {
+    var dt = (now - s.t) / 1000;
+    if (dt > 0.25) s.r = s.r ? s.r * 0.5 + ((bytes - s.b) / dt) * 0.5 : (bytes - s.b) / dt;
+    s.b = bytes; s.t = now;
+  }
+}
+function otRateTxt(r) {
+  var i = otIdx(r);
+  return (r / otP(i)).toLocaleString('it-IT', { minimumFractionDigits: i ? 1 : 0, maximumFractionDigits: i ? 1 : 0 }) + ' ' + OT_U[i] + '/s';
+}
+function otLoop(now) {
+  for (var key in OT) {
+    var s = OT[key]; if (!s.ready) continue;
+    var dt = s.lt ? Math.min((now - s.lt) / 1000, 0.1) : 0.016; s.lt = now;
+    var age = (now - s.t) / 1000, er = age > 8 ? 0 : s.r;
+    var tgt = s.b + er * Math.min(age, 6);
+    if (tgt > s.d) s.d += (tgt - s.d) * (1 - Math.exp(-dt / 0.3));
+    var i = otIdx(s.d), val = s.d / otP(i), bs = Math.max(i, 4) - 4;
+    s.odo.set(val, OT_D[i]);
+    if (i !== s.last) {
+      s.last = i; s.unit.textContent = OT_U[i]; s.unit.classList.add('fl');
+      (function (u) { setTimeout(function () { u.classList.remove('fl'); }, 450); })(s.unit);
+      for (var c = 0; c < 5; c++) { var ku = bs + 4 - c; s.chips[c].className = 'ot-lc ' + (ku === i ? 'a' : (ku < i ? 'p' : '')); s.chips[c].lastChild.textContent = OT_U[ku]; }
+    }
+    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0); }
+    s.bar.style.width = (i < 8 ? Math.min(val / 1024, 1) * 100 : 100) + '%';
+    var rt = (key === 'D' ? '&#11015; ' : '&#11014; ') + '<b>' + otRateTxt(er) + '</b>';
+    if (rt !== s.rt) { s.rt = rt; s.rate.innerHTML = rt; }
+  }
+  requestAnimationFrame(otLoop);
+}
   function nsPotUpdate(d) {
     try { nsFlags(d); } catch (e) {}
     var p = d.line_potential, n = d.net_speed;
     var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
+    try { otInit('D'); otInit('U'); } catch (e) {}
     for (var i = 0; i < cfg.length; i++) {
       var c = document.getElementById(cfg[i][0]), v = document.getElementById(cfg[i][1]), s = document.getElementById(cfg[i][2]);
       if (!c || !v || !s) continue;
@@ -6388,9 +6498,8 @@ $HtmlPageLight = @'
         var isD = (i === 0);
         var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
         if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
-        var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
-        var gb = mb / 1024, tot = gb >= 1024 ? (gb / 1024).toFixed(2).replace('.', ',') + ' TB' : gb.toFixed(2).replace('.', ',') + ' GB';
-        sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'inizio del conteggio (data e ora sotto il valore); sopravvive al riavvio della Dashboard e al reset di una scheda, si azzera allo spegnimento del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + (p.count_since ? '<em class="ns-pot-since">dal ' + nsEsc(p.count_since) + '</em>' : '') + '</span>';
+        var ob = Number(isD ? p.acc_down : p.acc_up); if (!(ob >= 0)) ob = (Number(isD ? p.mb_down : p.mb_up) || 0) * 1048576;
+        try { otFeed(isD ? 'D' : 'U', ob, p.count_since); } catch (e) {}
         s.innerHTML = sub;
         c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
       } else {
@@ -7170,7 +7279,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7269,6 +7378,27 @@ $HtmlPage = @'
   .ns-stc { max-width: 250px; margin: 3px auto 0; font-size: 0.66em; text-align: center; color: var(--dim); }
   #nsDSa { color: #22d3ee; } #nsUSa { color: #ff8c1a; }
   #nsPotDc:not(.fb) .ns-pot-v b { color: #22d3ee; } #nsPotUc:not(.fb) .ns-pot-v b { color: #ff8c1a; }
+  .ns-pot { flex-wrap: wrap; }
+  .ns-pot-a { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1 1 190px; min-width: 0; }
+  .ns-pot-c { --c: #22d3ee; flex: 0 1 226px; min-width: 200px; padding-left: 12px; border-left: 1px dashed var(--border-strong); }
+  #nsPotUc .ns-pot-c { --c: #ff8c1a; }
+  .ot-cap { font-size: 0.72em; color: var(--dim); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; white-space: nowrap; min-height: 1em; }
+  .ot-big { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-weight: 700; font-size: 24px; line-height: 1; color: var(--c); }
+  .ot-odo { display: inline-flex; align-items: baseline; }
+  .ot-d { display: inline-block; height: 1em; width: 0.62em; overflow: hidden; line-height: 1em; -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); }
+  .ot-s { display: block; will-change: transform; } .ot-s i { display: block; height: 1em; font-style: normal; text-align: center; }
+  .ot-c { display: inline-block; width: 0.3em; text-align: center; line-height: 1em; }
+  .ot-unit { font-size: 0.6em; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--c); transition: background 0.4s, color 0.4s; }
+  .ot-unit.fl { background: var(--c); color: #06101c; }
+  .ot-lad { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 8px; }
+  .ot-lc { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+  .ot-lv { display: flex; justify-content: center; font-family: var(--font-mono); font-weight: 700; font-size: 12px; line-height: 1; color: var(--dim); transition: color 0.3s; }
+  .ot-lc.a .ot-lv, .ot-lc.p .ot-lv { color: var(--c); }
+  .ot-lc > span { width: 100%; text-align: center; font-family: var(--font-mono); font-weight: 600; font-size: 0.68em; padding: 1px 0; border-radius: 5px; border: 1px solid var(--border-strong); color: var(--dim); transition: all 0.3s; }
+  .ot-lc.a > span { color: #06101c; background: var(--c); border-color: var(--c); }
+  .ot-lc.p > span { color: var(--c); border-color: var(--c); }
+  .ot-bar { height: 4px; border-radius: 2px; background: var(--border-strong); margin-top: 7px; overflow: hidden; } .ot-bar i { display: block; height: 100%; background: var(--c); width: 0; }
+  .ot-rate { margin-top: 5px; font-family: var(--font-mono); font-size: 0.72em; color: var(--dim); white-space: nowrap; min-height: 1em; } .ot-rate b { color: var(--c); }
   .ns-tr { font-size: 0.76em; text-align: center; margin: 2px 0 4px; min-height: 1.3em; }
   .ns-trs { color: var(--dim); }
   .ns-hc { display: block; width: 100%; max-width: 250px; margin: 2px auto 0; }
@@ -8027,7 +8157,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -8073,8 +8203,8 @@ $HtmlPage = @'
   <div class="ns-meters">
     <div>
       <div class="ns-pot fb" id="nsPotDc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
-        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
-        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div>
+        <div class="ns-pot-a"><div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11015;</div><div class="ns-pot-s" id="nsPotDs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotD">--</b><small>Mbps</small></div></div><div class="ns-pot-c" id="nsPotDt"></div>
       </div>
       <div class="ns-mh"><span style="color:#22d3ee">&#11015; Download</span><small id="nsDpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsDc" viewBox="0 0 200 104" role="img" aria-label="Indicatore download"><polyline class="cv-c" id="nsDc0" style="--i:0" points="20,6.0 30,13.0 40,6.0"/><polyline class="cv-c" id="nsDc1" style="--i:1" points="20,18.5 30,25.5 40,18.5"/><polyline class="cv-c" id="nsDc2" style="--i:2" points="20,31.0 30,38.0 40,31.0"/><polyline class="cv-c" id="nsDc3" style="--i:3" points="20,43.5 30,50.5 40,43.5"/><polyline class="cv-c" id="nsDc4" style="--i:4" points="20,56.0 30,63.0 40,56.0"/><polyline class="cv-c" id="nsDc5" style="--i:5" points="20,68.5 30,75.5 40,68.5"/><polyline class="cv-c" id="nsDc6" style="--i:6" points="20,81.0 30,88.0 40,81.0"/><polyline class="cv-c" id="nsDc7" style="--i:7" points="20,93.5 30,100.5 40,93.5"/><text class="gv" id="nsDv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsDx" x="66" y="82">&nbsp;</text></svg>
@@ -8083,8 +8213,8 @@ $HtmlPage = @'
     </div>
     <div>
       <div class="ns-pot fb" id="nsPotUc" title="Potenziale velocit&agrave; della connessione internet: ultima misura di un test reale, eseguito ogni 30 minuti (alle :00 e alle :30) dopo i task di aggiornamento. Se vedi &laquo;velocit&agrave; scheda&raquo; il test non ha ancora prodotto una misura valida">
-        <div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
-        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div>
+        <div class="ns-pot-a"><div><div class="ns-pot-l">&#128225; Velocit&agrave; linea &#11014;</div><div class="ns-pot-s" id="nsPotUs">&nbsp;</div></div>
+        <div class="ns-pot-v"><b id="nsPotU">--</b><small>Mbps</small></div></div><div class="ns-pot-c" id="nsPotUt"></div>
       </div>
       <div class="ns-mh"><span style="color:#ff8c1a">&#11014; Upload</span><small id="nsUpk">picco 0 Mbps</small></div>
       <svg class="ns-g ns-cv" id="nsUc" viewBox="0 0 200 104" role="img" aria-label="Indicatore upload"><polyline class="cv-c" id="nsUc0" style="--i:7" points="20,13.0 30,6.0 40,13.0"/><polyline class="cv-c" id="nsUc1" style="--i:6" points="20,25.5 30,18.5 40,25.5"/><polyline class="cv-c" id="nsUc2" style="--i:5" points="20,38.0 30,31.0 40,38.0"/><polyline class="cv-c" id="nsUc3" style="--i:4" points="20,50.5 30,43.5 40,50.5"/><polyline class="cv-c" id="nsUc4" style="--i:3" points="20,63.0 30,56.0 40,63.0"/><polyline class="cv-c" id="nsUc5" style="--i:2" points="20,75.5 30,68.5 40,75.5"/><polyline class="cv-c" id="nsUc6" style="--i:1" points="20,88.0 30,81.0 40,88.0"/><polyline class="cv-c" id="nsUc7" style="--i:0" points="20,100.5 30,93.5 40,100.5"/><text class="gv" id="nsUv" x="66" y="42">--</text><text class="gu" x="66" y="57">Mbps</text><text class="gu" id="nsUx" x="66" y="82">&nbsp;</text></svg>
@@ -9768,9 +9898,94 @@ async function forceLineTest() {
   if (st) setTimeout(function () { st.textContent = ''; }, 30000);
 }
 (function () { var b = document.getElementById('btnForceLine'); if (b) b.addEventListener('click', forceLineTest); })();
+var OT_U = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'], OT_D = [0, 2, 2, 2, 3, 3, 3, 3, 3], OT = {}, OT_RUN = false;
+function otP(n) { return Math.pow(1024, n); }
+function otIdx(b) { var i = 0; while (i < 8 && b >= otP(i + 1)) i++; return i; }
+function otSm(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+function otOdo(host, nI) {
+  var strips = [], cols = [], nD = -1;
+  function build(nd) {
+    host.innerHTML = ''; strips = []; cols = []; nD = nd;
+    for (var i = 0; i < nI + nd; i++) {
+      if (i === nI) { var c = document.createElement('span'); c.className = 'ot-c'; c.textContent = ','; host.appendChild(c); }
+      var o = document.createElement('span'); o.className = 'ot-d';
+      var s = document.createElement('span'); s.className = 'ot-s';
+      s.innerHTML = '<i>0</i><i>1</i><i>2</i><i>3</i><i>4</i><i>5</i><i>6</i><i>7</i><i>8</i><i>9</i><i>0</i>';
+      o.appendChild(s); host.appendChild(o); strips.push(s); cols.push(o);
+    }
+  }
+  return {
+    set: function (val, nd) {
+      if (nd !== nD) build(nd);
+      var v = val * Math.pow(10, nd), n = nI + nd;
+      for (var j = 0; j < n; j++) {
+        var p10 = Math.pow(10, j), q = Math.floor(v / p10), dg = q % 10, pos;
+        if (j === 0) pos = v % 10; else pos = dg + otSm(((v % p10) / p10 - 0.8) / 0.2);
+        var k = n - 1 - j;
+        strips[k].style.transform = 'translateY(' + (-pos) + 'em)';
+        cols[k].style.opacity = (q === 0 && j > nd) ? '0.14' : '1';
+      }
+    }
+  };
+}
+function otInit(key) {
+  var root = document.getElementById(key === 'D' ? 'nsPotDt' : 'nsPotUt');
+  if (!root) return null;
+  if (root._ot) return root._ot;
+  var lc = '';
+  for (var k = 4; k >= 0; k--) lc += '<div class="ot-lc"><div class="ot-lv"><span class="ot-odo"></span></div><span>' + OT_U[k] + '</span></div>';
+  root.innerHTML = '<div class="ot-cap">&nbsp;</div><div class="ot-big"><span class="ot-odo ot-main"></span><span class="ot-unit">GB</span></div><div class="ot-lad">' + lc + '</div><div class="ot-bar"><i></i></div><div class="ot-rate">&nbsp;</div>';
+  root.title = 'Traffico totale ' + (key === 'D' ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche da inizio conteggio; sopravvive al riavvio della Dashboard e al reset di una scheda, si azzera allo spegnimento del PC. Sotto: valore per ogni unita (TB, GB, MB, KB, B)';
+  var s = { key: key, b: 0, d: 0, t: 0, r: 0, ready: false, last: -1, lt: 0, capTxt: '', rt: '',
+    cap: root.querySelector('.ot-cap'), unit: root.querySelector('.ot-unit'), bar: root.querySelector('.ot-bar i'), rate: root.querySelector('.ot-rate'),
+    chips: root.querySelectorAll('.ot-lc'), odo: otOdo(root.querySelector('.ot-main'), 4),
+    segs: [].map.call(root.querySelectorAll('.ot-lv .ot-odo'), function (o) { return otOdo(o, 4); }) };
+  root._ot = s; OT[key] = s;
+  if (!OT_RUN) { OT_RUN = true; requestAnimationFrame(otLoop); }
+  return s;
+}
+function otFeed(key, bytes, since) {
+  var s = otInit(key); if (!s || !(bytes >= 0)) return;
+  var now = performance.now();
+  var ct = (key === 'D' ? '&#11015; scaricati' : '&#11014; inviati') + (since ? ' dal ' + nsEsc(since) : '');
+  if (ct !== s.capTxt) { s.capTxt = ct; s.cap.innerHTML = ct; }
+  if (!s.ready) { s.b = bytes; s.d = bytes; s.t = now; s.r = 0; s.ready = true; return; }
+  if (bytes < s.b) { s.b = bytes; s.d = bytes; s.t = now; s.r = 0; return; }
+  if (bytes > s.b) {
+    var dt = (now - s.t) / 1000;
+    if (dt > 0.25) s.r = s.r ? s.r * 0.5 + ((bytes - s.b) / dt) * 0.5 : (bytes - s.b) / dt;
+    s.b = bytes; s.t = now;
+  }
+}
+function otRateTxt(r) {
+  var i = otIdx(r);
+  return (r / otP(i)).toLocaleString('it-IT', { minimumFractionDigits: i ? 1 : 0, maximumFractionDigits: i ? 1 : 0 }) + ' ' + OT_U[i] + '/s';
+}
+function otLoop(now) {
+  for (var key in OT) {
+    var s = OT[key]; if (!s.ready) continue;
+    var dt = s.lt ? Math.min((now - s.lt) / 1000, 0.1) : 0.016; s.lt = now;
+    var age = (now - s.t) / 1000, er = age > 8 ? 0 : s.r;
+    var tgt = s.b + er * Math.min(age, 6);
+    if (tgt > s.d) s.d += (tgt - s.d) * (1 - Math.exp(-dt / 0.3));
+    var i = otIdx(s.d), val = s.d / otP(i), bs = Math.max(i, 4) - 4;
+    s.odo.set(val, OT_D[i]);
+    if (i !== s.last) {
+      s.last = i; s.unit.textContent = OT_U[i]; s.unit.classList.add('fl');
+      (function (u) { setTimeout(function () { u.classList.remove('fl'); }, 450); })(s.unit);
+      for (var c = 0; c < 5; c++) { var ku = bs + 4 - c; s.chips[c].className = 'ot-lc ' + (ku === i ? 'a' : (ku < i ? 'p' : '')); s.chips[c].lastChild.textContent = OT_U[ku]; }
+    }
+    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0); }
+    s.bar.style.width = (i < 8 ? Math.min(val / 1024, 1) * 100 : 100) + '%';
+    var rt = (key === 'D' ? '&#11015; ' : '&#11014; ') + '<b>' + otRateTxt(er) + '</b>';
+    if (rt !== s.rt) { s.rt = rt; s.rate.innerHTML = rt; }
+  }
+  requestAnimationFrame(otLoop);
+}
 function nsPotUpdate(d) {
   var p = d.line_potential, n = d.net_speed;
   var cfg = [['nsPotDc', 'nsPotD', 'nsPotDs', 'down_mbps'], ['nsPotUc', 'nsPotU', 'nsPotUs', 'up_mbps']];
+  try { otInit('D'); otInit('U'); } catch (e) {}
   for (var i = 0; i < cfg.length; i++) {
     var c = document.getElementById(cfg[i][0]), v = document.getElementById(cfg[i][1]), s = document.getElementById(cfg[i][2]);
     if (!c || !v || !s) continue;
@@ -9780,9 +9995,8 @@ function nsPotUpdate(d) {
       var isD = (i === 0);
       var sub = nsEsc(isD ? (p.testo_down || p.testo) : (p.testo_up || p.testo));
       if (n && n.ok) sub += ' &middot; in uso ' + Math.round(Math.min(n[cfg[i][3]] / pot, 9.99) * 100) + '%';
-      var mb = Number(isD ? p.mb_down : p.mb_up) || 0;
-      var gb = mb / 1024, tot = gb >= 1024 ? (gb / 1024).toFixed(2).replace('.', ',') + ' TB' : gb.toFixed(2).replace('.', ',') + ' GB';
-      sub += '<span class="ns-pot-d ' + (isD ? 'dn' : 'up') + '" title="Traffico totale ' + (isD ? 'ricevuto' : 'inviato') + ' dalle schede di rete fisiche dall\'inizio del conteggio (data e ora sotto il valore); sopravvive al riavvio della Dashboard e al reset di una scheda, si azzera allo spegnimento del PC">' + (isD ? '&#11015; ' : '&#11014; ') + tot + (isD ? ' scaricati' : ' inviati') + (p.count_since ? '<em class="ns-pot-since">dal ' + nsEsc(p.count_since) + '</em>' : '') + '</span>';
+      var ob = Number(isD ? p.acc_down : p.acc_up); if (!(ob >= 0)) ob = (Number(isD ? p.mb_down : p.mb_up) || 0) * 1048576;
+      try { otFeed(isD ? 'D' : 'U', ob, p.count_since); } catch (e) {}
       s.innerHTML = sub;
       c.className = 'ns-pot' + (p.fonte === 'scheda' ? ' fb' : '') + (p.in_corso ? ' run' : '');
     } else {
