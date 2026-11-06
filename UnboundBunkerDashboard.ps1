@@ -260,7 +260,7 @@ $script:LpFile        = "R:\line_potential.json"
 $script:LtFile        = "R:\line_traffic.json"   # inizio e totali del conteggio dati scaricati/inviati (volatile come R:)
 $script:LpLockFile    = "R:\line_test.run"
 $script:LpTaskName    = 'Unbound_Bunker_AbuseCh30m'
-$script:LpMinAgeMin   = 25
+$script:LpIsOffice    = ([string]$env:COMPUTERNAME -ieq 'UFFICIO'); $script:LpMinAgeMin = $(if ($script:LpIsOffice) { 25 } else { 115 }); $script:LpFreqTxt = $(if ($script:LpIsOffice) { 'test ogni 30 min' } else { 'test ogni 2 h' }); $script:LpProfTxt = $(if ($script:LpIsOffice) { 'completo' } else { 'ridotto' })  # [v1112.0] profilo test di velocita' per postazione - UFFICIO: test ogni 30 min come prima; altre postazioni: ogni ~2 h e tetti di byte ridotti (download 4x25 MB, upload 4x10 MB)
 $script:LpTaskNames   = @('Unbound_Bunker_AbuseCh30m', 'Unbound_Bunker_2h')
 $script:LpSettleSec   = 15
 $script:LpPending     = $false
@@ -315,14 +315,14 @@ function Start-LineSpeedTest {
     try {
         $ps = [powershell]::Create()
         [void]$ps.AddScript({
-            param($OutFile, $LockFile, $Secs, $Delay)
+            param($OutFile, $LockFile, $Secs, $Delay, $Lite)
             $ProgressPreference = 'SilentlyContinue'
             $tmpUp = $null
             $lpLog = 'R:\line_test.log'
             try { if ((Test-Path -LiteralPath $lpLog) -and ((Get-Item -LiteralPath $lpLog).Length -gt 102400)) { Remove-Item -LiteralPath $lpLog -Force } } catch {}
             $lpW = { param($m) try { ('[' + (Get-Date).ToString('dd.MM.yyyy HH:mm:ss') + '] ' + $m) | Out-File -LiteralPath $lpLog -Append -Encoding utf8 } catch {} }
             try {
-                & $lpW ('Avvio test linea (flussi=4, secondi=' + $Secs + ', ritardo=' + $Delay + ')')
+                & $lpW ('Avvio test linea (flussi=4, secondi=' + $Secs + ', ritardo=' + $Delay + ', ridotto=' + $Lite + ')')
                 # Pausa iniziale: il task AbuseCh30m riavvia Unbound per ricaricare le RPZ e il DNS
                 # potrebbe non essere ancora pronto appena il task risulta terminato.
                 if ($Delay -gt 0) { Start-Sleep -Seconds $Delay }
@@ -372,13 +372,13 @@ function Start-LineSpeedTest {
 
                 # Download: prova in ordine piu' sorgenti, si ferma alla prima che produce una velocita' > 0
                 $dlUrls = @(
-                    'https://speed.cloudflare.com/__down?bytes=100000000',
+                    ('https://speed.cloudflare.com/__down?bytes=' + $(if ($Lite) { 25000000 } else { 100000000 })),
                     'https://proof.ovh.net/files/100Mb.dat',
                     'https://speedtest.tele2.net/100MB.zip'
                 )
                 $dl = 0.0
                 foreach ($u in $dlUrls) {
-                    $argDown = '-s -L -A "Mozilla/5.0" -o NUL -w "%{speed_download}|%{http_code}" --max-time ' + $Secs + ' --connect-timeout 5 "' + $u + '"'
+                    $argDown = '-s -L -A "Mozilla/5.0" -o NUL ' + $(if ($Lite -and $u -notlike '*speed.cloudflare.com*') { '-r 0-24999999 ' } else { '' }) + '-w "%{speed_download}|%{http_code}" --max-time ' + $Secs + ' --connect-timeout 5 "' + $u + '"'
                     & $lpW ('Download da ' + $u)
                     $dl = & $runFlows $argDown $flows
                     if ($dl -gt 0) { break }
@@ -386,7 +386,7 @@ function Start-LineSpeedTest {
                 & $lpW ('Download totale (byte/s): ' + $dl)
 
                 $tmpUp = Join-Path $env:TEMP 'ub_line_up.bin'
-                $buf = New-Object byte[] 26214400
+                $upSize = 26214400; if ($Lite) { $upSize = 10485760 }; $buf = New-Object byte[] $upSize
                 (New-Object System.Random).NextBytes($buf)
                 [System.IO.File]::WriteAllBytes($tmpUp, $buf)
                 # Upload: prova piu' varianti (HTTP/2 poi HTTP/1.1 su Cloudflare, poi un secondo server) e si ferma
@@ -432,7 +432,7 @@ function Start-LineSpeedTest {
                 if ($tmpUp) { Remove-Item -LiteralPath $tmpUp -Force -ErrorAction SilentlyContinue }
                 Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
             }
-        }).AddArgument($script:LpFile).AddArgument($script:LpLockFile).AddArgument($script:LpTestSecs).AddArgument($DelaySec)
+        }).AddArgument($script:LpFile).AddArgument($script:LpLockFile).AddArgument($script:LpTestSecs).AddArgument($DelaySec).AddArgument([bool](-not $script:LpIsOffice))
         $script:LpAsync = @{ Ps = $ps; Handle = $ps.BeginInvoke() }
         return 'started'
     } catch {
@@ -546,8 +546,8 @@ function Get-LinePotential {
                 $j = Get-Content -LiteralPath $script:LpFile -Raw -ErrorAction Stop | ConvertFrom-Json
                 if ([double]$j.down_mbps -gt 0 -or [double]$j.up_mbps -gt 0) {
                     $quando = ([datetime]$j.ts).ToString('HH:mm')
-                    $testoDown = "misurato alle $quando"
-                    $testoUp   = "misurato alle $quando"
+                    $testoDown = "misurato alle $quando · $($script:LpFreqTxt) · profilo $($script:LpProfTxt)"
+                    $testoUp   = "misurato alle $quando · $($script:LpFreqTxt) · profilo $($script:LpProfTxt)"
                     if ($inCorso) { 
                         $testoDown += ' · test in corso'
                         $testoUp   += ' · test in corso'
@@ -572,7 +572,7 @@ function Get-LinePotential {
         if (-not $res) {
             $nicMbps = Get-NicLinkMbps
             if ($nicMbps -gt 0) {
-                $testoBase = if ($inCorso) { 'solo velocità scheda di rete · test in corso' } else { 'solo velocità scheda di rete · nessuna misura valida' }
+                $testoBase = if ($inCorso) { 'solo velocità scheda di rete · test in corso' } else { 'solo velocità scheda di rete · nessuna misura valida' }; $testoBase += " · $($script:LpFreqTxt) · profilo $($script:LpProfTxt)"
                 $res = @{ 
                     ok           = $true
                     down_mbps    = $nicMbps
@@ -5669,7 +5669,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -7170,7 +7170,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -8027,7 +8027,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1111.6 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.0 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
