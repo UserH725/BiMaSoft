@@ -193,7 +193,7 @@
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 19.5px; }
-  #ana { flex: 0 0 auto; width: 54px; height: 54px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
+  #ana { flex: 0 0 auto; width: var(--anaS, 54px); height: var(--anaS, 54px); filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
 
@@ -2327,21 +2327,40 @@
 
   (function () {
     var NS = 'http://www.w3.org/2000/svg', g = document.getElementById('anaDots'), i, a, c;
-    var hh = document.getElementById('anaH'), hm = document.getElementById('anaM'), hs = document.getElementById('anaS');
+    var hh = document.getElementById('anaH'), hm = document.getElementById('anaM'), hs = document.getElementById('anaS'), dots = [];
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     for (i = 0; i < 12; i++) {
       a = i * Math.PI / 6; c = document.createElementNS(NS, 'circle');
       c.setAttribute('cx', 50 + 38 * Math.sin(a)); c.setAttribute('cy', 50 - 38 * Math.cos(a));
       c.setAttribute('r', i % 3 ? 2.6 : 3.8); c.setAttribute('fill', 'hsl(' + ((i * 30 + 330) % 360) + ',95%,60%)');
-      g.appendChild(c);
+      g.appendChild(c); dots.push(c);
     }
     function rot(e, d) { e.setAttribute('transform', 'rotate(' + d + ' 50 50)'); }
     function frame() {
       var d = new Date(), s = d.getSeconds() + (reduce ? 0 : d.getMilliseconds() / 1000), m = d.getMinutes() + s / 60, h = d.getHours() % 12 + m / 60;
       rot(hh, h * 30); rot(hm, m * 6); rot(hs, s * 6);
+      /* pallini delle ore: gradiente arcobaleno che ruota in senso orario (un giro ogni 12 s; fermo con movimento ridotto) */
+      var hb = reduce ? 0 : (Date.now() % 12000) / 12000 * 360;
+      for (var k = 0; k < 12; k++) dots[k].setAttribute('fill', 'hsl(' + ((k * 30 + 330 - hb + 360) % 360).toFixed(1) + ',95%,60%)');
       if (reduce) setTimeout(frame, 1000); else requestAnimationFrame(frame);
     }
     frame();
+  })();
+
+  /* orologio analogico centrale: si ingrandisce al massimo in base allo spazio libero dell'intestazione (altezza e larghezza) */
+  (function () {
+    var pl = document.getElementById('player'), ana = document.getElementById('ana'), L = pl.querySelector('.pl'), R = pl.querySelector('.pr'), rc = document.getElementById('rc'), last = 0;
+    function fit() {
+      var cs = getComputedStyle(pl), pt = parseFloat(cs.paddingTop) || 0, pb = parseFloat(cs.paddingBottom) || 0, px = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0),
+          gap = parseFloat(cs.columnGap) || 12, minH = parseFloat(cs.minHeight) || 0,
+          h = Math.max(minH, L.offsetHeight + pt + pb, R.offsetHeight + pt + pb) - pt - pb,
+          w = pl.clientWidth - px - 2 * Math.max(rc.offsetWidth, 130) - 2 * gap,
+          s = Math.floor(Math.max(40, Math.min(h, w)));
+      if (s !== last) { last = s; pl.style.setProperty('--anaS', s + 'px'); }
+    }
+    fit(); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit);
+    if (window.ResizeObserver) { var ro = new ResizeObserver(fit); ro.observe(pl); ro.observe(L); ro.observe(R); ro.observe(rc); }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   })();
 
   (function () {
@@ -2686,12 +2705,60 @@
       if (!dyn) wMasks[str] = m;
       return m;
     }
-    /* sequenza: parola fissa, poi (alternando) nome della stazione o titolo del brano, poi parola fissa... */
-    var wSeq = 0, wDynT = 0;
+    /* logo della stazione in ascolto: stessa tecnica delle scritte (micro-tasselli), ma con i colori originali del logo */
+    var LGS = 60, lgMasks = {};
+    function logoBuild(im) {
+      try {
+        var iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height, sc, dw, dh, cv2, x, d, i, j, p, r, g, b, lum, t, ix,
+            mnx = 1e9, mxx = -1, mny = 1e9, mxy = -1, w, h, m, rgb;
+        if (!iw || !ih) return null;
+        sc = LGS / Math.max(iw, ih); dw = Math.max(1, Math.round(iw * sc)); dh = Math.max(1, Math.round(ih * sc));
+        cv2 = document.createElement('canvas'); cv2.width = LGS; cv2.height = LGS; x = cv2.getContext('2d');
+        x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+        x.drawImage(im, (LGS - dw) / 2, (LGS - dh) / 2, dw, dh);
+        d = x.getImageData(0, 0, LGS, LGS).data;
+        for (j = 0; j < LGS; j++) for (i = 0; i < LGS; i++) if (d[(j * LGS + i) * 4 + 3] > 110) {
+          if (i < mnx) mnx = i; if (i > mxx) mxx = i; if (j < mny) mny = j; if (j > mxy) mxy = j;
+        }
+        if (mxx < 0) return null;
+        w = mxx - mnx + 1; h = mxy - mny + 1; m = new Uint8Array(w * h); rgb = new Array(w * h);
+        for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
+          p = ((j + mny) * LGS + i + mnx) * 4;
+          if (d[p + 3] <= 110) continue;
+          ix = j * w + i; m[ix] = 1; r = d[p]; g = d[p + 1]; b = d[p + 2];
+          lum = 0.3 * r + 0.59 * g + 0.11 * b;
+          if (lum < 110) { t = (110 - lum) / 110 * 0.85; r += (255 - r) * t; g += (255 - g) * t; b += (255 - b) * t; }   /* le parti scure restano visibili sulla palla */
+          rgb[ix] = 'rgba(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ',';
+        }
+        return { m: m, w: w, h: h, rgb: rgb };
+      } catch (e) { return null; }
+    }
+    function logoMask(u) {
+      var e = lgMasks[u], im;
+      if (e && typeof e === 'object') return e;
+      if (e !== undefined) return null;   /* 'ld' = in caricamento, 0 = non utilizzabile */
+      lgMasks[u] = 'ld'; im = new Image();
+      im.onload = function () { lgMasks[u] = logoBuild(im) || 0; };
+      im.onerror = function () { lgMasks[u] = 0; };
+      im.src = u;
+      return null;
+    }
+    /* sequenza: il logo della stazione alterna ogni scritta (scritta, logo, scritta, logo...); le scritte sono a turno una parola fissa
+       e il nome della stazione o il titolo del brano (alternati) */
+    var wSeq = 0, wTxt = 0, wDynT = 0;
     function wordPick() {
       var st = (typeof cur !== 'undefined' && cur >= 0 && STATIONS[cur]) ? String(STATIONS[cur].name || '').trim() : '',
-          sg = String(typeof song !== 'undefined' ? song : '').replace(/^\u266A\s*/, '').trim(), a, q, k;
+          sg = String(typeof song !== 'undefined' ? song : '').replace(/^\u266A\s*/, '').trim(), a, q, k, u, lm;
       if (wSeq++ % 2) {
+        if (st && typeof stLogo === 'function') {
+          u = stLogo(st);
+          if (u) {
+            lm = logoMask(u); if (lm) return lm;
+            if (lgMasks[u] === 'ld') wSeq--;   /* ancora in caricamento: riprova al prossimo giro */
+          }
+        }
+      }
+      if (wTxt++ % 2) {
         a = (wDynT++ % 2) ? [sg, st] : [st, sg];
         for (q = 0; q < 2; q++) if (a[q]) return a[q];
       }
@@ -2702,7 +2769,7 @@
       var i, k, m, dur, free = [], u = Math.PI / (WNL * WS), lat, lon0;
       for (i = wAct.length - 1; i >= 0; i--) if (t - wAct[i].t0 > wAct[i].dur) wAct.splice(i, 1);
       if (t < wNext || wAct.length >= 1) return;
-      m = wordMask(wordPick());
+      m = wordPick(); if (typeof m === 'string') m = wordMask(m);
       for (i = 0; i < wBands.length; i++) if (!wAct.some(function (a) { return a.b === wBands[i]; }) && Math.abs(wBands[i]) + m.h * u / 2 <= 1.15) free.push(wBands[i]);
       if (!free.length) free.push(wBands[0]);
       lat = free[Math.floor(Math.random() * free.length)];
@@ -2873,7 +2940,7 @@
                 if (!wm.m[(wm.h - 1 - rr) * wm.w + cc]) continue;
                 var a0 = (sj - 0.03) / WS, a1 = (sj + 1.03) / WS, b0 = (si - 0.03) / WS, b1 = (si + 1.03) / WS,
                     wh = Math.round((wd.h0 + t * 60 + cc * 5) % 360), wa = Math.min(1, wal * 1.6);
-                c.fillStyle = 'hsla(' + wh + ',100%,52%,' + wa + ')';
+                c.fillStyle = wm.rgb ? wm.rgb[(wm.h - 1 - rr) * wm.w + cc] + wa + ')' : 'hsla(' + wh + ',100%,52%,' + wa + ')';
                 c.beginPath();
                 c.moveTo(bi(X4, a0, b0), bi(Y4, a0, b0));
                 c.lineTo(bi(X4, a1, b0), bi(Y4, a1, b0));
