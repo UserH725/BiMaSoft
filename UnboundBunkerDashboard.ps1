@@ -5694,7 +5694,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -6405,9 +6405,9 @@ function otP(n) { return Math.pow(1024, n); }
 function otIdx(b) { var i = 0; while (i < 8 && b >= otP(i + 1)) i++; return i; }
 function otSm(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
 function otOdo(host, nI) {
-  var strips = [], cols = [], nD = -1;
+  var strips = [], cols = [], pos = [], nD = -1;
   function build(nd) {
-    host.innerHTML = ''; strips = []; cols = []; nD = nd;
+    host.innerHTML = ''; strips = []; cols = []; pos = []; nD = nd;
     for (var i = 0; i < nI + nd; i++) {
       if (i === nI) { var c = document.createElement('span'); c.className = 'ot-c'; c.textContent = ','; host.appendChild(c); }
       var o = document.createElement('span'); o.className = 'ot-d';
@@ -6417,14 +6417,15 @@ function otOdo(host, nI) {
     }
   }
   return {
-    set: function (val, nd) {
+    set: function (val, nd, dt) {
       if (nd !== nD) build(nd);
-      var v = val * Math.pow(10, nd), n = nI + nd;
+      var v = val * Math.pow(10, nd), n = nI + nd, kf = 1 - Math.exp(-(dt || 0.016) / 0.1);
       for (var j = 0; j < n; j++) {
-        var p10 = Math.pow(10, j), q = Math.floor(v / p10), dg = q % 10, pos;
-        if (j === 0) pos = v % 10; else pos = dg + otSm(((v % p10) / p10 - 0.8) / 0.2);
-        var k = n - 1 - j;
-        strips[k].style.transform = 'translateY(' + (-pos) + 'em)';
+        var p10 = Math.pow(10, j), q = Math.floor(v / p10), k = n - 1 - j, cur = pos[k], pm;
+        if (cur === undefined || Math.abs(q - cur) > 24) cur = q;
+        else { cur += (q - cur) * kf; if (Math.abs(q - cur) < 0.02) cur = q; }
+        pos[k] = cur; pm = cur - 10 * Math.floor(cur / 10);
+        strips[k].style.transform = 'translateY(' + (-pm) + 'em)';
         cols[k].style.opacity = (q === 0 && j > nd) ? '0.14' : '1';
       }
     }
@@ -6471,13 +6472,13 @@ function otLoop(now) {
     var tgt = s.b + er * Math.min(age, 6);
     if (tgt > s.d) s.d += (tgt - s.d) * (1 - Math.exp(-dt / 0.3));
     var i = otIdx(s.d), val = s.d / otP(i), bs = Math.max(i, 4) - 4;
-    s.odo.set(val, OT_D[i]);
+    s.odo.set(val, OT_D[i], dt);
     if (i !== s.last) {
       s.last = i; s.unit.textContent = OT_U[i]; s.unit.classList.add('fl');
       (function (u) { setTimeout(function () { u.classList.remove('fl'); }, 450); })(s.unit);
       for (var c = 0; c < 5; c++) { var ku = bs + 4 - c; s.chips[c].className = 'ot-lc ' + (ku === i ? 'a' : (ku < i ? 'p' : '')); s.chips[c].lastChild.textContent = OT_U[ku]; }
     }
-    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0); }
+    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0, dt); }
     s.bar.style.width = (i < 8 ? Math.min(val / 1024, 1) * 100 : 100) + '%';
     var rt = (key === 'D' ? '&#11015; ' : '&#11014; ') + '<b>' + otRateTxt(er) + '</b>';
     if (rt !== s.rt) { s.rt = rt; s.rate.innerHTML = rt; }
@@ -7279,7 +7280,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -8157,7 +8158,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.1 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -9903,9 +9904,9 @@ function otP(n) { return Math.pow(1024, n); }
 function otIdx(b) { var i = 0; while (i < 8 && b >= otP(i + 1)) i++; return i; }
 function otSm(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
 function otOdo(host, nI) {
-  var strips = [], cols = [], nD = -1;
+  var strips = [], cols = [], pos = [], nD = -1;
   function build(nd) {
-    host.innerHTML = ''; strips = []; cols = []; nD = nd;
+    host.innerHTML = ''; strips = []; cols = []; pos = []; nD = nd;
     for (var i = 0; i < nI + nd; i++) {
       if (i === nI) { var c = document.createElement('span'); c.className = 'ot-c'; c.textContent = ','; host.appendChild(c); }
       var o = document.createElement('span'); o.className = 'ot-d';
@@ -9915,14 +9916,15 @@ function otOdo(host, nI) {
     }
   }
   return {
-    set: function (val, nd) {
+    set: function (val, nd, dt) {
       if (nd !== nD) build(nd);
-      var v = val * Math.pow(10, nd), n = nI + nd;
+      var v = val * Math.pow(10, nd), n = nI + nd, kf = 1 - Math.exp(-(dt || 0.016) / 0.1);
       for (var j = 0; j < n; j++) {
-        var p10 = Math.pow(10, j), q = Math.floor(v / p10), dg = q % 10, pos;
-        if (j === 0) pos = v % 10; else pos = dg + otSm(((v % p10) / p10 - 0.8) / 0.2);
-        var k = n - 1 - j;
-        strips[k].style.transform = 'translateY(' + (-pos) + 'em)';
+        var p10 = Math.pow(10, j), q = Math.floor(v / p10), k = n - 1 - j, cur = pos[k], pm;
+        if (cur === undefined || Math.abs(q - cur) > 24) cur = q;
+        else { cur += (q - cur) * kf; if (Math.abs(q - cur) < 0.02) cur = q; }
+        pos[k] = cur; pm = cur - 10 * Math.floor(cur / 10);
+        strips[k].style.transform = 'translateY(' + (-pm) + 'em)';
         cols[k].style.opacity = (q === 0 && j > nd) ? '0.14' : '1';
       }
     }
@@ -9969,13 +9971,13 @@ function otLoop(now) {
     var tgt = s.b + er * Math.min(age, 6);
     if (tgt > s.d) s.d += (tgt - s.d) * (1 - Math.exp(-dt / 0.3));
     var i = otIdx(s.d), val = s.d / otP(i), bs = Math.max(i, 4) - 4;
-    s.odo.set(val, OT_D[i]);
+    s.odo.set(val, OT_D[i], dt);
     if (i !== s.last) {
       s.last = i; s.unit.textContent = OT_U[i]; s.unit.classList.add('fl');
       (function (u) { setTimeout(function () { u.classList.remove('fl'); }, 450); })(s.unit);
       for (var c = 0; c < 5; c++) { var ku = bs + 4 - c; s.chips[c].className = 'ot-lc ' + (ku === i ? 'a' : (ku < i ? 'p' : '')); s.chips[c].lastChild.textContent = OT_U[ku]; }
     }
-    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0); }
+    for (var g = 0; g < 5; g++) { var kk = bs + 4 - g; s.segs[g].set(g === 0 ? s.d / otP(kk) : (s.d / otP(kk)) % 1024, 0, dt); }
     s.bar.style.width = (i < 8 ? Math.min(val / 1024, 1) * 100 : 100) + '%';
     var rt = (key === 'D' ? '&#11015; ' : '&#11014; ') + '<b>' + otRateTxt(er) + '</b>';
     if (rt !== s.rt) { s.rt = rt; s.rate.innerHTML = rt; }
