@@ -395,12 +395,63 @@
   #ovInitBufWrap { max-width: 140px; height: 5px; margin-top: 4px; }
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
+
+  /* === Bande laterali fluide (5 stili, scelta dal selettore "Bande") === */
+  .sb { position: fixed; top: var(--hdrh, 137px); bottom: 12px; width: var(--w, 12px); z-index: 2; pointer-events: none; overflow: hidden; opacity: .88; transition: opacity .6s ease; }
+  .sb.l { left: 0; } .sb.r { right: 0; }
+  .sb::before, .sb::after { content: ""; position: absolute; inset: 0; }
+  body.is-playing .sb { opacity: 1; }
+  #ver { text-shadow: 0 0 3px #000, 0 0 6px #000; }
+  @keyframes sbRise { to { background-position: 0 100%; } }
+  @keyframes sbUpPx { to { background-position: 0 calc(-1 * var(--p, 300px)); } }
+  @keyframes sbLevel { from { height: 14%; } to { height: 100%; } }
+  @keyframes sbLvPx { to { background-position: 0 calc(-1 * var(--p, 26px)), 0 0; } }
+  @keyframes sbGlow { 50% { opacity: .35; } }
+
+  /* Bande laterali: arcobaleno liquido */
+  .sb { --w: 12px; }
+
+  /* === Effetto vite + bolle (sopra tutti gli stili) === */
+  #ver { left: calc(17px + env(safe-area-inset-left, 0px)); }
+  .sb > i, .sbb > i { position: absolute; inset: 0; z-index: 1; display: block; }
+  .sb .th, .sbb .th { --S: 8.485px; background: linear-gradient(var(--sa, 90deg), rgba(0,0,0,.6), rgba(255,255,255,.28) 32%, rgba(0,0,0,0) 55%, rgba(0,0,0,.55)), repeating-linear-gradient(var(--ta, 45deg), rgba(255,255,255,.55) 0, rgba(255,255,255,.12) 1.4px, transparent 2.4px, transparent 3.2px, rgba(0,0,0,.5) 4.2px, transparent 6px); background-size: 100% 100%, var(--S) var(--S); background-repeat: no-repeat, repeat; animation: sbScrew 1.6s linear infinite; }
+  .sb .bb { --p: 200px; background: radial-gradient(circle at calc(35% - 1.3px) 20.6px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 35% 22px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(68% - 1.3px) 62.6px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 68% 64px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(40% - 1.3px) 106.6px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 40% 108px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(66% - 1.3px) 148.6px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 66% 150px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(50% - 1.3px) 184.6px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 50% 186px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px); background-size: 100% 200px; background-repeat: repeat-y; animation: sbUpPx 7s linear infinite; }
+  .sb .bb2 { --p: 130px; background: radial-gradient(circle at calc(60% - 0.8px) 13.1px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 60% 14px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(32% - 0.8px) 47.1px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 32% 48px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(70% - 0.8px) 81.1px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 70% 82px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(45% - 0.8px) 111.1px, #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 45% 112px, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px); background-size: 100% 130px; background-repeat: repeat-y; opacity: .85; animation: sbUpPx 4.5s linear infinite; }
+  .sb.r .th { animation-direction: reverse; }
+  .sb.r .bb { animation-delay: -3s; }
+  .sb.r .bb2 { animation-delay: -2s; }
+  @keyframes sbScrew { to { background-position: 0 0, 0 calc(-1 * var(--S)); } }
+
+
+  /* Gradiente continuo a U: scende a destra, corre in basso verso sinistra, sale a sinistra */
+  :root { --P: 420px; --dB: 0s; --dL: 0s; }
+  .sb.r::before { background: linear-gradient(to bottom, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: 100% var(--P); background-repeat: repeat-y; animation: sbFlowD 7s linear infinite; }
+  .sb.l::before { background: linear-gradient(to top, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: 100% var(--P); background-repeat: repeat-y; animation: sbFlowU 7s linear infinite; animation-delay: var(--dL); }
+  .sbb { position: fixed; left: 0; right: 0; bottom: 0; height: 12px; z-index: 3; pointer-events: none; opacity: .88; transition: opacity .6s ease; }
+  body.is-playing .sbb { opacity: 1; }
+  .sbb::before, .sbb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to left, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: var(--P) 100%; background-repeat: repeat-x; animation: sbFlowL 7s linear infinite; animation-delay: var(--dB); }
+  .sbb::after { inset: -4px 0 0 0; filter: blur(6px); opacity: .6; }
+  @keyframes sbFlowD { to { background-position: 0 var(--P); } }
+  @keyframes sbFlowU { to { background-position: 0 calc(-1 * var(--P)); } }
+  @keyframes sbFlowL { to { background-position: calc(-1 * var(--P)) 0; } }
+
+  /* Tubo unico: stessa vite e stesse bolle anche sul bordo inferiore, flusso concorde lungo il percorso */
+  .sb.l .th { --sa: 270deg; --ta: 225deg; }
+  .sbb .th { --sa: 180deg; --ta: 135deg; background-size: 100% 100%, var(--S) var(--S); background-repeat: no-repeat, repeat; animation: sbScrewL 1.6s linear infinite; }
+  .sb.r .bb, .sb.r .bb2 { animation-direction: reverse; }
+  .sbb::after { display: none; }
+  .sbb .bb { --p: 200px; background: radial-gradient(circle at calc(22px - 1.4px) calc(35% - 1.3px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 22px 35%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(64px - 1.4px) calc(68% - 1.3px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 64px 68%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(108px - 1.4px) calc(40% - 1.3px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 108px 40%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(150px - 1.4px) calc(66% - 1.3px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 150px 66%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px), radial-gradient(circle at calc(186px - 1.4px) calc(50% - 1.3px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 186px 50%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 2.8px, rgba(255,255,255,.65) 3.6px, transparent 4.5px); background-size: 200px 100%; background-repeat: repeat-x; animation: sbLeftPx 7s linear infinite; }
+  .sbb .bb2 { --p: 130px; background: radial-gradient(circle at calc(14px - 0.9px) calc(60% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 14px 60%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(48px - 0.9px) calc(32% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 48px 32%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(82px - 0.9px) calc(70% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 82px 70%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(112px - 0.9px) calc(45% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 112px 45%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px); background-size: 130px 100%; background-repeat: repeat-x; opacity: .85; animation: sbLeftPx 4.5s linear infinite; }
+  @keyframes sbScrewL { to { background-position: 0 0, calc(-1 * var(--S)) 0; } }
+  @keyframes sbLeftPx { to { background-position: calc(-1 * var(--p)) 0; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
 <body>
 <canvas id="ballBg" aria-hidden="true"></canvas>
 <div id="notes" aria-hidden="true"><div id="bgDisc"></div></div>
+<div id="sbL" class="sb l" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbR" class="sb r" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbB" class="sbb" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div>
+
 <div id="hdr">
 <header id="player" data-g="2" class="">
 <div class="pl">
@@ -3687,6 +3738,15 @@
     if (ov) new MutationObserver(soon).observe(ov, { attributes: true, attributeFilter: ['hidden', 'class'] });
     spin();
   })();
+</script>
+<script>
+(function () {
+  var T = 7, V = 60, rb = document.getElementById('sbR'), st = document.documentElement.style;
+  function d(x) { return (((x / V) % T) - T).toFixed(3) + 's'; }
+  function f() { var H = rb.offsetHeight || 0, W = window.innerWidth; st.setProperty('--dB', d(H + W)); st.setProperty('--dL', d(2 * H + W)); }
+  f(); window.addEventListener('resize', f); window.addEventListener('orientationchange', f);
+  if (window.ResizeObserver) new ResizeObserver(f).observe(rb);
+})();
 </script>
 </body>
 </html>
