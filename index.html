@@ -397,7 +397,7 @@
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 
   /* === Bande laterali fluide (5 stili, scelta dal selettore "Bande") === */
-  .sb { position: fixed; top: var(--hdrh, 137px); bottom: 12px; width: var(--w, 12px); z-index: 2; pointer-events: none; overflow: hidden; opacity: .88; transition: opacity .6s ease; }
+  .sb { position: fixed; top: var(--hdrh, 137px); bottom: 12px; width: var(--w, 12px); z-index: 6; pointer-events: none; overflow: hidden; opacity: 1; transition: opacity .6s ease; }
   .sb.l { left: 0; } .sb.r { right: 0; }
   .sb::before, .sb::after { content: ""; position: absolute; inset: 0; }
   body.is-playing .sb { opacity: 1; }
@@ -427,7 +427,7 @@
   :root { --P: 420px; --dB: 0s; --dL: 0s; }
   .sb.r::before { background: linear-gradient(to bottom, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: 100% var(--P); background-repeat: repeat-y; animation: sbFlowD 7s linear infinite; }
   .sb.l::before { background: linear-gradient(to top, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: 100% var(--P); background-repeat: repeat-y; animation: sbFlowU 7s linear infinite; animation-delay: var(--dL); }
-  .sbb { position: fixed; left: 0; right: 0; bottom: 0; height: 12px; z-index: 3; pointer-events: none; opacity: .88; transition: opacity .6s ease; }
+  .sbb { position: fixed; left: 0; right: 0; bottom: 0; height: 12px; z-index: 6; pointer-events: none; opacity: 1; transition: opacity .6s ease; }
   body.is-playing .sbb { opacity: 1; }
   .sbb::before, .sbb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to left, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: var(--P) 100%; background-repeat: repeat-x; animation: sbFlowL 7s linear infinite; animation-delay: var(--dB); }
   .sbb::after { inset: -4px 0 0 0; filter: blur(6px); opacity: .6; }
@@ -444,6 +444,18 @@
   .sbb .bb2 { --p: 130px; background: radial-gradient(circle at calc(14px - 0.9px) calc(60% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 14px 60%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(48px - 0.9px) calc(32% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 48px 32%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(82px - 0.9px) calc(70% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 82px 70%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px), radial-gradient(circle at calc(112px - 0.9px) calc(45% - 0.8px), #fff 0, #fff .8px, transparent 1.3px), radial-gradient(circle at 112px 45%, rgba(255,255,255,.16) 0, rgba(255,255,255,.1) 1.4px, rgba(255,255,255,.65) 2.2px, transparent 3.1px); background-size: 130px 100%; background-repeat: repeat-x; opacity: .85; animation: sbLeftPx 4.5s linear infinite; }
   @keyframes sbScrewL { to { background-position: 0 0, calc(-1 * var(--S)) 0; } }
   @keyframes sbLeftPx { to { background-position: calc(-1 * var(--p)) 0; } }
+
+  /* Barra di avanzamento del brano (stesso gradiente del tubo) */
+  .sgb { display: flex; align-items: center; gap: 6px; width: 100%; max-width: 260px; margin-top: 3px; }
+  .sgb[hidden] { display: none; }
+  .sgb .tk { position: relative; flex: 1 1 auto; height: 6px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.15); box-shadow: inset 0 1px 3px rgba(0,0,0,.6); }
+  .sgb .tk > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; border-radius: 999px; transition: width .5s linear; background-image: linear-gradient(to right, #ff2d95 0, #ff9500 70px, #ffe600 140px, #2dff7a 210px, #00c8ff 280px, #7a3dff 350px, #ff2d95 420px); background-size: var(--P) 100%; background-repeat: repeat-x; animation: sbFlowR 7s linear infinite; box-shadow: inset 0 -2px 3px rgba(0,0,0,.35), inset 0 1px 1px rgba(255,255,255,.5); }
+  .sgb .tm { font: 600 10.5px/1 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-variant-numeric: tabular-nums; color: #d6d6d6; white-space: nowrap; }
+  .sgb.nof .tk { display: none; }
+  #ovSongBar { margin: 8px auto 0; width: 80%; max-width: 280px; justify-content: center; }
+  #ovSongBar .tm { font-size: 12px; }
+  .sgb.est .tk > i { opacity: .6; }
+  @keyframes sbFlowR { to { background-position: var(--P) 0; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -466,6 +478,7 @@
     <div id="nowRadio"><span id="nowRadioTx">Scegli una radio</span></div>
     <div id="initBufWrap"><div id="initBufBar"></div></div>
     <div id="nowName" title="Radio"><span id="nowTxt"></span></div>
+    <div class="sgb" id="songBar" hidden><div class="tk"><i></i></div><span class="tm"></span></div>
   </div>
 </div>
 <div id="ana" aria-hidden="true">
@@ -518,6 +531,7 @@
       <div id="ovNameRow"><div id="ovName"><span id="ovNameTx"></span></div></div>
       <div id="ovInitBufWrap"><div id="ovInitBufBar"></div></div>
       <div id="ovSong"><span id="ovSongTx"></span></div>
+      <div class="sgb" id="ovSongBar" hidden><div class="tk"><i></i></div><span class="tm"></span></div>
     </div>
   </div>
 </div>
@@ -1200,7 +1214,7 @@
       }, function (e) { if (k + 1 < idx.length) return t(k + 1); throw e; });
     })(0);
   }
-  function parseInfo(txt) {
+  function parseInfo0(txt) {
     txt = String(txt || '').trim();
     if (txt.indexOf('#EXTM3U') === 0) return parseChunklist(txt);
     var j, k, keys, v, r, az, p;
@@ -1304,8 +1318,8 @@
 
   /* brano in onda: cambia subito se la nuova info è diversa, se è uguale non si tocca nulla (SONG_HOLD = tenuta minima opzionale in ms); un'info vuota/non letta non cancella quello mostrato */
   var SONG_HOLD = 0, EMPTY_HOLD = 60000, songAt = 0, pendSong = null, pendT = null, emptySince = 0;
-  function songReset() { song = ''; songAt = 0; pendSong = null; emptySince = 0; clearTimeout(pendT); pendT = null; }
-  function applySong(s) { pendSong = null; if (s === song) return; song = s; songAt = Date.now(); updateNow(); setMedia(); }
+  function songReset() { song = ''; songAt = 0; pendSong = null; emptySince = 0; clearTimeout(pendT); pendT = null; if (SB) { SB.seen = false; songStarted(''); } }
+  function applySong(s) { pendSong = null; if (s === song) return; song = s; songAt = Date.now(); songStarted(s); updateNow(); setMedia(); }
   function setSong(s) {
     s = (s === null || s === undefined) ? '' : String(s);
     if (!s) {
@@ -1316,6 +1330,7 @@
       return;
     }
     emptySince = 0;
+    if (s !== song && sbSeen[s] === undefined) sbSeen[s] = Date.now();
     if (s === song) { pendSong = null; clearTimeout(pendT); pendT = null; return; }
     var wait = song ? SONG_HOLD - (Date.now() - songAt) : 0;
     if (wait > 0) {
@@ -1328,6 +1343,186 @@
     applySong(s);
   }
   /* st.info può essere un solo indirizzo o un elenco di alternative: si prova in ordine (partendo da quella che ha funzionato l'ultima volta) e si usa la prima che dà un brano */
+
+  /* ===== Barra di avanzamento del brano =====
+     Durata: 1) dalla radio stessa (durata/elapsed/orari nelle risposte JSON), 2) dai cataloghi iTunes, Deezer, MusicBrainz (cercando "artista - titolo").
+     Inizio: dalla fonte se lo dà, altrimenti dal momento in cui il titolo cambia (solo se il cambio è stato visto dal vivo).
+     Il ritardo del buffer di ascolto rispetto alla diretta viene sottratto. Senza durata la barra non compare. */
+  var SB = { key: '', dur: 0, start: 0, trusted: false, exact: false, seen: false }, sbSeen = {}, sbTiming = null, sbJp = 0;
+  var sbDurCache = {}; try { sbDurCache = JSON.parse(localStorage.getItem('songDur') || '{}') || {}; } catch (e) { sbDurCache = {}; }
+  var sbEls = ['songBar', 'ovSongBar'].map(function (id) { var b = document.getElementById(id); return b ? { bar: b, f: b.querySelector('.tk > i'), tm: b.querySelector('.tm') } : null; }).filter(Boolean);
+  function sbKey(x) { return String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function sbClean(x) { return String(x || '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(feat|ft|featuring)\b.*$/i, ' ').replace(/["“”]/g, '').replace(/\s+/g, ' ').trim(); }
+  function sbNorm(x) { return sbClean(x).toLowerCase().replace(/[^a-z0-9\u00e0-\u00f6\u00f8-\u00ff ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function sbFmt(t) { t = Math.max(0, Math.round(t)); var m = Math.floor(t / 60), r = t % 60; return m + ':' + (r < 10 ? '0' : '') + r; }
+  /* secondi da numero, millisecondi o "m:ss"; NaN se non valido */
+  function sbSec(v) {
+    var m;
+    if (typeof v === 'string') { m = /^\s*(?:(\d+):)?(\d{1,2}):(\d{2})(?:[.,]\d+)?\s*$/.exec(v); if (m) return (+m[1] || 0) * 3600 + (+m[2]) * 60 + (+m[3]); v = parseFloat(v); }
+    if (typeof v !== 'number' || !isFinite(v) || v < 0) return NaN;
+    return v >= 1000 ? v / 1000 : v;
+  }
+  function sbEpoch(v) {
+    var n;
+    if (typeof v === 'string' && /[-:T]/.test(v)) { n = Date.parse(v); return isFinite(n) ? n : 0; }
+    n = typeof v === 'string' ? parseFloat(v) : v;
+    if (typeof n !== 'number' || !isFinite(n)) return 0;
+    return n > 1e12 ? n : (n > 1e9 ? n * 1000 : 0);
+  }
+  var SB_SKIP = /^(next|playingnext|prev|previous|history|songhistory|upcoming|queue|playlist|songs|tracks|items)$/;
+  function sbScan(o, d, out) {
+    var k, v, kk, x;
+    if (!o || typeof o !== 'object' || Array.isArray(o) || d > 2) return out;
+    for (k in o) {
+      if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+      v = o[k]; kk = k.toLowerCase().replace(/[^a-z]/g, '');
+      if (v && typeof v === 'object') { if (!SB_SKIP.test(kk)) sbScan(v, d + 1, out); continue; }
+      if (/^(duration|durata|length|tracklength|trackduration|songlength|songduration|dur|tracktime|durationms|durationsec|durationseconds|lengthms)$/.test(kk)) { x = sbSec(v); if (x >= 30 && x <= 1200 && !out.dur) out.dur = x; }
+      else if (/^(elapsed|elapsedtime)$/.test(kk)) { x = sbSec(v); if (!isNaN(x) && out.el === undefined) out.el = x; }
+      else if (/^(playedat|starttime|start|startedat|begin|trackplayed)$/.test(kk)) { x = sbEpoch(v); if (x && !out.st) out.st = x; }
+      else if (/^(endtime|end|endedat)$/.test(kk)) { x = sbEpoch(v); if (x && !out.en) out.en = x; }
+    }
+    return out;
+  }
+  function sbNote(txt, title) {
+    var j, root, o, now = Date.now(), t;
+    txt = String(txt || '').trim();
+    if (!title || (txt.charAt(0) !== '{' && txt.charAt(0) !== '[')) return;
+    j = JSON.parse(txt);
+    root = j && (j.now_playing || j.nowplaying || j.nowPlaying || j.current || j.onair || (Array.isArray(j.result) ? j.result[0] : j.result)) || j;
+    o = sbScan(root, 0, {});
+    if (!o.dur && o.st === undefined && o.el === undefined && root !== j) o = sbScan(j, 0, {});
+    if (!o.dur && o.st && o.en && o.en > o.st) { t = (o.en - o.st) / 1000; if (t >= 30 && t <= 1200) o.dur = t; }
+    t = { k: sbKey(title), dur: o.dur || 0, start: 0 };
+    if (o.el !== undefined && (!t.dur || o.el <= t.dur + 5)) t.start = now - o.el * 1000;
+    else if (o.st && (!t.dur || (now - o.st) / 1000 <= t.dur + 30) && o.st <= now + 5000) t.start = o.st;
+    if (!t.dur && !t.start) return;
+    sbTiming = t;
+    /* la fonte arriva a brano già in corso: si aggiorna ciò che si sa */
+    if (SB.key && sbKey(SB.key) === t.k) {
+      if (t.dur && !SB.exact) { SB.dur = t.dur; SB.exact = true; }
+      if (t.start && (!SB.trusted || SB.src !== 'src' || Math.abs(t.start - SB.start) > 3000)) { SB.start = t.start; SB.trusted = true; SB.src = 'src'; }
+    }
+  }
+  function parseInfo(txt) { var r = parseInfo0(txt); try { sbNote(txt, r); } catch (e) {} return r; }
+
+  function sbJsonp(url) {
+    return new Promise(function (res, rej) {
+      var n = '__sbj' + (++sbJp), sc = document.createElement('script'), to = setTimeout(function () { cl(); rej(new Error('jsonp')); }, 7000);
+      function cl() { clearTimeout(to); try { delete window[n]; } catch (e) { window[n] = undefined; } if (sc.parentNode) sc.parentNode.removeChild(sc); }
+      window[n] = function (j) { cl(); res(j); };
+      sc.onerror = function () { cl(); rej(new Error('jsonp')); };
+      sc.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'callback=' + n;
+      document.head.appendChild(sc);
+    });
+  }
+  /* fetch diretto; se il sito non permette CORS e jp non è null, ripiega su JSONP */
+  function sbGet(url, jp) {
+    return new Promise(function (res, rej) {
+      var ac = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ac) ac.abort(); }, 6500);
+      fetch(url, { cache: 'no-store', signal: ac ? ac.signal : undefined }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) { clearTimeout(to); res(j); }, function (e) { clearTimeout(to); rej(e); });
+    }).then(null, function (e) { if (jp === null) throw e; return sbJsonp(url + jp); });
+  }
+  function sbQIt(A, T) {
+    return sbGet('https://itunes.apple.com/search?media=music&entity=song&limit=10&term=' + encodeURIComponent(A + ' ' + T), '').then(function (j) {
+      return (j.results || []).map(function (r) { return { a: r.artistName, t: r.trackName, s: r.trackTimeMillis / 1000 }; });
+    });
+  }
+  function sbQDz(A, T) {
+    return sbGet('https://api.deezer.com/search?limit=10&q=' + encodeURIComponent('artist:"' + A + '" track:"' + T + '"'), '&output=jsonp').then(function (j) {
+      return (j.data || []).map(function (r) { return { a: r.artist && r.artist.name, t: r.title, s: r.duration }; });
+    });
+  }
+  function sbQMb(A, T) {
+    return sbGet('https://musicbrainz.org/ws/2/recording/?fmt=json&limit=10&query=' + encodeURIComponent('recording:"' + T + '" AND artist:"' + A + '"'), null).then(function (j) {
+      return (j.recordings || []).map(function (r) { return { a: r['artist-credit'] && r['artist-credit'][0] && r['artist-credit'][0].name, t: r.title, s: (r.length || 0) / 1000 }; });
+    });
+  }
+  function sbEq(x, y) { return !!x && !!y && (x === y || (x.length >= 3 && y.length >= 3 && (x.indexOf(y) >= 0 || y.indexOf(x) >= 0))); }
+  function sbPick(list, A, T, full) {
+    var na = sbNorm(A), nt = sbNorm(T), bad = /\b(live|karaoke|instrumental|tribute|cover|made famous|originally performed)\b/i, ds = [], i, r, ra, rt;
+    for (i = 0; i < list.length; i++) {
+      r = list[i]; ra = sbNorm(r.a); rt = sbNorm(r.t);
+      if (!(r.s >= 45 && r.s <= 1200)) continue;
+      if (!((sbEq(ra, na) && sbEq(rt, nt)) || (sbEq(ra, nt) && sbEq(rt, na)))) continue;
+      if (bad.test(String(r.t || '')) && !bad.test(full)) continue;
+      ds.push(r.s);
+    }
+    if (!ds.length) return 0;
+    ds.sort(function (a, b) { return a - b; });
+    return Math.round(ds[Math.floor((ds.length - 1) / 2)]);
+  }
+  function sbSplit(s) {
+    var m = /^(.+?)\s+[-\u2013\u2014|\/]\s+(.+)$/.exec(s) || /^([^:]{2,60}):\s+(.+)$/.exec(s) || /^([^-]{2,60})-([^-]{2,80})$/.exec(s);
+    return m ? [sbClean(m[1]), sbClean(m[2])] : null;
+  }
+  function sbLog() { try { console.log.apply(console, ['[barra brano]'].concat([].slice.call(arguments))); } catch (e) {} }
+  function sbLookup(s) {
+    var sp = sbSplit(s), A, T, chain = [['iTunes', sbQIt], ['Deezer', sbQDz], ['MusicBrainz', sbQMb]], key = sbKey(s);
+    if (!sp || !sp[0] || !sp[1]) { sbLog('titolo non separabile in artista/titolo:', s); return Promise.resolve({ d: 0, why: 'formato titolo' }); }
+    A = sp[0]; T = sp[1];
+    if (sbDurCache[key]) return Promise.resolve({ d: sbDurCache[key], src: 'memoria' });
+    return (function n(k, errs) {
+      if (k >= chain.length) return Promise.resolve({ d: 0, why: errs ? 'cataloghi non raggiungibili' : 'brano non trovato' });
+      return chain[k][1](A, T).then(function (l) {
+        var d = sbPick(l, A, T, s);
+        sbLog(chain[k][0], l.length + ' risultati', d ? '-> ' + d + ' s' : '-> nessuna corrispondenza', '(' + A + ' | ' + T + ')');
+        return d ? { d: d, src: chain[k][0] } : n(k + 1, errs);
+      }, function (e) { sbLog(chain[k][0], 'errore', e && e.message); return n(k + 1, true); });
+    })(0, false).then(function (r) {
+      if (r.d && r.src !== 'memoria') {
+        sbDurCache[key] = r.d;
+        var ks = Object.keys(sbDurCache); while (ks.length > 400) { delete sbDurCache[ks.shift()]; }
+        try { localStorage.setItem('songDur', JSON.stringify(sbDurCache)); } catch (e) {}
+      }
+      return r;
+    });
+  }
+  function songStarted(s) {
+    var key = sbKey(s), t = sbTiming && sbTiming.k === key ? sbTiming : null, lag = meta.kind === 'icy' ? 5000 : 1500, seen = sbSeen[s];
+    delete sbSeen[s];
+    SB.key = s || ''; SB.dur = 0; SB.start = 0; SB.trusted = false; SB.exact = false; SB.src = ''; SB.st = ''; SB.why = '';
+    if (!s) { sbTick(); return; }
+    if (t && t.start) { SB.start = t.start; SB.trusted = true; SB.src = 'src'; }
+    else { SB.start = (seen || Date.now()) - lag; SB.trusted = true; SB.src = SB.seen ? 'chg' : 'est'; }
+    SB.seen = true;
+    if (t && t.dur) { SB.dur = t.dur; SB.exact = true; sbTick(); return; }
+    SB.st = 'cerca'; SB.why = '';
+    sbLookup(s).then(function (r) { if (SB.key !== s || SB.dur) return; if (r.d) { SB.dur = r.d; SB.st = ''; } else { SB.st = 'no'; SB.why = r.why || ''; } sbTick(); });
+    sbTick();
+  }
+  function sbAhead() {
+    if (hls) return 0;
+    try {
+      var r = au.buffered, t = au.currentTime, k;
+      for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) return Math.max(0, Math.min(120, r.end(k) - t)); }
+    } catch (e) {}
+    return 0;
+  }
+  function sbTick() {
+    var show = false, trk = false, txt = '', pct = 0, el, i, e;
+    if (SB.key && !au.paused) {
+      if (SB.dur) {
+        show = true; trk = SB.trusted;
+        if (trk) {
+          el = (Date.now() - SB.start) / 1000 - sbAhead();
+          if (el < 0) el = 0; if (el > SB.dur) el = SB.dur;
+          pct = el / SB.dur * 100;
+          txt = (SB.src === 'est' ? '\u2265' : '') + sbFmt(el) + ' / ' + (SB.exact ? '' : '~') + sbFmt(SB.dur);
+        } else txt = (SB.exact ? '' : '~') + sbFmt(SB.dur);
+      } else if (SB.st === 'cerca') { show = true; txt = 'cerco la durata\u2026'; }
+      else if (SB.st === 'no') { show = true; txt = 'durata non trovata' + (SB.why ? ' (' + SB.why + ')' : ''); }
+    }
+    for (i = 0; i < sbEls.length; i++) {
+      e = sbEls[i];
+      if (e.bar.hidden === show) e.bar.hidden = !show;
+      e.bar.classList.toggle('nof', !trk);
+      e.bar.classList.toggle('est', SB.src === 'est');
+      if (show) { e.f.style.width = pct.toFixed(1) + '%'; if (e.tm.textContent !== txt) e.tm.textContent = txt; }
+    }
+  }
+  setInterval(sbTick, 500);
   function infoTry(st) {
     var list = Array.isArray(st.info) ? st.info : [st.info], n = list.length, start = st._ii || 0, empty = false, lastErr = null;
     return (function t(k) {
