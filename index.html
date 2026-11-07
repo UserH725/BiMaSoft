@@ -1511,8 +1511,7 @@
           pct = el / SB.dur * 100;
           txt = (SB.src === 'est' ? '\u2265' : '') + sbFmt(el) + ' / ' + (SB.exact ? '' : '~') + sbFmt(SB.dur);
         } else txt = (SB.exact ? '' : '~') + sbFmt(SB.dur);
-      } else if (SB.st === 'cerca') { show = true; txt = 'cerco la durata\u2026'; }
-      else if (SB.st === 'no') { show = true; txt = 'durata non trovata' + (SB.why ? ' (' + SB.why + ')' : ''); }
+      }
     }
     for (i = 0; i < sbEls.length; i++) {
       e = sbEls[i];
