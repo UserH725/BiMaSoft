@@ -125,8 +125,9 @@
   .head.sr #find:focus { outline: none; border-color: #8fd0ff; box-shadow: 0 0 0 4px rgba(79,179,255,.3); }
   #find:focus { outline: none; }
 
-  #list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 18px; }
-  #list li { border-bottom: 1px solid #1d1d1d; }
+  /* ordine alfabetico in verticale, colonna per colonna: A, B, C scendono nella prima colonna, poi si prosegue nella seconda */
+  #list { list-style: none; margin: 0; padding: 0; display: block; column-width: 280px; column-gap: 18px; }
+  #list li { border-bottom: 1px solid #1d1d1d; break-inside: avoid; -webkit-column-break-inside: avoid; }
   #list li[hidden] { display: none; }
   .st { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 6px 8px; background: none; border: 0; border-radius: 6px; text-align: left; cursor: pointer; }
   .st:hover { background: rgba(255,255,255,.07); }
@@ -389,7 +390,7 @@
   #ov .ovc-disc { width: min(70vw, 70vh, 140px); height: min(70vw, 70vh, 140px); }
   #ovName, #ovNameRow { font-size: clamp(14px, 3.3vw, 19px); }
   #ovSong { margin-top: 6px; font-size: clamp(10px, 2.1vw, 11px); }
-  #ovBadge { gap: 4px; margin-bottom: 5px; padding: 3px 7px 3px 5px; border-width: 1px; border-radius: 4px; font-size: 9px; }
+  #ovBadge { position: relative; top: -8px; gap: 4px; margin-bottom: 5px; padding: 3px 7px 3px 5px; border-width: 1px; border-radius: 4px; font-size: 9px; }
   #ovBadge svg { width: 12px; height: 12px; }
   #ovInitBufWrap { max-width: 140px; height: 5px; margin-top: 4px; }
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
