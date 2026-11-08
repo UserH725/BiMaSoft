@@ -456,6 +456,24 @@
   #ovSongBar .tm { font-size: 12px; }
   .sgb.est .tk > i { opacity: .6; }
   @keyframes sbFlowR { to { background-position: var(--P) 0; } }
+
+  /* pulsante TV accanto alla radio + video in sovraimpressione */
+  #list li.hastv { display: flex; align-items: center; gap: 6px; }
+  #list li.hastv .st { flex: 1 1 0; width: auto; min-width: 0; }
+  .tvb { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px; border: 1.5px solid #4fb3ff; border-radius: 8px; background: rgba(79,179,255,.12); color: #8fd0ff; font-weight: 800; font-size: 12px; letter-spacing: .08em; line-height: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .2s ease, color .2s ease; }
+  .tvb svg { width: 18px; height: 18px; flex: 0 0 auto; }
+  .tvb:hover { background: rgba(79,179,255,.3); color: #fff; }
+  #tvOv { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(10px + env(safe-area-inset-bottom, 0px)); background: rgba(0,0,0,.88); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #tvOv[hidden] { display: none; }
+  #tvBar { width: min(100%, 1100px); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  #tvTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'Nunito', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 800; font-size: 17px; color: #ffe600; text-shadow: 0 1px 3px #000; }
+  #tvX { flex: 0 0 auto; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.4); background: rgba(255,255,255,.1); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+  #tvX:hover { background: rgba(255,255,255,.25); }
+  #tvBox { position: relative; width: min(100%, 1100px, calc((100vh - 110px) * 16 / 9)); width: min(100%, 1100px, calc((100dvh - 110px) * 16 / 9)); aspect-ratio: 16 / 9; background: #000; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
+  #tvVid { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; }
+  #tvMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: #fff; font-weight: 600; text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; }
+  #tvMsg[hidden] { display: none; }
+  html:has(body.tv-on) { overflow: hidden; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -519,6 +537,11 @@
 <canvas id="disco" aria-hidden="true"></canvas>
 
 <div id="mgr" hidden=""></div>
+
+<div id="tvOv" role="dialog" aria-modal="true" aria-label="Video TV" hidden>
+  <div id="tvBar"><span id="tvTitle"></span><button id="tvX" type="button" aria-label="Chiudi il video">&times;</button></div>
+  <div id="tvBox"><video id="tvVid" controls playsinline></video><div id="tvMsg" role="status" aria-live="polite" hidden></div></div>
+</div>
 
 <audio id="au" preload="none" playsinline=""></audio>
 
@@ -656,13 +679,13 @@
     {name: 'Radio Company Reggaeton', urls: ['https://sphera.fluidstream.eu/companyreggaetown.mp3?FLID=6'], info: 'https://sphera.fluidstream.eu/companyreggaetown.mp3?FLID=6'},
     {name: 'Radio Country Live', urls: ['https://streaming.radiostreamlive.com/radiocountrylive_devices'], info: 'https://streaming.radiostreamlive.com/radiocountrylive_devices'},
     {name: 'Radio Cuore', urls: ['https://stream10.xdevel.com/audio32s975552-1839/stream/icecast.audio'], info: 'https://stream10.xdevel.com/audio32s975552-1839/stream/icecast.audio'},
-    {name: 'Radio Dee Jay', urls: ['https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8'], info: 'https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8'},
+    {name: 'Radio Dee Jay', urls: ['https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8'], info: 'https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8', tv: 'https://streamcdnr11-4c4b867c89244861ac216426883d1ad0.msvdn.net/live/S85984808/sMO0tz9Sr2Rk/chunklist_b1064000.m3u8'},
     {name: 'Radio Freccia', urls: ['https://streamcdnf24-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S3160845/D6MENOraq6Qy/playlist_audio.m3u8']},
     {name: 'Radio FS News', urls: ['https://fsnmob.newradio.it/stream'], info: 'https://fsnmob.newradio.it/stream'},
-    {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir'},
+    {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir', tv: 'https://radioitaliatv.akamaized.net/hls/live/2093117/RadioitaliaTV/stream01/streamPlaylist.m3u8'},
     {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3'], info: 'https://titoli.fluidstream.it/grradio/titoliGR7.txt', infoFmt: 'dash'},
     {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'], info: 'https://streaming.radiostreamlive.com/radioitalylive_devices'},
-    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs'},
+    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs', tv: 'https://kk.fluid.stream/KKMulti/smil:KissKissTV.smil/chunklist_w1017726789_b1028000_slita.m3u8?FLID=1'},
     {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6'], info: 'https://prod.radio-api.net/stations/radiokisskisslatina/songs', infoFmt: 'json', icyFirst: true},
     {name: 'Radio Kiss Kiss San Valentino', urls: ['https://kk.fluidstream.eu/kk_sanvalentino.mp3?FLID=6'], info: 'https://kk.fluidstream.eu/kk_sanvalentino.mp3?FLID=6'},
     {name: 'Radio Kiss Kiss Sanremo', urls: ['https://kk.fluidstream.eu/kk_sanremo.mp3?FLID=6']},
@@ -692,7 +715,7 @@
     {name: 'RDS - Dimensione Suono Roma', urls: ['https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8'], info: 'https://stream.dimensionesuonoroma.radio/audio/dsr.stream_aac/chunklist.m3u8'},
     {name: 'RDS - Dimensione Suono Soft', urls: ['https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8'], info: 'https://stream.dimensionesuonosoft.radio/audio/dssc.stream_aac64/chunklist.m3u8'},
     {name: 'RDS - Next', urls: ['https://audionext.rds.radio/chunklist.m3u8'], info: 'https://audionext.rds.radio/chunklist.m3u8'},
-    {name: 'RDS - Radio Dimensione Suono - 100% Grandi successi', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds'},
+    {name: 'RDS - Radio Dimensione Suono - 100% Grandi successi', urls: ['https://stream.rds.radio/audio/rds.stream_aac/chunklist.m3u8'], info: 'https://api.instant.audio/data/playlist/34/rds', tv: 'https://stream.rdstv.radio/index_9.m3u8'},
     {name: 'RDS Relax', urls: ['https://icstream.rds.radio/rdsrelax'], info: 'https://icstream.rds.radio/rdsrelax'},
     {name: 'Reiki Radio', urls: ['https://radio.hearme.fm:8168/stream'], info: 'https://radio.hearme.fm:8168/stream'},
     {name: 'Relax Instrumental', urls: ['https://edge05.cdn.bitflip.ee:8888/instrumental?_i=681cdfe1'], info: 'https://edge05.cdn.bitflip.ee:8888/instrumental?_i=681cdfe1'},
@@ -711,7 +734,7 @@
     {name: 'RTL102.5 - Best', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S76960628/fYNIdrsfP3xC/chunklist_b192000.m3u8']},
     {name: 'RTL102.5 - Caliente', urls: ['https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S8448465/TxhFMf45Q7cw/playlist_audio.m3u8'], info: 'https://streamcdnf45-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S8448465/TxhFMf45Q7cw/playlist_audio.m3u8'},
     {name: 'RTL102.5 - Disco', urls: ['https://streamcdni2-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S51100361/Sz3kCA55PrRh/playlist_audio.m3u8'], info: 'https://streamcdni2-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S51100361/Sz3kCA55PrRh/playlist_audio.m3u8'},
-    {name: 'RTL102.5 - Very Normal People', urls: ['https://streamcdng16-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/WjpMtPyNjHwj/chunklist_b192000.m3u8', 'https://streamingv2.shoutcast.com/rtl-1025'], info: 'https://streamcdng16-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/WjpMtPyNjHwj/chunklist_b192000.m3u8'},
+    {name: 'RTL102.5 - Very Normal People', urls: ['https://streamcdng16-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/WjpMtPyNjHwj/chunklist_b192000.m3u8', 'https://streamingv2.shoutcast.com/rtl-1025'], info: 'https://streamcdng16-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/WjpMtPyNjHwj/chunklist_b192000.m3u8', tv: 'https://streamcdnr16-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S97044836/tbbP8T1ZRPBL/playlist_video.m3u8'},
     {name: 'Santana', urls: ['https://streaming.exclusive.radio/er/santana/icecast.audio'], info: 'https://streaming.exclusive.radio/er/santana/icecast.audio'},
     {name: 'Scorpions', urls: ['https://streaming.exclusive.radio/er/scorpions/icecast.audio'], info: 'https://streaming.exclusive.radio/er/scorpions/icecast.audio'},
     {name: 'Sleeping Music', urls: ['https://stream-287.surfernetwork.com/30drqrdsyc9uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiIzMGRycXJkc3ljOXV2IiwiaG9zdCI6InN0cmVhbS0yODcuc3VyZmVybmV0d29yay5jb20iLCJ0bSI6ZmFsc2UsInJ0dGwiOjUsImp0aSI6Ik80RngtMnhoUmdlTHVjU1FhRDB3MkEiLCJpYXQiOjE3OTI4MjM4NzQsImV4cCI6MTc5MjQyMzkzNH0.wkAHQqeLfSPJ8rumdHrgUNQuGIPOfE3rNS6d7b6FNFQ'], info: 'https://stream-287.surfernetwork.com/30drqrdsyc9uv?zt=eyJhbGciOiJIUzI1NiJ9.eyJzdHJlYW0iOiIzMGRycXJkc3ljOXV2IiwiaG9zdCI6InN0cmVhbS0yODcuc3VyZmVybmV0d29yay5jb20iLCJ0bSI6ZmFsc2UsInJ0dGwiOjUsImp0aSI6Ik80RngtMnhoUmdlTHVjU1FhRDB3MkEiLCJpYXQiOjE3OTI4MjM4NzQsImV4cCI6MTc5MjQyMzkzNH0.wkAHQqeLfSPJ8rumdHrgUNQuGIPOfE3rNS6d7b6FNFQ'},
@@ -1768,6 +1791,61 @@
     if (u) { if (img.getAttribute('src') !== u) img.src = u; img.hidden = false; } else { img.hidden = true; }
   }
 
+  /* ===== Video TV in sovraimpressione (stazioni con campo tv) ===== */
+  var tvEl = document.getElementById('tvOv'), tvVid = document.getElementById('tvVid'), tvTitle = document.getElementById('tvTitle'), tvMsg = document.getElementById('tvMsg');
+  var tvHls = null, tvOpen = false, tvGen = 0, tvFocus = null;
+  function tvMsgSet(t) { tvMsg.textContent = t || ''; tvMsg.hidden = !t; }
+  function tvKill() {
+    if (tvHls) { try { tvHls.destroy(); } catch (e) {} tvHls = null; }
+    try { tvVid.pause(); } catch (e) {}
+    tvVid.removeAttribute('src'); try { tvVid.load(); } catch (e) {}
+  }
+  function tvClose() {
+    if (!tvOpen) return;
+    tvOpen = false; tvGen++;
+    tvEl.hidden = true; document.body.classList.remove('tv-on');
+    tvKill(); tvMsgSet('');
+    if (tvFocus) { try { tvFocus.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  function tvShow(name, url, opener) {
+    var g = ++tvGen;
+    /* il video ha il proprio audio: si ferma la radio per non sentire due flussi insieme */
+    if (wantPlay) { userWants = false; stop(); }
+    tvKill();
+    tvFocus = opener || null; tvOpen = true;
+    tvTitle.textContent = name + ' TV';
+    tvEl.hidden = false; document.body.classList.add('tv-on');
+    tvMsgSet('Caricamento video\u2026');
+    function fail() { if (g === tvGen) tvMsgSet('Flusso video non disponibile al momento.'); }
+    function go() { var p = tvVid.play(); if (p && p.catch) p.catch(function () { if (g === tvGen) tvMsgSet('Tocca play per avviare il video.'); }); }
+    loadHls(function (ok) {
+      if (g !== tvGen || !tvOpen) return;
+      if (ok && window.Hls && Hls.isSupported()) {
+        var h = new Hls({ lowLatencyMode: false, maxBufferLength: 30, backBufferLength: 10 }), rec = 0;
+        tvHls = h;
+        h.on(Hls.Events.MANIFEST_PARSED, function () { if (g === tvGen) go(); });
+        h.on(Hls.Events.ERROR, function (e, d) {
+          if (g !== tvGen || !d || !d.fatal) return;
+          if (d.type === Hls.ErrorTypes.NETWORK_ERROR && rec++ < 2) { try { h.startLoad(); } catch (x) { fail(); } }
+          else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && rec++ < 2) { try { h.recoverMediaError(); } catch (x) { fail(); } }
+          else fail();
+        });
+        h.loadSource(url); h.attachMedia(tvVid);
+      } else if (tvVid.canPlayType('application/vnd.apple.mpegurl')) {
+        tvVid.src = url; go();
+      } else {
+        tvMsgSet('Il browser non supporta questo flusso video.');
+      }
+    });
+  }
+  tvVid.addEventListener('playing', function () { tvMsgSet(''); });
+  tvVid.addEventListener('waiting', function () { if (tvOpen && !tvVid.paused) tvMsgSet('Buffering\u2026'); });
+  tvVid.addEventListener('canplay', function () { if (tvOpen && !tvVid.paused) tvMsgSet(''); });
+  tvVid.addEventListener('error', function () { if (tvOpen && !tvHls && tvVid.getAttribute('src')) tvMsgSet('Flusso video non disponibile al momento.'); });
+  document.getElementById('tvX').addEventListener('click', tvClose);
+  tvEl.addEventListener('click', function (e) { if (e.target === tvEl) tvClose(); });
+  document.addEventListener('keydown', function (e) { if (tvOpen && e.key === 'Escape') { e.stopPropagation(); tvClose(); } }, true);
+
   STATIONS.forEach(function (s, i) {
     var li = document.createElement('li'), b = document.createElement('button');
     b.type = 'button'; b.className = 'st'; b.setAttribute('aria-pressed', 'false');
@@ -1777,6 +1855,13 @@
     if (lgSrc) { var lg = document.createElement('img'); lg.className = 'lg'; lg.alt = ''; lg.src = lgSrc; lg.draggable = false; lg.setAttribute('aria-hidden', 'true'); b.insertBefore(lg, b.querySelector('.nm')); }
     b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); findCollapse(true); });
     li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase()); li.setAttribute('data-i', i);
+    if (s.tv) {
+      var tb = document.createElement('button');
+      tb.type = 'button'; tb.className = 'tvb'; tb.title = 'Guarda ' + s.name + ' in video'; tb.setAttribute('aria-label', 'Guarda ' + s.name + ' in video');
+      tb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/></svg>TV';
+      tb.addEventListener('click', function (e) { e.stopPropagation(); tvShow(s.name, s.tv, tb); });
+      li.appendChild(tb); li.classList.add('hastv');
+    }
     listEl.appendChild(li); items.push(b);
   });
   document.getElementById('count').textContent = STATIONS.length + ' stazioni';
