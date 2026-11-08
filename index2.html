@@ -1836,19 +1836,24 @@
       loadDash(function (ok) {
         if (g !== tvGen || !tvOpen) return;
         if (!ok || !window.dashjs) { fail(); return; }
-        var d = dashjs.MediaPlayer().create();
-        tvDash = d;
-        d.initialize();
-        d.updateSettings({ streaming: { buffer: { fastSwitchEnabled: true } } });
-        if (lic) d.setProtectionData({ 'com.widevine.alpha': { serverURL: lic } });
-        d.on('error', function (e) {
-          if (g !== tvGen) return;
-          var er = (e && e.error) || {}, c = er.code, m = String(er.message || '').replace(/\s+/g, ' ').slice(0, 160);
-          try { console.error('[TV dash]', e); } catch (x) {}
-          tvMsgSet('Flusso video non disponibile.' + (c ? ' Errore DASH ' + c : '') + (m ? ': ' + m : ''));
-        });
-        d.on('playbackPlaying', function () { if (g === tvGen) tvMsgSet(''); });
-        d.attachView(tvVid); d.attachSource(url); d.play();
+        /* prima con robustezza esplicita (Chrome recente la richiede), poi, se il browser nega l'accesso al sistema di chiavi, con quella predefinita */
+        (function startDash(rob) {
+          var d = dashjs.MediaPlayer().create();
+          if (tvDash) { try { tvDash.reset(); } catch (x) {} }
+          tvDash = d;
+          d.initialize();
+          d.updateSettings({ streaming: { buffer: { fastSwitchEnabled: true } } });
+          if (lic) { var pd = { serverURL: lic }; if (rob) { pd.audioRobustness = rob; pd.videoRobustness = rob; } d.setProtectionData({ 'com.widevine.alpha': pd }); }
+          d.on('error', function (e) {
+            if (g !== tvGen) return;
+            var er = (e && e.error) || {}, c = er.code, m = String(er.message || '').replace(/\s+/g, ' ').slice(0, 160);
+            try { console.error('[TV dash] robustness=' + (rob || '(default)'), e); } catch (x) {}
+            if (c === 112 && rob) { startDash(''); return; }
+            tvMsgSet('Flusso video non disponibile.' + (c ? ' Errore DASH ' + c : '') + (m ? ': ' + m : ''));
+          });
+          d.on('playbackPlaying', function () { if (g === tvGen) tvMsgSet(''); });
+          d.attachView(tvVid); d.attachSource(url); d.play();
+        })('SW_SECURE_CRYPTO');
       });
       return;
     }
