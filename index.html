@@ -685,7 +685,7 @@
     {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir', tv: 'https://radioitaliatv.akamaized.net/hls/live/2093117/RadioitaliaTV/stream01/streamPlaylist.m3u8'},
     {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3'], info: 'https://titoli.fluidstream.it/grradio/titoliGR7.txt', infoFmt: 'dash'},
     {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'], info: 'https://streaming.radiostreamlive.com/radioitalylive_devices'},
-    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs', tv: 'https://kk.fluid.stream/KKMulti/smil:KissKissTV.smil/chunklist_w1017726789_b1028000_slita.m3u8?FLID=1'},
+    {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs', tv: 'https://kk.fluid.stream/KKMulti/smil:KissKissTV.smil/playlist.m3u8?FLID=1', tvAudioCodec: 'mp4a.40.5'},
     {name: 'Radio Kiss Kiss Latina', urls: ['https://kk.fluidstream.eu/kk_latina.mp3?FLID=6'], info: 'https://prod.radio-api.net/stations/radiokisskisslatina/songs', infoFmt: 'json', icyFirst: true},
     {name: 'Radio Kiss Kiss San Valentino', urls: ['https://kk.fluidstream.eu/kk_sanvalentino.mp3?FLID=6'], info: 'https://kk.fluidstream.eu/kk_sanvalentino.mp3?FLID=6'},
     {name: 'Radio Kiss Kiss Sanremo', urls: ['https://kk.fluidstream.eu/kk_sanremo.mp3?FLID=6']},
@@ -1793,12 +1793,13 @@
 
   /* ===== Video TV in sovraimpressione (stazioni con campo tv) ===== */
   var tvEl = document.getElementById('tvOv'), tvVid = document.getElementById('tvVid'), tvTitle = document.getElementById('tvTitle'), tvMsg = document.getElementById('tvMsg');
-  var tvHls = null, tvOpen = false, tvGen = 0, tvFocus = null;
+  var tvHls = null, tvOpen = false, tvGen = 0, tvFocus = null, tvNativeTry = false;
   function tvMsgSet(t) { tvMsg.textContent = t || ''; tvMsg.hidden = !t; }
   function tvKill() {
+    tvNativeTry = false;
     if (tvHls) { try { tvHls.destroy(); } catch (e) {} tvHls = null; }
     try { tvVid.pause(); } catch (e) {}
-    tvVid.removeAttribute('src'); try { tvVid.load(); } catch (e) {}
+    tvVid.removeAttribute('src'); tvVid.removeAttribute('crossorigin'); try { tvVid.load(); } catch (e) {}
   }
   function tvClose() {
     if (!tvOpen) return;
@@ -1807,7 +1808,7 @@
     tvKill(); tvMsgSet('');
     if (tvFocus) { try { tvFocus.focus({ preventScroll: true }); } catch (e) {} }
   }
-  function tvShow(name, url, opener) {
+  function tvShow(name, url, opener, native, audioCodec) {
     var g = ++tvGen;
     /* il video ha il proprio audio: si ferma la radio per non sentire due flussi insieme */
     if (wantPlay) { userWants = false; stop(); }
@@ -1820,28 +1821,86 @@
     function go() { var p = tvVid.play(); if (p && p.catch) p.catch(function () { if (g === tvGen) tvMsgSet('Tocca play per avviare il video.'); }); }
     loadHls(function (ok) {
       if (g !== tvGen || !tvOpen) return;
-      if (ok && window.Hls && Hls.isSupported()) {
-        var h = new Hls({ lowLatencyMode: false, maxBufferLength: 30, backBufferLength: 10 }), rec = 0;
-        tvHls = h;
-        h.on(Hls.Events.MANIFEST_PARSED, function () { if (g === tvGen) go(); });
-        h.on(Hls.Events.ERROR, function (e, d) {
-          if (g !== tvGen || !d || !d.fatal) return;
-          if (d.type === Hls.ErrorTypes.NETWORK_ERROR && rec++ < 2) { try { h.startLoad(); } catch (x) { fail(); } }
-          else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && rec++ < 2) { try { h.recoverMediaError(); } catch (x) { fail(); } }
-          else fail();
-        });
-        h.loadSource(url); h.attachMedia(tvVid);
-      } else if (tvVid.canPlayType('application/vnd.apple.mpegurl')) {
-        tvVid.src = url; go();
-      } else {
-        tvMsgSet('Il browser non supporta questo flusso video.');
+      function startHls() {
+        if (g !== tvGen || !tvOpen) return;
+        if (ok && window.Hls && Hls.isSupported()) {
+          var hc = { lowLatencyMode: false, maxBufferLength: 30, backBufferLength: 10 }, rec = 0;
+          /* flussi senza CODECS nella playlist: l'audio HE-AAC puo' risultare rallentato in Chrome, si forza il codec */
+          if (audioCodec) {
+            hc.defaultAudioCodec = audioCodec;
+            /* la playlist principale dichiara AAC-LC (mp4a.40.2) ma il flusso e' HE-AAC: si riscrive il codec nella playlist prima che hls.js la usi */
+            var BaseLoader = Hls.DefaultConfig.loader;
+            hc.pLoader = function (cfg) {
+              var inner = new BaseLoader(cfg), self = this;
+              Object.defineProperty(self, 'stats', { get: function () { return inner.stats; } });
+              Object.defineProperty(self, 'context', { get: function () { return inner.context; } });
+              self.load = function (ctx, conf, cbs) {
+                inner.load(ctx, conf, {
+                  onSuccess: function (resp, stats, c, net) {
+                    if (resp && typeof resp.data === 'string' && resp.data.indexOf('#EXTM3U') !== -1) resp.data = resp.data.split('mp4a.40.2').join(audioCodec);
+                    cbs.onSuccess(resp, stats, c, net);
+                  },
+                  onError: cbs.onError, onTimeout: cbs.onTimeout, onAbort: cbs.onAbort, onProgress: cbs.onProgress
+                });
+              };
+              self.abort = function () { inner.abort(); };
+              self.destroy = function () { inner.destroy(); };
+              self.getCacheAge = function () { return inner.getCacheAge ? inner.getCacheAge() : null; };
+              self.getResponseHeader = function (n) { return inner.getResponseHeader ? inner.getResponseHeader(n) : null; };
+            };
+          }
+          var h = new Hls(hc);
+          tvHls = h;
+          h.on(Hls.Events.MANIFEST_PARSED, function () { if (g === tvGen) go(); });
+          h.on(Hls.Events.ERROR, function (e, d) {
+            if (g !== tvGen || !d || !d.fatal) return;
+            if (d.type === Hls.ErrorTypes.NETWORK_ERROR && rec++ < 2) { try { h.startLoad(); } catch (x) { fail(); } }
+            else if (d.type === Hls.ErrorTypes.MEDIA_ERROR && rec++ < 2) { try { h.recoverMediaError(); } catch (x) { fail(); } }
+            else fail();
+          });
+          h.loadSource(url); h.attachMedia(tvVid);
+        } else if (tvVid.canPlayType('application/vnd.apple.mpegurl')) {
+          tvVid.src = url; go();
+        } else {
+          tvMsgSet('Il browser non supporta questo flusso video.');
+        }
       }
+      /* alcuni flussi (es. Kiss Kiss) hanno l'audio disturbato con hls.js: se richiesto (tvNative) si prova il player nativo, e se fallisce si torna a hls.js */
+      if (native && tvVid.canPlayType('application/vnd.apple.mpegurl')) {
+        tvNativeTry = true;
+        var waits = [];
+        var nf, onWait;
+        function nativeCleanup() {
+          tvVid.removeEventListener('error', nf);
+          tvVid.removeEventListener('waiting', onWait);
+        }
+        nf = function () {
+          nativeCleanup();
+          tvNativeTry = false;
+          if (g !== tvGen || !tvOpen) return;
+          tvKill(); tvTitle.textContent = name + ' TV \u00b7 hls.js'; startHls();
+        };
+        /* se il player nativo va in buffering 3 volte in 30 secondi, si passa a hls.js */
+        onWait = function () {
+          if (g !== tvGen || !tvOpen) { nativeCleanup(); return; }
+          var t = Date.now(); waits.push(t);
+          waits = waits.filter(function (x) { return t - x < 30000; });
+          if (waits.length >= 3) nf();
+        };
+        tvVid.addEventListener('error', nf);
+        tvVid.addEventListener('waiting', onWait);
+        tvTitle.textContent = name + ' TV \u00b7 nativo';
+        tvVid.crossOrigin = 'anonymous'; /* Chrome legge la playlist HLS nativa solo con richiesta CORS */
+        tvVid.src = url; go();
+        return;
+      }
+      startHls();
     });
   }
   tvVid.addEventListener('playing', function () { tvMsgSet(''); });
   tvVid.addEventListener('waiting', function () { if (tvOpen && !tvVid.paused) tvMsgSet('Buffering\u2026'); });
   tvVid.addEventListener('canplay', function () { if (tvOpen && !tvVid.paused) tvMsgSet(''); });
-  tvVid.addEventListener('error', function () { if (tvOpen && !tvHls && tvVid.getAttribute('src')) tvMsgSet('Flusso video non disponibile al momento.'); });
+  tvVid.addEventListener('error', function () { if (tvOpen && !tvHls && !tvNativeTry && tvVid.getAttribute('src')) tvMsgSet('Flusso video non disponibile al momento.'); });
   document.getElementById('tvX').addEventListener('click', tvClose);
   tvEl.addEventListener('click', function (e) { if (e.target === tvEl) tvClose(); });
   document.addEventListener('keydown', function (e) { if (tvOpen && e.key === 'Escape') { e.stopPropagation(); tvClose(); } }, true);
@@ -1859,7 +1918,7 @@
       var tb = document.createElement('button');
       tb.type = 'button'; tb.className = 'tvb'; tb.title = 'Guarda ' + s.name + ' in video'; tb.setAttribute('aria-label', 'Guarda ' + s.name + ' in video');
       tb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/></svg>TV';
-      tb.addEventListener('click', function (e) { e.stopPropagation(); tvShow(s.name, s.tv, tb); });
+      tb.addEventListener('click', function (e) { e.stopPropagation(); tvShow(s.name, s.tv, tb, s.tvNative, s.tvAudioCodec); });
       li.appendChild(tb); li.classList.add('hastv');
     }
     listEl.appendChild(li); items.push(b);
