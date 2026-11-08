@@ -459,7 +459,10 @@
 
   /* pulsante TV accanto alla radio + video in sovraimpressione */
   #list li.hastv { display: flex; align-items: center; gap: 6px; }
-  #list li.hastv .st { flex: 1 1 0; width: auto; min-width: 0; }
+  /* radio con TV: il nome occupa tutta la riga e i pulsanti TV vanno nella riga sotto */
+  #list li.hastv { flex-wrap: wrap; justify-content: flex-end; }
+  #list li.hastv .st { flex: 1 1 100%; width: auto; min-width: 0; }
+  #list li.hastv .tvb { margin: 0 10px 4px 0; }
   .tvb { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px; border: 1.5px solid #4fb3ff; border-radius: 8px; background: rgba(79,179,255,.12); color: #8fd0ff; font-weight: 800; font-size: 12px; letter-spacing: .08em; line-height: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .2s ease, color .2s ease; }
   .tvb svg { width: 18px; height: 18px; flex: 0 0 auto; }
   .tvb:hover { background: rgba(79,179,255,.3); color: #fff; }
@@ -682,7 +685,7 @@
     {name: 'Radio Dee Jay', urls: ['https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8'], info: 'https://streamcdnf30-4c4b867c89244861ac216426883d1ad0.msvdn.net/radiodeejay/radiodeejay/play1.m3u8', tv: 'https://streamcdnm5-4c4b867c89244861ac216426883d1ad0.msvdn.net/live/S85984808/sMO0tz9Sr2Rk/playlist.m3u8', tvAudioCodec: 'mp4a.40.5'},
     {name: 'Radio Freccia', urls: ['https://streamcdnf24-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S3160845/D6MENOraq6Qy/playlist_audio.m3u8'], tv: 'https://streamcdnm5-dd782ed59e2a4e86aabf6fc508674b59.msvdn.net/live/S3160845/0tuSetc8UFkF/chunklist_b3256000.m3u8'},
     {name: 'Radio FS News', urls: ['https://fsnmob.newradio.it/stream'], info: 'https://fsnmob.newradio.it/stream'},
-    {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir', tv: 'https://radioitaliatv.akamaized.net/hls/live/2093117/RadioitaliaTV/stream01/streamPlaylist.m3u8'},
+    {name: 'Radio Italia', urls: ['https://radioitaliasmi.akamaized.net/hls/live/2093120/RISMI/master.m3u8'], info: 'https://www.radioitalia.it/onAir', tv: 'https://radioitaliatv.akamaized.net/hls/live/2093117/RadioitaliaTV/stream01/streamPlaylist.m3u8', tv2: 'https://radioitalialive.akamaized.net/hls/live/2124228/radioitalialive/stream01/streamPlaylist.m3u8', tv2Name: 'Radio Italia Live'},
     {name: 'Radio Italia Network', urls: ['https://gr.fluidstream.eu/gr7.mp3'], info: 'https://titoli.fluidstream.it/grradio/titoliGR7.txt', infoFmt: 'dash'},
     {name: 'Radio Italy Live', urls: ['https://streaming.radiostreamlive.com/radioitalylive_devices'], info: 'https://streaming.radiostreamlive.com/radioitalylive_devices'},
     {name: 'Radio Kiss Kiss', urls: ['https://kisskiss.fluidstream.eu/KissKiss.aac'], info: 'https://prod.radio-api.net/stations/radiokisskiss/songs', tv: 'https://kk.fluid.stream/KKMulti/smil:KissKissTV.smil/playlist.m3u8?FLID=1', tvAudioCodec: 'mp4a.40.5'},
@@ -1914,13 +1917,17 @@
     if (lgSrc) { var lg = document.createElement('img'); lg.className = 'lg'; lg.alt = ''; lg.src = lgSrc; lg.draggable = false; lg.setAttribute('aria-hidden', 'true'); b.insertBefore(lg, b.querySelector('.nm')); }
     b.addEventListener('click', function () { if (!(i === cur && wantPlay && nowSt.className !== 'err')) select(i, true); ovShow(i); findCollapse(true); });
     li.appendChild(b); li.setAttribute('data-n', s.name.toLowerCase()); li.setAttribute('data-i', i);
-    if (s.tv) {
+    function addTvBtn(url, label, tvName) {
       var tb = document.createElement('button');
-      tb.type = 'button'; tb.className = 'tvb'; tb.title = 'Guarda ' + s.name + ' in video'; tb.setAttribute('aria-label', 'Guarda ' + s.name + ' in video');
-      tb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/></svg>TV';
-      tb.addEventListener('click', function (e) { e.stopPropagation(); tvShow(s.name, s.tv, tb, s.tvNative, s.tvAudioCodec); });
+      tb.type = 'button'; tb.className = 'tvb'; tb.title = 'Guarda ' + tvName + ' in video'; tb.setAttribute('aria-label', 'Guarda ' + tvName + ' in video');
+      tb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M9 3l3 3 3-3"/></svg>' + label;
+      tb.addEventListener('click', function (e) { e.stopPropagation(); tvShow(tvName, url, tb, s.tvNative, s.tvAudioCodec); });
       li.appendChild(tb); li.classList.add('hastv');
     }
+    if (s.tv) addTvBtn(s.tv, s.tv2 ? 'TV 1' : 'TV', s.name);
+    /* secondo canale TV della stessa radio (opzionale): tv2 = URL, tv2Name = nome mostrato nella finestra video */
+    if (s.tv && s.tv2) li.classList.add('hastv2');
+    if (s.tv2) addTvBtn(s.tv2, 'TV 2', s.tv2Name || (s.name + ' 2'));
     listEl.appendChild(li); items.push(b);
   });
   document.getElementById('count').textContent = STATIONS.length + ' stazioni';
