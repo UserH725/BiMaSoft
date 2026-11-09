@@ -4167,7 +4167,7 @@
 (function () {
   var el = document.getElementById('addr1');
   if (!el) return;
-  var KEY = 'addrCache', MAXACC = 100, busy = false, has = false;
+  var KEY = 'addrCache', busy = false, has = false;
   function show(t) { el.textContent = t; }
   try { var c = localStorage.getItem(KEY); if (c) { show(c); has = true; } } catch (e) {}
   function jget(u) { return fetch(u).then(function (r) { return r.json(); }); }
@@ -4204,11 +4204,6 @@
     if (busy) return;
     busy = true;
     navigator.geolocation.getCurrentPosition(function (p) {
-      if (p.coords.accuracy > MAXACC) {
-        busy = false;
-        if (!has) show('Posizione imprecisa (\u00b1' + Math.round(p.coords.accuracy) + ' m)');
-        return;
-      }
       lookup(p.coords.latitude, p.coords.longitude);
     }, function (e) { busy = false; err(e); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
   }
