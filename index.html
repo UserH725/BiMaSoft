@@ -195,9 +195,10 @@
   #rc #clock b { font-size: 19.5px; }
   #clock #addr { display: block; width: max-content; max-width: 60vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
   #clock #addr.addr-new { color: #ffe600; }
-  #clock #addr #addrBar { display: block; height: 2px; margin-top: 1px; border-radius: 1px; background: currentColor; opacity: 0.9; transform: scaleX(0); transform-origin: left center; }
-  #clock #addr #addrBar.run { animation-name: addrFill; animation-timing-function: linear; animation-fill-mode: forwards; }
-  @keyframes addrFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  #clock #addr #addrBar { display: block; height: 2px; margin-top: 1px; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
+  #clock #addr #addrBar.ok { background: #00e676; }
+  #clock #addr #addrBar.bad { background: #ff1744; animation: addrBlink 0.7s steps(1, end) infinite; }
+  @keyframes addrBlink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
   #clock #addr span { display: inline; font: inherit; color: inherit; }
   #ana { flex: 0 0 auto; width: var(--anaS, 54px); height: var(--anaS, 54px); filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
@@ -4171,20 +4172,22 @@
 (function () {
   var el = document.getElementById('addr1');
   if (!el) return;
-  var KEY = 'addrCache', MINMOVE = 10, MINGAP = 2000, MAXGAP = 30000;
+  var KEY = 'addrCache', MINMOVE = 1, MINGAP = 2000, MAXGAP = 30000;
   var busy = false, has = false, lastPt = null, lastT = 0, pending = null;
   var box = document.getElementById('addr'), ft = null;
   var bar = document.getElementById('addrBar');
-  function restartBar() {
+  var startT = Date.now(), lastPosT = 0, lastFail = false, errState = false, STALE = 15000;
+  function health() {
     if (!bar) return;
-    bar.classList.remove('run');
-    void bar.offsetWidth;
-    bar.style.animationDuration = MAXGAP + 'ms';
-    bar.classList.add('run');
+    var now = Date.now(), cls;
+    if (!lastPosT && !errState && now - startT < STALE) cls = '';
+    else if (errState || lastFail || now - (lastPosT || startT) > STALE) cls = 'bad';
+    else cls = 'ok';
+    if (bar.className !== cls) bar.className = cls;
   }
+  setInterval(health, 1000);
   function show(t) { el.textContent = t; }
   function flash() {
-    restartBar();
     if (!box) return;
     box.classList.add('addr-new');
     clearTimeout(ft);
@@ -4219,11 +4222,11 @@
       }, function () { return build(via, civ, fr, citta); });
     }).then(function (t) {
       t = t || 'Indirizzo non disponibile';
-      show(t); has = true;
-      flash();
+      show(t); has = true; lastFail = false;
+      flash(); health();
       try { localStorage.setItem(KEY, t); } catch (e) {}
     }).catch(function () {
-      lastPt = null;
+      lastPt = null; lastFail = true; health();
       if (!has) show('Indirizzo non disponibile');
     }).then(function () {
       busy = false;
@@ -4236,10 +4239,10 @@
     var moved = lastPt ? dist(lastPt, pt) : Infinity;
     if ((moved >= MINMOVE && now - lastT >= MINGAP) || now - lastT >= MAXGAP) lookup(pt);
   }
-  function err(e) { if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile'); }
+  function err(e) { errState = true; health(); if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile'); }
   if (!('geolocation' in navigator)) { show('Geolocalizzazione assente'); return; }
-  restartBar();
   navigator.geolocation.watchPosition(function (p) {
+    lastPosT = Date.now(); errState = false; health();
     consider({ lat: p.coords.latitude, lon: p.coords.longitude });
   }, err, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 })();
