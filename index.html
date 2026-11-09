@@ -4167,17 +4167,23 @@
 (function () {
   var el = document.getElementById('addr1');
   if (!el) return;
-  var KEY = 'addrCache', busy = false, has = false;
+  var KEY = 'addrCache', MINMOVE = 10, MINGAP = 2000, MAXGAP = 30000;
+  var busy = false, has = false, lastPt = null, lastT = 0, pending = null;
   function show(t) { el.textContent = t; }
   try { var c = localStorage.getItem(KEY); if (c) { show(c); has = true; } } catch (e) {}
   function jget(u) { return fetch(u).then(function (r) { return r.json(); }); }
   function norm(x) { return (x || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
   function build(via, civ, fr, citta) {
-    var parts = [(via + (civ ? ' ' + civ : '')).trim(), fr, citta].filter(Boolean);
-    return parts.join(', ');
+    return [(via + (civ ? ' ' + civ : '')).trim(), fr, citta].filter(Boolean).join(', ');
   }
-  function lookup(lat, lon) {
-    var u = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=it&lat=' + lat + '&lon=' + lon;
+  function dist(a, b) {
+    var R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
+    var x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+  function lookup(pt) {
+    busy = true; lastPt = pt; lastT = Date.now();
+    var u = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&accept-language=it&lat=' + pt.lat + '&lon=' + pt.lon;
     jget(u).then(function (j) {
       var d = (j && j.address) || {};
       var via = d.road || d.pedestrian || d.footway || d.path || d.square || '';
@@ -4186,7 +4192,7 @@
       var fr = '', k = [d.hamlet, d.suburb, d.quarter, d.city_district, d.village, d.neighbourhood];
       for (var i = 0; i < k.length; i++) { if (k[i] && k[i] !== citta) { fr = k[i]; break; } }
       if (civ || !via) return build(via, civ, fr, citta);
-      return jget('https://photon.komoot.io/reverse?lang=it&limit=1&lat=' + lat + '&lon=' + lon).then(function (g) {
+      return jget('https://photon.komoot.io/reverse?lang=it&limit=1&lat=' + pt.lat + '&lon=' + pt.lon).then(function (g) {
         var p = g && g.features && g.features[0] && g.features[0].properties;
         if (p && p.housenumber && norm(p.street) === norm(via)) civ = p.housenumber;
         return build(via, civ, fr, citta);
@@ -4196,20 +4202,24 @@
       show(t); has = true;
       try { localStorage.setItem(KEY, t); } catch (e) {}
     }).catch(function () {
+      lastPt = null;
       if (!has) show('Indirizzo non disponibile');
-    }).then(function () { busy = false; });
+    }).then(function () {
+      busy = false;
+      if (pending) { var p = pending; pending = null; consider(p); }
+    });
+  }
+  function consider(pt) {
+    var now = Date.now();
+    if (busy) { pending = pt; return; }
+    var moved = lastPt ? dist(lastPt, pt) : Infinity;
+    if ((moved >= MINMOVE && now - lastT >= MINGAP) || now - lastT >= MAXGAP) lookup(pt);
   }
   function err(e) { if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile'); }
-  function tick() {
-    if (busy) return;
-    busy = true;
-    navigator.geolocation.getCurrentPosition(function (p) {
-      lookup(p.coords.latitude, p.coords.longitude);
-    }, function (e) { busy = false; err(e); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-  }
   if (!('geolocation' in navigator)) { show('Geolocalizzazione assente'); return; }
-  tick();
-  setInterval(tick, 30000);
+  navigator.geolocation.watchPosition(function (p) {
+    consider({ lat: p.coords.latitude, lon: p.coords.longitude });
+  }, err, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 })();
 </script>
 </body>
