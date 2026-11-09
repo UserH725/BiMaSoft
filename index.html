@@ -193,7 +193,8 @@
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 19.5px; }
-  #clock #addr { display: block; max-width: 60vw; margin: 0 0 2px auto; font-size: 11.5px; font-weight: 800; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; }
+  #clock #addr { display: block; max-width: 60vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
+  #clock #addr.addr-new { color: #ffe600; }
   #clock #addr span { display: inline; font: inherit; color: inherit; }
   #ana { flex: 0 0 auto; width: var(--anaS, 54px); height: var(--anaS, 54px); filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
@@ -4169,7 +4170,14 @@
   if (!el) return;
   var KEY = 'addrCache', MINMOVE = 10, MINGAP = 2000, MAXGAP = 30000;
   var busy = false, has = false, lastPt = null, lastT = 0, pending = null;
+  var box = document.getElementById('addr'), ft = null;
   function show(t) { el.textContent = t; }
+  function flash() {
+    if (!box) return;
+    box.classList.add('addr-new');
+    clearTimeout(ft);
+    ft = setTimeout(function () { box.classList.remove('addr-new'); }, 3000);
+  }
   try { var c = localStorage.getItem(KEY); if (c) { show(c); has = true; } } catch (e) {}
   function jget(u) { return fetch(u).then(function (r) { return r.json(); }); }
   function norm(x) { return (x || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
@@ -4200,6 +4208,7 @@
     }).then(function (t) {
       t = t || 'Indirizzo non disponibile';
       show(t); has = true;
+      flash();
       try { localStorage.setItem(KEY, t); } catch (e) {}
     }).catch(function () {
       lastPt = null;
