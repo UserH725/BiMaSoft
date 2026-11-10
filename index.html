@@ -172,9 +172,15 @@
 
   #player[data-go]::after, html[data-go] #list .st.cur::after, html[data-go] #ov .ovc::after { animation-delay: var(--od, 0s); }
 
-  #bufrow { position: relative; height: 15px; background: #111; overflow: hidden; --c: #3ddc84; }
+  #bufrow { position: relative; height: 15px; background: #111; overflow: hidden; --c: #3ddc84; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 8px; padding: 0 12px; }
   #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
-  #bftxt { position: absolute; right: 12px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+  #bufrow #netStat, #bufrow #netCon, #bufrow #bftxt { position: relative; margin: 0; font-size: 10.5px; line-height: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+  #bufrow #netStat { grid-column: 1; justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  #bufrow #netCon { grid-column: 2; justify-self: center; gap: 4px; }
+  #bufrow #netCon #netLbl { color: #fff; }
+  #bufrow #netDot { width: 8px; height: 8px; }
+  #bufrow #bftxt { grid-column: 3; justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 430px) { #bufrow .nl { display: none; } }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
   #ck .dg { position: relative; display: inline-block; width: 1ch; height: 1.15em; overflow: hidden; vertical-align: top; }
@@ -193,13 +199,14 @@
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 19.5px; }
-  #clock #addr { display: block; width: max-content; max-width: 60vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
+  #clock #addr { display: block; width: max-content; max-width: 62vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
   #clock #addr.addr-new { color: #ffe600; }
   #clock #addr #addrBar { display: block; height: 2px; margin-top: 1px; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
   #clock #addr #addrBar.ok { background: #00e676; }
   #clock #addr #addrBar.bad { background: #ff1744; animation: addrBlink 0.7s steps(1, end) infinite; }
   @keyframes addrBlink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
-  #clock #addr span { display: inline; font: inherit; color: inherit; }
+  #clock #addr span { display: block; font: inherit; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #clock #addr #addr2:empty, #clock #addr #addr3:empty { display: none; }
   #ana { flex: 0 0 auto; width: var(--anaS, 54px); height: var(--anaS, 54px); filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
@@ -522,15 +529,14 @@
 <div class="pr">
  <div id="rc">
   <div id="clock">
-    <div id="addr" aria-live="polite" title="Posizione rilevata dal dispositivo"><span id="addr1">Rilevo la posizione...</span><span id="addr2"></span><i id="addrBar"></i></div>
+    <div id="addr" aria-live="polite" title="Posizione rilevata dal dispositivo"><span id="addr1">Rilevo la posizione...</span><span id="addr2"></span><span id="addr3"></span><i id="addrBar"></i></div>
     <b id="ck" aria-label=""></b>
     <span id="cd"></span>
-    <div id="netStat" title="Stato connessione, velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • Totale: <span id="dlTot">0,0000 MB</span><span id="netCon" role="status" aria-live="polite"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span></div>
   </div>
  </div>
 </div>
 </header>
-<div id="bufrow" aria-hidden="true"><div id="bfill"></div><div id="bftxt"></div></div>
+<div id="bufrow"><div id="bfill" aria-hidden="true"></div><div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • <span class="nl">Totale: </span><span id="dlTot">0,0000 MB</span></div><span id="netCon" role="status" aria-live="polite" title="Stato connessione"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span><div id="bftxt" aria-hidden="true"></div></div>
 <div id="mtr"><canvas id="meter" width="1905" height="26" aria-hidden="true"></canvas></div>
 </div>
 
@@ -4170,13 +4176,16 @@
 </script>
 <script id="addrJs">
 (function () {
-  var el = document.getElementById('addr1');
+  var el = document.getElementById('addr1'), el2 = document.getElementById('addr2'), el3 = document.getElementById('addr3');
   if (!el) return;
-  var KEY = 'addrCache', MINMOVE = 1, MINGAP = 2000, MAXGAP = 30000;
+  var KEY = 'addrCache2', HKEY = 'addrHome', MINMOVE = 1, MINGAP = 2000, MAXGAP = 30000, STALE = 15000;
+  var HOME_Q = 'Via Lettonia 20, Grosseto, Italia';
+  var HOME_LL = null; /* per forzare le coordinate di casa a mano: [lat, lon] */
+  var home = null, curPt = null;
   var busy = false, has = false, lastPt = null, lastT = 0, pending = null;
   var box = document.getElementById('addr'), ft = null;
   var bar = document.getElementById('addrBar');
-  var startT = Date.now(), lastPosT = 0, lastFail = false, errState = false, STALE = 15000;
+  var startT = Date.now(), lastPosT = 0, lastFail = false, errState = false;
   function health() {
     if (!bar) return;
     var now = Date.now(), cls;
@@ -4186,23 +4195,80 @@
     if (bar.className !== cls) bar.className = cls;
   }
   setInterval(health, 1000);
-  function show(t) { el.textContent = t; }
+  function show(l1, l2) {
+    el.textContent = l1 || '';
+    if (el2) el2.textContent = l2 || '';
+    if (box) box.title = [l1, l2].filter(Boolean).join(' - ');
+  }
   function flash() {
     if (!box) return;
     box.classList.add('addr-new');
     clearTimeout(ft);
     ft = setTimeout(function () { box.classList.remove('addr-new'); }, 3000);
   }
-  try { var c = localStorage.getItem(KEY); if (c) { show(c); has = true; } } catch (e) {}
+  try {
+    var c = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (c && c.a) { show(c.a, c.b); has = true; }
+  } catch (e) {}
   function jget(u) { return fetch(u).then(function (r) { return r.json(); }); }
   function norm(x) { return (x || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
-  function build(via, civ, fr, citta) {
-    return [(via + (civ ? ' ' + civ : '')).trim(), fr, citta].filter(Boolean).join(', ');
-  }
   function dist(a, b) {
     var R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
     var x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
     return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+  var roadM = null, roadPt = null, roadT = 0, roadBusy = false, ROAD_MOVE = 20, ROAD_GAP = 5000;
+  function fmt(n) { return Math.round(n).toLocaleString('it-IT') + ' m'; }
+  function maybeRoad() {
+    if (roadBusy || !home || !curPt) return;
+    var now = Date.now();
+    if (now - roadT < ROAD_GAP) return;
+    if (roadPt && roadM !== null && dist(roadPt, curPt) < ROAD_MOVE) return;
+    roadBusy = true; roadT = now;
+    var pt = curPt;
+    jget('https://router.project-osrm.org/route/v1/driving/' + pt.lon + ',' + pt.lat + ';' + home.lon + ',' + home.lat + '?overview=false&alternatives=false&steps=false')
+      .then(function (r) {
+        if (r && r.code === 'Ok' && r.routes && r.routes[0] && isFinite(r.routes[0].distance)) { roadM = r.routes[0].distance; roadPt = pt; }
+        else { roadM = null; }
+      }).catch(function () { roadM = null; })
+      .then(function () { roadBusy = false; showDist(); });
+  }
+  function showDist() {
+    if (!el3) return;
+    if (!home) { el3.textContent = 'Casa: calcolo in corso...'; return; }
+    if (!curPt) return;
+    if (roadM !== null) el3.textContent = 'Casa: ' + fmt(roadM) + ' (strada)';
+    else el3.textContent = 'Casa: ' + fmt(dist(curPt, home)) + ' (linea d\'aria)';
+    maybeRoad();
+  }
+  function loadHome() {
+    if (HOME_LL) { home = { lat: HOME_LL[0], lon: HOME_LL[1] }; showDist(); return; }
+    try {
+      var h = JSON.parse(localStorage.getItem(HKEY) || 'null');
+      if (h && isFinite(h.lat) && isFinite(h.lon)) { home = h; showDist(); return; }
+    } catch (e) {}
+    jget('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=it&q=' + encodeURIComponent(HOME_Q)).then(function (r) {
+      if (r && r[0] && isFinite(+r[0].lat)) {
+        home = { lat: +r[0].lat, lon: +r[0].lon };
+        try { localStorage.setItem(HKEY, JSON.stringify(home)); } catch (e) {}
+        showDist();
+      } else if (el3) { el3.textContent = 'Casa: indirizzo non trovato'; }
+    }).catch(function () { setTimeout(loadHome, 20000); });
+  }
+  function two(d, civ) {
+    var via = d.road || d.pedestrian || d.footway || d.path || d.square || '';
+    var citta = d.city || d.town || d.municipality || d.village || d.hamlet || '';
+    var iso = d['ISO3166-2-lvl6'] || '';
+    var prov = iso ? iso.split('-').pop() : '';
+    if (!prov && d.county && d.county !== citta) prov = d.county;
+    if (!citta) citta = d.county || '';
+    var fr = '', k = [d.hamlet, d.suburb, d.quarter, d.city_district, d.village, d.neighbourhood];
+    for (var i = 0; i < k.length; i++) { if (k[i] && k[i] !== citta) { fr = k[i]; break; } }
+    var l1 = (via + (civ ? ' ' + civ : '')).trim();
+    var base = [fr, citta].filter(Boolean).join(', ');
+    var l2 = base + (prov ? (base ? ' ' : '') + '(' + prov + ')' : '');
+    if (!l1 && !l2) return { a: 'Indirizzo non disponibile', b: '' };
+    return { a: l1 || 'Via non disponibile', b: l2 };
   }
   function lookup(pt) {
     busy = true; lastPt = pt; lastT = Date.now();
@@ -4211,23 +4277,19 @@
       var d = (j && j.address) || {};
       var via = d.road || d.pedestrian || d.footway || d.path || d.square || '';
       var civ = d.house_number || '';
-      var citta = d.city || d.town || d.municipality || d.village || d.hamlet || d.county || '';
-      var fr = '', k = [d.hamlet, d.suburb, d.quarter, d.city_district, d.village, d.neighbourhood];
-      for (var i = 0; i < k.length; i++) { if (k[i] && k[i] !== citta) { fr = k[i]; break; } }
-      if (civ || !via) return build(via, civ, fr, citta);
+      if (civ || !via) return two(d, civ);
       return jget('https://photon.komoot.io/reverse?lang=it&limit=1&lat=' + pt.lat + '&lon=' + pt.lon).then(function (g) {
         var p = g && g.features && g.features[0] && g.features[0].properties;
         if (p && p.housenumber && norm(p.street) === norm(via)) civ = p.housenumber;
-        return build(via, civ, fr, citta);
-      }, function () { return build(via, civ, fr, citta); });
-    }).then(function (t) {
-      t = t || 'Indirizzo non disponibile';
-      show(t); has = true; lastFail = false;
+        return two(d, civ);
+      }, function () { return two(d, civ); });
+    }).then(function (r) {
+      show(r.a, r.b); has = true; lastFail = false;
       flash(); health();
-      try { localStorage.setItem(KEY, t); } catch (e) {}
+      try { localStorage.setItem(KEY, JSON.stringify(r)); } catch (e) {}
     }).catch(function () {
       lastPt = null; lastFail = true; health();
-      if (!has) show('Indirizzo non disponibile');
+      if (!has) show('Indirizzo non disponibile', '');
     }).then(function () {
       busy = false;
       if (pending) { var p = pending; pending = null; consider(p); }
@@ -4239,11 +4301,14 @@
     var moved = lastPt ? dist(lastPt, pt) : Infinity;
     if ((moved >= MINMOVE && now - lastT >= MINGAP) || now - lastT >= MAXGAP) lookup(pt);
   }
-  function err(e) { errState = true; health(); if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile'); }
-  if (!('geolocation' in navigator)) { show('Geolocalizzazione assente'); return; }
+  function err(e) { errState = true; health(); if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile', ''); }
+  loadHome();
+  if (!('geolocation' in navigator)) { show('Geolocalizzazione assente', ''); return; }
   navigator.geolocation.watchPosition(function (p) {
     lastPosT = Date.now(); errState = false; health();
-    consider({ lat: p.coords.latitude, lon: p.coords.longitude });
+    curPt = { lat: p.coords.latitude, lon: p.coords.longitude };
+    showDist();
+    consider(curPt);
   }, err, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 })();
 </script>
