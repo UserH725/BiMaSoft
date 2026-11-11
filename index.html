@@ -426,6 +426,30 @@
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 
+  /* === Info a luci discoteca accese: in basso a destra logo radio (sopra), nome stazione, brano e vinile che gira === */
+  #discoInfo { position: fixed; z-index: 45; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: min(88vw, 440px);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; opacity: 0; visibility: hidden;
+    transition: opacity .6s ease, visibility 0s linear .6s; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+  body.disco-on #discoInfo { opacity: 1; visibility: visible; transition: opacity .6s ease; }
+  #discoInfo .di-lg { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; object-position: right center;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); animation: logoPulse 2s ease-in-out infinite; }
+  #discoInfo .di-lg[hidden] { display: none; }
+  #discoInfo .di-row { display: flex; align-items: center; gap: 12px; max-width: 100%; }
+  #discoInfo .di-tx { min-width: 0; text-align: right; }
+  #discoInfo .di-st, #discoInfo .di-sg { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #discoInfo .di-st { font-family: 'Nunito', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 800; font-size: clamp(16px, 4vw, 20px); line-height: 1.2; color: #ffe600; }
+  #discoInfo .di-sg { margin-top: 2px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(12px, 3vw, 14px); }
+  #discoInfo .di-sg:empty { display: none; }
+  #discoInfo .di-vn { flex: none; width: 58px; height: 58px; border-radius: 50%; border: 2px solid #3a3a3a; box-shadow: 0 0 10px rgba(0,0,0,.6);
+    background: repeating-radial-gradient(circle, #0d0d0d 0 2px, #1c1c1c 2px 3px); display: flex; align-items: center; justify-content: center;
+    animation: diSpin 4s linear infinite; animation-play-state: paused; }
+  body.disco-on #discoInfo .di-vn { animation-play-state: running; }
+  #discoInfo .di-lb { position: relative; width: 22px; height: 22px; border-radius: 50%; background: #ff2d95; }
+  #discoInfo .di-lb::before { content: ''; position: absolute; left: 3px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+  #discoInfo .di-lb::after { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #111; }
+  @keyframes diSpin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #discoInfo .di-vn, #discoInfo .di-lg { animation: none; } }
+
   /* === Bande laterali fluide (5 stili, scelta dal selettore "Bande") === */
   .sb { position: fixed; top: var(--hdrh, 137px); bottom: 12px; width: var(--w, 12px); z-index: 6; pointer-events: none; overflow: hidden; opacity: 1; transition: opacity .6s ease; }
   .sb.l { left: 0; } .sb.r { right: 0; }
@@ -623,6 +647,13 @@
 </main>
 
 <canvas id="disco" aria-hidden="true"></canvas>
+<div id="discoInfo" aria-hidden="true">
+  <img class="di-lg" alt="" hidden>
+  <div class="di-row">
+    <div class="di-tx"><b class="di-st"></b><span class="di-sg"></span></div>
+    <div class="di-vn"><span class="di-lb"></span></div>
+  </div>
+</div>
 
 <div id="mgr" hidden=""></div>
 
@@ -2996,6 +3027,20 @@ window.hdrGeo = function () {
       im.src = u;
       return null;
     }
+    /* info a luci discoteca accese: logo radio, nome stazione e brano in basso a destra (si aggiorna solo quando cambiano) */
+    var diEl = document.getElementById('discoInfo'), diSt = null, diSg = null,
+        diLg = diEl && diEl.querySelector('.di-lg'), diTxS = diEl && diEl.querySelector('.di-st'), diTxG = diEl && diEl.querySelector('.di-sg');
+    function discoInfoUpd() {
+      if (!diEl) return;
+      var st = (typeof cur !== 'undefined' && cur >= 0 && STATIONS[cur]) ? String(STATIONS[cur].name || '').trim() : '',
+          sg = String(typeof song !== 'undefined' ? song : '').replace(/^\u266A\s*/, '').trim(), u;
+      if (st !== diSt) {
+        diSt = st; diTxS.textContent = st;
+        u = (st && typeof stLogo === 'function') ? stLogo(st) : '';
+        if (u) { if (diLg.getAttribute('src') !== u) diLg.src = u; diLg.hidden = false; } else diLg.hidden = true;
+      }
+      if (sg !== diSg) { diSg = sg; diTxG.textContent = sg ? '\u266A ' + sg : ''; }
+    }
     /* sequenza: il logo della stazione alterna ogni scritta (scritta, logo, scritta, logo...); le scritte sono a turno una parola fissa
        e il nome della stazione o il titolo del brano (alternati) */
     var wSeq = 0, wTxt = 0, wDynT = 0;
@@ -3740,6 +3785,7 @@ window.hdrGeo = function () {
       var play = document.body.classList.contains('is-playing'), wantD = discoOn && play, want = (discoOn || relaxOn) && play;
       document.body.classList.toggle('disco-on', wantD);
       document.body.classList.toggle('ball-on', want);
+      if (wantD) discoInfoUpd();
       if (ana) ana.classList.toggle('disco-on', discoOn);
       if (clk) clk.classList.toggle('relax-on', relaxOn);
       act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
