@@ -20,7 +20,7 @@
   #hdr { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 1px solid rgba(255,255,255,.12); }
   #player { position: relative; z-index: 0; display: flex; align-items: center; gap: 12px; min-height: 92px; padding: 6px 16px; padding-top: calc(6px + env(safe-area-inset-top, 0px)); background: #000; border-bottom: 1px solid rgba(255,255,255,.12); overflow: hidden; }
   
-  #notes { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  #notes { position: fixed; inset: 0 0 0 var(--hw, 0px); z-index: 0; overflow: hidden; pointer-events: none; display: flex; align-items: center; justify-content: center; }
   #bgDisc {
     position: absolute; width: min(85vw, 85vh); height: min(85vw, 85vh); border-radius: 50%; opacity: 0.40; filter: blur(0px);
     animation: discSpin 10s linear infinite; animation-play-state: paused;
@@ -172,14 +172,26 @@
 
   #player[data-go]::after, html[data-go] #list .st.cur::after, html[data-go] #ov .ovc::after { animation-delay: var(--od, 0s); }
 
-  #bufrow { position: relative; height: 15px; background: #111; overflow: hidden; --c: #3ddc84; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 8px; padding: 0 12px; }
-  #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff9800 35%, #e6d422 65%, #0a7d32 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
-  #bufrow #netStat, #bufrow #netCon, #bufrow #bftxt { position: relative; margin: 0; font-size: 10.5px; line-height: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
-  #bufrow #netStat { grid-column: 1; justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  #bufrow #netCon { grid-column: 2; justify-self: center; gap: 4px; }
-  #bufrow #netCon #netLbl { color: #fff; }
+  /* ===== barra stato: riga 1 connessione, riga 2 dati, riga 3 buffer ===== */
+  #bufrow { position: relative; display: flex; flex-direction: column; align-items: stretch; background: #0b0b0b; overflow: hidden; --c: #3ddc84; padding: 0; }
+  #bufrow #netCon, #bufrow #netStat { margin: 0; align-self: center; height: 15px; line-height: 15px; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+  #bufrow #netCon { display: flex; align-items: center; justify-content: center; gap: 5px; }
   #bufrow #netDot { width: 8px; height: 8px; }
-  #bufrow #bftxt { grid-column: 3; justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  #bufrow #netRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px; min-width: 0; }
+  #bufrow #netRow #netStat { align-self: auto; flex: 0 1 auto; min-width: 0; text-align: left; }
+  #bufrow #netRow #netCon { align-self: auto; flex: 0 0 auto; justify-content: flex-end; }
+  /* testo con gradiente animato che scorre */
+  #bufrow #netStat, #bufrow #netLbl { color: transparent; -webkit-text-fill-color: transparent; -webkit-background-clip: text; background-clip: text; background-size: 200% 100%; animation: gradFlow 3.5s linear infinite; }
+  #bufrow #netLbl { background-image: linear-gradient(90deg, #9e9e9e, #eeeeee, #9e9e9e); }
+  #bufrow #netCon.ok #netLbl { background-image: linear-gradient(90deg, #00e676, #b9f6ca, #00e5ff, #b9f6ca, #00e676); }
+  #bufrow #netCon.ko #netLbl { background-image: linear-gradient(90deg, #ff1744, #ff9100, #ffd24d, #ff9100, #ff1744); }
+  #bufrow #netStat { background-image: linear-gradient(90deg, #4fc3f7, #b388ff, #ff80ab, #ffd180, #4fc3f7); animation-duration: 5s; }
+  @keyframes gradFlow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+  @media (prefers-reduced-motion: reduce) { #bufrow #netStat, #bufrow #netLbl { animation: none; } }
+  /* buffer: barra rossa -> verde (verde pieno = buffer al massimo) */
+  #bufbar { position: relative; height: 15px; background: #1c1c1c; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff7043 25%, #ffb300 50%, #c6e000 75%, #00e676 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
+  #bufrow #bftxt { position: relative; margin: 0; font-size: 10.5px; line-height: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   @media (max-width: 430px) { #bufrow .nl { display: none; } }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
@@ -206,7 +218,8 @@
   #clock #addr #addrBar.bad { background: #ff1744; animation: addrBlink 0.7s steps(1, end) infinite; }
   @keyframes addrBlink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
   #clock #addr span { display: block; font: inherit; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #clock #addr #addr2:empty, #clock #addr #addr3:empty { display: none; }
+  #clock #addr span.dirArr { display: inline; font-size: 2.4em; font-weight: 700; line-height: 1; vertical-align: -0.14em; }
+  #clock #addr #addr2:empty, #clock #addr #addr3:empty, #clock #addr #addr4:empty { display: none; }
   #ana { flex: 0 0 auto; width: var(--anaS, 54px); height: var(--anaS, 54px); filter: drop-shadow(0 1px 4px rgba(0,0,0,.6)); }
   #ana svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 560px) { #ana { display: none; } }
@@ -399,6 +412,9 @@
   main { transition: opacity .6s ease, visibility 0s linear 0s; }
   body.disco-on main { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .6s ease, visibility 0s linear .6s; }
   html:has(body.disco-on) { overflow: hidden; }
+  /* orologio analogico toccato: resta solo la mirror ball centrata, con tutte le luci a pagina piena */
+  #hdr, .sb, .sbb, #ver { transition: opacity .6s ease, visibility 0s linear 0s; }
+  body.disco-on #hdr, body.disco-on .sb, body.disco-on .sbb, body.disco-on #ver, body.disco-on #ov { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .6s ease, visibility 0s linear .6s; }
   /* riquadro della radio selezionata: dimensioni e caratteri dimezzati */
   #ov .ovc { gap: 6px; padding: 10px; }
   #ov .ovc-disc { width: min(70vw, 70vh, 140px); height: min(70vw, 70vh, 140px); }
@@ -491,6 +507,61 @@
   #tvMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: #fff; font-weight: 600; text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; }
   #tvMsg[hidden] { display: none; }
   html:has(body.tv-on) { overflow: hidden; }
+
+  /* ===== Layout a due colonne (sempre): intestazione a sinistra (46% della larghezza), elenco radio a destra; sugli schermi piccoli tutto si rimpicciolisce ===== */
+  :root { --hw: 46vw; }
+  #hdr { position: fixed; top: 0; left: 0; bottom: 0; width: var(--hw); height: 100vh; height: 100dvh; display: flex; flex-direction: column; border-bottom: 0; border-right: 1px solid rgba(255,255,255,.12); }
+  #player { flex: 1 1 auto; min-height: 0; flex-direction: column; justify-content: flex-start; align-items: stretch; gap: 14px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
+  #player .pl { flex: 0 0 auto; }
+  #player .pr { flex: 0 0 auto; justify-content: center; }
+  #ana { display: block; align-self: center; margin: auto; } /* l'orologio analogico si centra nello spazio libero: in alto radio/ON AIR/brano, in basso orologio digitale e dati */
+  #rc { align-items: center; }
+  #clock #addr { max-width: 100%; margin: 0 auto 4px; text-align: center; }
+  #bufrow, #mtr { flex: 0 0 auto; }
+  main { margin: 0 0 0 var(--hw); max-width: none; }
+  .sb.l { left: var(--hw); }
+  .sbb { left: var(--hw); }
+  #ver { left: calc(var(--hw) + 17px); }
+  #ov { left: var(--hl, var(--hw)); }
+  /* schermi piccoli: stessa visualizzazione, tutto in scala con la larghezza (760px = dimensioni piene), nulla viene nascosto */
+  @media (max-width: 760px) {
+    #player { gap: 1.1vw; padding: calc(0.8vw + env(safe-area-inset-top, 0px)) 1.1vw 0.8vw; }
+    #player .pl { gap: 1.8vw; }
+    #btnCol { gap: 0.7vw; }
+    #btn { width: max(24px, 6vw); height: max(24px, 6vw); }
+    #btn::after { width: 40%; height: 40%; margin: -20% 0 0 -20%; }
+    #nowRadio { font-size: max(8px, 2.24vw); }
+    #nowName { font-size: max(7px, 1.97vw); margin-top: 0.5vw; }
+    #nowName.det { font-size: max(6.5px, 1.64vw); }
+    #nowLg { width: max(14px, 3.7vw); height: max(14px, 3.7vw); }
+    #nowIc { flex-basis: max(10px, 2.9vw); width: max(10px, 2.9vw); font-size: max(7px, 1.84vw); }
+    #nowSt { gap: 0.8vw; padding: 0.4vw 1.2vw 0.4vw 0.8vw; font-size: max(6px, 1.5vw); border-width: 1px; letter-spacing: .12em; }
+    #nowSt svg { width: max(8px, 2vw); height: max(8px, 2vw); }
+    #rc #clock b { font-size: max(9px, 2.57vw); }
+    #clock #cd { font-size: max(6px, 1.5vw); }
+    #clock #addr { font-size: max(6.5px, 1.78vw); margin-bottom: 0.5vw; }
+    #bufrow #netCon, #bufrow #netStat, #bufbar { height: max(9px, 2vw); }
+    #bufrow #netCon, #bufrow #netStat, #bufrow #bftxt { font-size: max(5.5px, 1.38vw); line-height: max(9px, 2vw); }
+    #bufrow .nl { display: inline; }
+    #bufrow #netDot { width: max(5px, 1.05vw); height: max(5px, 1.05vw); }
+    #mtr { height: max(14px, 3.4vw); }
+    main { padding: 2.4vw 2vw calc(30px + env(safe-area-inset-bottom, 0px)); }
+    .head { margin: 0 -2vw 1vw; padding: 0.8vw 2vw 1vw; gap: 1vw; }
+    h1 { font-size: max(11px, 2.6vw); }
+    #count { font-size: max(6.5px, 1.6vw); }
+    #scanRd { flex-basis: max(12px, 2.9vw); width: max(12px, 2.9vw); height: max(12px, 2.9vw); }
+    #find { flex-basis: max(26px, 5vw); width: max(26px, 5vw); height: max(26px, 5vw); }
+    #list { column-width: 36vw; column-gap: 2vw; }
+    .st { gap: 1.2vw; min-height: max(30px, 6.6vw); padding: 0.8vw 1vw; }
+    .st .nm { font-size: max(9px, 2.1vw); }
+    .st .ic { flex-basis: max(12px, 2.9vw); width: max(12px, 2.9vw); font-size: max(8px, 1.84vw); }
+    .st .lg { flex-basis: max(20px, 4.2vw); width: max(20px, 4.2vw); height: max(20px, 4.2vw); }
+  }
+  /* schermi bassi (telefono in orizzontale) */
+  @media (max-height: 460px) {
+    #player { gap: 4px; padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; }
+    #clock #addr { font-size: 10px; margin-bottom: 1px; }
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
@@ -529,14 +600,14 @@
 <div class="pr">
  <div id="rc">
   <div id="clock">
-    <div id="addr" aria-live="polite" title="Posizione rilevata dal dispositivo"><span id="addr1">Rilevo la posizione...</span><span id="addr2"></span><span id="addr3"></span><i id="addrBar"></i></div>
+    <div id="addr" aria-live="polite" title="Posizione rilevata dal dispositivo"><span id="addr1">Rilevo la posizione...</span><span id="addr2"></span><span id="addr3"></span><span id="addr4"></span><i id="addrBar"></i></div>
     <b id="ck" aria-label=""></b>
     <span id="cd"></span>
   </div>
  </div>
 </div>
 </header>
-<div id="bufrow"><div id="bfill" aria-hidden="true"></div><div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • <span class="nl">Totale: </span><span id="dlTot">0,0000 MB</span></div><span id="netCon" role="status" aria-live="polite" title="Stato connessione"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span><div id="bftxt" aria-hidden="true"></div></div>
+<div id="bufrow"><div id="netRow"><div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • <span class="nl">Totale: </span><span id="dlTot">0,0000 MB</span></div><span id="netCon" role="status" aria-live="polite" title="Stato connessione"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span></div><div id="bufbar"><div id="bfill" aria-hidden="true"></div><div id="bftxt" aria-hidden="true"></div></div></div>
 <div id="mtr"><canvas id="meter" width="1905" height="26" aria-hidden="true"></canvas></div>
 </div>
 
@@ -576,6 +647,14 @@
   </div>
 </div>
 
+<script>
+/* geometria dell'intestazione: sopra (schermi stretti) oppure colonna sinistra (schermi larghi) */
+window.hdrGeo = function () {
+  var h = document.getElementById('hdr'), r = h ? h.getBoundingClientRect() : { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+  var side = r.width > 0 && r.width < window.innerWidth - 2;
+  return { side: side, top: side ? 0 : r.bottom, left: side ? r.right : 0 };
+};
+</script>
 <script>
   if ('serviceWorker' in navigator) {
     var swCode = "self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));" +
@@ -959,7 +1038,7 @@
       var b = items[cur], li = b && b.parentNode;
       if (!li || li.hidden) return;
       var hdr = document.getElementById('hdr'), hd = document.querySelector('.head');
-      var off = (hdr ? hdr.getBoundingClientRect().height : 0) + (hd ? hd.offsetHeight : 0) + 4;
+      var off = (hdr ? hdrGeo().top : 0) + (hd ? hd.offsetHeight : 0) + 4;
       window.scrollTo({ top: Math.max(0, li.getBoundingClientRect().top + window.pageYOffset - off), behavior: 'smooth' });
     }, 80);
   }
@@ -2169,16 +2248,16 @@
   var ovEl = document.getElementById('ov'), ovCard = ovEl.querySelector('.ovc'), ovSongTx = document.getElementById('ovSongTx'), ovName = document.getElementById('ovName'), ovNameTx = document.getElementById('ovNameTx');
   var ovBadge = document.getElementById('ovBadge'), ovBadgeTx = document.getElementById('ovBadgeTx'), ovSong = document.getElementById('ovSong'), hdrEl = document.getElementById('hdr'), ovOpen = false, ovT = null, ovAt = 0;
   function ovTarget() {
-    var hb = hdrEl.getBoundingClientRect().bottom, vw = window.innerWidth, vh = window.innerHeight, w = Math.min(vw - 24, Math.max(200, Math.min(vw - 24, 560) / 2)), h = Math.max(100, Math.min(vh - hb - 12, 230));
-    ovEl.style.setProperty('--hh', hb + 'px');
-    return { top: hb + (vh - hb - h) / 2, left: (vw - w) / 2, width: w, height: h };
+    var g = hdrGeo(), hb = g.top, gl = g.left, vw = window.innerWidth - gl, vh = window.innerHeight, w = Math.min(vw - 24, Math.max(200, Math.min(vw - 24, 560) / 2)), h = Math.max(100, Math.min(vh - hb - 12, 230));
+    ovEl.style.setProperty('--hh', hb + 'px'); ovEl.style.setProperty('--hl', gl + 'px');
+    return { top: hb + (vh - hb - h) / 2, left: gl + (vw - w) / 2, width: w, height: h };
   }
   function ovPlace(r) { ovCard.style.top = r.top + 'px'; ovCard.style.left = r.left + 'px'; ovCard.style.width = r.width + 'px'; ovCard.style.height = r.height + 'px'; }
   function ovNoAnim(fn) { ovCard.style.transition = 'none'; fn(); void ovCard.offsetWidth; ovCard.style.transition = ''; }
   /* altezza dell'intestazione fissa -> posizione della barra di ricerca sticky */
   (function () {
     var root = document.documentElement;
-    function setH() { root.style.setProperty('--hdrh', Math.round(hdrEl.getBoundingClientRect().height) + 'px'); }
+    function setH() { root.style.setProperty('--hdrh', Math.round(hdrGeo().top) + 'px'); }
     setH(); window.addEventListener('resize', setH);
     if (window.ResizeObserver) new ResizeObserver(setH).observe(hdrEl);
   })();
@@ -2200,8 +2279,8 @@
     ovSet(ovSongTx, 'g', sg, force, function () { fitMq(ovSong, ovSongTx); });
   }
   function ovRect(row, t) {
-    var r = row ? row.getBoundingClientRect() : null, hb = hdrEl.getBoundingClientRect().bottom;
-    if (r && r.width > 0 && r.height > 0 && r.bottom > hb && r.top < window.innerHeight) return { top: r.top, left: r.left, width: r.width, height: r.height };
+    var r = row ? row.getBoundingClientRect() : null, hb = hdrGeo().top, gl = hdrGeo().left;
+    if (r && r.width > 0 && r.height > 0 && r.bottom > hb && r.right > gl && r.top < window.innerHeight) return { top: r.top, left: r.left, width: r.width, height: r.height };
     return { top: t.top + t.height / 2, left: t.left + t.width / 2, width: 0, height: 0 };
   }
   function ovShow(i) {
@@ -2298,7 +2377,7 @@
 
       lv = hls && hls.levels && hls.levels[hls.currentLevel >= 0 ? hls.currentLevel : 0];
       kbps = lv && lv.bitrate ? lv.bitrate / 1000 : 128;
-      kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); f = Math.min(1, (s / T * 100) / FULL);
+      kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); f = Math.min(1, s / T);
       sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
       bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';
       bt.textContent = 'Buffer ' + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
@@ -2521,6 +2600,12 @@
           h = Math.max(minH, L.offsetHeight + pt + pb, R.offsetHeight + pt + pb) - pt - pb,
           w = pl.clientWidth - px - 2 * Math.max(rc.offsetWidth, 130) - 2 * gap,
           s = Math.floor(Math.max(40, Math.min(h, w)));
+      if (hdrGeo().side) {
+        /* colonna sinistra: l'orologio occupa lo spazio che resta tra riga della radio e orologio digitale */
+        h = pl.clientHeight - pt - pb - L.offsetHeight - R.offsetHeight - 2 * gap;
+        w = pl.clientWidth - px;
+        s = Math.floor(Math.max(40, Math.min(h, w, 420)));
+      }
       if (s !== last) { last = s; pl.style.setProperty('--anaS', s + 'px'); }
     }
     fit(); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit);
@@ -2621,7 +2706,10 @@
     var discoOn = false, ana = document.getElementById('ana'), btnP = document.getElementById('btn');
     /* le luci si accendono toccando l'orologio centrale e si spengono da sole quando la radio si ferma */
     function stopped() { return !btnP || btnP.textContent.indexOf('\u275A') < 0; }
-    if (ana) ana.addEventListener('click', function () { if (discoOn) discoOn = false; else if (!stopped()) { discoOn = true; relaxOn = false; modeR = false; } });
+    var discoT = 0;
+    if (ana) ana.addEventListener('click', function () { if (discoOn) discoOn = false; else if (!stopped()) { discoOn = true; relaxOn = false; modeR = false; discoT = performance.now(); } });
+    /* a schermo pieno l'orologio non è visibile: un tocco in qualsiasi punto spegne le luci */
+    document.addEventListener('click', function (e) { if (discoOn && performance.now() - discoT > 400 && !(e.target.closest && e.target.closest('#mgr, #tvOv'))) discoOn = false; });
     var clkH = document.getElementById('clock');
     if (clkH) clkH.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#netStat')) return; if (relaxOn) relaxOn = false; else if (!stopped()) { relaxOn = true; modeR = true; discoOn = false; } });
     /* sfondo dell'orologio analogico: sfuma tra tonalità scure e morbide a tempo di bassi (solo a luci accese) */
@@ -3165,7 +3253,7 @@
     function shockwave(c, bx, by, R, t) {
       var u = (t - wave.t0) / WAVE_DUR, maxR, e, r, bw, al, g, hue;
       if (u >= 1) { wave = null; return; }
-      maxR = Math.hypot(Math.max(bx, W - bx), by) * 1.05;
+      maxR = Math.hypot(Math.max(bx, W - bx), Math.max(by, H - by)) * 1.05;
       e = Math.sin(u * 1.5708);                              // partenza dolce, rallenta in modo continuo
       r = R * 1.02 + (maxR - R) * e;
       bw = R * (0.16 * (1 - u) + 0.04);
@@ -3186,7 +3274,7 @@
     function balls(t) {
       if (!bcx) return;
       bcx.clearRect(0, 0, W, H);
-      var R0 = Math.min(W, H) * 0.21, bx = W / 2, by = H - R0 - Math.max(14, H * 0.04), dt = bPrevT ? Math.min(0.1, t - bPrevT) : 0.033, hg, R;
+      var gg0 = modeR ? hdrGeo() : { left: 0, top: 0 }, fx = gg0.left, fy = gg0.top, R0 = Math.min(W - fx, H - fy) * 0.21, bx = fx + (W - fx) / 2, by = fy + (H - fy) / 2, dt = bPrevT ? Math.min(0.1, t - bPrevT) : 0.033, hg, R;
       bPrevT = t;
       // una sola onda alla volta: la successiva parte (con pulsazione) sul primo colpo di basso dopo che la precedente è sparita
       if (!wave && beat > pBeat + 0.5) {
@@ -3374,7 +3462,7 @@
     var fanY = 137, fanT = -9;
     function drawFan(t, L, pulse) {
       var n = 9, f, i, q, dx, a, sp, x0, y0, x1, y1, hue, la, g, hd, sum, Lf = L * 1.1, al = Math.min(1, 0.55 + 0.4 * pulse);
-      if (t - fanT > 1) { fanT = t; hd = document.getElementById('hdr'); if (hd) fanY = hd.getBoundingClientRect().bottom; }
+      if (t - fanT > 1) { fanT = t; hd = document.getElementById('hdr'); if (hd) fanY = hdrGeo().top; }
       y0 = Math.max(0, Math.min(H * 0.5, fanY)) + 2;
       for (f = 0; f < 2; f++) {
         q = f ? seqG : seqF; dx = f ? -1 : 1; x0 = f ? W + 2 : -2;
@@ -4176,7 +4264,7 @@
 </script>
 <script id="addrJs">
 (function () {
-  var el = document.getElementById('addr1'), el2 = document.getElementById('addr2'), el3 = document.getElementById('addr3');
+  var el = document.getElementById('addr1'), el2 = document.getElementById('addr2'), el3 = document.getElementById('addr3'), el4 = document.getElementById('addr4');
   if (!el) return;
   var KEY = 'addrCache2', HKEY = 'addrHome', MINMOVE = 1, MINGAP = 2000, MAXGAP = 30000, STALE = 15000;
   var HOME_Q = 'Via Lettonia 20, Grosseto, Italia';
@@ -4301,12 +4389,47 @@
     var moved = lastPt ? dist(lastPt, pt) : Infinity;
     if ((moved >= MINMOVE && now - lastT >= MINGAP) || now - lastT >= MAXGAP) lookup(pt);
   }
+  var prevFix = null;
+  function card(h) { return ['\u2191', '\u2197', '\u2192', '\u2198', '\u2193', '\u2199', '\u2190', '\u2196'][Math.round(h / 45) % 8]; }
+  function bearing(a, b) {
+    var r = Math.PI / 180, dl = (b.lon - a.lon) * r;
+    var y = Math.sin(dl) * Math.cos(b.lat * r);
+    var x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos(dl);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  function motion(p) {
+    if (!el4) return;
+    var c = p.coords, t = p.timestamp || Date.now(), pt = { lat: c.latitude, lon: c.longitude };
+    var v = (c.speed != null && isFinite(c.speed)) ? c.speed : null;
+    var h = (c.heading != null && isFinite(c.heading)) ? c.heading : null;
+    if (prevFix) {
+      var dt = (t - prevFix.t) / 1000, d = dist(prevFix.pt, pt);
+      /* ripiego: se il dispositivo non fornisce velocita' o direzione, le ricavo dagli spostamenti */
+      if (dt > 0.5 && dt < 30) {
+        if (v === null) v = d / dt;
+        if (h === null && d >= 5) h = bearing(prevFix.pt, pt);
+      }
+      if (d >= 5 || dt >= 10) prevFix = { pt: pt, t: t };
+    } else prevFix = { pt: pt, t: t };
+    var parts = [];
+    if (v !== null) {
+      var kmh = v * 3.6;
+      if (kmh < 2) parts.push('Fermo');
+      else {
+        parts.push(Math.round(kmh) + ' km/h');
+        if (h !== null) parts.push('<span class="dirArr">' + card(h) + '</span> ' + Math.round(h) + '\u00b0');
+      }
+    }
+    if (c.altitude != null && isFinite(c.altitude)) parts.push('Altitudine ' + Math.round(c.altitude) + ' m');
+    el4.innerHTML = parts.join(' \u00b7 ');
+  }
   function err(e) { errState = true; health(); if (!has) show(e && e.code === 1 ? 'Posizione non consentita' : 'Posizione non disponibile', ''); }
   loadHome();
   if (!('geolocation' in navigator)) { show('Geolocalizzazione assente', ''); return; }
   navigator.geolocation.watchPosition(function (p) {
     lastPosT = Date.now(); errState = false; health();
     curPt = { lat: p.coords.latitude, lon: p.coords.longitude };
+    motion(p);
     showDist();
     consider(curPt);
   }, err, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
