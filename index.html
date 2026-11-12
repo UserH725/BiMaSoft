@@ -471,6 +471,7 @@
   #discoInfo .di-lg { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; object-position: center;
     filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); animation: logoPulse 2s ease-in-out infinite; }
   #discoInfo .di-lg[hidden] { display: none; }
+  #discoInfo .di-top { display: flex; align-items: center; justify-content: center; gap: 18px; max-width: 100%; }
   #discoInfo .di-row { display: flex; align-items: center; gap: 12px; max-width: 100%; }
   #discoInfo .di-tx { min-width: 0; text-align: center; }
   #discoInfo .di-st, #discoInfo .di-sg { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -689,10 +690,13 @@
 
 <canvas id="disco" aria-hidden="true"></canvas>
 <div id="discoInfo" data-disc="cd" aria-hidden="true">
-  <img class="di-lg" alt="" hidden>
+  <div class="di-top">
+    <div class="di-vn"><span class="di-lb"></span></div>
+    <img class="di-lg" alt="" hidden>
+    <div class="di-vn"><span class="di-lb"></span></div>
+  </div>
   <div class="di-row">
     <div class="di-tx"><b class="di-st"></b><span class="di-sg"></span></div>
-    <div class="di-vn"><span class="di-lb"></span></div>
   </div>
 </div>
 
