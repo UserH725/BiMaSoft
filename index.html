@@ -284,11 +284,11 @@
   #btn:hover { transform: scale(1.08); }
   #btn:active { transform: scale(.94); }
   #btn::before { content: ""; position: absolute; inset: 0; border-radius: 50%; animation: discSpin 2.4s linear infinite; animation-play-state: paused;
+    /* CD/DVD come nella pagina delle mirror ball: disco argentato con riflessi, foro scuro al centro (dove restano ben visibili play/stop)
+       e anello colorato di stato (rosso fermo, verde in onda) */
     background:
-      radial-gradient(circle at 50% 33%, rgba(255,255,255,.95) 0 1.6px, transparent 2.2px),
-      radial-gradient(circle at center, var(--lc1) 0, var(--lc2) 11px, #fff 11.5px 12.5px, transparent 13px),
-      conic-gradient(from 20deg, transparent 0 4%, rgba(0,200,255,.32) 10%, rgba(255,255,255,.38) 14%, rgba(255,45,149,.3) 18%, transparent 26%, transparent 50%, rgba(0,200,255,.32) 60%, rgba(255,255,255,.38) 64%, rgba(255,45,149,.3) 68%, transparent 76%),
-      repeating-radial-gradient(circle at center, #0b0b0b 0 2px, #1c1c1c 2px 3px); }
+      radial-gradient(circle at center, #0b0b0b 0 21%, var(--lc1) 22%, var(--lc2) 29%, #fff 30% 32%, transparent 33%),
+      conic-gradient(from 0deg, #dfe7f3, #ffffff, #9db6dc, #f0cdf3, #fff2bd, #a9ead2, #dfe7f3, #ffffff, #9db6dc, #f0cdf3, #fff2bd, #a9ead2, #dfe7f3); }
   #btn.is-on::before { animation-play-state: running; }
   #btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.55)); }
   #btn.is-on::after { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 5h4v14H7zM13 5h4v14h-4z' fill='white'/%3E%3C/svg%3E"); }
@@ -424,6 +424,38 @@
   #ovBadge svg { width: 12px; height: 12px; }
   #ovInitBufWrap { max-width: 140px; height: 5px; margin-top: 4px; }
   #ballBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; opacity: .85; }
+  /* risparmio risorse: a luci discoteca accese intestazione, elenco, scheda e barre laterali sono nascosti, quindi le loro animazioni CSS restano in pausa */
+  body.disco-on #hdr,
+  body.disco-on #hdr *,
+  body.disco-on #hdr *::before,
+  body.disco-on #hdr *::after,
+  body.disco-on main,
+  body.disco-on main *,
+  body.disco-on main *::before,
+  body.disco-on main *::after,
+  body.disco-on #ov,
+  body.disco-on #ov *,
+  body.disco-on #ov *::before,
+  body.disco-on #ov *::after,
+  body.disco-on #notes,
+  body.disco-on #notes *,
+  body.disco-on #notes *::before,
+  body.disco-on #notes *::after,
+  body.disco-on .sb,
+  body.disco-on .sb *,
+  body.disco-on .sb *::before,
+  body.disco-on .sb *::after,
+  body.disco-on .sbb,
+  body.disco-on .sbb *,
+  body.disco-on .sbb *::before,
+  body.disco-on .sbb *::after,
+  body.disco-on #ver,
+  body.disco-on #ver *,
+  body.disco-on #ver *::before,
+  body.disco-on #ver *::after,
+  body.disco-on #hdr::before,
+  body.disco-on #hdr::after,
+  body.ball-on #bgDisc { animation-play-state: paused !important; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 
   /* === Info a luci discoteca accese: in basso a destra logo radio (sopra), nome stazione, brano e CD che gira === */
@@ -2614,13 +2646,16 @@ window.hdrGeo = function () {
       g.appendChild(c); dots.push(c);
     }
     function rot(e, d) { e.setAttribute('transform', 'rotate(' + d + ' 50 50)'); }
-    function frame() {
+    var fLast = 0;
+    function frame(ts) {
+      if (ts && !reduce && ts - fLast < 28) { requestAnimationFrame(frame); return; }
+      fLast = ts || 0;
       var d = new Date(), s = d.getSeconds() + (reduce ? 0 : d.getMilliseconds() / 1000), m = d.getMinutes() + s / 60, h = d.getHours() % 12 + m / 60;
       rot(hh, h * 30); rot(hm, m * 6); rot(hs, s * 6);
       /* pallini delle ore: gradiente arcobaleno che ruota in senso orario (un giro ogni 12 s; fermo con movimento ridotto) */
       var hb = reduce ? 0 : (Date.now() % 12000) / 12000 * 360;
       for (var k = 0; k < 12; k++) dots[k].setAttribute('fill', 'hsl(' + ((k * 30 + 330 - hb + 360) % 360).toFixed(1) + ',95%,60%)');
-      if (reduce) setTimeout(frame, 1000); else requestAnimationFrame(frame);
+      if (reduce) setTimeout(frame, 1000); else if (document.body.classList.contains('disco-on')) setTimeout(frame, 400); else requestAnimationFrame(frame);
     }
     frame();
   })();
@@ -2711,7 +2746,7 @@ window.hdrGeo = function () {
     }
     function loop(ts) {
       requestAnimationFrame(loop);
-      if (cv.offsetWidth < 2 || ts - lastD < 33) return;
+      if (ts - lastD < 28 || document.body.classList.contains('disco-on') || cv.offsetWidth < 2) return;
       lastD = ts;
       if (!W || Math.round(cv.getBoundingClientRect().width) !== W) size();
       step(ts / 1000); draw();
@@ -2725,7 +2760,10 @@ window.hdrGeo = function () {
   (function () {
     var cv = document.getElementById('disco');
     if (!cv || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
-    var cx = cv.getContext('2d'), W = 0, H = 0, dpr = 1, act = 0, beat = 0, nextK = 0, lastT = 0, lastD = 0, cleared = true, i;
+    var cx = cv.getContext('2d'), W = 0, H = 0, dpr = 1, act = 0, beat = 0, nextK = 0, lastT = 0, lastD = 0, cleared = true, i,
+        /* qualità adattiva: 0 = piena, 1 = ridotta, 2 = minima; si abbassa da sola se il dispositivo non regge i 30 fps */
+        qlT = 0, qlD = [1.25, 1, 0.75], qlI = [28, 28, 40], qlBk = [18, 10, 4], qlDs = [28, 14, 6], qlFl = [8, 5, 3], qlBn = [40, 26, 16], qlPm = [3, 2, 1],
+        qlE = 0, qlV = 33, qlLast = 0, qlUp = 0, qlPrev = 0, qlRise = 0;
     var NB = 6, bm = [], cn = [], bk = [], ds = [];
     function rnd(a, b) { return a + Math.random() * (b - a); }
     function ease(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
@@ -2855,35 +2893,37 @@ window.hdrGeo = function () {
       return s / (80 * 255);
     }
     /* modalità relax: il bordo della pagina si illumina con un gradiente sfumato che respira, con colori che scorrono */
-    var rlM = null, rlL = null, rlW = 0, rlH = 0, rlE = 0;
+    var rlM = null, rlL = null, rlW = 0, rlH = 0, rlE = 0, rlS = 1, rlQ = -1, rlw = 2, rlh = 2;
     function drawRelax(t, keep) {
-      var e = Math.max(28, Math.min(70, Math.min(W, H) * 0.07)), gain = 0.75 + lvA * 0.6, q, g, k;
-      if (!rlM || rlW !== W || rlH !== H || rlE !== e) {
-        rlW = W; rlH = H; rlE = e;
-        rlM = document.createElement('canvas'); rlM.width = W; rlM.height = H;
-        rlL = document.createElement('canvas'); rlL.width = W; rlL.height = H;
-        q = rlM.getContext('2d');
-        [[0, 0, 0, e], [0, H, 0, H - e], [0, 0, e, 0], [W, 0, W - e, 0]].forEach(function (a) {
+      /* i canvas di lavoro sono a bassa risoluzione (il bordo è una sfumatura morbida): stesso aspetto, area riempita 10-16 volte più piccola */
+      var e = Math.max(28, Math.min(70, Math.min(W, H) * 0.07)), gain = 0.75 + lvA * 0.6, q, g, k, rs = qlT ? 0.2 : 0.25;
+      if (!rlM || rlW !== W || rlH !== H || rlE !== e || rlQ !== qlT) {
+        rlW = W; rlH = H; rlE = e; rlQ = qlT; rlS = rs;
+        rlw = Math.max(2, Math.round(W * rs)); rlh = Math.max(2, Math.round(H * rs));
+        rlM = document.createElement('canvas'); rlM.width = rlw; rlM.height = rlh;
+        rlL = document.createElement('canvas'); rlL.width = rlw; rlL.height = rlh;
+        q = rlM.getContext('2d'); var es = e * rs;
+        [[0, 0, 0, es], [0, rlh, 0, rlh - es], [0, 0, es, 0], [rlw, 0, rlw - es, 0]].forEach(function (a) {
           g = q.createLinearGradient(a[0], a[1], a[2], a[3]);
           g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-          q.fillStyle = g; q.fillRect(0, 0, W, H);
+          q.fillStyle = g; q.fillRect(0, 0, rlw, rlh);
         });
       }
       q = rlL.getContext('2d');
-      q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, W, H);
+      q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, rlw, rlh);
       if (q.createConicGradient) {
-        g = q.createConicGradient(t * 0.35, W / 2, H / 2);
-        for (k = 0; k <= 6; k++) g.addColorStop(k / 6, 'hsl(' + ((t * 18 + k * 60) % 360) + ',100%,58%)');
+        g = q.createConicGradient(t * 0.35, rlw / 2, rlh / 2);
+        for (k = 0; k <= 6; k++) g.addColorStop(k / 6, 'hsl(' + Math.round((t * 18 + k * 60) % 360) + ',100%,58%)');
       } else {
-        g = q.createLinearGradient(0, 0, W, H);
-        for (k = 0; k <= 3; k++) g.addColorStop(k / 3, 'hsl(' + ((t * 18 + k * 120) % 360) + ',100%,58%)');
+        g = q.createLinearGradient(0, 0, rlw, rlh);
+        for (k = 0; k <= 3; k++) g.addColorStop(k / 3, 'hsl(' + Math.round((t * 18 + k * 120) % 360) + ',100%,58%)');
       }
-      q.fillStyle = g; q.fillRect(0, 0, W, H);
+      q.fillStyle = g; q.fillRect(0, 0, rlw, rlh);
       q.globalCompositeOperation = 'destination-in'; q.drawImage(rlM, 0, 0);
       if (!keep) cx.clearRect(0, 0, W, H);
       cx.globalAlpha = Math.min(1, act * (0.5 + 0.2 * Math.sin(t * 1.1)) * gain);
       cx.globalCompositeOperation = 'lighter';
-      cx.drawImage(rlL, 0, 0, W, H);
+      cx.drawImage(rlL, 0, 0, rlw, rlh, 0, 0, W, H);
       cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
     }
 
@@ -2896,7 +2936,7 @@ window.hdrGeo = function () {
       return 0;
     }
     function size() {
-      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      dpr = Math.min(window.devicePixelRatio || 1, qlD[qlT]);
       W = window.innerWidth; H = window.innerHeight;
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2934,9 +2974,9 @@ window.hdrGeo = function () {
         a = o.a;
         x1 = bx + Math.sin(a) * Lb; y1 = by - Math.cos(a) * Lb;
         lk = seqK.lv[k]; if (lk < 0.004) continue;
-        for (q = 0; q < 4; q++) {
+        for (q = 0; q < 4; q += (qlT ? 2 : 1)) {
           w = wd * mult[q]; px = Math.cos(a) * Lb * w; py = Math.sin(a) * Lb * w;
-          al = 0.16 * (q > 1 ? 1.15 : 1) * lk;
+          al = 0.16 * (q > 1 ? 1.15 : 1) * lk * (qlT ? 1.35 : 1);
           g = c.createLinearGradient(bx, by, x1, y1);
           g.addColorStop(0, 'hsla(' + o.hue + ',' + o.sat + '%,' + (q > 1 ? o.lumC : o.lum) + '%,' + al + ')');
           g.addColorStop(0.55, 'hsla(' + o.hue + ',' + o.sat + '%,' + o.lum + '%,' + (al * 0.4) + ')');
@@ -2950,10 +2990,11 @@ window.hdrGeo = function () {
        Le parole sono ancorate alla superficie della palla (girano con lei), compaiono/spariscono con dissolvenza,
        in ordine casuale, a latitudini diverse, anche due insieme. */
     var WORDS = ['Mauro', 'Asia', 'Antonella', 'Dance', 'Party', 'Music'], WS = 8, WNL = 20, WNO = 40,
-        wMasks = {}, wAct = [], wNext = 0, wLast = -1, wBands = [0.1, 0.36, 0.62];
+        wMasks = {}, wAct = [], wNext = 0, wLast = -1, wBands = [0.1, 0.36, 0.62], wDyn = {}, wDynN = 0, wAl = [], wBkW = [], wBkK = [];
     function wordMask(str) {
       var dyn = WORDS.indexOf(str) < 0;
       if (!dyn && wMasks[str]) return wMasks[str];
+      if (dyn && wDyn[str]) return wDyn[str];
       var CW = 420, CH = 120, MAXW = 135, cfgs = [[38, 1, 0.56], [28, 2, 0.5], [21, 3, 0.5]],
           fam = 'px Arial Black, Arial, Helvetica, sans-serif', cv2 = document.createElement('canvas'), x, d, i, j, k, ci, cfg, lines = null,
           mnx = 1e9, mxx = -1, mny = 1e9, mxy = -1, w, h, m, s = String(str).replace(/\s+/g, ' ').trim();
@@ -2989,7 +3030,7 @@ window.hdrGeo = function () {
       w = mxx - mnx + 1; h = mxy - mny + 1; m = new Uint8Array(w * h);
       for (j = 0; j < h; j++) for (i = 0; i < w; i++) m[j * w + i] = d[((j + mny) * CW + i + mnx) * 4 + 3] > 110 ? 1 : 0;
       m = { m: m, w: w, h: h };
-      if (!dyn) wMasks[str] = m;
+      if (!dyn) wMasks[str] = m; else { if (++wDynN > 8) { wDyn = {}; wDynN = 1; } wDyn[str] = m; }
       return m;
     }
     /* logo della stazione in ascolto: stessa tecnica delle scritte (micro-tasselli), ma con i colori originali del logo */
@@ -3015,7 +3056,7 @@ window.hdrGeo = function () {
           ix = j * w + i; m[ix] = 1; r = d[p]; g = d[p + 1]; b = d[p + 2];
           lum = 0.3 * r + 0.59 * g + 0.11 * b;
           if (lum < 110) { t = (110 - lum) / 110 * 0.85; r += (255 - r) * t; g += (255 - g) * t; b += (255 - b) * t; }   /* le parti scure restano visibili sulla palla */
-          rgb[ix] = 'rgba(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ',';
+          rgb[ix] = 'rgba(' + Math.round(r / 17) * 17 + ',' + Math.round(g / 17) * 17 + ',' + Math.round(b / 17) * 17 + ',';
         }
         return { m: m, w: w, h: h, rgb: rgb };
       } catch (e) { return null; }
@@ -3091,205 +3132,212 @@ window.hdrGeo = function () {
     }
     var t_now = 0;
     function bi(A, a, b) { return (1 - b) * ((1 - a) * A[0] + a * A[1]) + b * ((1 - a) * A[3] + a * A[2]); }
+    /* mirror ball: tabelle trigonometriche statiche (20 fasce × 40 spicchi). La rotazione si applica con le formule di somma degli angoli,
+       così per frame servono solo pochi sin/cos e nessun array temporaneo (meno lavoro e niente pause del garbage collector) */
+    var mbNL = 20, mbNO = 40, mbW = 41, mbSLa = new Float64Array(21), mbCLa = new Float64Array(21), mbSLm = new Float64Array(20), mbCLm = new Float64Array(20),
+        mbSLo = new Float64Array(41), mbCLo = new Float64Array(41), mbSLn = new Float64Array(40), mbCLn = new Float64Array(40),
+        mbSv = new Float64Array(41), mbCv = new Float64Array(41), mbSn = new Float64Array(40), mbCn = new Float64Array(40), mbHue = new Int16Array(40),
+        mbVX = new Float64Array(21 * 41), mbVY = new Float64Array(21 * 41), mbX4 = [0, 0, 0, 0], mbY4 = [0, 0, 0, 0];
+    (function () {
+      var n, la0, lo0;
+      for (n = 0; n <= mbNL; n++) { la0 = -1.5708 + n * 3.1416 / mbNL; mbSLa[n] = Math.sin(la0); mbCLa[n] = Math.cos(la0); }
+      for (n = 0; n < mbNL; n++) { la0 = -1.5708 + n * 3.1416 / mbNL + 1.5708 / mbNL; mbSLm[n] = Math.sin(la0); mbCLm[n] = Math.cos(la0); }
+      for (n = 0; n <= mbNO; n++) { lo0 = n * 6.2832 / mbNO; mbSLo[n] = Math.sin(lo0); mbCLo[n] = Math.cos(lo0); }
+      for (n = 0; n < mbNO; n++) { lo0 = n * 6.2832 / mbNO + 3.1416 / mbNO; mbSLn[n] = Math.sin(lo0); mbCLn[n] = Math.cos(lo0); }
+    })();
     function ball(c, bx, by, R, L, t) {
       // 1. Rotazione 360° e tilt asse X
-      var rotY = -t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15;
-      var ct = Math.cos(rotX), st = Math.sin(rotX), X4 = [0, 0, 0, 0], Y4 = [0, 0, 0, 0], textPts = [];
+      var rotY = -t * 0.45, rotX = 0.35 + Math.sin(t * 0.2) * 0.15, ct = Math.cos(rotX), st = Math.sin(rotX), cr = Math.cos(rotY), sr = Math.sin(rotY),
+          X4 = mbX4, Y4 = mbY4, NL = mbNL, NO = mbNO, W8 = WNO * WS, pl = 0.65 + beat * 0.5,
+          BNe = qlBn[qlT], PM = qlPm[qlT], rb = Math.sqrt(BN / BNe), AR = qlT ? 3 : 4,
+          k, m, a, len, hue, al, x0, y0, x1, y1, g, u, px, py, i2, j, q, sp, cxx, cyy, e, gl = [], kk, rHue, flicker, sparkA,
+          lightX = 0.6, lightY = -0.5, lightZ = 0.7, backLightX = -0.7, backLightY = 0.4, backLightZ = -0.4,
+          ix, i0, scale, tc0, tc1, tc2, cl, sy, cm, sm0, dotL, dotB, sp2, sp4, sp8, specular, lum, sat, fHue, iw,
+          nW = wAct.length, wd, wm, wal, wa, rowT, colT, si, sj, rr, cc, a0, a1, b0, b1, key, arr, bk, ks, lg, gx, gy, ghue, gtype, gsz;
+
       wordsUpd(t); t_now = t;
-      
-      // 2. Griglia ad alta densità
-      var NL = 20, NO = 40, pl = 0.65 + beat * 0.5,
-          k, m, a, len, hue, al, x0, y0, x1, y1, g, u, px, py, i2, j, la0, la1, lo0, lo1, tc, q, sh, sp, cxx, cyy, e, gl = [];
-          
-      function P(la, lo) {
-        var x = Math.cos(la) * Math.sin(lo + rotY);
-        var y = Math.sin(la);
-        var z = Math.cos(la) * Math.cos(lo + rotY);
-        return [x, y * ct - z * st, y * st + z * ct];
-      }
-      
-      // Coordinate della luce 3D per l'ombreggiatura
-      var lightX = 0.6, lightY = -0.5, lightZ = 0.7; 
-      var backLightX = -0.7, backLightY = 0.4, backLightZ = -0.4;
 
       c.globalAlpha = act; c.globalCompositeOperation = 'lighter';
-      hue = (t * 30) % 360;
-      
+      hue = Math.round((t * 30) % 360);
+
       // 3. Aura ambientale profonda
-      g = c.createRadialGradient(bx, by, R * 0.5, bx, by, R * 4);
-      g.addColorStop(0, 'hsla(' + hue + ',100%,65%,' + (0.35 + pl * 0.25) + ')'); 
+      g = c.createRadialGradient(bx, by, R * 0.5, bx, by, R * AR);
+      g.addColorStop(0, 'hsla(' + hue + ',100%,65%,' + Math.round((0.35 + pl * 0.25) * 100) / 100 + ')');
       g.addColorStop(1, 'hsla(' + (hue + 40) % 360 + ',100%,50%,0)');
-      c.fillStyle = g; c.beginPath(); c.arc(bx, by, R * 4, 0, 6.3); c.fill();
-      
+      c.fillStyle = g; c.beginPath(); c.arc(bx, by, R * AR, 0, 6.3); c.fill();
+
       c.lineCap = 'round';
-      
-      // 4. Raggi luminosi multi-livello (Core intenso + Glow diffuso)
-      for (k = 0; k < BN; k++) {
-        a = t * -0.35 + k * 6.2832 / BN; 
-        len = L * (0.55 + 0.45 * Math.sin(t * 0.8 + k * 2.1));
-        var rHue = (t * 20 + k * 360 / BN) % 360;
-        
-        // Flicker (sfarfallio del raggio)
-        var flicker = 0.7 + 0.3 * Math.sin(t * 15 + k * 13);
-        al = (0.2 + 0.3 * pl) * (0.5 + 0.5 * Math.sin(t * 1.5 + k * 1.1)) * flicker;
-        
+
+      // 4. Raggi luminosi multi-livello (Core intenso + Glow diffuso); con qualità ridotta meno raggi (stessa distribuzione, un po' più luminosi)
+      for (k = 0; k < BNe; k++) {
+        kk = k * BN / BNe;
+        a = t * -0.35 + k * 6.2832 / BNe;
+        len = L * (0.55 + 0.45 * Math.sin(t * 0.8 + kk * 2.1));
+        rHue = Math.round((t * 20 + k * 360 / BNe) % 360);
+        flicker = 0.7 + 0.3 * Math.sin(t * 15 + kk * 13);
+        al = Math.round((0.2 + 0.3 * pl) * (0.5 + 0.5 * Math.sin(t * 1.5 + kk * 1.1)) * flicker * rb * 100) / 100;
+
         x0 = bx + Math.cos(a) * R * 0.9; y0 = by + Math.sin(a) * R * 0.9;
         x1 = bx + Math.cos(a) * (R + len); y1 = by + Math.sin(a) * (R + len);
-        
+
         g = c.createLinearGradient(x0, y0, x1, y1);
-        g.addColorStop(0, 'hsla(' + rHue + ',100%,80%,' + al + ')'); 
+        g.addColorStop(0, 'hsla(' + rHue + ',100%,80%,' + al + ')');
         g.addColorStop(1, 'hsla(' + rHue + ',100%,50%,0)');
-        
+
         // Glow (raggio largo fumoso)
         px = Math.cos(a + 1.5708) * len * 0.07; py = Math.sin(a + 1.5708) * len * 0.07;
         c.fillStyle = g; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1 + px, y1 + py); c.lineTo(x1 - px, y1 - py); c.closePath();
-        c.globalAlpha = act * 0.3; c.fill(); 
-        
+        c.globalAlpha = act * 0.3; c.fill();
+
         // Core (raggio laser interno)
         c.globalAlpha = act * 0.75;
-        c.strokeStyle = g; c.lineWidth = Math.max(1.5, R * 0.015); 
+        c.strokeStyle = g; c.lineWidth = Math.max(1.5, R * 0.015);
         c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
-        
+
         // Particelle (pulviscolo che ondeggia nel raggio)
         c.globalAlpha = act;
-        for (m = 0; m < 3; m++) {
-          u = (t * 0.15 + k * 0.23 + m * 0.35) % 1;
-          var sparkA = a + Math.sin(t * 2.5 + k + m) * 0.04; // Zig-zag
-          c.fillStyle = 'hsla(' + rHue + ',100%,95%,' + ((1 - u) * Math.pow(flicker, 2)) + ')';
-          c.beginPath(); 
-          c.arc(bx + Math.cos(sparkA) * (R + u * len), by + Math.sin(sparkA) * (R + u * len), 0.8 + (1 - u) * 2.2, 0, 6.3); 
+        for (m = 0; m < PM; m++) {
+          u = (t * 0.15 + kk * 0.23 + m * 0.35) % 1;
+          sparkA = a + Math.sin(t * 2.5 + kk + m) * 0.04; // Zig-zag
+          c.fillStyle = 'hsla(' + rHue + ',100%,95%,' + Math.round((1 - u) * flicker * flicker * 100) / 100 + ')';
+          c.beginPath();
+          c.arc(bx + Math.cos(sparkA) * (R + u * len), by + Math.sin(sparkA) * (R + u * len), 0.8 + (1 - u) * 2.2, 0, 6.3);
           c.fill();
         }
       }
-      
-      c.globalCompositeOperation = 'source-over';
-      
+
       c.globalCompositeOperation = 'lighter'; c.globalAlpha = act; ballBeams(c, bx, by, L, t); c.globalCompositeOperation = 'source-over';
       // Sfera di base (sfondo dietro le tessere, crea lo spessore scuro e profondo)
-      var baseG = c.createRadialGradient(bx - R*0.3, by - R*0.3, 0, bx, by, R);
+      var baseG = c.createRadialGradient(bx - R * 0.3, by - R * 0.3, 0, bx, by, R);
       baseG.addColorStop(0, '#1b1d26');
       baseG.addColorStop(1, '#020204');
       c.fillStyle = baseG; c.beginPath(); c.arc(bx, by, R, 0, 6.3); c.fill();
-      
-      // 5. Specchietti con Modello di Illuminazione 3D (Phong Shading)
+
+      // 5. Specchietti con illuminazione 3D: vertici della griglia calcolati una sola volta (ognuno è condiviso da 4 tasselli)
+      for (j = 0; j <= NO; j++) { mbSv[j] = mbSLo[j] * cr + mbCLo[j] * sr; mbCv[j] = mbCLo[j] * cr - mbSLo[j] * sr; }
+      for (j = 0; j < NO; j++) { mbSn[j] = mbSLn[j] * cr + mbCLn[j] * sr; mbCn[j] = mbCLn[j] * cr - mbSLn[j] * sr; mbHue[j] = Math.round((t * 15 + j * 5) % 360); }
+      for (i2 = 0; i2 <= NL; i2++) {
+        cl = mbCLa[i2]; sy = mbSLa[i2] * ct;
+        for (j = 0; j <= NO; j++) { ix = i2 * mbW + j; mbVX[ix] = bx + cl * mbSv[j] * R; mbVY[ix] = by - (sy - cl * mbCv[j] * st) * R; }
+      }
+      for (m = 0; m < nW; m++) {
+        wd = wAct[m]; wal = t - wd.t0; wAl[m] = sm(wal / 0.9) * sm((wd.dur - wal) / 0.9);
+        if (!wBkK[m]) { wBkK[m] = []; wBkW[m] = {}; }
+        wBkK[m].length = 0;
+      }
       for (i2 = 0; i2 < NL; i2++) {
-        la0 = -1.5708 + i2 * 3.1416 / NL; la1 = la0 + 3.1416 / NL;
+        cm = mbCLm[i2]; sm0 = mbSLm[i2];
         for (j = 0; j < NO; j++) {
-          lo0 = j * 6.2832 / NO; lo1 = lo0 + 6.2832 / NO;
-          tc = P((la0 + la1) / 2, (lo0 + lo1) / 2);
-          
-          if (tc[2] < 0.01) continue; // Nascondi facce dietro la sfera
-          var iw = wAct.length ? inWord(i2, j) : 0;
-          
-          q = [P(la0, lo0), P(la0, lo1), P(la1, lo1), P(la1, lo0)];
-          cxx = bx + tc[0] * R; cyy = by - tc[1] * R;
-          
-          // Luce diffusa (Calcolo normale vs Vettore luce)
-          var dotLight = Math.max(0, tc[0] * lightX + tc[1] * lightY + tc[2] * lightZ);
-          var dotBack = Math.max(0, tc[0] * backLightX + tc[1] * backLightY + tc[2] * backLightZ);
-          
-          // Punto di luce speculare accecante
-          var specular = Math.pow(dotLight, 16);
-          
-          // Calcolo colori vetro
-          var tileHue = (t * 15 + j * 5) % 360;
-          var lum = 12 + dotLight * 48 + dotBack * 20 + ((i2 + j) & 1) * 7;
-          var sat = 15 + dotLight * 35;
-          
+          tc0 = cm * mbSn[j]; tc1 = sm0 * ct - cm * mbCn[j] * st; tc2 = sm0 * st + cm * mbCn[j] * ct;
+          if (tc2 < 0.01) continue; // Nascondi facce dietro la sfera
+          iw = nW ? inWord(i2, j) : 0;
+          cxx = bx + tc0 * R; cyy = by - tc1 * R;
+
+          // Luce diffusa (normale vs vettore luce) e punto di luce speculare (^16 con 4 quadrati)
+          dotL = tc0 * lightX + tc1 * lightY + tc2 * lightZ; if (dotL < 0) dotL = 0;
+          dotB = tc0 * backLightX + tc1 * backLightY + tc2 * backLightZ; if (dotB < 0) dotB = 0;
+          sp2 = dotL * dotL; sp4 = sp2 * sp2; sp8 = sp4 * sp4; specular = sp8 * sp8;
+
+          lum = 12 + dotL * 48 + dotB * 20 + ((i2 + j) & 1) * 7;
+          sat = 15 + dotL * 35;
+
           // Pattern ritmico (i tasselli si accendono casualmente col beat)
           sp = Math.sin(t * (2.2 + ((i2 * 3 + j * 7) % 11) * 0.3) + i2 * 2.5 + j * 1.8);
           if (!iw && (sp > 0.94 || (beat > 0.5 && sp > 0.55))) {
-            var fHue = (t * 40 + j * 20 + i2 * 30) % 360;
-            c.fillStyle = 'hsl(' + Math.round(fHue) + ', 95%, ' + Math.min(100, lum + 40) + '%)';
+            fHue = Math.round((t * 40 + j * 20 + i2 * 30) % 360);
+            c.fillStyle = 'hsl(' + fHue + ',95%,' + Math.round(Math.min(100, lum + 40)) + '%)';
             // Registra lens flare (tipo 1 = base, tipo 2 = speculare)
-            if (sp > 0.97 || specular > 0.6) gl.push([cxx, cyy, fHue, specular > 0.6 ? 2 : 1]);
+            if (gl.length < 8 && (sp > 0.97 || specular > 0.6)) gl.push([cxx, cyy, fHue, specular > 0.6 ? 2 : 1]);
           } else {
-            // Fusione del colore vetro con il bianco del riflesso diretto
-            if (specular > 0.3) {
-               c.fillStyle = 'hsl(' + tileHue + ', ' + sat + '%, ' + Math.min(100, lum + specular * 60) + '%)';
-            } else {
-               c.fillStyle = 'hsl(' + tileHue + ', ' + sat + '%, ' + lum + '%)';
-            }
+            c.fillStyle = 'hsl(' + mbHue[j] + ',' + Math.round(sat) + '%,' + Math.round(specular > 0.3 ? Math.min(100, lum + specular * 60) : lum) + '%)';
           }
-          
-          c.beginPath();
-          for (e = 0; e < 4; e++) {
-            // Effetto prospettico dello spessore (ruba spazio ai bordi esterni)
-            var scale = 0.95 - (1 - tc[2]) * 0.055; 
-            px = cxx + (bx + q[e][0] * R - cxx) * scale; 
-            py = cyy + (by - q[e][1] * R - cyy) * scale;
-            X4[e] = px; Y4[e] = py;
-            if (e) c.lineTo(px, py); else c.moveTo(px, py);
-          }
-          c.closePath(); c.fill();
+
+          // Effetto prospettico dello spessore (ruba spazio ai bordi esterni)
+          scale = 0.95 - (1 - tc2) * 0.055;
+          i0 = i2 * mbW + j;
+          X4[0] = cxx + (mbVX[i0] - cxx) * scale; Y4[0] = cyy + (mbVY[i0] - cyy) * scale;
+          X4[1] = cxx + (mbVX[i0 + 1] - cxx) * scale; Y4[1] = cyy + (mbVY[i0 + 1] - cyy) * scale;
+          X4[2] = cxx + (mbVX[i0 + mbW + 1] - cxx) * scale; Y4[2] = cyy + (mbVY[i0 + mbW + 1] - cyy) * scale;
+          X4[3] = cxx + (mbVX[i0 + mbW] - cxx) * scale; Y4[3] = cyy + (mbVY[i0 + mbW] - cyy) * scale;
+          c.beginPath(); c.moveTo(X4[0], Y4[0]); c.lineTo(X4[1], Y4[1]); c.lineTo(X4[2], Y4[2]); c.lineTo(X4[3], Y4[3]); c.closePath(); c.fill();
 
           if (iw > 0.01) {
-            c.fillStyle = 'rgba(0,0,10,' + (0.7 * iw) + ')';
+            c.fillStyle = 'rgba(0,0,10,' + Math.round(0.7 * iw * 100) / 100 + ')';
             c.beginPath(); c.moveTo(X4[0], Y4[0]); c.lineTo(X4[1], Y4[1]); c.lineTo(X4[2], Y4[2]); c.lineTo(X4[3], Y4[3]); c.closePath(); c.fill();
           }
-          // micro-tasselli colorati che compongono le parole
-          for (var wi = 0; wi < wAct.length; wi++) {
-            var wd = wAct[wi], wm = wd.m, ag = t - wd.t0, wal = sm(ag / 0.9) * sm((wd.dur - ag) / 0.9);
-            if (wal <= 0.01 || tc[2] < 0.22) continue;
-            var rowT = i2 * WS - wd.r0;
+          // micro-tasselli colorati che compongono le parole: raccolti per colore e disegnati in blocco dopo il ciclo
+          for (m = 0; m < nW; m++) {
+            if (wAl[m] <= 0.01 || tc2 < 0.22) continue;
+            wd = wAct[m]; wm = wd.m;
+            rowT = i2 * WS - wd.r0;
             if (rowT + WS <= 0 || rowT >= wm.h) continue;
-            var colT = (((j * WS - wd.c0) % (WNO * WS)) + WNO * WS) % (WNO * WS);
-            for (var si = 0; si < WS; si++) {
-              var rr = rowT + si; if (rr < 0 || rr >= wm.h) continue;
-              for (var sj = 0; sj < WS; sj++) {
-                var cc = (colT + sj) % (WNO * WS); if (cc >= wm.w) continue;
-                if (!wm.m[(wm.h - 1 - rr) * wm.w + cc]) continue;
-                var a0 = (sj - 0.03) / WS, a1 = (sj + 1.03) / WS, b0 = (si - 0.03) / WS, b1 = (si + 1.03) / WS,
-                    wh = Math.round((wd.h0 + t * 60 + cc * 5) % 360), wa = Math.min(1, wal * 1.6);
-                c.fillStyle = wm.rgb ? wm.rgb[(wm.h - 1 - rr) * wm.w + cc] + wa + ')' : 'hsla(' + wh + ',100%,52%,' + wa + ')';
-                c.beginPath();
-                c.moveTo(bi(X4, a0, b0), bi(Y4, a0, b0));
-                c.lineTo(bi(X4, a1, b0), bi(Y4, a1, b0));
-                c.lineTo(bi(X4, a1, b1), bi(Y4, a1, b1));
-                c.lineTo(bi(X4, a0, b1), bi(Y4, a0, b1));
-                c.closePath(); c.fill();
-                textPts.push(bi(X4, (sj + 0.5) / WS, (si + 0.5) / WS), bi(Y4, (sj + 0.5) / WS, (si + 0.5) / WS),
-                  R * Math.PI / (WNL * WS) * Math.max(0.3, tc[2]), wh, wa);
+            colT = (((j * WS - wd.c0) % W8) + W8) % W8;
+            bk = wBkW[m]; ks = wBkK[m];
+            for (si = 0; si < WS; si++) {
+              rr = rowT + si; if (rr < 0 || rr >= wm.h) continue;
+              for (sj = 0; sj < WS; sj++) {
+                cc = (colT + sj) % W8; if (cc >= wm.w) continue;
+                ix = (wm.h - 1 - rr) * wm.w + cc;
+                if (!wm.m[ix]) continue;
+                key = wm.rgb ? wm.rgb[ix] : ((((wd.h0 + t * 60 + cc * 5) % 360) / 6) | 0);
+                arr = bk[key]; if (!arr) arr = bk[key] = [];
+                if (!arr.length) ks.push(key);
+                a0 = (sj - 0.03) / WS; a1 = (sj + 1.03) / WS; b0 = (si - 0.03) / WS; b1 = (si + 1.03) / WS;
+                arr.push(bi(X4, a0, b0), bi(Y4, a0, b0), bi(X4, a1, b0), bi(Y4, a1, b0), bi(X4, a1, b1), bi(Y4, a1, b1), bi(X4, a0, b1), bi(Y4, a0, b1));
               }
             }
           }
         }
       }
-      
+      // disegno dei micro-tasselli: un solo riempimento per colore invece di uno per tassello
+      for (m = 0; m < nW; m++) {
+        ks = wBkK[m]; bk = wBkW[m]; wa = Math.round(Math.min(1, wAl[m] * 1.6) * 100) / 100;
+        for (e = 0; e < ks.length; e++) {
+          key = ks[e]; arr = bk[key];
+          c.fillStyle = typeof key === 'number' ? 'hsla(' + key * 6 + ',100%,52%,' + wa + ')' : key + wa + ')';
+          c.beginPath();
+          for (q = 0; q < arr.length; q += 8) {
+            c.moveTo(arr[q], arr[q + 1]); c.lineTo(arr[q + 2], arr[q + 3]); c.lineTo(arr[q + 4], arr[q + 5]); c.lineTo(arr[q + 6], arr[q + 7]); c.closePath();
+          }
+          c.fill(); arr.length = 0;
+        }
+        ks.length = 0;
+      }
+
       c.globalCompositeOperation = 'lighter';
       // 6. Nebbia diffusa sull'emisfero frontale
       g = c.createRadialGradient(bx - R * 0.2, by - R * 0.2, 0, bx, by, R * 1.1);
-      g.addColorStop(0, 'rgba(255,255,255,' + (wAct.length ? 0.1 : 0.3) + ')'); 
+      g.addColorStop(0, 'rgba(255,255,255,' + (nW ? 0.1 : 0.3) + ')');
       g.addColorStop(0.5, 'rgba(150,200,255,.1)');
       g.addColorStop(1, 'rgba(255,255,255,0)');
       c.fillStyle = g; c.beginPath(); c.arc(bx, by, R, 0, 6.3); c.fill();
-      
+
       // 7. Lens Flares (Bagliori stellari)
-      for (k = 0; k < gl.length && k < 8; k++) {
-        var gx = gl[k][0], gy = gl[k][1], ghue = gl[k][2], gtype = gl[k][3];
-        var gsz = R * (gtype === 2 ? 0.35 : 0.16); // I flares sui riflessi speculari sono enormi
-        
-        var lg = c.createRadialGradient(gx, gy, 0, gx, gy, gsz);
-        lg.addColorStop(0, 'rgba(255,255,255,1)'); 
-        lg.addColorStop(0.2, 'hsla(' + ghue + ',100%,80%,.7)'); 
+      for (k = 0; k < gl.length && k < qlFl[qlT]; k++) {
+        gx = gl[k][0]; gy = gl[k][1]; ghue = gl[k][2]; gtype = gl[k][3];
+        gsz = R * (gtype === 2 ? 0.35 : 0.16); // I flares sui riflessi speculari sono enormi
+
+        lg = c.createRadialGradient(gx, gy, 0, gx, gy, gsz);
+        lg.addColorStop(0, 'rgba(255,255,255,1)');
+        lg.addColorStop(0.2, 'hsla(' + ghue + ',100%,80%,.7)');
         lg.addColorStop(1, 'hsla(' + ghue + ',100%,60%,0)');
-        
+
         c.fillStyle = lg; c.beginPath(); c.arc(gx, gy, gsz, 0, 6.3); c.fill();
-        
+
         // Stella a croce orizzontale/verticale
         c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = gtype === 2 ? 2.5 : 1.2;
-        c.beginPath(); 
-        c.moveTo(gx - gsz * 1.5, gy); c.lineTo(gx + gsz * 1.5, gy); 
-        c.moveTo(gx, gy - gsz * 1.5); c.lineTo(gx, gy + gsz * 1.5); 
+        c.beginPath();
+        c.moveTo(gx - gsz * 1.5, gy); c.lineTo(gx + gsz * 1.5, gy);
+        c.moveTo(gx, gy - gsz * 1.5); c.lineTo(gx, gy + gsz * 1.5);
         c.stroke();
-        
+
         // Raggi diagonali extra per il super-flare speculare
         if (gtype === 2) {
-           c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1;
-           c.beginPath(); 
-           c.moveTo(gx - gsz * 0.8, gy - gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy + gsz * 0.8); 
-           c.moveTo(gx - gsz * 0.8, gy + gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy - gsz * 0.8); 
-           c.stroke();
+          c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1;
+          c.beginPath();
+          c.moveTo(gx - gsz * 0.8, gy - gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy + gsz * 0.8);
+          c.moveTo(gx - gsz * 0.8, gy + gsz * 0.8); c.lineTo(gx + gsz * 0.8, gy - gsz * 0.8);
+          c.stroke();
         }
       }
       c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
@@ -3366,9 +3414,9 @@ window.hdrGeo = function () {
     /* cono morbido: quattro passate sempre più strette e luminose, come un faro con foschia, più lampada calda alla sorgente */
     function stgCone(x0, a, wd, base, hue, sat, lum, lumC, L, lr) {
       var mult = [1, 0.68, 0.42, 0.2], q, w, px, py, al, g, x1 = x0 + Math.sin(a) * L, y1 = -4 + Math.cos(a) * L;
-      for (q = 0; q < 4; q++) {
+      for (q = 0; q < 4; q += (qlT ? 2 : 1)) {
         w = wd * mult[q]; px = Math.cos(a) * L * w; py = -Math.sin(a) * L * w;
-        al = Math.min(0.9, base * (q > 1 ? 1.15 : 1));
+        al = Math.min(0.9, base * (q > 1 ? 1.15 : 1) * (qlT ? 1.35 : 1));
         g = cx.createLinearGradient(x0, -4, x1, y1);
         g.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + (q > 1 ? lumC : lum) + '%,' + al + ')');
         g.addColorStop(0.55, 'hsla(' + hue + ',' + sat + '%,' + lum + '%,' + (al * 0.4) + ')');
@@ -3763,7 +3811,7 @@ window.hdrGeo = function () {
       drawCurtain(t, dt, L, pulse);
       act = actS * qf; cx.globalAlpha = act;
       drawMills(t, dt, L, pulse);
-      for (i = 0; i < bk.length; i++) {
+      for (i = 0; i < qlBk[qlT]; i++) {
         b = bk[i]; b.y -= b.vy * dt / H; b.x += Math.sin(t * b.sw + b.ph) * 0.0003;
         if (b.y < -0.05) { b.y = 1.05; b.x = Math.random(); }
         rr = b.r * (1 + beat * 0.25); hh = (b.h + t * 20) % 360;
@@ -3771,7 +3819,7 @@ window.hdrGeo = function () {
         gg.addColorStop(0, 'hsla(' + hh + ',100%,70%,' + (b.a * 0.3) + ')'); gg.addColorStop(0.78, 'hsla(' + hh + ',100%,65%,' + (b.a * 0.55) + ')'); gg.addColorStop(1, 'hsla(' + hh + ',100%,60%,0)');
         cx.fillStyle = gg; cx.beginPath(); cx.arc(b.x * W, b.y * H, rr, 0, 6.3); cx.fill();
       }
-      for (i = 0; i < ds.length; i++) {
+      for (i = 0; i < qlDs[qlT]; i++) {
         d = ds[i]; d.y -= d.vy * dt / H; if (d.y < -0.01) { d.y = 1.01; d.x = Math.random(); }
         cx.fillStyle = 'rgba(255,255,255,' + (0.35 + 0.65 * Math.abs(Math.sin(t * d.tw + d.ph))) + ')';
         cx.beginPath(); cx.arc(d.x * W, d.y * H, d.r, 0, 6.3); cx.fill();
@@ -3779,9 +3827,20 @@ window.hdrGeo = function () {
       act = actS;
       cx.globalCompositeOperation = 'source-over'; cx.globalAlpha = 1;
     }
+    /* governatore di qualità: misura il tempo di disegno e l'intervallo reale tra i frame; se il dispositivo (es. l'auto) non regge,
+       abbassa risoluzione, numero di raggi/particelle e frequenza; risale al massimo 2 volte dopo 60 s tranquilli, per evitare continui cambi */
+    function qlGov(ms, ts) {
+      var iv = qlPrev ? ts - qlPrev : 33.3;
+      qlPrev = ts; if (iv > 150) iv = 33.3;
+      qlE += (ms - qlE) * 0.08; qlV += (iv - qlV) * 0.08;
+      if (!qlLast) qlLast = ts;
+      if ((qlE > 18 || qlV > 46) && qlT < 2 && ts - qlLast > 2500) { qlT++; qlLast = ts; qlUp = 0; size(); }
+      else if (qlT > 0 && qlRise < 2 && qlE < 6 && (qlT > 1 || qlV < 38)) { if (!qlUp) qlUp = ts; else if (ts - qlUp > 60000) { qlT--; qlRise++; qlLast = ts; qlUp = 0; size(); } }
+      else qlUp = 0;
+    }
     function loop(ts) {
       requestAnimationFrame(loop);
-      if (ts - lastD < 33) return;
+      if (ts - lastD < qlI[qlT]) return;
       var t = ts / 1000, dt = Math.min(0.1, t - lastT);
       lastD = ts; lastT = t; if (dt <= 0) return;
       if ((discoOn || relaxOn) && stopped()) { discoOn = false; relaxOn = false; }
@@ -3793,7 +3852,7 @@ window.hdrGeo = function () {
       if (clk) clk.classList.toggle('relax-on', relaxOn);
       act += ((want ? 1 : 0) - act) * (1 - Math.pow(0.92, dt * 60));
       clockBg(t, wantD);
-      if (act < 0.01) { seqOff = true; lastBass = t; moodReset(t); bq = []; nbOn = false; if (!cleared) { cx.clearRect(0, 0, W, H); clrB(); cleared = true; } return; }
+      if (act < 0.01) { seqOff = true; lastBass = t; moodReset(t); bq = []; nbOn = false; if (!cleared) { cx.clearRect(0, 0, W, H); clrB(); cleared = true; } qlPrev = 0; return; }
       cleared = false;
       if (!tvI) { tv = t; tvI = 1; }
       tv += dt * (modeR ? 1 : spd); tvC = tv;
@@ -3806,7 +3865,9 @@ window.hdrGeo = function () {
       if (!live && !nbOn && t >= nextK) { beat = 1; nextK = t + 0.44 + Math.random() * 0.1; }
       beat *= Math.pow(0.86, dt * 60);
       lvA += ((live ? avgLevel() : 0.5) - lvA) * 0.05;
+      var w0 = performance.now();
       if (modeR) { rpOn = false; rpNx = 0; drawRelax(t); balls(t); } else { draw(tv, dt * spd); var aS = act; act = aS * qf; drawRelax(tv, true); balls(tv); act = aS; }
+      qlGov(performance.now() - w0, ts);
     }
     window.addEventListener('resize', size);
     size();
