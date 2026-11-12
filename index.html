@@ -43,7 +43,7 @@
   @keyframes rnUp { 0% { transform: translateY(0) rotate(-12deg); opacity: 0; } 8% { opacity: .5; } 85% { opacity: .5; } 100% { transform: translateY(calc(-100vh - 60px)) rotate(14deg); opacity: 0; } }
 
   #now { flex: 1 1 auto; min-width: 0; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
-  #nowRadio {   font-family: 'Nunito', 'Segoe UI', system-ui, Roboto, Arial, sans-serif;   font-style: normal;   font-weight: 800;   font-size: 17px;   line-height: 1.15;   color: #ffe600;   white-space: nowrap;   overflow: hidden; }
+  #nowRadio {   font-family: 'Nunito', 'Segoe UI', system-ui, Roboto, Arial, sans-serif;   font-style: normal;   font-weight: 800;   font-size: 19px;   line-height: 1.15;   color: #ffe600;   white-space: nowrap;   overflow: hidden; }
   #nowRadio span, #ovName span, #ovSong span { display: inline-block; }
   /* riga 1: immagine "musica in corso" + logo radio; riga 2: nome radio; riga 3: brano */
   #nowRadioRow { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 3px; }
@@ -63,7 +63,7 @@
   #nowRadio.mq span, #ovName.mq span, #ovSong.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   #btnCol { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 5px; }
   #btnCol #nowSt { margin-top: 0; }
-  #nowName { margin-top: 4px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
+  #nowName { margin-top: 4px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-size: 17px; font-weight: 600; line-height: 1.2; min-height: 1.2em; white-space: nowrap; overflow: hidden; }
   #nowName span { display: inline-block; }
   #nowName.mq span { animation: mq var(--t, 8s) ease-in-out infinite alternate; }
   @keyframes mq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(calc(-1 * var(--d, 0px))); } }
@@ -71,7 +71,7 @@
   #nowSt { --ac: #ff3b30; display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 3px; padding: 3px 9px 3px 6px; border: 1.5px solid var(--ac); border-radius: 5px; background: rgba(0,0,0,.35); color: var(--ac); font-weight: 700; font-size: 11.5px; letter-spacing: .18em; line-height: 1; white-space: nowrap; text-shadow: 0 0 6px var(--ac), 0 0 14px var(--ac); box-shadow: 0 0 10px var(--ac), inset 0 0 8px rgba(255,255,255,.12); }
   @media (max-width: 370px) { #nowSt { gap: 5px; padding: 2px 7px 2px 5px; font-size: 10.5px; letter-spacing: .1em; } }
   /* senza brano, sotto la radio compare il dettaglio dello stato (es. "tocca play per avviare") */
-  #nowName.det { font-size: 12.5px; font-weight: 600; color: #d6d6d6; }
+  #nowName.det { font-size: 14px; font-weight: 600; color: #d6d6d6; }
   #nowSt svg { width: 15px; height: 15px; flex: 0 0 auto; overflow: visible; color: var(--ac); filter: drop-shadow(0 0 4px var(--ac)); }
   #nowSt .w { animation: obWv 1.6s ease-in-out infinite; } #nowSt .w2 { animation-delay: .25s; }
   #nowSt.on { --ac: #3ddc84; animation: nsBx 1s ease-in-out infinite; }
@@ -211,7 +211,12 @@
 
   #rc { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #rc #clock b { font-size: 19.5px; }
-  #clock #addr { display: block; width: max-content; max-width: 62vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 13.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
+  #rc { flex: 1 1 auto; min-width: 0; align-items: stretch; }
+  #rc #clock { width: 100%; text-align: left; }
+  #tmRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #rc #clock #cd { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 19.5px; font-weight: 700; color: #fff; line-height: 1.15; }
+  #rc #clock #ck { flex: 0 0 auto; text-align: right; }
+  #clock #addr { display: block; width: max-content; max-width: 62vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 15px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
   #clock #addr.addr-new { color: #ffe600; }
   #clock #addr #addrBar { display: block; height: 2px; margin-top: 1px; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
   #clock #addr #addrBar.ok { background: #00e676; }
@@ -573,6 +578,8 @@
   #player { flex: 1 1 auto; min-height: 0; flex-direction: column; justify-content: flex-start; align-items: stretch; gap: 14px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
   #player .pl { flex: 0 0 auto; }
   #player .pr { flex: 0 0 auto; justify-content: center; }
+  #player .pl #now { order: 1; text-align: left; }
+  #player .pl #btnCol { order: 2; margin-left: auto; }
   #ana { display: block; align-self: center; margin: auto; } /* l'orologio analogico si centra nello spazio libero: in alto radio/ON AIR/brano, in basso orologio digitale e dati */
   #rc { align-items: center; }
   #clock #addr { max-width: 100%; margin: 0 auto 4px; text-align: center; }
@@ -589,16 +596,16 @@
     #btnCol { gap: 0.7vw; }
     #btn { width: max(24px, 6vw); height: max(24px, 6vw); }
     #btn::after { width: 40%; height: 40%; margin: -20% 0 0 -20%; }
-    #nowRadio { font-size: max(8px, 2.24vw); }
-    #nowName { font-size: max(7px, 1.97vw); margin-top: 0.5vw; }
-    #nowName.det { font-size: max(6.5px, 1.64vw); }
+    #nowRadio { font-size: max(9px, 2.5vw); }
+    #nowName { font-size: max(8px, 2.2vw); margin-top: 0.5vw; }
+    #nowName.det { font-size: max(7px, 1.85vw); }
     #nowLg { width: max(14px, 3.7vw); height: max(14px, 3.7vw); }
     #nowIc { flex-basis: max(10px, 2.9vw); width: max(10px, 2.9vw); font-size: max(7px, 1.84vw); }
     #nowSt { gap: 0.8vw; padding: 0.4vw 1.2vw 0.4vw 0.8vw; font-size: max(6px, 1.5vw); border-width: 1px; letter-spacing: .12em; }
     #nowSt svg { width: max(8px, 2vw); height: max(8px, 2vw); }
     #rc #clock b { font-size: max(9px, 2.57vw); }
-    #clock #cd { font-size: max(6px, 1.5vw); }
-    #clock #addr { font-size: max(6.5px, 1.78vw); margin-bottom: 0.5vw; }
+    #rc #clock #cd { font-size: max(9px, 2.57vw); }
+    #clock #addr { font-size: max(7.2px, 2vw); margin-bottom: 0.5vw; }
     #bufrow #netCon, #bufrow #netStat, #bufbar { height: max(9px, 2vw); }
     #bufrow #netCon, #bufrow #netStat, #bufrow #bftxt { font-size: max(5.5px, 1.38vw); line-height: max(9px, 2vw); }
     #bufrow .nl { display: inline; }
@@ -619,7 +626,7 @@
   /* schermi bassi (telefono in orizzontale) */
   @media (max-height: 460px) {
     #player { gap: 4px; padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; }
-    #clock #addr { font-size: 10px; margin-bottom: 1px; }
+    #clock #addr { font-size: 11px; margin-bottom: 1px; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
@@ -660,8 +667,7 @@
  <div id="rc">
   <div id="clock">
     <div id="addr" aria-live="polite" title="Posizione rilevata dal dispositivo"><span id="addr1">Rilevo la posizione...</span><span id="addr2"></span><span id="addr3"></span><span id="addr4"></span><i id="addrBar"></i></div>
-    <b id="ck" aria-label=""></b>
-    <span id="cd"></span>
+    <div id="tmRow"><span id="cd"></span><b id="ck" aria-label=""></b></div>
   </div>
  </div>
 </div>
@@ -2603,6 +2609,7 @@ window.hdrGeo = function () {
     var ck = document.getElementById('ck'), cd = document.getElementById('cd');
     var tf = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     var df = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    var dfs = new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     var slots = [], reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     function build(str) {
       var i, ch, el, sp;
@@ -2631,7 +2638,7 @@ window.hdrGeo = function () {
       else for (i = 0; i < str.length; i++) if (slots[i] && slots[i].v !== str.charAt(i)) roll(slots[i], str.charAt(i));
       ck.setAttribute('aria-label', str);
     }
-    function tick() { var d = new Date(); setTime(tf.format(d)); cd.textContent = df.format(d); }
+    function tick() { var d = new Date(); setTime(tf.format(d)); cd.textContent = df.format(d); if (cd.scrollWidth > cd.clientWidth + 1) cd.textContent = dfs.format(d); }
     tick(); setInterval(tick, 1000);
   })();
 
@@ -4453,18 +4460,27 @@ window.hdrGeo = function () {
       } else if (el3) { el3.textContent = 'Casa: indirizzo non trovato'; }
     }).catch(function () { setTimeout(loadHome, 20000); });
   }
+  var CONT = {};
+  [['Europa','ad al at ax ba be bg by ch cy cz de dk ee es fi fo fr gb gg gi gr hr hu ie im is it je li lt lu lv mc md me mk mt nl no pl pt ro rs ru se si sk sm ua va xk'],
+   ['Asia','ae af am az bd bh bn bt cn ge hk id il in iq ir jo jp kg kh kp kr kw kz la lb lk mm mn mo mv my np om ph pk ps qa sa sg sy th tj tl tm tr tw uz vn ye'],
+   ['Africa','ao bf bi bj bw cd cf cg ci cm cv dj dz eg eh er et ga gh gm gn gq gw ke km lr ls ly ma mg ml mr mu mw mz na ne ng re rw sc sd sh sl sn so ss st sz td tg tn tz ug yt za zm zw'],
+   ['Nord America','ag ai aw bb bl bm bs bz ca cr cu cw dm do gd gl gp gt hn ht jm kn ky lc mf mq ms mx ni pa pm pr sv sx tc tt us vc vg vi'],
+   ['Sud America','ar bo br cl co ec fk gf gy pe py sr uy ve'],
+   ['Oceania','as au ck fj fm gu ki mh mp nc nr nu nz pf pg pn pw sb tk to tv vu wf ws'],
+   ['Antartide','aq']].forEach(function (g) { g[1].split(' ').forEach(function (c) { CONT[c] = g[0]; }); });
   function two(d, civ) {
     var via = d.road || d.pedestrian || d.footway || d.path || d.square || '';
     var citta = d.city || d.town || d.municipality || d.village || d.hamlet || '';
     var iso = d['ISO3166-2-lvl6'] || '';
-    var prov = iso ? iso.split('-').pop() : '';
-    if (!prov && d.county && d.county !== citta) prov = d.county;
+    var sigla = iso ? iso.split('-').pop() : '';
+    var county = (d.county || '').replace(/^(Provincia|Città metropolitana|Libero consorzio comunale) (di |del |della |dell')/i, '');
     if (!citta) citta = d.county || '';
     var fr = '', k = [d.hamlet, d.suburb, d.quarter, d.city_district, d.village, d.neighbourhood];
     for (var i = 0; i < k.length; i++) { if (k[i] && k[i] !== citta) { fr = k[i]; break; } }
-    var l1 = (via + (civ ? ' ' + civ : '')).trim();
-    var base = [fr, citta].filter(Boolean).join(', ');
-    var l2 = base + (prov ? (base ? ' ' : '') + '(' + prov + ')' : '');
+    var prov = county && sigla ? county + ' (' + sigla + ')' : (county || sigla || d.state || '');
+    var cc = (d.country_code || '').toLowerCase();
+    var l1 = [(via + (civ ? ' ' + civ : '')).trim(), citta].filter(Boolean).join(', ');
+    var l2 = [fr, prov, d.country || '', CONT[cc] || ''].filter(Boolean).join(', ');
     if (!l1 && !l2) return { a: 'Indirizzo non disponibile', b: '' };
     return { a: l1 || 'Via non disponibile', b: l2 };
   }
