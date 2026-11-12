@@ -463,16 +463,16 @@
   body.ball-on #bgDisc { animation-play-state: paused !important; }
   @media (prefers-reduced-motion: reduce) { #disco { display: none; } body.disco-on #ov.open #ovNameTx { animation: none; } }
 
-  /* === Info a luci discoteca accese: in basso a destra logo radio (sopra), nome stazione, brano e CD che gira === */
-  #discoInfo { position: fixed; z-index: 45; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: min(88vw, 440px);
-    display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; opacity: 0; visibility: hidden;
+  /* === Info a luci discoteca accese: in basso al centro logo radio (sopra), nome stazione, brano e CD che gira === */
+  #discoInfo { position: fixed; z-index: 45; left: 0; right: 0; margin: 0 auto; width: max-content; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: min(88vw, 440px);
+    display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; opacity: 0; visibility: hidden;
     transition: opacity .6s ease, visibility 0s linear .6s; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   body.disco-on #discoInfo { opacity: 1; visibility: visible; transition: opacity .6s ease; }
-  #discoInfo .di-lg { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; object-position: right center;
+  #discoInfo .di-lg { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; object-position: center;
     filter: drop-shadow(0 1px 3px rgba(0,0,0,.7)); animation: logoPulse 2s ease-in-out infinite; }
   #discoInfo .di-lg[hidden] { display: none; }
   #discoInfo .di-row { display: flex; align-items: center; gap: 12px; max-width: 100%; }
-  #discoInfo .di-tx { min-width: 0; text-align: right; }
+  #discoInfo .di-tx { min-width: 0; text-align: center; }
   #discoInfo .di-st, #discoInfo .di-sg { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #discoInfo .di-st { font-family: 'Nunito', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 800; font-size: clamp(16px, 4vw, 20px); line-height: 1.2; color: #ffe600; }
   #discoInfo .di-sg { margin-top: 2px; font-family: 'Source Sans 3', 'Segoe UI', system-ui, Roboto, Arial, sans-serif; font-weight: 600; font-size: clamp(12px, 3vw, 14px); }
