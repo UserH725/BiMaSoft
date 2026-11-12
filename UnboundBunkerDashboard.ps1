@@ -1704,6 +1704,88 @@ function Get-UpstreamRadar {
     return $script:RadarCacheData
 }
 
+# === DNS PIU' UTILIZZATI DALL'AVVIO (v1112.3) ===
+# Unbound non espone contatori per singolo upstream: come "utilizzo" si accumulano i secondi in cui
+# ciascun resolver e' stato tra i 2 piu' veloci del radar (gli stessi mostrati nel badge "DNS in uso"),
+# solo con Unbound attivo. I totali vengono salvati su R:\upstream_usage.json (RAM disk, zero scritture SSD)
+# ogni 30 s e ricaricati al riavvio della dashboard; il RAM disk si svuota ad ogni riavvio del PC = nuova sessione.
+$script:UpUsageFile      = "R:\upstream_usage.json"
+$script:UpUsage          = $null
+$script:UpUsageAvvio     = $null
+$script:UpUsageTot       = 0.0
+$script:UpUsageLast      = [DateTime]::MinValue
+$script:UpUsageLastSave  = [DateTime]::MinValue
+$script:UpUsageCache     = $null
+
+function Initialize-UpstreamUsage {
+    if ($null -ne $script:UpUsage) { return }
+    $script:UpUsage      = @{}
+    $script:UpUsageAvvio = Get-Date
+    try {
+        if ([System.IO.File]::Exists($script:UpUsageFile)) {
+            $s = [System.IO.File]::ReadAllText($script:UpUsageFile) | ConvertFrom-Json
+            if ($s) {
+                if ($s.avvio) { $script:UpUsageAvvio = [datetime]$s.avvio }
+                if ($s.tot)   { $script:UpUsageTot   = [double]$s.tot }
+                foreach ($e in @($s.items)) {
+                    if ($e -and $e.ip) { $script:UpUsage[[string]$e.ip] = @{ tag = [string]$e.tag; sec = [double]$e.sec } }
+                }
+            }
+        }
+    } catch { $script:UpUsage = @{}; $script:UpUsageTot = 0.0 }
+}
+
+function Update-UpstreamUsage {
+    param($Radar, [bool]$EngineOn)
+    Initialize-UpstreamUsage
+    $now   = Get-Date
+    $first = ($script:UpUsageLast -eq [DateTime]::MinValue)
+    $dt    = if ($first) { 0.0 } else { ($now - $script:UpUsageLast).TotalSeconds }
+    # Campiona al massimo ~1 volta al secondo (Light e Pro possono chiamare in parallelo)
+    if (-not $first -and $dt -lt 0.9 -and $null -ne $script:UpUsageCache) { return $script:UpUsageCache }
+    $script:UpUsageLast = $now
+    if ($dt -gt 5) { $dt = 5 }
+    if ($EngineOn -and $Radar -and $dt -gt 0) {
+        $okR = @($Radar | Where-Object { $_.ok } | Sort-Object ms | Select-Object -First 2)
+        if ($okR.Count -gt 0) {
+            foreach ($r in $okR) {
+                $k = [string]$r.ip
+                if (-not $script:UpUsage.ContainsKey($k)) { $script:UpUsage[$k] = @{ tag = [string]$r.tag; sec = 0.0 } }
+                $script:UpUsage[$k].sec += $dt
+                $script:UpUsage[$k].tag  = [string]$r.tag
+            }
+            $script:UpUsageTot += $dt
+        }
+    }
+    $tot = $script:UpUsageTot
+    $top = @($script:UpUsage.GetEnumerator() | Sort-Object { $_.Value.sec } -Descending | Select-Object -First 3 | ForEach-Object {
+        [ordered]@{
+            ip  = [string]$_.Key
+            tag = [string]$_.Value.tag
+            sec = [int][math]::Round($_.Value.sec)
+            pct = $(if ($tot -gt 0) { [math]::Round(100.0 * $_.Value.sec / $tot, 1) } else { 0 })
+        }
+    })
+    $script:UpUsageCache = [ordered]@{
+        avvio        = $script:UpUsageAvvio.ToString("o")
+        campioni_sec = [int][math]::Round($tot)
+        top          = $top
+    }
+    if (($now - $script:UpUsageLastSave).TotalSeconds -ge 30) {
+        $script:UpUsageLastSave = $now
+        try {
+            $items = @(foreach ($kv in $script:UpUsage.GetEnumerator()) {
+                [ordered]@{ ip = [string]$kv.Key; tag = [string]$kv.Value.tag; sec = [math]::Round($kv.Value.sec, 1) }
+            })
+            $json = ([ordered]@{ avvio = $script:UpUsageAvvio.ToString("o"); tot = [math]::Round($tot, 1); items = $items } | ConvertTo-Json -Depth 4 -Compress)
+            $tmp = "$($script:UpUsageFile).tmp"
+            [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
+            Move-Item -LiteralPath $tmp -Destination $script:UpUsageFile -Force
+        } catch {}
+    }
+    return $script:UpUsageCache
+}
+
 # === ROOT SERVERS RADAR ===
 $script:RootRadarCacheTime = [DateTime]::MinValue
 $script:RootRadarCacheData = @()
@@ -3824,6 +3906,7 @@ function Get-BunkerStatusJson {
     $connLive    = Get-LightConnFeed
     $trafficAnomalie = Update-AnomalyTracking -liveRcode $liveRcode
     $radar       = Get-UpstreamRadar
+    $upUsage     = Update-UpstreamUsage -Radar $radar -EngineOn ([bool]$engineOn)
     $rootRadar   = Get-RootServersRadar
     $rpz         = Get-RpzBreakdown
     $rpzFresh    = Get-RpzFreshness
@@ -3952,6 +4035,7 @@ function Get-BunkerStatusJson {
         live_feed_summary = $liveFeedSummary
         conn_live        = $connLive
         upstream_radar   = $radar
+        upstream_usage   = $upUsage
         root_radar       = $rootRadar
         ip_geo           = $ipGeo
         ip_geo3          = $ipGeo3
@@ -4053,6 +4137,7 @@ function Get-BunkerStatusLightJson {
     # tempo REALE tra due letture (e non sull'orario di arrivo), cosi' il jitter di rete/polling non li falsa
     $tsMs     = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $radar    = Get-UpstreamRadar
+    $upUsage  = Update-UpstreamUsage -Radar $radar -EngineOn ([bool]$engineOn)
     $salute   = $script:LightHealthData
     # Riga di rete (banda + IP + DNS vincitore): letture leggere, la parte web dell'IP pubblico gira in un runspace separato
     $netSpeed = Get-NetworkSpeed
@@ -4110,6 +4195,7 @@ function Get-BunkerStatusLightJson {
         ram_disk         = $ramDisk
         engine_attivo    = $engineOn
         upstream_radar   = $radar
+        upstream_usage   = $upUsage
         net_speed        = $netSpeed
         line_potential   = $linePot
         connettivita_ip  = $ipConn
@@ -5570,6 +5656,9 @@ $HtmlPageLight = @'
   .ns-dn { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
   .ns-dt { flex: 1 1 auto; min-width: 0; }
   .ns-dm { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
+  .ns-pr + .ns-pr { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--border); }
+  .ns-pt { display: inline-block; font-size: 0.72em; color: var(--accent); letter-spacing: 0.06em; margin-bottom: 2px; }
+  .ns-ps { display: block; font-size: 0.78em; font-weight: 400; color: var(--dim); word-break: normal; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } .ns-row { flex-wrap: wrap; } }
   /* Classifica bandierine: fila orizzontale (a capo su piu' righe) sopra ciascun log - sinistra/sopra Download, destra/sopra Upload */
@@ -5694,7 +5783,7 @@ $HtmlPageLight = @'
 <div class="wrap">
   <header>
     <div>
-      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</h1>
+      <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.3 - by Mauro Bigoni</h1>
       <div class="sub" id="sub">Connessione al Bunker in corso...</div>
     </div>
     <div class="top-actions">
@@ -5709,9 +5798,9 @@ $HtmlPageLight = @'
 <div class="netstrip" id="netStrip">
   <div class="ns-info">
     <div class="ns-c"><div class="ns-l">IP pubblico</div><div class="ns-v" id="nsPub">N/D</div><div class="ns-s" id="nsPubS">&nbsp;</div></div>
-    <div class="ns-c"><div class="ns-l">IPv4</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
-    <div class="ns-c"><div class="ns-l">IPv6</div><div class="ns-v" id="nsV6">N/D</div><div class="ns-s" id="nsV6S">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IP locale</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
     <div class="ns-c" id="nsDnsC"><div class="ns-l">DNS in uso</div><div class="ns-v" id="nsDns">N/D</div><div class="ns-s" id="nsDnsS">&nbsp;</div></div>
+    <div class="ns-c" id="nsTopC" title="I 3 resolver upstream piu' utilizzati dall'avvio del bunker (secondi trascorsi tra i 2 piu' veloci del radar). I dati sono salvati su R:\ e sopravvivono al riavvio della dashboard"><div class="ns-l">DNS pi&ugrave; usati</div><div class="ns-v" id="nsTop">N/D</div><div class="ns-s" id="nsTopS">&nbsp;</div></div>
   </div>
   <div class="ns-meters">
     <div>
@@ -6530,28 +6619,30 @@ function otLoop(now) {
     }
     var ip = d.connettivita_ip;
     if (ip) {
-      nsSet('nsPub', ip.ipv4_wan_ok ? ipg3Block(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
-      nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
-      // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
+      // [v1112.3] Badge 1 = IP pubblico IPv4 + IPv6 con bandierine a 3 provider; badge 2 = IP locale (IPv4 + IPv6 locali)
+      var pubRow = function (tag, addr, cc, ok, loc, isp) {
+        if (!ok) return '<div class="ns-pr"><span class="ns-pt">' + tag + '</span><span class="ns-ps">non disponibile</span></div>';
+        var sub = [loc, isp].filter(Boolean).map(nsEsc).join(' &middot; ');
+        return '<div class="ns-pr"><span class="ns-pt">' + tag + '</span>' + ipg3Block(addr, cc, false) + nsEsc(addr) + (sub ? '<span class="ns-ps">' + sub + '</span>' : '') + '</div>';
+      };
+      nsSet('nsPub', pubRow('IPv4 PUBBLICO', ip.ipv4_wan, ip.ipv4_cc, ip.ipv4_wan_ok, ip.ipv4_loc, ip.ipv4_isp) + pubRow('IPv6 PUBBLICO', ip.ipv6_wan, ip.ipv6_cc, ip.ipv6_wan_ok, ip.ipv6_loc, ip.ipv6_isp));
+      nsSet('nsPubS', '<span class="ns-dot ' + (ip.ipv4_wan_ok ? 'ok' : 'bad') + '"></span>v4 <span class="ns-dot ' + (ip.ipv6_wan_ok ? 'ok' : 'bad') + '"></span>v6');
+      // IP locali: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga (l'IPv6 pubblico e' nel badge 1)
       var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-      nsSet('nsV4', l4.length ? l4.map(function (x) { return ipg3Block(x) + nsEsc(x); }).join('<br>') : 'N/D');
-      nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
       var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
-      var a6 = [];
-      if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
-      l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
-      if (a6.length) {
-        nsSet('nsV6', a6.map(function (x) { return '<div>' + ipg3Block(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x) + '</div>'; }).join(''));
-        nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
-      } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+      l6 = l6.filter(function (x) { return x && x !== ip.ipv6_wan; });
+      var locH = l4.map(function (x) { return '<div class="ns-pr"><span class="ns-pt">IPv4</span>' + ipg3Block(x) + nsEsc(x) + '</div>'; }).join('') +
+                 l6.map(function (x) { return '<div class="ns-pr"><span class="ns-pt">IPv6</span>' + ipg3Block(x, undefined, false) + nsEsc(x) + '</div>'; }).join('');
+      nsSet('nsV4', locH || 'N/D');
+      nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>v4 <span class="ns-dot ' + (l6.length ? 'ok' : '') + '"></span>v6');
     }
     var tv = d.tunnel_vpn;
     if (tv && ip) {
-      if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsV6S'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
+      if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsPubS'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
       var xs = [];
       if (tv.pc && tv.pc.attivo && tv.pc.ipv4 && tv.pc.breve) xs.push(tv.pc.breve);
       if (tv.router && tv.router.breve) xs.push(tv.router.breve);
-      if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += '<br>' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
+      if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += ' &middot; ' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
     }
     var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
     rad = rad || [];
@@ -6572,6 +6663,17 @@ function otLoop(now) {
       nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
       nsSet('nsDnsS', rad.length ? '<span class="ns-dot bad"></span>radar 0/' + rad.length : '&nbsp;');
     }
+    // [v1112.3] Badge 4: i 3 DNS piu' usati dall'avvio (dato server, persistente su R:\)
+    var uu = d.upstream_usage, tops = [];
+    if (uu && uu.top) tops = Array.isArray(uu.top) ? uu.top : [uu.top];
+    var fmtT = function (s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), mi = Math.floor((s % 3600) / 60); return h > 0 ? h + 'h ' + (mi < 10 ? '0' : '') + mi + 'm' : (mi > 0 ? mi + 'm ' + (s % 60) + 's' : s + 's'); };
+    if (tops.length) {
+      nsSet('nsTop', tops.map(function (r, i) {
+        return '<div class="ns-dr">' + ipg3Block(r.ip, undefined, true) +
+          '<div class="ns-dl"><span class="ns-dn">' + (i + 1) + '&deg;</span><span class="ns-dt">' + nsEsc(r.tag || 'Upstream') + ' ' + nsEsc(r.ip) + '</span><span class="ns-dm">' + nsEsc(String(r.pct).replace('.', ',')) + '% &middot; ' + fmtT(r.sec) + '</span></div></div>';
+      }).join(''));
+      nsSet('nsTopS', '<span class="ns-dot ok"></span>dall\'avvio');
+    } else { nsSet('nsTop', 'In raccolta...'); nsSet('nsTopS', '&nbsp;'); }
   }
 
   // ---- Connessioni live sotto Download/Upload (v1106.7) ----
@@ -7280,7 +7382,7 @@ $HtmlPage = @'
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</title>
+<title>UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.3 - by Mauro Bigoni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cpath fill=%27%234fb3ff%27 d=%27M16 1.5 3.5 6.5v9c0 8 5.2 13.6 12.5 15 7.3-1.4 12.5-7 12.5-15v-9z%27/%3E%3Cpath fill=%27none%27 stroke=%27%230a0e14%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 d=%27M10.5 16.5l4 4 7.5-8.5%27/%3E%3C/svg%3E">
 <style>
   /* =====================================================================
@@ -7425,6 +7527,9 @@ $HtmlPage = @'
   .ns-dn { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
   .ns-dt { flex: 1 1 auto; min-width: 0; }
   .ns-dm { flex: 0 0 auto; color: var(--dim); font-weight: 400; font-size: 0.85em; }
+  .ns-pr + .ns-pr { margin-top: 5px; padding-top: 4px; border-top: 1px dashed var(--border); }
+  .ns-pt { display: inline-block; font-size: 0.72em; color: var(--accent); letter-spacing: 0.06em; margin-bottom: 2px; }
+  .ns-ps { display: block; font-size: 0.78em; font-weight: 400; color: var(--dim); word-break: normal; }
   @media (max-width: 900px) { .ns-info { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .ns-meters { grid-template-columns: 1fr; } }
 
@@ -8158,7 +8263,7 @@ $HtmlPage = @'
 
 <div class="header-container">
   <div>
-    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.2 - by Mauro Bigoni</h1>
+    <h1>&#128737; UNBOUND BUNKER CERBERO - DASHBOARD LIVE Versione 1112.3 - by Mauro Bigoni</h1>
     <div class="sub" id="subheader">Connessione al Bunker in corso...</div>
   </div>
   <div class="clock-box">
@@ -8225,9 +8330,9 @@ $HtmlPage = @'
   </div>
   <div class="ns-info">
     <div class="ns-c"><div class="ns-l">IP pubblico</div><div class="ns-v" id="nsPub">N/D</div><div class="ns-s" id="nsPubS">&nbsp;</div></div>
-    <div class="ns-c"><div class="ns-l">IPv4</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
-    <div class="ns-c"><div class="ns-l">IPv6</div><div class="ns-v" id="nsV6">N/D</div><div class="ns-s" id="nsV6S">&nbsp;</div></div>
+    <div class="ns-c"><div class="ns-l">IP locale</div><div class="ns-v" id="nsV4">N/D</div><div class="ns-s" id="nsV4S">&nbsp;</div></div>
     <div class="ns-c" id="nsDnsC"><div class="ns-l">DNS in uso</div><div class="ns-v" id="nsDns">N/D</div><div class="ns-s" id="nsDnsS">&nbsp;</div></div>
+    <div class="ns-c" id="nsTopC" title="I 3 resolver upstream piu' utilizzati dall'avvio del bunker (secondi trascorsi tra i 2 piu' veloci del radar). I dati sono salvati su R:\ e sopravvivono al riavvio della dashboard"><div class="ns-l">DNS pi&ugrave; usati</div><div class="ns-v" id="nsTop">N/D</div><div class="ns-s" id="nsTopS">&nbsp;</div></div>
   </div>
 </div>
 
@@ -10113,28 +10218,30 @@ function nsUpdate(d) {
   }
   var ip = d.connettivita_ip;
   if (ip) {
-    nsSet('nsPub', ip.ipv4_wan_ok ? ipg3Block(ip.ipv4_wan, ip.ipv4_cc, false) + nsEsc(ip.ipv4_wan) : 'N/D');
-    nsSet('nsPubS', ip.ipv4_wan_ok ? [ip.ipv4_loc, ip.ipv4_isp].filter(Boolean).map(nsEsc).join('<br>') || '&nbsp;' : 'non disponibile');
-    // IPv4/IPv6: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga
+    // [v1112.3] Badge 1 = IP pubblico IPv4 + IPv6 con bandierine a 3 provider; badge 2 = IP locale (IPv4 + IPv6 locali)
+    var pubRow = function (tag, addr, cc, ok, loc, isp) {
+      if (!ok) return '<div class="ns-pr"><span class="ns-pt">' + tag + '</span><span class="ns-ps">non disponibile</span></div>';
+      var sub = [loc, isp].filter(Boolean).map(nsEsc).join(' &middot; ');
+      return '<div class="ns-pr"><span class="ns-pt">' + tag + '</span>' + ipg3Block(addr, cc, false) + nsEsc(addr) + (sub ? '<span class="ns-ps">' + sub + '</span>' : '') + '</div>';
+    };
+    nsSet('nsPub', pubRow('IPv4 PUBBLICO', ip.ipv4_wan, ip.ipv4_cc, ip.ipv4_wan_ok, ip.ipv4_loc, ip.ipv4_isp) + pubRow('IPv6 PUBBLICO', ip.ipv6_wan, ip.ipv6_cc, ip.ipv6_wan_ok, ip.ipv6_loc, ip.ipv6_isp));
+    nsSet('nsPubS', '<span class="ns-dot ' + (ip.ipv4_wan_ok ? 'ok' : 'bad') + '"></span>v4 <span class="ns-dot ' + (ip.ipv6_wan_ok ? 'ok' : 'bad') + '"></span>v6');
+    // IP locali: se ci sono piu' indirizzi vengono mostrati TUTTI, uno per riga (l'IPv6 pubblico e' nel badge 1)
     var l4 = ip.ipv4_lan_ok ? String(ip.ipv4_lan).split(', ') : [];
-    nsSet('nsV4', l4.length ? l4.map(function (x) { return ipg3Block(x) + nsEsc(x); }).join('<br>') : 'N/D');
-    nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>' + (l4.length ? 'rete locale' + (l4.length > 1 ? ' (' + l4.length + ' indirizzi)' : '') : 'offline'));
     var l6 = ip.ipv6_lan_ok ? String(ip.ipv6_lan).split(', ') : [];
-    var a6 = [];
-    if (ip.ipv6_wan_ok) a6.push(ip.ipv6_wan);
-    l6.forEach(function (x) { if (a6.indexOf(x) < 0) a6.push(x); });
-    if (a6.length) {
-      nsSet('nsV6', a6.map(function (x) { return '<div>' + ipg3Block(x, x === ip.ipv6_wan ? ip.ipv6_cc : undefined, false) + nsEsc(x) + '</div>'; }).join(''));
-      nsSet('nsV6S', '<span class="ns-dot ok"></span>' + (ip.ipv6_wan_ok ? 'pubblico' + (l6.length ? ' + ' + l6.length + (l6.length > 1 ? ' locali' : ' locale') : '') : 'solo locale' + (l6.length > 1 ? ' (' + l6.length + ' indirizzi)' : '')));
-    } else { nsSet('nsV6', 'N/D'); nsSet('nsV6S', '<span class="ns-dot bad"></span>non disponibile'); }
+    l6 = l6.filter(function (x) { return x && x !== ip.ipv6_wan; });
+    var locH = l4.map(function (x) { return '<div class="ns-pr"><span class="ns-pt">IPv4</span>' + ipg3Block(x) + nsEsc(x) + '</div>'; }).join('') +
+               l6.map(function (x) { return '<div class="ns-pr"><span class="ns-pt">IPv6</span>' + ipg3Block(x, undefined, false) + nsEsc(x) + '</div>'; }).join('');
+    nsSet('nsV4', locH || 'N/D');
+    nsSet('nsV4S', '<span class="ns-dot ' + (l4.length ? 'ok' : 'bad') + '"></span>v4 <span class="ns-dot ' + (l6.length ? 'ok' : '') + '"></span>v6');
   }
   var tv = d.tunnel_vpn;
   if (tv && ip) {
-    if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsV6S'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
+    if (tv.pc && tv.pc.attivo && tv.pc.ipv6 && tv.pc.breve) { var e6 = document.getElementById('nsPubS'); if (e6) e6.innerHTML += ' &middot; ' + nsEsc(tv.pc.breve); }
     var xs = [];
     if (tv.pc && tv.pc.attivo && tv.pc.ipv4 && tv.pc.breve) xs.push(tv.pc.breve);
     if (tv.router && tv.router.breve) xs.push(tv.router.breve);
-    if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += '<br>' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
+    if (xs.length) { var e4 = document.getElementById('nsPubS'); if (e4) e4.innerHTML += ' &middot; ' + xs.map(function (x) { return nsEsc(x); }).join(' &middot; '); }
   }
   var rad = d.upstream_radar; if (rad && !Array.isArray(rad)) rad = [rad];
   rad = rad || [];
@@ -10155,6 +10262,17 @@ function nsUpdate(d) {
     nsSet('nsDns', rad.length ? 'Nessun resolver raggiungibile' : 'N/D');
     nsSet('nsDnsS', rad.length ? '<span class="ns-dot bad"></span>radar 0/' + rad.length : '&nbsp;');
   }
+  // [v1112.3] Badge 4: i 3 DNS piu' usati dall'avvio (dato server, persistente su R:\)
+  var uu = d.upstream_usage, tops = [];
+  if (uu && uu.top) tops = Array.isArray(uu.top) ? uu.top : [uu.top];
+  var fmtT = function (s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), mi = Math.floor((s % 3600) / 60); return h > 0 ? h + 'h ' + (mi < 10 ? '0' : '') + mi + 'm' : (mi > 0 ? mi + 'm ' + (s % 60) + 's' : s + 's'); };
+  if (tops.length) {
+    nsSet('nsTop', tops.map(function (r, i) {
+      return '<div class="ns-dr">' + ipg3Block(r.ip, undefined, true) +
+        '<div class="ns-dl"><span class="ns-dn">' + (i + 1) + '&deg;</span><span class="ns-dt">' + nsEsc(r.tag || 'Upstream') + ' ' + nsEsc(r.ip) + '</span><span class="ns-dm">' + nsEsc(String(r.pct).replace('.', ',')) + '% &middot; ' + fmtT(r.sec) + '</span></div></div>';
+    }).join(''));
+    nsSet('nsTopS', '<span class="ns-dot ok"></span>dall\'avvio');
+  } else { nsSet('nsTop', 'In raccolta...'); nsSet('nsTopS', '&nbsp;'); }
 }
 
 async function refresh(forceVersions) {
