@@ -216,7 +216,7 @@
   #tmRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   #rc #clock #cd { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 19.5px; font-weight: 700; color: #fff; line-height: 1.15; }
   #rc #clock #ck { flex: 0 0 auto; text-align: right; }
-  #clock #addr { display: block; width: max-content; max-width: 62vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 15px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
+  #clock #addr { display: block; width: max-content; max-width: 62vw; margin: 0 0 2px auto; font-family: "sans-serif-condensed", "Roboto Condensed", "Arial Narrow", "Bahnschrift SemiCondensed", "Helvetica Neue", Arial, sans-serif; font-stretch: condensed; font-size: 16.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.15; color: rgb(255, 255, 255); text-align: right; transition: color 0.3s; }
   #clock #addr.addr-new { color: #ffe600; }
   #clock #addr #addrBar { display: block; height: 2px; margin-top: 1px; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
   #clock #addr #addrBar.ok { background: #00e676; }
@@ -605,7 +605,7 @@
     #nowSt svg { width: max(8px, 2vw); height: max(8px, 2vw); }
     #rc #clock b { font-size: max(9px, 2.57vw); }
     #rc #clock #cd { font-size: max(9px, 2.57vw); }
-    #clock #addr { font-size: max(7.2px, 2vw); margin-bottom: 0.5vw; }
+    #clock #addr { font-size: max(7.9px, 2.2vw); margin-bottom: 0.5vw; }
     #bufrow #netCon, #bufrow #netStat, #bufbar { height: max(9px, 2vw); }
     #bufrow #netCon, #bufrow #netStat, #bufrow #bftxt { font-size: max(5.5px, 1.38vw); line-height: max(9px, 2vw); }
     #bufrow .nl { display: inline; }
@@ -626,7 +626,7 @@
   /* schermi bassi (telefono in orizzontale) */
   @media (max-height: 460px) {
     #player { gap: 4px; padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; }
-    #clock #addr { font-size: 11px; margin-bottom: 1px; }
+    #clock #addr { font-size: 12px; margin-bottom: 1px; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
