@@ -174,9 +174,9 @@
 
   /* ===== barra stato: riga 1 connessione, riga 2 dati, riga 3 buffer ===== */
   #bufrow { position: relative; display: flex; flex-direction: column; align-items: stretch; background: #0b0b0b; overflow: hidden; --c: #3ddc84; padding: 0; }
-  #bufrow #netCon, #bufrow #netStat { margin: 0; align-self: center; height: 15px; line-height: 15px; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+  #bufrow #netCon, #bufrow #netStat { margin: 0; align-self: center; height: 17px; line-height: 17px; font-size: 12px; font-weight: 700; letter-spacing: .03em; font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
   #bufrow #netCon { display: flex; align-items: center; justify-content: center; gap: 5px; }
-  #bufrow #netDot { width: 8px; height: 8px; }
+  #bufrow #netDot { width: 9px; height: 9px; }
   #bufrow #netRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px; min-width: 0; }
   #bufrow #netRow #netStat { align-self: auto; flex: 0 1 auto; min-width: 0; text-align: left; }
   #bufrow #netRow #netCon { align-self: auto; flex: 0 0 auto; justify-content: flex-end; }
@@ -189,9 +189,9 @@
   @keyframes gradFlow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
   @media (prefers-reduced-motion: reduce) { #bufrow #netStat, #bufrow #netLbl { animation: none; } }
   /* buffer: barra rossa -> verde (verde pieno = buffer al massimo) */
-  #bufbar { position: relative; height: 15px; background: #1c1c1c; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #bufbar { position: relative; height: 17px; background: #1c1c1c; overflow: hidden; display: flex; align-items: center; justify-content: center; }
   #bfill { position: absolute; inset: 0; background: linear-gradient(90deg, #e53935 0%, #ff7043 25%, #ffb300 50%, #c6e000 75%, #00e676 100%); clip-path: inset(0 100% 0 0); transition: clip-path .45s ease; }
-  #bufrow #bftxt { position: relative; margin: 0; font-size: 10.5px; line-height: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+  #bufrow #bftxt { position: relative; margin: 0; font-size: 12px; line-height: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
   @media (max-width: 430px) { #bufrow .nl { display: none; } }
   #clock { flex: 0 0 auto; text-align: center; line-height: 1.15; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000, 0 0 8px #000; }
   #clock b { display: block; font-size: 22px; font-weight: 700; color: #fff; }
@@ -607,10 +607,12 @@
     #rc #clock b { font-size: max(9px, 2.5vw); }
     #rc #clock #cd { font-size: max(9px, 2.5vw); }
     #clock #addr { font-size: max(7.9px, 2.2vw); margin-bottom: 0.5vw; }
-    #bufrow #netCon, #bufrow #netStat, #bufbar { height: max(9px, 2vw); }
-    #bufrow #netCon, #bufrow #netStat, #bufrow #bftxt { font-size: max(5.5px, 1.38vw); line-height: max(9px, 2vw); }
+    #bufrow #netCon, #bufrow #netStat { height: max(10px, 2.3vw); }
+    #bufbar { height: max(10px, 2.3vw); }
+    #bufrow #netCon, #bufrow #netStat { font-size: max(6.3px, 1.58vw); line-height: max(10px, 2.3vw); }
+    #bufrow #bftxt { font-size: max(6.3px, 1.58vw); line-height: max(10px, 2.3vw); }
     #bufrow .nl { display: inline; }
-    #bufrow #netDot { width: max(5px, 1.05vw); height: max(5px, 1.05vw); }
+    #bufrow #netDot { width: max(5.7px, 1.2vw); height: max(5.7px, 1.2vw); }
     #mtr { height: max(14px, 3.4vw); }
     main { padding: 2.4vw 2vw calc(30px + env(safe-area-inset-bottom, 0px)); }
     .head { margin: 0 -2vw 1vw; padding: 0.8vw 2vw 1vw; gap: 1vw; }
