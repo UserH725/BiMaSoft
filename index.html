@@ -775,8 +775,10 @@ window.hdrGeo = function () {
   }
 
   var INIT_BUFFER_TARGET = 10;   /* secondi di buffer da accumulare prima di partire (copre i buchi di connessione) */
-  var BUFFER_REFILL_TARGET = 6;  /* dopo uno svuotamento, secondi da ricostruire prima di ripartire */
-  var BUFFER_MAX_WAIT = 25000;   /* attesa massima per riempire il buffer: poi parte comunque */
+  var BUFFER_REFILL_TARGET = 3;  /* dopo uno svuotamento, secondi da ricostruire prima di ripartire (stream non HLS) */
+  var PROG_BUFFER_TARGET = 3;    /* stream progressivi (Icecast/Shoutcast): dopo il burst iniziale arrivano in tempo reale, non si puo' accumulare di piu' */
+  var BUFFER_STALL_MS = 1500;    /* se il buffer non cresce piu' per questo tempo (e c'e' gia' >= 1 s) si parte subito */
+  var BUFFER_MAX_WAIT = 8000;   /* attesa massima per riempire il buffer: poi parte comunque */
 
   var STATIONS = [
     {name: '20s Pop Music', urls: ['https://radio.hearme.fm:8000/stream'], info: 'https://radio.hearme.fm:8000/stream'},
@@ -2472,6 +2474,7 @@ window.hdrGeo = function () {
     function upd() {
       if (!(wantPlay && cur >= 0)) { bf.style.clipPath = 'inset(0 100% 0 0)'; bt.textContent = ''; box.title = ''; lastBufferedSec = 0; return; }
       var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, f, sz;
+      T = hls ? INIT_BUFFER_TARGET : PROG_BUFFER_TARGET;
       for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) { s = Math.max(0, r.end(k) - t); break; } }
       
       if (!hls && s > lastBufferedSec) {
@@ -2544,8 +2547,8 @@ window.hdrGeo = function () {
       setSt('buf', 'caricamento buffer...');
       function go(reconnect) {
         setBufBar(100);
+        bufHold = false;
         setTimeout(function () {
-          bufHold = false;
           if (g !== gen) return;
           showBar(false);
           if (reconnect) { next(g); return; }
@@ -2560,7 +2563,7 @@ window.hdrGeo = function () {
         setBufBar(shown);
         if (a >= need) { go(false); return; }
         if (now - startTime > maxWait) { go(a < 1); return; }
-        if (now - lastGrow > 8000) { go(a < 1); return; }
+        if (now - lastGrow > (a >= 1 ? BUFFER_STALL_MS : 8000)) { go(a < 1); return; }
         if (nowSt.className !== 'buf') setSt('buf', 'caricamento buffer...');
         showBar(true);
         setTimeout(w, 250);
@@ -2570,8 +2573,8 @@ window.hdrGeo = function () {
     au.addEventListener('playing', function () {
       if (doneGen === gen) return;
       doneGen = gen;
-      if (hls || ahead() >= INIT_BUFFER_TARGET) { showBar(false); return; }
-      fillBuffer(INIT_BUFFER_TARGET, BUFFER_MAX_WAIT, gen);
+      if (hls || ahead() >= PROG_BUFFER_TARGET) { showBar(false); return; }
+      fillBuffer(PROG_BUFFER_TARGET, BUFFER_MAX_WAIT, gen);
     });
 
     /* buco di connessione: se il buffer si e' svuotato lo si ricostruisce un po' prima di ripartire (stream non HLS;
