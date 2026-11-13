@@ -774,7 +774,9 @@ window.hdrGeo = function () {
     }
   }
 
-  var INIT_BUFFER_TARGET = 5;
+  var INIT_BUFFER_TARGET = 10;   /* secondi di buffer da accumulare prima di partire (copre i buchi di connessione) */
+  var BUFFER_REFILL_TARGET = 6;  /* dopo uno svuotamento, secondi da ricostruire prima di ripartire */
+  var BUFFER_MAX_WAIT = 25000;   /* attesa massima per riempire il buffer: poi parte comunque */
 
   var STATIONS = [
     {name: '20s Pop Music', urls: ['https://radio.hearme.fm:8000/stream'], info: 'https://radio.hearme.fm:8000/stream'},
@@ -951,7 +953,7 @@ window.hdrGeo = function () {
   var listEl = document.getElementById('list'), nowName = document.getElementById('nowName'), nowSt = document.getElementById('nowSt'), nowTx = document.getElementById('nowTx');
   var cur = -1, cands = [], uIdx = 0, tries = 0, gen = 0, wantPlay = false, retryT = null, stalledT = null, hls = null, hlsLoading = null, items = [];
   var bufHold = false, pausedAt = 0, resumeT = null, resumeN = 0, userWants = false, tapArmed = false;
-  var scanSt = [], scanInfl = {}, scanRun = 0, scanT = null, scanHold = 0;
+  var scanSt = [], scanInfl = {}, scanRun = 0, scanT = null, scanHold = 0, scanDeferUntil = 0, scanLastStart = Date.now();
   var song = '', stText = 'in attesa', meta = { o: '', kind: '', fails: 0, t: 0 }, polling = false, lastPoll = 0, fitT = null;
   var nowTxt = document.getElementById('nowTxt'), nowRadio = document.getElementById('nowRadio'), nowRadioTx = document.getElementById('nowRadioTx');
 
@@ -1060,6 +1062,7 @@ window.hdrGeo = function () {
     unlockAudioContext();
     requestWakeLock();
     var g = ++gen, u = cands[uIdx];
+    au.preload = 'auto'; scanDefer();   /* la riproduzione ha la precedenza sulla verifica delle stazioni */
     segSong = {};
     if (!u) { setSt('err', 'nessun indirizzo disponibile'); return; }
     setSt('buf', tries ? 'riconnessione...' : 'connessione...');
@@ -1067,10 +1070,20 @@ window.hdrGeo = function () {
       loadHls(function (ok) {
         if (g !== gen) return;
         if (ok && window.Hls && Hls.isSupported()) {
+          var hlsRec = 0;
           hls = new Hls({ lowLatencyMode: false, maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 10, liveSyncDurationCount: 8, startLevel: 0, abrEwmaDefaultEstimate: 300000 });
           hls.on(Hls.Events.MANIFEST_PARSED, function () { if (g === gen) au.play().catch(onPlayErr(g)); });
-          hls.on(Hls.Events.ERROR, function (e, d) { if (g === gen && d && d.fatal) next(g); });
-          hls.on(Hls.Events.FRAG_LOADED, function (e, d) { if (d && d.frag && d.frag.loaded) addDownloadedBytes(d.frag.loaded); });
+          hls.on(Hls.Events.ERROR, function (e, d) {
+            if (g !== gen || !d || !d.fatal) return;
+            /* errore fatale: prima di riavviare tutto (e perdere il buffer) si prova a riprendere da dove si e' */
+            if (hlsRec < 4 && hls) {
+              hlsRec++;
+              if (d.type === Hls.ErrorTypes.NETWORK_ERROR) { try { hls.startLoad(); } catch (x) { next(g); } return; }
+              if (d.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch (x) { next(g); } return; }
+            }
+            next(g);
+          });
+          hls.on(Hls.Events.FRAG_LOADED, function (e, d) { hlsRec = 0; if (d && d.frag && d.frag.loaded) addDownloadedBytes(d.frag.loaded); });
           hls.on(Hls.Events.FRAG_PARSING_METADATA, function (e, d) {
             if (g !== gen || !d || !d.frag || !d.samples) return;
             d.samples.forEach(function (sm) {
@@ -1161,7 +1174,7 @@ window.hdrGeo = function () {
     setSt('on', 'in onda');
     if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {} }
   });
-  au.addEventListener('waiting', function () { if (wantPlay) { setSt('buf', 'buffering'); } });
+  au.addEventListener('waiting', function () { if (wantPlay) { scanDefer(4000); setSt('buf', 'buffering'); } });
 
   function resumeTry() {
     clearTimeout(resumeT);
@@ -2125,7 +2138,10 @@ window.hdrGeo = function () {
   });
 
   /* ===== Scansione stato radio (verde = raggiungibile, rosso = non raggiungibile) ===== */
-  var SCAN_GAP_FIRST = 500, SCAN_GAP_STEADY = 6000, SCAN_GAP_PLAY = 12000, SCAN_PAR_FIRST = 2, SCAN_PAR_IDLE_FIRST = 6, SCAN_PAR_IDLE = 3, SCAN_TIMEOUT = 15000, SCAN_HOLD = 6000;
+  /* dispositivo poco potente: meno sonde in parallelo. La riproduzione ha sempre la precedenza (vedi scanWaiting) */
+  var SCAN_LOW = (navigator.hardwareConcurrency || 4) <= 4 || (navigator.deviceMemory || 4) <= 4;
+  var SCAN_GAP_FIRST = 1200, SCAN_GAP_STEADY = 6000, SCAN_GAP_PLAY = 12000, SCAN_PAR_FIRST = 1, SCAN_PAR_IDLE_FIRST = SCAN_LOW ? 2 : 4, SCAN_PAR_IDLE = SCAN_LOW ? 1 : 2, SCAN_TIMEOUT = 15000, SCAN_HOLD = 6000;
+  var SCAN_BOOT_DELAY = 5000, SCAN_PLAY_GRACE = 10000, SCAN_YIELD_MAX = 60000;
   var scanIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   STATIONS.forEach(function (st, i) { scanSt[i] = { s: 0, f: 0, t: 0 }; });
 
@@ -2163,6 +2179,8 @@ window.hdrGeo = function () {
     }
     if (li.nextElementSibling !== ref) listEl.insertBefore(li, ref);
   }
+  var scanCountT = null;
+  function scanCountSoon() { if (scanCountT) return; scanCountT = setTimeout(function () { scanCountT = null; scanCount(); }, 400); }
   function scanRecord(i, ok) {
     var s = scanSt[i];
     if (!s) return;
@@ -2170,7 +2188,7 @@ window.hdrGeo = function () {
     s.t = Date.now();
     if (ok) { s.s = 1; s.f = 0; }
     else { s.f++; if (s.f >= 3) s.s = 2; }
-    scanPaint(i); scanCount();
+    scanPaint(i); scanCountSoon();
   }
   function scanLive(cls) {
     if (cls === 'on') { scanHold = Date.now() + SCAN_HOLD; if (cur >= 0) scanRecord(cur, true); }
@@ -2190,10 +2208,10 @@ window.hdrGeo = function () {
     a.src = url;
     return function () { if (!fin) { fin = true; clean(); } };
   }
-  function probeFetch(url, done) {
+  function probeFetch(url, done, tmo) {
     var ac = window.AbortController ? new AbortController() : null, fin = false, t;
     function end(ok) { if (fin) return; fin = true; clearTimeout(t); if (ac) { try { ac.abort(); } catch (e) {} } done(ok); }
-    t = setTimeout(function () { end(false); }, SCAN_TIMEOUT);
+    t = setTimeout(function () { end(false); }, tmo || SCAN_TIMEOUT);
     fetch(url, { mode: 'no-cors', cache: 'no-store', priority: 'low', signal: ac ? ac.signal : undefined }).then(function () { end(true); }, function () { end(false); });
     return function () { if (!fin) { fin = true; clearTimeout(t); if (ac) { try { ac.abort(); } catch (e) {} } } };
   }
@@ -2205,7 +2223,7 @@ window.hdrGeo = function () {
     loadHls(function (ok) {
       if (fin) return;
       if (ok && window.Hls && Hls.isSupported()) {
-        h = new Hls({ autoStartLoad: false, startLevel: 0 });
+        h = new Hls({ autoStartLoad: false, startLevel: 0, enableWorker: false, maxBufferLength: 1, maxMaxBufferLength: 1 });
         h.on(Hls.Events.MANIFEST_PARSED, function () { try { h.startLoad(-1); } catch (e) { end(false); } });
         h.on(Hls.Events.LEVEL_LOADED, function () { end(true); });
         h.on(Hls.Events.ERROR, function (e, d) { if (d && d.fatal) end(false); });
@@ -2220,16 +2238,15 @@ window.hdrGeo = function () {
      fetch invece risponde appena il server e' raggiungibile anche quando l'audio impiega troppo ad avviarsi.
      Rosso solo se falliscono entrambe. */
   function probeBoth(url, done) {
-    var fin = false, pend = 2, c1 = null, c2 = null;
-    function end(ok) {
-      if (fin) return; fin = true;
-      try { if (c1) c1(); } catch (e) {} try { if (c2) c2(); } catch (e) {}
-      done(ok);
-    }
-    function sub(ok) { if (fin) return; if (ok) { end(true); return; } if (--pend <= 0) end(false); }
-    c1 = probeFetch(url, sub);
-    c2 = probeAudio(url, sub);
-    return function () { if (!fin) { fin = true; try { if (c1) c1(); } catch (e) {} try { if (c2) c2(); } catch (e) {} } };
+    var fin = false, cancel = null;
+    function end(ok) { if (fin) return; fin = true; cancel = null; done(ok); }
+    /* prima la prova leggera (fetch, nessun elemento audio); l'elemento audio solo se fetch fallisce (stream ICY/Shoutcast) */
+    cancel = probeFetch(url, function (ok) {
+      if (fin) return;
+      if (ok) { end(true); return; }
+      cancel = probeAudio(url, end);
+    }, 9000);
+    return function () { if (!fin) { fin = true; if (cancel) { try { cancel(); } catch (e) {} } } };
   }
   function probeUrl(url, done) {
     if (/\.m3u8(\?|$)/i.test(url)) return probeHls(url, done);
@@ -2280,7 +2297,17 @@ window.hdrGeo = function () {
     }
     return best;
   }
+  /* la verifica delle stazioni cede il passo alla riproduzione: dopo l'avvio, durante buffering o riempimento del buffer
+     resta ferma. Non si ferma mai del tutto: dopo SCAN_YIELD_MAX senza sonde ne parte comunque una. */
+  function scanDefer(ms) { scanDeferUntil = Math.max(scanDeferUntil || 0, Date.now() + (ms || SCAN_PLAY_GRACE)); }
+  function scanWaiting() {
+    var now = Date.now();
+    if (now - scanLastStart > SCAN_YIELD_MAX) return false;
+    if (now < scanDeferUntil) return true;
+    return !!(wantPlay && (bufHold || nowSt.className === 'buf'));
+  }
   function scanStart(i) {
+    scanLastStart = Date.now();
     scanRun++; scanBusy();
     scanInfl[i] = probeStation(i, function (ok) {
       if (!scanInfl[i]) return;
@@ -2292,6 +2319,7 @@ window.hdrGeo = function () {
   function scanPump() {
     clearTimeout(scanT); scanT = null;
     if (!scanReady()) { scanYield(); scanDue = Date.now() + 1500; scanT = setTimeout(scanPump, 1500); return; }
+    if (scanWaiting()) { scanDue = Date.now() + 1000; scanT = setTimeout(scanPump, 1000); return; }
     var first = scanUnknown() > 0, playing = wantPlay && nowSt.className === 'on';
     /* player fermo: sonde in parallelo (molte al primo giro, poche dopo); in ascolto o in buffer si resta leggeri per non rubare banda alla musica */
     var limit = wantPlay ? (first ? SCAN_PAR_FIRST : 1) : (first ? SCAN_PAR_IDLE_FIRST : SCAN_PAR_IDLE);
@@ -2300,11 +2328,12 @@ window.hdrGeo = function () {
       if (i < 0) break;
       scanStart(i);
     }
-    var gap = scanRun >= limit ? 800 : (first ? (wantPlay ? SCAN_GAP_FIRST : 250) : (playing ? SCAN_GAP_PLAY : (wantPlay ? SCAN_GAP_STEADY : 3000)));
+    var gap = scanRun >= limit ? 800 : (first ? (wantPlay ? SCAN_GAP_FIRST : (SCAN_LOW ? 700 : 300)) : (playing ? SCAN_GAP_PLAY : (wantPlay ? SCAN_GAP_STEADY : 3000)));
     scanDue = Date.now() + gap; scanT = setTimeout(scanPump, gap);
   }
   scanCount();
-  scanT = setTimeout(scanPump, 800);
+  scanDefer(SCAN_BOOT_DELAY);   /* all'apertura la scansione parte solo dopo che la pagina si e' assestata */
+  scanT = setTimeout(scanPump, 1000);
   /* anti-sospensione: i timer della pagina in background vengono rallentati o congelati dal browser.
      1) un Web Worker fa da metronomo (non soggetto allo stesso throttling) e riavvia la pompa se è in ritardo;
      2) un Web Lock tenuto per sempre scoraggia il congelamento della scheda;
@@ -2456,7 +2485,7 @@ window.hdrGeo = function () {
       kb = s * kbps / 8; p = Math.min(100, Math.round(s / T * 100)); f = Math.min(1, s / T);
       sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
       bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';
-      bt.textContent = 'Buffer ' + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
+      bt.textContent = (bufHold ? 'Caricamento buffer ' : 'Buffer ') + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
       box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s target \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
     }
     au.addEventListener('playing', upd); au.addEventListener('waiting', upd); au.addEventListener('progress', upd);
@@ -2503,61 +2532,56 @@ window.hdrGeo = function () {
       }
     }
 
+    /* accumula 'need' secondi prima di (ri)partire; dopo 'maxWait' parte comunque. La barra mostra i secondi realmente
+       accumulati. Se il flusso non cresce piu' per 8 s si riparte (o ci si riconnette se non c'e' nulla). */
+    function fillBuffer(need, maxWait, g) {
+      var startTime = Date.now(), shown = 0, best = 0, lastGrow = Date.now();
+      bufHold = true;
+      try { au.pause(); } catch (e) {}
+      scanDefer(maxWait + 3000);
+      showBar(true);
+      setBufBar(0);
+      setSt('buf', 'caricamento buffer...');
+      function go(reconnect) {
+        setBufBar(100);
+        setTimeout(function () {
+          bufHold = false;
+          if (g !== gen) return;
+          showBar(false);
+          if (reconnect) { next(g); return; }
+          au.play().catch(onPlayErr(g));
+        }, 150);
+      }
+      (function w() {
+        if (g !== gen || !wantPlay) { bufHold = false; showBar(false); return; }
+        var a = ahead(), now = Date.now(), target = Math.min(100, Math.round(a / need * 100));
+        if (a > best + 0.2) { best = a; lastGrow = now; }
+        if (shown < target) shown = Math.min(target, shown + 4); else if (shown > target) shown = target;
+        setBufBar(shown);
+        if (a >= need) { go(false); return; }
+        if (now - startTime > maxWait) { go(a < 1); return; }
+        if (now - lastGrow > 8000) { go(a < 1); return; }
+        if (nowSt.className !== 'buf') setSt('buf', 'caricamento buffer...');
+        showBar(true);
+        setTimeout(w, 250);
+      })();
+    }
+
     au.addEventListener('playing', function () {
       if (doneGen === gen) return;
       doneGen = gen;
-      
-      var need = INIT_BUFFER_TARGET;
-      if (hls || ahead() >= need) {
-        showBar(false);
-        return;
-      }
-      
+      if (hls || ahead() >= INIT_BUFFER_TARGET) { showBar(false); return; }
+      fillBuffer(INIT_BUFFER_TARGET, BUFFER_MAX_WAIT, gen);
+    });
+
+    /* buco di connessione: se il buffer si e' svuotato lo si ricostruisce un po' prima di ripartire (stream non HLS;
+       con HLS hls.js tiene gia' fino a 60 s in avanti) */
+    au.addEventListener('waiting', function () {
+      if (!wantPlay || hls || bufHold || doneGen !== gen) return;
       var g = gen;
-      var currentPct = 0;
-      var startTime = Date.now();
-      
-      bufHold = true;
-      au.pause();
-      showBar(true);
-      setBufBar(0);
-      
-      (function w() {
-        if (g !== gen || !wantPlay) {
-          bufHold = false;
-          showBar(false);
-          return;
-        }
-        
-        var a = ahead();
-        var elapsed = Date.now() - startTime;
-        var targetPct = Math.min(100, Math.round((a / need) * 100));
-        
-        if (currentPct < targetPct) {
-          currentPct = Math.min(targetPct, currentPct + 3);
-        } else if (elapsed > 500 && currentPct < 95) {
-          currentPct += 1;
-        }
-        
-        setBufBar(currentPct);
-        
-        if (a >= need || currentPct >= 100 || (elapsed > 2500 && a >= 1)) { 
-          setBufBar(100);
-          setTimeout(function() {
-            bufHold = false;
-            if (g === gen) {
-              showBar(false);
-              au.play().catch(onPlayErr(g)); 
-            }
-          }, 120);
-          return; 
-        }
-
-        setSt('buf', 'caricamento buffer...');
-        showBar(true);
-
-        setTimeout(w, 40);
-      })();
+      setTimeout(function () {
+        if (g === gen && wantPlay && !bufHold && !hls && ahead() < 1) fillBuffer(BUFFER_REFILL_TARGET, BUFFER_MAX_WAIT / 2, g);
+      }, 800);
     });
   })();
 
