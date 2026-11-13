@@ -4769,13 +4769,13 @@ window.hdrGeo = function () {
     if (!svg) return;
     if (inSeason()) {
       if (g) return;
-      svg.setAttribute('viewBox', '0 -16 100 116');
-      g = document.createElementNS(NS, 'g'); g.id = 'anaHat'; g.setAttribute('transform', 'rotate(-16 50 50)');
-      g.innerHTML = '<path d="M12.2 20.5 C 16 -4 38 -14 58 -14 C 74 -14 88 -4 90 8 L 87.8 20.5 A48 48 0 0 0 12.2 20.5 Z" fill="#d62828"/>' +
-        '<path d="M58 -14 C 74 -14 88 -4 90 8 L 87.8 20.5 A48 48 0 0 0 58.3 2.7 C 66 -3 65 -9 58 -14 Z" fill="rgba(0,0,0,.2)"/>' +
-        '<path d="M22 10 C 26 -3 38 -10 50 -11" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="2" stroke-linecap="round"/>' +
-        '<path d="M9.8 18.6 A51 51 0 0 1 90.2 18.6 L85.5 22.3 A45 45 0 0 0 14.5 22.3 Z" fill="#fff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>' +
-        '<circle cx="90" cy="10" r="7" fill="#fff" stroke="rgba(0,0,0,.16)" stroke-width="1"/>';
+      svg.setAttribute('viewBox', '0 -16 100 116'); svg.setAttribute('overflow', 'visible');
+      g = document.createElementNS(NS, 'g'); g.id = 'anaHat'; g.setAttribute('transform', 'rotate(-14 50 50)');
+      g.innerHTML = '<path d="M27 8 C 28 -10 40 -22 58 -24 C 70 -25 80 -18 82 -6 C 74 -14 70 -2 73 8 Z" fill="#d62828"/>' +
+        '<path d="M58 -24 C 70 -25 80 -18 82 -6 C 74 -14 70 -2 73 8 L 56 8 C 62 -4 62 -16 58 -24 Z" fill="rgba(0,0,0,.2)"/>' +
+        '<path d="M31 2 C 33 -9 41 -17 52 -20" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round"/>' +
+        '<rect x="22" y="3" width="56" height="13" rx="6.5" fill="#fff" stroke="rgba(0,0,0,.18)" stroke-width="1"/>' +
+        '<circle cx="82" cy="-4" r="6" fill="#fff" stroke="rgba(0,0,0,.16)" stroke-width="1"/>';
       svg.appendChild(g);
     } else if (g) { g.remove(); svg.setAttribute('viewBox', '0 0 100 100'); }
   }
