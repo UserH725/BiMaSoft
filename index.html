@@ -632,13 +632,32 @@
     #player { gap: 4px; padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; }
     #clock #addr { font-size: 12px; margin-bottom: 1px; }
   }
+
+  /* ===== v2 =====
+     1) posizione / direzione / distanza da casa: ancorate a sinistra nel frame sinistro
+     2) barra volume verticale sul lato destro del frame sinistro (massimo in alto, verde = basso, rosso = massimo)
+     3) barra inferiore su tutta la larghezza della videata + barra laterale anche sul lato sinistro del frame sinistro */
+  #rc #clock #addr { margin-left: 0; margin-right: auto; text-align: left; }
+  #rc #clock #addr span { text-align: left; }
+
+  :root { --vw: clamp(18px, 3.4vw, 30px); }
+  #hdr #player { padding-right: calc(var(--vw) + 6px); }
+  #vol { position: absolute; top: 10px; bottom: 10px; right: 3px; width: var(--vw); z-index: 3; cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; outline: none; }
+  #vol .vt { position: absolute; left: 22%; right: 22%; top: 0; bottom: 0; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.14); box-shadow: inset 0 1px 3px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.2); }
+  #vol .vf { position: absolute; left: 0; right: 0; bottom: 0; height: var(--vp, 100%); border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,.45), rgba(255,255,255,0) 50%, rgba(0,0,0,.28)), var(--vc, #ff1744); box-shadow: 0 0 10px var(--vc, #ff1744); }
+  #vol .vf::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: rgba(255,255,255,.9); }
+  #vol:focus-visible .vt { box-shadow: inset 0 1px 3px rgba(0,0,0,.7), 0 0 0 2px #4fb3ff; }
+
+  #hdr { height: calc(100vh - 12px); height: calc(100dvh - 12px); padding-left: 12px; }
+  .sbb { left: 0; }
+  .sb.l.l0 { left: 0; z-index: 11; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
 </head>
 <body>
 <canvas id="ballBg" aria-hidden="true"></canvas>
 <div id="notes" aria-hidden="true"><div id="bgDisc"></div></div>
-<div id="sbL" class="sb l" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbR" class="sb r" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbB" class="sbb" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div>
+<div id="sbL0" class="sb l l0" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbL" class="sb l" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbR" class="sb r" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div><div id="sbB" class="sbb" aria-hidden="true"><i class="th"></i><i class="bb"></i><i class="bb2"></i></div>
 
 <div id="hdr">
 <header id="player" data-g="2" class="">
@@ -675,6 +694,7 @@
   </div>
  </div>
 </div>
+<div id="vol" role="slider" tabindex="0" aria-label="Volume" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" title="Volume"><div class="vt"><div class="vf"></div></div></div>
 </header>
 <div id="bufrow"><div id="netRow"><div id="netStat" title="Velocità download istantanea in KB/s e totale dati scaricati in MB">↓ <span id="dlSpd">0,0 KB/s</span> • <span class="nl">Totale: </span><span id="dlTot">0,0000 MB</span></div><span id="netCon" role="status" aria-live="polite" title="Stato connessione"><i id="netDot"></i><span id="netLbl">VERIFICA…</span></span></div><div id="bufbar"><div id="bfill" aria-hidden="true"></div><div id="bftxt" aria-hidden="true"></div></div></div>
 <div id="mtr"><canvas id="meter" width="1905" height="26" aria-hidden="true"></canvas></div>
@@ -4851,6 +4871,55 @@ window.hdrGeo = function () {
   }
   window.addEventListener('resize', function () { if (on) size(); });
   check(); setInterval(check, 60000);
+})();
+</script>
+<script id="volJs">
+/* volume: barra verticale (massimo in alto); colore dal verde (basso) al rosso (massimo) */
+(function () {
+  var au = document.getElementById('au'), vol = document.getElementById('vol');
+  if (!au || !vol) return;
+  var KEY = 'radioVol', v = 1, drag = false;
+  try { var s = parseFloat(localStorage.getItem(KEY)); if (isFinite(s)) v = Math.min(1, Math.max(0, s)); } catch (e) {}
+  function paint() {
+    var p = Math.round(v * 100);
+    vol.style.setProperty('--vp', p + '%');
+    vol.style.setProperty('--vc', 'hsl(' + Math.round((1 - v) * 120) + ' 88% 48%)');
+    vol.setAttribute('aria-valuenow', p);
+    vol.title = 'Volume ' + p + '%';
+  }
+  function apply(save) {
+    try { au.volume = v; } catch (e) {}
+    paint();
+    if (save) { try { localStorage.setItem(KEY, String(v)); } catch (e) {} }
+  }
+  function fromY(y) {
+    var r = vol.getBoundingClientRect();
+    if (r.height > 0) v = Math.min(1, Math.max(0, 1 - (y - r.top) / r.height));
+  }
+  function step(d) { v = Math.min(1, Math.max(0, Math.round((v + d) * 100) / 100)); apply(true); }
+  vol.addEventListener('pointerdown', function (e) {
+    drag = true; try { vol.setPointerCapture(e.pointerId); } catch (x) {}
+    fromY(e.clientY); apply(false); e.preventDefault();
+  });
+  vol.addEventListener('pointermove', function (e) { if (drag) { fromY(e.clientY); apply(false); } });
+  function end() { if (drag) { drag = false; apply(true); } }
+  vol.addEventListener('pointerup', end);
+  vol.addEventListener('pointercancel', end);
+  vol.addEventListener('lostpointercapture', end);
+  vol.addEventListener('wheel', function (e) { e.preventDefault(); step(e.deltaY < 0 ? 0.05 : -0.05); }, { passive: false });
+  vol.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'ArrowUp' || k === 'ArrowRight') step(0.05);
+    else if (k === 'ArrowDown' || k === 'ArrowLeft') step(-0.05);
+    else if (k === 'PageUp') step(0.1);
+    else if (k === 'PageDown') step(-0.1);
+    else if (k === 'Home') { v = 0; apply(true); }
+    else if (k === 'End') { v = 1; apply(true); }
+    else return;
+    e.preventDefault();
+  });
+  au.addEventListener('volumechange', function () { if (!drag && Math.abs(au.volume - v) > 0.005) { v = au.volume; paint(); } });
+  apply(false);
 })();
 </script>
 </body>
