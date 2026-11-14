@@ -58,8 +58,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1125.1"
-:: [v1125.1] Task abuse.ch (30 min) spostato a xx:15 e xx:45 (prima xx:00/xx:30): non parte piu' insieme al task biorario (xx:00) e non si sovrappone ai suoi riavvii/ricarichi.
+set "LOCAL_VER=1125.2"
+:: [v1125.2] FIX exit 0xFF task abuse.ch: un commento :: con parentesi chiusa dentro il blocco del ricarico a caldo chiudeva il blocco in anticipo (". non atteso"). Task abuse.ch spostato a xx:15 e xx:45 per non partire insieme al biorario xx:00.
 :: [v1121.0] 1) Dopo ogni riavvio di Unbound il DNS di sistema torna su 127.0.0.1 solo quando Unbound
 ::   risponde davvero (:WAIT_UNBOUND_READY), non dopo 2 secondi: niente piu' blackout DNS durante il
 ::   caricamento delle RPZ. 2) abuse.ch: ricarico a caldo delle sole zone cambiate con
@@ -3290,7 +3290,7 @@ if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
 
 if "!CHANGED!"=="1" (
     :: [RICARICO A CALDO v1121.0] Ricarico solo le zone RPZ abuse.ch cambiate, senza fermare Unbound
-    :: (nessun blackout DNS, cache DNS intatta). Se anche una sola zona fallisce: riavvio completo.
+    :: nessun blackout DNS e cache DNS intatta. Se anche una sola zona fallisce: riavvio completo.
     set "ABU_RELOAD_FAIL=0"
     set "ABU_RELOAD_ZONES="
     if "!ABU_UH_ST!"=="OK" (
