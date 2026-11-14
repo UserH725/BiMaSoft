@@ -58,7 +58,11 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1120.0"
+set "LOCAL_VER=1125.0"
+:: [v1121.0] 1) Dopo ogni riavvio di Unbound il DNS di sistema torna su 127.0.0.1 solo quando Unbound
+::   risponde davvero (:WAIT_UNBOUND_READY), non dopo 2 secondi: niente piu' blackout DNS durante il
+::   caricamento delle RPZ. 2) abuse.ch: ricarico a caldo delle sole zone cambiate con
+::   "unbound-control auth_zone_reload" (:RPZ_HOT_RELOAD), riavvio completo solo come ripiego, esito su Telegram.
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
@@ -762,8 +766,9 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: FLAG --refresh: aggiorna solo HaGeZi + root hints, poi riavvia
 :: Viene eseguito ogni 2 ore dallo scheduler. Salta tutto il resto.
 :: FLAG --refreshabusech: aggiorna solo URLhaus + ThreatFox, poi riavvia
-:: se necessario. Viene eseguito ogni ora dallo scheduler dedicato (v1106.1: era ogni 30 minuti;
-:: ogni riavvio rilegge tutte le RPZ, quindi meno riavvii = meno picchi di CPU/RAM).
+:: se necessario. Viene eseguito ogni 30 minuti dallo scheduler dedicato (REPEAT30M). Dalla v1121.0
+:: le zone cambiate vengono ricaricate a caldo (auth_zone_reload) senza fermare Unbound; il riavvio
+:: completo resta solo come ripiego se il ricarico a caldo fallisce.
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
@@ -1289,6 +1294,9 @@ if "%SKIP_MAINTENANCE%"=="1" (
     taskkill /f /im unbound.exe >nul 2>&1
     net start unbound >nul 2>&1
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    :: [FIX BLACKOUT DNS v1121.0] Aspetto che Unbound abbia finito di caricare le RPZ e risponda,
+    :: PRIMA di rimettere il DNS di sistema su 127.0.0.1.
+    call :WAIT_UNBOUND_READY 180
     :: [FIX] Ripristina il DNS su 127.0.0.1: DNS_FALLBACK_ON era già attiva
     :: dalla FASE 1 e questo percorso di skip non la disattivava mai.
     call :DNS_FALLBACK_OFF
@@ -2205,8 +2213,8 @@ if not exist "%UB_DIR%\unbound-checkconf.exe" goto :CONFIG_ERROR
 "%UB_DIR%\unbound-checkconf.exe" "%UB_DIR%\service.conf" >nul 2>&1
 if %errorLevel% neq 0 goto :CONFIG_ERROR
 
-:: Ripristina 127.0.0.1 prima di avviare Unbound
-call :DNS_FALLBACK_OFF
+:: [FIX BLACKOUT DNS v1121.0] Il DNS di sistema resta sul resolver temporaneo finche' Unbound non risponde:
+:: il ripristino su 127.0.0.1 avviene piu' sotto, dopo :WAIT_UNBOUND_READY.
 net start unbound >nul 2>&1
 :: Verifica reale dello stato del servizio (errorLevel di net start non è affidabile)
 timeout /t 2 >nul
@@ -2214,7 +2222,12 @@ sc query unbound | find "RUNNING" >nul 2>&1
 if %errorLevel% neq 0 goto :START_ERROR
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
+set "F13_ACT=[...in corso...] CONF >> Attendo che Unbound abbia caricato le RPZ prima di ripristinare il DNS."
+call :UPDATE_UI 99
+call :WAIT_UNBOUND_READY 180
+call :DNS_FALLBACK_OFF
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
+if not "!UNBOUND_READY!"=="1" set "F13_RES=[     WARN     ] CONF >> Servizio avviato ma non ancora pronto dopo 180 secondi: DNS ripristinato comunque."
 if not defined ONLY_PH echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
@@ -3145,8 +3158,8 @@ if "!CHANGED!"=="1" (
     :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
     call :DNS_FALLBACK_ON
     net start unbound >nul 2>&1
-    :: Verifica stabilità: attendo 2 secondi affinché Unbound sia pronto ad accettare query
-    ping -n 3 127.0.0.1 >nul
+    :: [FIX BLACKOUT DNS v1121.0] Attendo che Unbound abbia caricato le RPZ e risponda davvero
+    call :WAIT_UNBOUND_READY 180
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
     call :DNS_FALLBACK_OFF
     call :CACHE_LOAD
@@ -3184,6 +3197,9 @@ if not exist "%UB_DIR%" (
 set "ABU_UH_ST=SKIP"
 set "ABU_TF_ST=SKIP"
 set "CHANGED=0"
+set "ABU_RELOAD_ST=NONE"
+set "ABU_RELOAD_ZONES="
+set "ABU_RELOAD_DET="
 
 :: Rotazione backup prima del download, stesso pattern del refresh biorario
 if exist "%URLHAUS%"            call :ROTATE_BAK "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
@@ -3272,19 +3288,50 @@ if not errorlevel 1 (
 if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
 
 if "!CHANGED!"=="1" (
-    call :CACHE_DUMP
-    net stop unbound >nul 2>&1
-    taskkill /f /im unbound.exe >nul 2>&1
-    :: DNS bootstrap attivo: Unbound e' fermo, garantisco risoluzione esterna temporanea
-    call :DNS_FALLBACK_ON
-    net start unbound >nul 2>&1
-    :: Verifica stabilita': attendo 2 secondi affinche' Unbound sia pronto ad accettare query
-    ping -n 3 127.0.0.1 >nul
-    :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound e' attivo
-    call :DNS_FALLBACK_OFF
-    call :CACHE_LOAD
-    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
-    call :LOGSTEP "REFRESH-ABUSECH" "Servizio riavviato dopo refresh abuse.ch"
+    :: [RICARICO A CALDO v1121.0] Ricarico solo le zone RPZ abuse.ch cambiate, senza fermare Unbound
+    :: (nessun blackout DNS, cache DNS intatta). Se anche una sola zona fallisce: riavvio completo.
+    set "ABU_RELOAD_FAIL=0"
+    set "ABU_RELOAD_ZONES="
+    if "!ABU_UH_ST!"=="OK" (
+        call :RPZ_HOT_RELOAD "urlhaus.rpz"
+        if errorlevel 1 (
+            set "ABU_RELOAD_FAIL=1"
+            set "ABU_RELOAD_DET=!RPZ_RELOAD_DET!"
+        ) else (
+            set "ABU_RELOAD_ZONES=URLhaus"
+        )
+    )
+    if "!ABU_RELOAD_FAIL!"=="0" if "!ABU_TF_ST!"=="OK" (
+        call :RPZ_HOT_RELOAD "threatfox.rpz"
+        if errorlevel 1 (
+            set "ABU_RELOAD_FAIL=1"
+            set "ABU_RELOAD_DET=!RPZ_RELOAD_DET!"
+        ) else (
+            if defined ABU_RELOAD_ZONES (
+                set "ABU_RELOAD_ZONES=!ABU_RELOAD_ZONES! e ThreatFox"
+            ) else (
+                set "ABU_RELOAD_ZONES=ThreatFox"
+            )
+        )
+    )
+    if "!ABU_RELOAD_FAIL!"=="0" (
+        set "ABU_RELOAD_ST=HOT"
+        call :LOGSTEP "REFRESH-ABUSECH" "Ricarico a caldo completato: !ABU_RELOAD_ZONES!"
+    ) else (
+        set "ABU_RELOAD_ST=FALLBACK"
+        call :CACHE_DUMP
+        net stop unbound >nul 2>&1
+        taskkill /f /im unbound.exe >nul 2>&1
+        :: DNS bootstrap attivo: Unbound e' fermo, garantisco risoluzione esterna temporanea
+        call :DNS_FALLBACK_ON
+        net start unbound >nul 2>&1
+        :: [FIX BLACKOUT DNS v1121.0] Ripristino il DNS locale solo quando Unbound risponde davvero
+        call :WAIT_UNBOUND_READY 180
+        call :DNS_FALLBACK_OFF
+        call :CACHE_LOAD
+        powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+        call :LOGSTEP "REFRESH-ABUSECH" "Ricarico a caldo fallito: servizio riavviato"
+    )
 ) else (
     call :LOGSTEP "REFRESH-ABUSECH" "Nessun file cambiato, riavvio saltato"
     :: [FIX] Ripristina comunque il DNS su 127.0.0.1:
@@ -3614,6 +3661,8 @@ echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
 :: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+:: [FIX BLACKOUT DNS v1121.0] Attendo che Unbound risponda prima di ripristinare il DNS.
+call :WAIT_UNBOUND_READY 180
 :: [FIX] Ripristina il DNS su 127.0.0.1 anche in caso di errore di configurazione:
 :: DNS_FALLBACK_ON era attiva e questo percorso di emergenza non la disattivava.
 call :DNS_FALLBACK_OFF
@@ -4842,7 +4891,7 @@ if errorlevel 1 (
     call :DNS_FALLBACK_ON
     set "TG_DNS_RESET=1"
 )
-powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $st = '!ABU_UH_ST!/!ABU_TF_ST!'; $stF = '!UB_DIR!\abuse_notify_state.txt'; $lastSt = ''; if (Test-Path -LiteralPath $stF) { try { $lastSt = (Get-Content -LiteralPath $stF -Raw).Trim() } catch {} }; $st | Out-File -LiteralPath $stF -Encoding ascii; if (($st -notmatch 'OK') -and ($st -eq $lastSt)) { exit 0 }; function Fmt { param($n) ([long]$n).ToString('N0', $ic).Replace(',', '.') }; function Get-Cnt { param($p) $n = 0; try { if (Test-Path -LiteralPath $p) { $n = [Linq.Enumerable]::Count([System.IO.File]::ReadLines($p)) } } catch {}; $n }; function Get-KeySet { param($p) $h = [System.Collections.Generic.HashSet[string]]::new(); try { if (Test-Path -LiteralPath $p) { foreach ($l in [System.IO.File]::ReadLines($p)) { $t = $l.Trim(); if ($t.Length -gt 0) { $f1 = $t.Substring(0, 1); if (($f1 -ne ';') -and ($f1 -ne '$') -and ($f1 -ne '@')) { [void]$h.Add($t) } } } } } catch {}; return ,$h }; function Get-Blk { param($name, $emoji, $file, $bak, $stt) $now = Get-Cnt $file; $s = $emoji + ' *' + $name + '*: '; if ($stt -eq 'OK') { $s += '✅ aggiornata' } elseif ($stt -eq 'WARN') { $s += '⚠️ download fallito, ripristinato dal backup' } elseif ($stt -eq 'ERR') { $s += '🔴 non scaricabile, nessun backup' } else { $s += '⏭️ invariata' }; $s += [char]10 + '   Elementi: `' + (Fmt $now) + '`'; if (Test-Path -LiteralPath $bak) { $before = Get-Cnt $bak; $d = $now - $before; if ($d -gt 0) { $dl = '▲ +' + (Fmt $d) } elseif ($d -lt 0) { $dl = '▼ -' + (Fmt ([math]::Abs($d))) } else { $dl = '= invariata' }; $s += ' (prima `' + (Fmt $before) + '`, ' + $dl + ')'; if ($stt -eq 'OK') { $a = Get-KeySet $file; $b = Get-KeySet $bak; $add = [System.Collections.Generic.HashSet[string]]::new($a); $add.ExceptWith($b); $rem = [System.Collections.Generic.HashSet[string]]::new($b); $rem.ExceptWith($a); $s += [char]10 + '   Aggiunti: `' + (Fmt $add.Count) + '` - Rimossi: `' + (Fmt $rem.Count) + '`' } }; $s }; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; $msg = '🦠 *UNBOUND BUNKER CERBERO - EVENTO ABUSE.CH*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '📅 Data: ' + (Get-Date).ToString('dd.MM.yyyy - HH:mm') + [char]10 + '=============================================' + [char]10 + (Get-Blk 'abuse.ch URLhaus' '🦠' '!URLHAUS!' '!URLHAUS_BAK!' '!ABU_UH_ST!') + [char]10 + (Get-Blk 'abuse.ch ThreatFox' '🕸️' '!THREATFOX!' '!THREATFOX_BAK!' '!ABU_TF_ST!'); $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $ok = $false; $lastErr = ''; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $proxyUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { ('[' + (Get-Date) + '] Invio notifica abuse.ch fallito dopo 2 tentativi: ' + $lastErr) | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $st = '!ABU_UH_ST!/!ABU_TF_ST!'; $stF = '!UB_DIR!\abuse_notify_state.txt'; $lastSt = ''; if (Test-Path -LiteralPath $stF) { try { $lastSt = (Get-Content -LiteralPath $stF -Raw).Trim() } catch {} }; $st | Out-File -LiteralPath $stF -Encoding ascii; if (($st -notmatch 'OK') -and ($st -eq $lastSt)) { exit 0 }; function Fmt { param($n) ([long]$n).ToString('N0', $ic).Replace(',', '.') }; function Get-Cnt { param($p) $n = 0; try { if (Test-Path -LiteralPath $p) { $n = [Linq.Enumerable]::Count([System.IO.File]::ReadLines($p)) } } catch {}; $n }; function Get-KeySet { param($p) $h = [System.Collections.Generic.HashSet[string]]::new(); try { if (Test-Path -LiteralPath $p) { foreach ($l in [System.IO.File]::ReadLines($p)) { $t = $l.Trim(); if ($t.Length -gt 0) { $f1 = $t.Substring(0, 1); if (($f1 -ne ';') -and ($f1 -ne '$') -and ($f1 -ne '@')) { [void]$h.Add($t) } } } } } catch {}; return ,$h }; function Get-Blk { param($name, $emoji, $file, $bak, $stt) $now = Get-Cnt $file; $s = $emoji + ' *' + $name + '*: '; if ($stt -eq 'OK') { $s += '✅ aggiornata' } elseif ($stt -eq 'WARN') { $s += '⚠️ download fallito, ripristinato dal backup' } elseif ($stt -eq 'ERR') { $s += '🔴 non scaricabile, nessun backup' } else { $s += '⏭️ invariata' }; $s += [char]10 + '   Elementi: `' + (Fmt $now) + '`'; if (Test-Path -LiteralPath $bak) { $before = Get-Cnt $bak; $d = $now - $before; if ($d -gt 0) { $dl = '▲ +' + (Fmt $d) } elseif ($d -lt 0) { $dl = '▼ -' + (Fmt ([math]::Abs($d))) } else { $dl = '= invariata' }; $s += ' (prima `' + (Fmt $before) + '`, ' + $dl + ')'; if ($stt -eq 'OK') { $a = Get-KeySet $file; $b = Get-KeySet $bak; $add = [System.Collections.Generic.HashSet[string]]::new($a); $add.ExceptWith($b); $rem = [System.Collections.Generic.HashSet[string]]::new($b); $rem.ExceptWith($a); $s += [char]10 + '   Aggiunti: `' + (Fmt $add.Count) + '` - Rimossi: `' + (Fmt $rem.Count) + '`' } }; $s }; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; $rl = '!ABU_RELOAD_ST!'; $rz = '!ABU_RELOAD_ZONES!'; $rd = '!ABU_RELOAD_DET!'; $rline = ''; if ($rl -eq 'HOT') { $rline = [char]10 + '🔥 *Ricarico a caldo:* ✅ ' + $rz + ' ricaricata senza riavviare Unbound' } elseif ($rl -eq 'FALLBACK') { $rline = [char]10 + '⚠️ *Ricarico a caldo fallito* (' + $rd + '): eseguito riavvio completo di Unbound' }; $msg = '🦠 *UNBOUND BUNKER CERBERO - EVENTO ABUSE.CH*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '📅 Data: ' + (Get-Date).ToString('dd.MM.yyyy - HH:mm') + [char]10 + '=============================================' + [char]10 + (Get-Blk 'abuse.ch URLhaus' '🦠' '!URLHAUS!' '!URLHAUS_BAK!' '!ABU_UH_ST!') + [char]10 + (Get-Blk 'abuse.ch ThreatFox' '🕸️' '!THREATFOX!' '!THREATFOX_BAK!' '!ABU_TF_ST!') + $rline; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $ok = $false; $lastErr = ''; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $proxyUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { ('[' + (Get-Date) + '] Invio notifica abuse.ch fallito dopo 2 tentativi: ' + $lastErr) | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
 if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit /b 0
 
@@ -5047,3 +5096,85 @@ if errorlevel 1 (
     call :LOGSTEP "CACHE" "Cache DNS ripristinata dopo il riavvio"
 )
 exit /b 0
+
+
+:: ==================================================================
+:: SUBROUTINE: ATTESA PRONTEZZA DI UNBOUND DOPO UN (RI)AVVIO
+:: Uso: call :WAIT_UNBOUND_READY [secondi_massimi]   (predefinito 180)
+:: Unbound carica tutte le RPZ prima di rispondere: "net start" ritorna
+:: ben prima. Qui si attende che (1) il canale di controllo risponda e
+:: (2) il resolver risponda davvero su 127.0.0.1:5300 (query a "localhost.",
+:: risolto in locale, quindi non dipende da Internet). Dopo il tempo
+:: massimo ritorna comunque: UNBOUND_READY=1 se pronto, 0 altrimenti.
+:: ==================================================================
+:WAIT_UNBOUND_READY
+set "WUR_MAX=%~1"
+if "!WUR_MAX!"=="" set "WUR_MAX=180"
+set "UNBOUND_READY=0"
+set "WUR_T=0"
+set "WUR_EXE=!UB_DIR!\unbound-control.exe"
+if "!UB_DIR!"=="" set "WUR_EXE=C:\Program Files\Unbound\unbound-control.exe"
+:WUR_LOOP
+sc query unbound | find "RUNNING" >nul 2>&1
+if errorlevel 1 goto :WUR_NEXT
+if exist "!WUR_EXE!" (
+    "!WUR_EXE!" status >nul 2>&1
+    if errorlevel 1 goto :WUR_NEXT
+)
+set "WUR_N=0"
+for /f %%C in ('nslookup -port=5300 -timeout=2 -retry=1 localhost. 127.0.0.1 2^>nul ^| find /c "127.0.0.1"') do set "WUR_N=%%C"
+if !WUR_N! GEQ 2 (
+    set "UNBOUND_READY=1"
+    goto :WUR_DONE
+)
+:WUR_NEXT
+set /a WUR_T+=3
+if !WUR_T! GEQ !WUR_MAX! goto :WUR_DONE
+ping -n 4 127.0.0.1 >nul
+goto :WUR_LOOP
+:WUR_DONE
+if "!UNBOUND_READY!"=="1" (
+    call :LOGSTEP "CORE" "Unbound pronto dopo circa !WUR_T! secondi"
+) else (
+    call :LOGSTEP "CORE" "[     WARN     ] Unbound non pronto dopo !WUR_MAX! secondi"
+)
+exit /b 0
+
+:: ==================================================================
+:: SUBROUTINE: RICARICO A CALDO DI UNA ZONA RPZ (senza riavviare Unbound)
+:: Uso: call :RPZ_HOT_RELOAD "<nome-zona>"   (es. urlhaus.rpz)
+:: Errorlevel 0 se Unbound risponde "ok", 1 altrimenti. In caso di errore
+:: RPZ_RELOAD_DET contiene un motivo breve e sicuro per Telegram; la
+:: risposta grezza di unbound-control va in abusech_reload_error.log.
+:: ==================================================================
+:RPZ_HOT_RELOAD
+set "RHR_ZONE=%~1"
+set "RPZ_RELOAD_DET="
+set "RHR_EXE=!UB_DIR!\unbound-control.exe"
+if "!UB_DIR!"=="" set "RHR_EXE=C:\Program Files\Unbound\unbound-control.exe"
+if not exist "!RHR_EXE!" (
+    set "RPZ_RELOAD_DET=unbound-control non trovato"
+    exit /b 1
+)
+sc query unbound | find "RUNNING" >nul 2>&1
+if errorlevel 1 (
+    set "RPZ_RELOAD_DET=servizio Unbound non in esecuzione"
+    exit /b 1
+)
+set "RHR_OUT=%TEMP%\ub_rhr_!RANDOM!!RANDOM!.txt"
+"!RHR_EXE!" auth_zone_reload !RHR_ZONE! >"!RHR_OUT!" 2>&1
+set "RHR_RC=!errorlevel!"
+set "RHR_LINE=nessuna risposta"
+if exist "!RHR_OUT!" set /p RHR_LINE=<"!RHR_OUT!"
+if exist "!RHR_OUT!" del /f /q "!RHR_OUT!" >nul 2>&1
+if not "!RHR_RC!"=="0" goto :RHR_FAIL
+if /i not "!RHR_LINE:~0,2!"=="ok" goto :RHR_FAIL
+call :LOGSTEP "REFRESH-ABUSECH" "Zona !RHR_ZONE! ricaricata a caldo"
+exit /b 0
+:RHR_FAIL
+set "RPZ_RELOAD_DET=Unbound ha rifiutato il ricarico della zona !RHR_ZONE!"
+if defined UB_DIR (
+    if exist "!UB_DIR!\abusech_reload_error.log" for %%L in ("!UB_DIR!\abusech_reload_error.log") do if %%~zL GTR 102400 del /f /q "%%~L" >nul 2>&1
+    >>"!UB_DIR!\abusech_reload_error.log" echo %date% %time% zona=!RHR_ZONE! rc=!RHR_RC! risposta=!RHR_LINE!
+)
+exit /b 1
