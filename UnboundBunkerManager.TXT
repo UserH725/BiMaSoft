@@ -58,7 +58,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1125.0"
+set "LOCAL_VER=1125.1"
+:: [v1125.1] Task abuse.ch (30 min) spostato a xx:15 e xx:45 (prima xx:00/xx:30): non parte piu' insieme al task biorario (xx:00) e non si sovrappone ai suoi riavvii/ricarichi.
 :: [v1121.0] 1) Dopo ogni riavvio di Unbound il DNS di sistema torna su 127.0.0.1 solo quando Unbound
 ::   risponde davvero (:WAIT_UNBOUND_READY), non dopo 2 secondi: niente piu' blackout DNS durante il
 ::   caricamento delle RPZ. 2) abuse.ch: ricarico a caldo delle sole zone cambiate con
@@ -580,12 +581,12 @@ call :CREATE_TASK_NOBATTERY "%TASK_NAME_2H%" "--refresh" "REPEAT2H" "00:00:00"
 :: URLhaus rigenera il proprio RPZ ogni 5 minuti; ThreatFox con cadenza simile.
 :: Il ciclo biorario resta troppo lento per sfruttare davvero questa freschezza,
 :: quindi le due fonti piu' dinamiche hanno un task dedicato separato, allineato
-:: alle mezz'ore esatte (xx:00, xx:30) grazie a /st 00:00 + /mo 30. Le altre 8
+:: a xx:15 e xx:45 grazie a /st 00:15 + /mo 30 (sfasato di 15 minuti dal biorario xx:00). Le altre 8
 :: liste (HaGeZi/Spamhaus) restano sul ciclo biorario standard: non serve
 :: aggiornarle piu' spesso e un intervallo piu' stretto per tutto lo stack
 :: sprecherebbe banda/CPU senza benefici reali.
 echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (XML, nessun blocco batteria, abuse.ch URLhaus/ThreatFox)...
-call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT30M" "00:00:00"
+call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT30M" "00:15:00"
 
 :: 2C. PULIZIA TASK WATCHDOG DASHBOARD (RIMOSSO: causava race condition con i
 :: riavvii nativi della dashboard - boot, ciclo biorario, task giornaliero -
