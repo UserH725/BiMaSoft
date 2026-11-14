@@ -58,8 +58,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1125.2"
-:: [v1125.2] FIX exit 0xFF task abuse.ch: un commento :: con parentesi chiusa dentro il blocco del ricarico a caldo chiudeva il blocco in anticipo (". non atteso"). Task abuse.ch spostato a xx:15 e xx:45 per non partire insieme al biorario xx:00.
+set "LOCAL_VER=1125.3"
+:: [v1125.3] FIX exit 0xFF task abuse.ch e 2h: commenti :: con parentesi chiusa dentro i blocchi if chiudevano il blocco in anticipo, ". non atteso". Ripuliti tutti i commenti indentati con parentesi. Task abuse.ch spostato a xx:15 e xx:45 per non partire insieme al biorario xx:00.
 :: [v1121.0] 1) Dopo ogni riavvio di Unbound il DNS di sistema torna su 127.0.0.1 solo quando Unbound
 ::   risponde davvero (:WAIT_UNBOUND_READY), non dopo 2 secondi: niente piu' blackout DNS durante il
 ::   caricamento delle RPZ. 2) abuse.ch: ricarico a caldo delle sole zone cambiate con
@@ -340,7 +340,7 @@ if "!UPDATE_NEEDED!"=="1" (
         if exist "!UPDATE_TMP!" if exist "!SHA_TMP!" (
             echo   [..] Verifica integrita' SHA256 in corso...
             
-            :: Estrae l'hash atteso dal file .sha256 (prende la prima stringa di 64 caratteri esadecimali)
+            :: Estrae l'hash atteso dal file .sha256 - prende la prima stringa di 64 caratteri esadecimali
             for /f "tokens=1" %%A in ('type "!SHA_TMP!"') do set "EXPECTED_SHA=%%A"
             
             :: Calcola l'hash locale del file appena scaricato
@@ -1086,7 +1086,7 @@ set /a NET_RETRY_COUNT+=1 >nul
 ping -n 1 8.8.8.8 >nul 2>&1
 if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
 if errorlevel 1 (
-    :: Dopo 3 ping falliti, prova un fallback TCP: alcune reti (hotspot, LAN aziendali)
+    :: Dopo 3 ping falliti, prova un fallback TCP: alcune reti come hotspot e LAN aziendali
     :: filtrano l'ICMP pur avendo la connettivita' attiva, il che bloccherebbe il loop qui in eterno.
     if !NET_RETRY_COUNT! GEQ 3 (
         powershell -NoProfile -Command "exit [int](-not (Test-NetConnection -ComputerName 1.1.1.1 -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded)" >nul 2>&1
@@ -1608,12 +1608,12 @@ if "!TIF_DL_ERROR!"=="1" (
     )
 
     rem Verifica anti-troncamento: i record CNAME del file unificato devono essere almeno
-    rem quanti dichiarati dall intestazione (somma delle parti). Se non torna il file
+    rem quanti dichiarati dall intestazione, somma delle parti. Se non torna il file
     rem viene azzerato e cade nel ramo scartato qui sotto: la versione attuale resta.
     call :RPZ_ENTRIES_CHECK "%HZ_TIF%.tmp"
     if errorlevel 1 type nul > "%HZ_TIF%.tmp"
 
-    :: Controllo sul file totale assemblato (minimo 10KB)
+    :: Controllo sul file totale assemblato, minimo 10KB
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
@@ -2536,8 +2536,8 @@ if not "!SVC_VER!"=="N/A" (
         set "SVC_TMP=%UB_DIR%\service.conf.tmp"
         powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; (New-Object System.Net.WebClient).DownloadFile('!CLOUD_SVC_URL!', '!SVC_TMP!') } catch { exit 1 }" >nul 2>&1
         
-        :: [FIX SHA256] Verifica d'integrita' di service.conf anche nel refresh (come all'avvio).
-        :: Se lo .sha256 manca o l'hash non coincide, il file scaricato viene scartato (fail-closed).
+        :: [FIX SHA256] Verifica d'integrita' di service.conf anche nel refresh, come all'avvio.
+        :: Se lo .sha256 manca o l'hash non coincide, il file scaricato viene scartato, fail-closed.
         set "CLOUD_SVC_SHA_URL=https://raw.githubusercontent.com/UserH725/BiMaSoft/main/service.conf.sha256"
         set "SVC_SHA_TMP_R=%UB_DIR%\service.conf.sha256.tmp"
         if exist "!SVC_SHA_TMP_R!" del /f /q "!SVC_SHA_TMP_R!" >nul 2>&1
@@ -4452,7 +4452,7 @@ if !TOTAL_RAM_GB! equ 0 set "TOTAL_RAM_GB=4"
 
 :: 3. Assegnazione dei Profili in base alle soglie di RAM reali (4, 6, 8, 12, 16, 32)
 if !TOTAL_RAM_GB! leq 5 (
-    :: --- PROFILO MICRO (<= 4GB RAM) ---
+    :: --- PROFILO MICRO - fino a 4GB RAM ---
     set "PROFILE_NAME=MICRO"
     set "MSG_CACHE=8m"
     set "RRSET_CACHE=16m"
@@ -4472,7 +4472,7 @@ if !TOTAL_RAM_GB! leq 5 (
     :: [v1106.2] Tetto ai thread di Unbound sul profilo MICRO
     if !THREADS! gtr 2 set "THREADS=2"
 ) else if !TOTAL_RAM_GB! leq 9 (
-    :: --- PROFILO LIGHT (6GB - 8GB RAM) ---
+    :: --- PROFILO LIGHT - da 6GB a 8GB RAM ---
     set "PROFILE_NAME=LIGHT"
     set "MSG_CACHE=32m"
     set "RRSET_CACHE=64m"
@@ -4492,7 +4492,7 @@ if !TOTAL_RAM_GB! leq 5 (
     :: [v1106.2] Tetto ai thread di Unbound sul profilo LIGHT
     if !THREADS! gtr 2 set "THREADS=2"
 ) else if !TOTAL_RAM_GB! leq 24 (
-    :: --- PROFILO STANDARD (12GB - 16GB RAM) ---
+    :: --- PROFILO STANDARD - da 12GB a 16GB RAM ---
     set "PROFILE_NAME=STANDARD"
     :: [v1106.1] Profilo alleggerito per reattivita' del PC, uso singolo utente con AdGuard davanti
     set "MSG_CACHE=64m"
@@ -4513,7 +4513,7 @@ if !TOTAL_RAM_GB! leq 5 (
     :: [v1106.1] Tetto ai thread di Unbound sul profilo STANDARD
     if !THREADS! gtr 4 set "THREADS=4"
 ) else (
-    :: --- PROFILO ULTRA (>= 32GB RAM) ---
+    :: --- PROFILO ULTRA - da 32GB RAM ---
     set "PROFILE_NAME=ULTRA"
     :: [v1106.2] Profilo alleggerito per reattivita' del PC, uso singolo utente con AdGuard davanti
     set "MSG_CACHE=128m"
