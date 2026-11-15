@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1126.2"
+set "LOCAL_VER=1126.5"
+:: [v1126.5] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
 :: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
@@ -1543,6 +1544,16 @@ call :LOGSTEP "NET" "!F10_RES!"
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10B" goto :SKIP_F10B
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
+:: [v1126.5] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
+:: e piu recente di TIF_BOOT_MAX_AGE_H ore si salta il download, se ne occupa il task biorario
+:: della zona TIF con ricarico a caldo. Non vale per --fase F10B lanciata a mano e se il file manca.
+set "TIF_BOOT_MAX_AGE_H=24"
+set "TIF_AGE_H=9999"
+if not defined ONLY_PH if exist "%HZ_TIF%" for /f %%H in ('powershell -NoProfile -Command "[int][math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%HZ_TIF%').LastWriteTime).TotalHours)" 2^>nul') do set "TIF_AGE_H=%%H"
+if !TIF_AGE_H! LSS !TIF_BOOT_MAX_AGE_H! (
+    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: file aggiornato !TIF_AGE_H! ore fa, salto il download all avvio e lo lascia al task biorario della zona"
+    goto :TIF_BOOT_DONE
+)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -1662,6 +1673,7 @@ if "!TIF_DL_ERROR!"=="1" (
     )
 )
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+:TIF_BOOT_DONE
 if exist "%HZ_TIF%" (
     call :GET_RPZ_LINES "%HZ_TIF%" RPZ_L_CNT
     set "F10B_RES=!F10B_RES! [!RPZ_L_CNT! elementi]"
@@ -2827,8 +2839,7 @@ if exist "%HZ_SPAMTLDS%.tmp" del /f /q "%HZ_SPAMTLDS%.tmp" >nul 2>&1
 
 if "!CHANGED!"=="1" (
     call :CACHE_DUMP
-    net stop unbound >nul 2>&1
-    taskkill /f /im unbound.exe >nul 2>&1
+    call :UB_STOP_IF_RUNNING
     :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
     call :DNS_FALLBACK_ON
     net start unbound >nul 2>&1
@@ -2994,8 +3005,7 @@ if "!CHANGED!"=="1" (
     ) else (
         set "ABU_RELOAD_ST=FALLBACK"
         call :CACHE_DUMP
-        net stop unbound >nul 2>&1
-        taskkill /f /im unbound.exe >nul 2>&1
+        call :UB_STOP_IF_RUNNING
         :: DNS bootstrap attivo: Unbound e' fermo, garantisco risoluzione esterna temporanea
         call :DNS_FALLBACK_ON
         net start unbound >nul 2>&1
@@ -3564,8 +3574,7 @@ if "!ZN_RELOAD_FAIL!"=="0" (
 )
 set "ZN_RELOAD_ST=FALLBACK"
 call :CACHE_DUMP
-net stop unbound >nul 2>&1
-taskkill /f /im unbound.exe >nul 2>&1
+call :UB_STOP_IF_RUNNING
 call :DNS_FALLBACK_ON
 net start unbound >nul 2>&1
 call :WAIT_UNBOUND_READY 180
@@ -4019,7 +4028,7 @@ if not "!DNS_RESTORE_PENDING!"=="1" goto :DRD_NOW
 set "DNS_RESTORE_PENDING=0"
 call :WAIT_UNBOUND_READY 3
 if "!UNBOUND_READY!"=="1" goto :DRD_NOW
-echo   [i] Unbound sta ancora caricando le RPZ: il DNS verra' ripristinato in automatico e comparira' un avviso a video.
+echo   [i] Unbound sta ancora caricando le RPZ: il DNS verra' ripristinato in automatico e arrivera' una notifica Telegram.
 powershell -NoProfile -Command "Start-Process -FilePath cmd.exe -ArgumentList ('/c '+[char]34+[char]34+'!SELF_BAT!'+[char]34+' --dnswatch'+[char]34) -WindowStyle Hidden" >nul 2>&1
 if errorlevel 1 goto :DRD_BLOCK
 exit /b 0
@@ -4033,23 +4042,27 @@ exit /b 0
 :: ==================================================================
 :: WATCHER NASCOSTO --dnswatch [v1126.2]
 :: Aspetta fino a 600 secondi che Unbound risponda, rimette il DNS su
-:: 127.0.0.1 / ::1 e mostra un avviso a video. Esito positivo: solo OK.
-:: Unbound muto: il DNS viene comunque ripristinato e l avviso chiede se
-:: rilanciare il Manager (Si = rilancia, No = lascia stare).
+:: 127.0.0.1 / ::1 e invia una notifica Telegram con l esito: Unbound risponde
+:: oppure non ha risposto entro 10 minuti (DNS ripristinato comunque).
+:: Nessun avviso a video in nessuno dei due casi [v1126.5].
 :: ==================================================================
 :DNS_WATCH_ONLY
 title UNBOUND BUNKER - ATTESA UNBOUND
 call :WAIT_UNBOUND_READY 600
 call :DNS_FALLBACK_OFF
-if "!UNBOUND_READY!"=="1" goto :DW_OK
-powershell -NoProfile -Command "$e=[char]232; $r=(New-Object -ComObject WScript.Shell).Popup('ATTENZIONE: Unbound non ha risposto entro 10 minuti dall''avvio. Il DNS del PC '+$e+' stato rimesso su 127.0.0.1 ma la protezione potrebbe non essere attiva.'+[char]13+[char]10+[char]13+[char]10+'Vuoi rilanciare ora Unbound Bunker Manager?', 0, 'Unbound Bunker - ATTENZIONE', 4116); exit [int]$r" >nul 2>&1
-set "DW_RC=!errorlevel!"
-if "!DW_RC!"=="6" start "" "!SELF_BAT!"
+set "DW_SVC=servizio fermo"
+sc query unbound | find "RUNNING" >nul 2>&1
+if not errorlevel 1 set "DW_SVC=servizio attivo ma nessuna risposta alla query di prova"
+set "TG_LOG=%UB_DIR%\telegram_error.log"
+set "TG_DNS_RESET=0"
+powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('script.google.com') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    call :DNS_FALLBACK_ON
+    set "TG_DNS_RESET=1"
+)
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $e = [char]232; $hostSafe = $env:COMPUTERNAME -replace '[^A-Za-z0-9-]', '-'; if ('!UNBOUND_READY!' -eq '1') { $head = '✅ *UNBOUND BUNKER CERBERO - UNBOUND RISPONDE*'; $txt = 'Unbound ora risponde, dopo circa !WUR_T! secondi dall''avvio del controllo.' + [char]10 + 'Il DNS del PC ' + $e + ' stato ripristinato su 127.0.0.1. Tutto a posto.' } else { $head = '⚠️ *UNBOUND BUNKER CERBERO - UNBOUND NON RISPONDE*'; $txt = 'Unbound non ha risposto entro 10 minuti dall''avvio (!DW_SVC!).' + [char]10 + 'Il DNS del PC ' + $e + ' stato rimesso su 127.0.0.1: la protezione potrebbe non essere attiva e la risoluzione DNS potrebbe non funzionare.' }; $msg = $head + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '📅 Data: ' + (Get-Date).ToString('dd.MM.yyyy - HH:mm') + [char]10 + '=============================================' + [char]10 + $txt; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $ok = $false; $lastErr = ''; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $proxyUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { ('[' + (Get-Date) + '] Invio notifica esito attesa Unbound fallito: ' + $lastErr) | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
 exit
-:DW_OK
-powershell -NoProfile -Command "$e=[char]232; $null=(New-Object -ComObject WScript.Shell).Popup('Unbound Bunker: Unbound ora risponde e il DNS del PC '+$e+' stato ripristinato su 127.0.0.1. Tutto a posto, puoi lavorare normalmente.', 0, 'Unbound Bunker - OK', 4160)" >nul 2>&1
-exit
-
 :RESOLVE_HOST
 set "%~2="
 for /f "tokens=*" %%a in ('powershell -Command "(Resolve-DnsName -Name %~1 -Server 1.1.1.1 -ErrorAction SilentlyContinue | Where-Object {$_.Type -eq 'A'}).IPAddress | Select-Object -First 1"') do set "%~2=%%a"
@@ -5414,7 +5427,7 @@ exit /b 0
 :: Uso: call :WAIT_UNBOUND_READY [secondi_massimi]   (predefinito 180)
 :: Unbound carica tutte le RPZ prima di rispondere: "net start" ritorna
 :: ben prima. Qui si attende che (1) il canale di controllo risponda e
-:: (2) il resolver risponda davvero su 127.0.0.1:5300 (query a "localhost.",
+:: (2) il resolver risponda davvero su 127.0.0.1:5300 (query TCP con nslookup -vc, poi UDP diretta, a "localhost.",
 :: risolto in locale, quindi non dipende da Internet). Dopo il tempo
 :: massimo ritorna comunque: UNBOUND_READY=1 se pronto, 0 altrimenti.
 :: ==================================================================
@@ -5433,8 +5446,15 @@ if exist "!WUR_EXE!" (
     if errorlevel 1 goto :WUR_NEXT
 )
 set "WUR_N=0"
-for /f %%C in ('nslookup -port=5300 -timeout=2 -retry=1 localhost. 127.0.0.1 2^>nul ^| find /c "127.0.0.1"') do set "WUR_N=%%C"
+:: [v1126.5] nslookup in UDP puo non ricevere risposta anche con Unbound sano: prima prova TCP (-vc),
+:: poi una query UDP diretta a localhost. su 127.0.0.1:5300 con un socket, senza nslookup.
+for /f %%C in ('nslookup -vc -port=5300 -timeout=2 -retry=1 localhost. 127.0.0.1 2^>nul ^| find /c "127.0.0.1"') do set "WUR_N=%%C"
 if !WUR_N! GEQ 2 (
+    set "UNBOUND_READY=1"
+    goto :WUR_DONE
+)
+powershell -NoProfile -Command "$u=New-Object Net.Sockets.UdpClient; $u.Client.ReceiveTimeout=2000; $q=[byte[]](0x12,0x34,0x01,0x00,0x00,0x01,0,0,0,0,0,0,9,0x6c,0x6f,0x63,0x61,0x6c,0x68,0x6f,0x73,0x74,0,0,1,0,1); $u.Connect('127.0.0.1',5300); [void]$u.Send($q,$q.Length); $ep=New-Object Net.IPEndPoint([Net.IPAddress]::Any,0); try { [void]$u.Receive([ref]$ep); exit 0 } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 (
     set "UNBOUND_READY=1"
     goto :WUR_DONE
 )
@@ -5449,6 +5469,26 @@ if "!UNBOUND_READY!"=="1" (
 ) else (
     call :LOGSTEP "CORE" "[     WARN     ] Unbound non pronto dopo !WUR_MAX! secondi"
 )
+exit /b 0
+
+:: ==================================================================
+:: SUBROUTINE: STOP DI UNBOUND SOLO SE IL SERVIZIO E RUNNING
+:: Usata dal ripiego con riavvio. Se il servizio e fermo o in avvio (per
+:: esempio un altro task lo sta gia riavviando) non si fa net stop e kill,
+:: per non interrompere il caricamento in corso: il chiamante fa net start
+:: e attende la prontezza. Un processo rimasto appeso con servizio STOPPED
+:: viene comunque terminato.
+:: ==================================================================
+:UB_STOP_IF_RUNNING
+sc query unbound | find "RUNNING" >nul 2>&1
+if errorlevel 1 goto :USIR_NOTRUN
+net stop unbound >nul 2>&1
+taskkill /f /im unbound.exe >nul 2>&1
+exit /b 0
+:USIR_NOTRUN
+call :LOGSTEP "CORE" "Unbound non RUNNING: salto stop e kill, procedo con l avvio"
+sc query unbound | find "STOPPED" >nul 2>&1
+if not errorlevel 1 taskkill /f /im unbound.exe >nul 2>&1
 exit /b 0
 
 :: ==================================================================
@@ -5468,10 +5508,17 @@ if not exist "!RHR_EXE!" (
     exit /b 1
 )
 sc query unbound | find "RUNNING" >nul 2>&1
-if errorlevel 1 (
-    set "RPZ_RELOAD_DET=servizio Unbound non in esecuzione"
-    exit /b 1
-)
+if errorlevel 1 goto :RHR_WAIT
+"!RHR_EXE!" status >nul 2>&1
+if errorlevel 1 goto :RHR_WAIT
+goto :RHR_GO
+:RHR_WAIT
+call :LOGSTEP "REFRESH-RPZ" "Unbound non ancora pronto, attendo fino a 45 secondi prima del ricarico a caldo di !RHR_ZONE!"
+call :WAIT_UNBOUND_READY 45
+if "!UNBOUND_READY!"=="1" goto :RHR_GO
+set "RPZ_RELOAD_DET=servizio Unbound non in esecuzione"
+exit /b 1
+:RHR_GO
 set "RHR_OUT=%TEMP%\ub_rhr_!RANDOM!!RANDOM!.txt"
 "!RHR_EXE!" auth_zone_reload !RHR_ZONE! >"!RHR_OUT!" 2>&1
 set "RHR_RC=!errorlevel!"
