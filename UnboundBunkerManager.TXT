@@ -38,6 +38,7 @@ if "%~1"=="--scheduled" goto :FONT_OK
 if "%~1"=="--refresh" goto :FONT_OK
 if "%~1"=="--dailyreport" goto :FONT_OK
 if "%~1"=="--refreshabusech" goto :FONT_OK
+if "%~1"=="--refreshzone" goto :FONT_OK
 if "%~1"=="--fase" goto :FONT_OK
 set "FLAG_FILE=%TEMP%\unbound_relaunched.flag"
 if exist "%FLAG_FILE%" (
@@ -58,7 +59,9 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1125.3"
+set "LOCAL_VER=1126.1"
+:: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
+:: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
 :: [v1125.3] FIX exit 0xFF task abuse.ch e 2h: commenti :: con parentesi chiusa dentro i blocchi if chiudevano il blocco in anticipo, ". non atteso". Ripuliti tutti i commenti indentati con parentesi. Task abuse.ch spostato a xx:15 e xx:45 per non partire insieme al biorario xx:00.
 :: [v1121.0] 1) Dopo ogni riavvio di Unbound il DNS di sistema torna su 127.0.0.1 solo quando Unbound
 ::   risponde davvero (:WAIT_UNBOUND_READY), non dopo 2 secondi: niente piu' blackout DNS durante il
@@ -143,6 +146,7 @@ set "THREATFOX_URL=https://threatfox-api.abuse.ch/v2/files/exports/990d6b135b1c0
 :: --- SALTI AI TASK IN BACKGROUND ---
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
+if "%~1"=="--refreshzone" goto :REFRESH_ZONE_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
 if "%~1"=="--fase" goto :FASE_SINGOLA
 
@@ -588,6 +592,16 @@ call :CREATE_TASK_NOBATTERY "%TASK_NAME_2H%" "--refresh" "REPEAT2H" "00:00:00"
 echo [+] Creazione/aggiornamento del task pianificato ogni 30 minuti (XML, nessun blocco batteria, abuse.ch URLhaus/ThreatFox)...
 call :CREATE_TASK_NOBATTERY "%TASK_NAME_ABUSECH%" "--refreshabusech" "REPEAT30M" "00:15:00"
 
+:: 2D. TASK PER ZONA RPZ, UNO PER ZONA, OGNI 2 ORE, SFALSATI DI 5 MINUTI
+:: Orari: xx:05 Pro Plus, xx:10 TIF-IPS, xx:20 Hoster, xx:25 Spamhaus DROP v4 e v6, xx:30 TIF.
+:: Gli slot xx:15 e xx:45 restano liberi per il task abuse.ch. Le zone DynDNS e SpamTLDs sono disattivate.
+echo [+] Creazione/aggiornamento dei task pianificati per zona RPZ ogni 2 ore, sfalsati di 5 minuti...
+call :CREATE_TASK_NOBATTERY "Unbound_Bunker_Zone_ProPlus" "--refreshzone proplus" "REPEAT2H" "00:05:00"
+call :CREATE_TASK_NOBATTERY "Unbound_Bunker_Zone_TifIps" "--refreshzone tifips" "REPEAT2H" "00:10:00"
+call :CREATE_TASK_NOBATTERY "Unbound_Bunker_Zone_Hoster" "--refreshzone hoster" "REPEAT2H" "00:20:00"
+call :CREATE_TASK_NOBATTERY "Unbound_Bunker_Zone_Drop" "--refreshzone drop" "REPEAT2H" "00:25:00"
+call :CREATE_TASK_NOBATTERY "Unbound_Bunker_Zone_Tif" "--refreshzone tif" "REPEAT2H" "00:30:00"
+
 :: 2C. PULIZIA TASK WATCHDOG DASHBOARD (RIMOSSO: causava race condition con i
 :: riavvii nativi della dashboard - boot, ciclo biorario, task giornaliero -
 :: che gia' fanno Stop-Process + start. Il check TCP ogni 5 minuti poteva
@@ -773,6 +787,7 @@ set /a "NOW_MINS=NOW_H*60+NOW_M"
 :: ==================================================================
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
 if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
+if "%~1"=="--refreshzone" goto :REFRESH_ZONE_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
 
 set "SKIP_MAINTENANCE=0"
@@ -1297,10 +1312,14 @@ if "%SKIP_MAINTENANCE%"=="1" (
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     :: [FIX BLACKOUT DNS v1121.0] Aspetto che Unbound abbia finito di caricare le RPZ e risponda,
     :: PRIMA di rimettere il DNS di sistema su 127.0.0.1.
-    call :WAIT_UNBOUND_READY 180
-    :: [FIX] Ripristina il DNS su 127.0.0.1: DNS_FALLBACK_ON era già attiva
-    :: dalla FASE 1 e questo percorso di skip non la disattivava mai.
-    call :DNS_FALLBACK_OFF
+    :: [v1126.1] Controllo rapido: se Unbound sta ancora caricando il ripristino DNS slitta a fine boot.
+    set "DNS_RESTORE_PENDING=0"
+    set "WUR_FAST=6"
+    if defined ONLY_PH set "WUR_FAST=180"
+    call :WAIT_UNBOUND_READY !WUR_FAST!
+    if "!UNBOUND_READY!"=="1" call :DNS_FALLBACK_OFF
+    if not "!UNBOUND_READY!"=="1" if defined ONLY_PH call :DNS_FALLBACK_OFF
+    if not "!UNBOUND_READY!"=="1" if not defined ONLY_PH set "DNS_RESTORE_PENDING=1"
     call :UPDATE_UI 100
     goto :FINALIZZAZIONE
 )
@@ -2225,10 +2244,17 @@ if %errorLevel% neq 0 goto :START_ERROR
 powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
 set "F13_ACT=[...in corso...] CONF >> Attendo che Unbound abbia caricato le RPZ prima di ripristinare il DNS."
 call :UPDATE_UI 99
-call :WAIT_UNBOUND_READY 180
-call :DNS_FALLBACK_OFF
+:: [v1126.1] Nel boot con UI non si blocca: controllo rapido, poi il ripristino DNS viene rimandato a fine boot. Con ONLY_PH resta l'attesa completa.
+set "DNS_RESTORE_PENDING=0"
+set "WUR_FAST=6"
+if defined ONLY_PH set "WUR_FAST=180"
+call :WAIT_UNBOUND_READY !WUR_FAST!
+if "!UNBOUND_READY!"=="1" call :DNS_FALLBACK_OFF
+if not "!UNBOUND_READY!"=="1" if defined ONLY_PH call :DNS_FALLBACK_OFF
+if not "!UNBOUND_READY!"=="1" if not defined ONLY_PH set "DNS_RESTORE_PENDING=1"
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
-if not "!UNBOUND_READY!"=="1" set "F13_RES=[     WARN     ] CONF >> Servizio avviato ma non ancora pronto dopo 180 secondi: DNS ripristinato comunque."
+if "!DNS_RESTORE_PENDING!"=="1" set "F13_RES=[      OK      ] CONF >> Servizio avviato: Unbound sta caricando le RPZ, DNS ripristinato in automatico a fine boot."
+if not "!UNBOUND_READY!"=="1" if defined ONLY_PH set "F13_RES=[     WARN     ] CONF >> Servizio avviato ma non ancora pronto dopo 180 secondi: DNS ripristinato comunque."
 if not defined ONLY_PH echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
 
@@ -2582,22 +2608,14 @@ if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" 
 if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
 if exist "%UB_DIR%\root.zone"   call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
 if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
-if exist "%HZ_PRO_PLUS%"        call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
-if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
-if exist "%HZ_TIF%"             call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
-if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
-if exist "%HZ_TIF_IPS%"         call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
-if exist "%HZ_TIF_IPS%"         copy /y "%HZ_TIF_IPS%"         "%HZ_TIF_IPS_BAK%"   >nul 2>&1
-if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
-if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
-if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
-if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
 if exist "%HZ_DYNDNS%"          call :ROTATE_BAK "%HZ_DYNDNS_BAK%" "%HZ_DYNDNS_BAK2%" "%HZ_DYNDNS_BAK3%"
 if exist "%HZ_DYNDNS%"          copy /y "%HZ_DYNDNS%"          "%HZ_DYNDNS_BAK%"    >nul 2>&1
-if exist "%HZ_HOSTER%"          call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
-if exist "%HZ_HOSTER%"          copy /y "%HZ_HOSTER%"          "%HZ_HOSTER_BAK%"    >nul 2>&1
 if exist "%HZ_SPAMTLDS%"        call :ROTATE_BAK "%HZ_SPAMTLDS_BAK%" "%HZ_SPAMTLDS_BAK2%" "%HZ_SPAMTLDS_BAK3%"
 if exist "%HZ_SPAMTLDS%"        copy /y "%HZ_SPAMTLDS%"        "%HZ_SPAMTLDS_BAK%"  >nul 2>&1
+:: [NOTA v1126.0] Le zone HaGeZi Pro Plus, TIF, TIF-IPS, Hoster e Spamhaus DROP v4 e v6
+:: non vengono piu scaricate qui: hanno un task dedicato ciascuna, ogni 2 ore sfalsate
+:: di 5 minuti, con ricarico a caldo e notifica Telegram propria: vedi :REFRESH_ZONE_ONLY.
+:: Questo ciclo biorario resta per report, NTP, self-update, service.conf, named.cache e root.zone.
 :: [NOTA] URLhaus/ThreatFox non hanno piu' rotazione backup qui: la gestisce
 :: il task dedicato ogni 30 minuti (:REFRESH_ABUSECH_ONLY).
 
@@ -2708,311 +2726,6 @@ if !RZ_NEEDS_DL! EQU 1 (
     if exist "%RZ_TMP_R%" del /f /q "%RZ_TMP_R%" >nul 2>&1
 )
 
-:: HaGeZi Pro Plus (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
-call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
-if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS%.tmp" >nul 2>&1
-set "HZR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
-if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
-    for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
-        set "SKIP_HZ=0"
-        if exist "%HZ_PRO_PLUS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
-            )
-        )
-        if "!SKIP_HZ!"=="0" (
-            move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro Plus- RPZ aggiornato: !DT_HZ!!HZR_TRYNOTE!"
-        ) else (
-            del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
-    )
-) else (
-    if exist "%HZ_PRO_PLUS_BAK%" (
-        copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
-        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
-
-:: HaGeZi TIF (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
-if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
-set "TIF_PARTS=0"
-set "TIF_TRYNOTE="
-set "TIF_DL_ERROR=0"
-
-:TIF_REFRESH_LOOP
-set /a TIF_PARTS+=1
-set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
-set "TIF_PART_URL_JS=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-!TIF_PARTS!.txt"
-set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
-set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
-
-call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
-set "CURL_ERR=!errorlevel!"
-set "TIF_PART_NEW=0"
-if exist "!TIF_PART_TMP!" set "TIF_PART_NEW=1"
-
-if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
-
-if !CURL_ERR! NEQ 0 (
-    if "!DL_NOTFOUND!"=="1" if !TIF_PARTS! GTR 1 (
-        set /a TIF_PARTS-=1
-        goto :TIF_REFRESH_LOOP_END
-    )
-    set "TIF_DL_ERROR=1"
-    goto :TIF_REFRESH_LOOP_END
-)
-
-set "PART_SIZE=0"
-for %%I in ("!TIF_PART_TMP!") do set "PART_SIZE=%%~zI"
-if !PART_SIZE! LSS 1024 (
-    del /f /q "!TIF_PART_TMP!" >nul 2>&1
-    if !TIF_PARTS! GTR 1 (
-        set /a TIF_PARTS-=1
-        goto :TIF_REFRESH_LOOP_END
-    ) else (
-        set "TIF_DL_ERROR=1"
-        goto :TIF_REFRESH_LOOP_END
-    )
-)
-
-:: [FIX LINEE LENTE] Parte scaricata e verificata: la salvo SUBITO come .partN (l'ETag
-:: e' gia' registrato). Se una parte successiva fallisce il lavoro fatto non va perso:
-:: al ciclo dopo le parti invariate rispondono 304 e si riparte da quella che mancava.
-if "!TIF_PART_NEW!"=="1" copy /y "!TIF_PART_TMP!" "!TIF_PART_REF!" >nul 2>&1
-if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
-if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
-if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
-
-:TIF_REFRESH_LOOP_END
-
-if "!TIF_DL_ERROR!"=="1" (
-    del /f /q "%HZ_TIF%.part*.tmp" >nul 2>&1
-    if exist "%HZ_TIF%" (
-        call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF: download incompleto o fallito alla parte !TIF_PARTS!, mantengo la versione attuale: !DT_TIF! - le parti gia' scaricate restano, al prossimo ciclo riparto da li'"
-    ) else if exist "%HZ_TIF_BAK%" (
-        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
-        call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
-    )
-) else (
-    if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
-    for /L %%N in (1,1,!TIF_PARTS!) do (
-        type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
-        echo.>> "%HZ_TIF%.tmp"
-        move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
-    )
-
-    rem Verifica anti-troncamento come in F10B: record CNAME almeno pari alle voci dichiarate, altrimenti scarta.
-    call :RPZ_ENTRIES_CHECK "%HZ_TIF%.tmp"
-    if errorlevel 1 type nul > "%HZ_TIF%.tmp"
-
-    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
-        set "SKIP_TIF=0"
-        if exist "%HZ_TIF%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
-            )
-        )
-        if "!SKIP_TIF!"=="0" (
-            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_TIF%" DT_TIF
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF (!TIF_PARTS! files) - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
-        ) else (
-            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_TIF%" DT_TIF
-            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF (!TIF_PARTS! files) - RPZ gia' aggiornato: !DT_TIF!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_TIF%" DT_TIF
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete), mantengo la versione attuale: !DT_TIF!"
-    )
-)
-if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
-
-:: HaGeZi TIF-IPS (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
-call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
-if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS%.tmp" >nul 2>&1
-set "TIFIPSR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
-if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
-    for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
-        set "SKIP_TIFIPS=0"
-        if exist "%HZ_TIF_IPS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
-            )
-        )
-        if "!SKIP_TIFIPS!"=="0" (
-            move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!!TIFIPSR_TRYNOTE!"
-        ) else (
-            del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - RPZ-IP gia' aggiornato: !DT_TIFIPS!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - file scaricato piccolo, uso esistente: !DT_TIFIPS!"
-    )
-) else (
-    if exist "%HZ_TIF_IPS_BAK%" (
-        copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
-        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF-IPS non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
-
-:: Spamhaus DROP (refresh biorario)
-:: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
-:: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
-call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" "" "%SH_DROP%.raw.lastgood"
-set "USED_LASTGOOD_DROP=0"
-if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" (
-    copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
-    set "USED_LASTGOOD_DROP=1"
-)
-set "LG_WARN="
-if "!USED_LASTGOOD_DROP!"=="1" call :LASTGOOD_AGE_WARN "%SH_DROP%.raw.lastgood"
-set "DROPR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "DROPR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
-    for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
-        copy /y "%SH_DROP%.raw.tmp" "%SH_DROP%.raw.lastgood" >nul 2>&1
-        call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
-        set "SKIP_DROP=0"
-        if exist "%SH_DROP%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
-            )
-        )
-        if "!SKIP_DROP!"=="0" (
-            move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%SH_DROP%" DT_DROP
-            if "!LG_WARN!"=="" (
-                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROPR_TRYNOTE!"
-            ) else (
-                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP da cache lastgood: !DT_DROP!!LG_WARN!"
-            )
-        ) else (
-            del /f /q "%SH_DROP%.tmp" >nul 2>&1
-            call :FILE_DATE "%SH_DROP%" DT_DROP
-            if "!LG_WARN!"=="" (
-                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
-            ) else (
-                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP!!LG_WARN!"
-            )
-        )
-    ) else (
-        call :FILE_DATE "%SH_DROP%" DT_DROP
-        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
-    )
-) else (
-    if exist "%SH_DROP_BAK%" (
-        copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
-        call :FILE_DATE "%SH_DROP%" DT_DROP
-        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROP non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
-if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
-
-:: Spamhaus DROPv6 (refresh biorario)
-call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" "" "%SH_DROP6%.raw.lastgood"
-set "USED_LASTGOOD_DROP6=0"
-if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" (
-    copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
-    set "USED_LASTGOOD_DROP6=1"
-)
-set "LG_WARN6="
-if "!USED_LASTGOOD_DROP6!"=="1" (
-    call :LASTGOOD_AGE_WARN "%SH_DROP6%.raw.lastgood"
-    set "LG_WARN6=!LG_WARN!"
-)
-set "DROP6R_TRYNOTE="
-if !CURL_TRY_NUM! GTR 1 set "DROP6R_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
-    for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
-        copy /y "%SH_DROP6%.raw.tmp" "%SH_DROP6%.raw.lastgood" >nul 2>&1
-        call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
-        set "SKIP_DROP6=0"
-        if exist "%SH_DROP6%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
-            )
-        )
-        if "!SKIP_DROP6!"=="0" (
-            move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            if "!LG_WARN6!"=="" (
-                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6R_TRYNOTE!"
-            ) else (
-                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP da cache lastgood: !DT_DROP6!!LG_WARN6!"
-            )
-        ) else (
-            del /f /q "%SH_DROP6%.tmp" >nul 2>&1
-            call :FILE_DATE "%SH_DROP6%" DT_DROP6
-            if "!LG_WARN6!"=="" (
-                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
-            ) else (
-                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP6!!LG_WARN6!"
-            )
-        )
-    ) else (
-        call :FILE_DATE "%SH_DROP6%" DT_DROP6
-        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - file scaricato piccolo, uso esistente: !DT_DROP6!"
-    )
-) else (
-    if exist "%SH_DROP6_BAK%" (
-        copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
-        call :FILE_DATE "%SH_DROP6%" DT_DROP6
-        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 non scaricato, ripristinato dal backup: !DT_DROP6!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROPv6 non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
-if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
-
 if not "!HZ_DYNDNS_ENABLED!"=="1" goto :RF_SKIP_DYNDNS
 :: HaGeZi Dynamic DNS (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -3058,49 +2771,6 @@ if not errorlevel 1 (
 if exist "%HZ_DYNDNS%.tmp" del /f /q "%HZ_DYNDNS%.tmp" >nul 2>&1
 
 :RF_SKIP_DYNDNS
-:: HaGeZi Badware Hoster (refresh biorario)
-call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
-set "RES_JSDELIVR="
-if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
-
-call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
-if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
-set "HOSTERR_TRYNOTE="
-if !CURL_TRY_NUM! GTR 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
-if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
-if not errorlevel 1 (
-    for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
-        set "SKIP_HOSTER=0"
-        if exist "%HZ_HOSTER%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
-            )
-        )
-        if "!SKIP_HOSTER!"=="0" (
-            move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
-            set "CHANGED=1"
-            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
-            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Badware Hoster - RPZ aggiornato: !DT_HOSTER!!HOSTERR_TRYNOTE!"
-        ) else (
-            del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
-            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
-            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - RPZ gia' aggiornato: !DT_HOSTER!"
-        )
-    ) else (
-        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
-        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - file scaricato piccolo, uso esistente: !DT_HOSTER!"
-    )
-) else (
-    if exist "%HZ_HOSTER_BAK%" (
-        copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
-        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
-        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Badware Hoster non scaricato, ripristinato dal backup: !DT_HOSTER!"
-    ) else (
-        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Badware Hoster non scaricabile e nessun backup disponibile!"
-    )
-)
-if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
-
 if not "!HZ_SPAMTLDS_ENABLED!"=="1" goto :RF_SKIP_SPAMTLDS
 :: HaGeZi Most Abused TLDs (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -3346,6 +3016,597 @@ call :ABUSECH_NOTIFY
 :: --- FORZATURA ASSOLUTA USCITA PULITA (0x0) ---
 cmd /c exit 0
 exit 0
+
+:: ============================================================================
+:: FLAG --refreshzone chiave: aggiorna UNA sola zona RPZ HaGeZi o Spamhaus.
+:: Chiavi valide: proplus, tifips, hoster, drop (v4 + v6), tif.
+:: Un task dedicato per zona, ogni 2 ore, sfalsato di 5 minuti dalle altre.
+:: Stesso schema di :REFRESH_ABUSECH_ONLY: download con backup e verifica,
+:: ricarico a caldo con auth_zone_reload, riavvio completo solo come ripiego,
+:: notifica Telegram dedicata. Le zone DynDNS e SpamTLDs restano disattivate.
+:: ============================================================================
+:REFRESH_ZONE_ONLY
+title UNBOUND BUNKER - REFRESH ZONA RPZ
+set "ZN_KEY=%~2"
+:: Notifica Telegram: 0 = solo se la zona e cambiata o il download e fallito, 1 = sempre
+set "ZN_NOTIFY_ALWAYS=0"
+set "ZN_DIFF=1"
+set "ZN_ST1=SKIP"
+set "ZN_ST2=NONE"
+set "ZN_CH1=0"
+set "ZN_CH2=0"
+set "ZN_NAME1="
+set "ZN_EMOJI1="
+set "ZN_FILE1="
+set "ZN_BAK1="
+set "ZN_RPZ1="
+set "ZN_NAME2="
+set "ZN_EMOJI2="
+set "ZN_FILE2="
+set "ZN_BAK2="
+set "ZN_RPZ2="
+set "ZN_RELOAD_ST=NONE"
+set "ZN_RELOAD_ZONES="
+set "ZN_RELOAD_DET="
+set "CHANGED=0"
+
+ping -n 1 8.8.8.8 >nul 2>&1
+if errorlevel 1 ping -n 1 1.1.1.1 >nul 2>&1
+if errorlevel 1 (
+    call :LOGFAIL "REFRESH-ZONE" "Rete non raggiungibile, refresh saltato"
+    cmd /c exit 0
+    exit 0
+)
+
+if not exist "%UB_DIR%" (
+    call :LOGFAIL "REFRESH-ZONE" "Directory Unbound non trovata"
+    exit /b
+)
+
+if /i "!ZN_KEY!"=="proplus" goto :RZ_PROPLUS
+if /i "!ZN_KEY!"=="tifips" goto :RZ_TIFIPS
+if /i "!ZN_KEY!"=="hoster" goto :RZ_HOSTER
+if /i "!ZN_KEY!"=="drop" goto :RZ_DROP
+if /i "!ZN_KEY!"=="tif" goto :RZ_TIF
+call :LOGFAIL "REFRESH-ZONE" "Chiave zona sconosciuta"
+cmd /c exit 0
+exit 0
+
+:RZ_PROPLUS
+set "ZN_NAME1=HaGeZi Pro Plus"
+set "ZN_EMOJI1=🔒"
+set "ZN_FILE1=%HZ_PRO_PLUS%"
+set "ZN_BAK1=%HZ_PRO_PLUS_BAK%"
+set "ZN_RPZ1=hagezi-pro-plus.rpz"
+set "ZN_DIFF=1"
+if exist "%HZ_PRO_PLUS%"        call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
+if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
+
+:: HaGeZi Pro Plus (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
+if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+set "HZR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
+        set "SKIP_HZ=0"
+        if exist "%HZ_PRO_PLUS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
+            )
+        )
+        if "!SKIP_HZ!"=="0" (
+            move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH1=1"
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Pro Plus- RPZ aggiornato: !DT_HZ!!HZR_TRYNOTE!"
+            set "ZN_ST1=OK"
+        ) else (
+            del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
+            set "ZN_ST1=SKIP"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus - file scaricato piccolo, uso esistente: !DT_HZ!"
+        set "ZN_ST1=SKIP"
+    )
+) else (
+    if exist "%HZ_PRO_PLUS_BAK%" (
+        copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
+        set "ZN_ST1=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Pro Plus non scaricabile e nessun backup disponibile!"
+        set "ZN_ST1=ERR"
+    )
+)
+if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+
+goto :RZ_FINISH
+
+:RZ_TIFIPS
+set "ZN_NAME1=HaGeZi TIF-IPS"
+set "ZN_EMOJI1=🌐"
+set "ZN_FILE1=%HZ_TIF_IPS%"
+set "ZN_BAK1=%HZ_TIF_IPS_BAK%"
+set "ZN_RPZ1=hagezi-tif-ips.rpz"
+set "ZN_DIFF=1"
+if exist "%HZ_TIF_IPS%"         call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
+if exist "%HZ_TIF_IPS%"         copy /y "%HZ_TIF_IPS%"         "%HZ_TIF_IPS_BAK%"   >nul 2>&1
+
+:: HaGeZi TIF-IPS (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
+if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS%.tmp" >nul 2>&1
+set "TIFIPSR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
+        set "SKIP_TIFIPS=0"
+        if exist "%HZ_TIF_IPS%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
+            )
+        )
+        if "!SKIP_TIFIPS!"=="0" (
+            move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH1=1"
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF-IPS - RPZ-IP aggiornato: !DT_TIFIPS!!TIFIPSR_TRYNOTE!"
+            set "ZN_ST1=OK"
+        ) else (
+            del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - RPZ-IP gia' aggiornato: !DT_TIFIPS!"
+            set "ZN_ST1=SKIP"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - file scaricato piccolo, uso esistente: !DT_TIFIPS!"
+        set "ZN_ST1=SKIP"
+    )
+) else (
+    if exist "%HZ_TIF_IPS_BAK%" (
+        copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
+        set "ZN_ST1=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF-IPS non scaricabile e nessun backup disponibile!"
+        set "ZN_ST1=ERR"
+    )
+)
+if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+
+goto :RZ_FINISH
+
+:RZ_HOSTER
+set "ZN_NAME1=HaGeZi Badware Hoster"
+set "ZN_EMOJI1=🏠"
+set "ZN_FILE1=%HZ_HOSTER%"
+set "ZN_BAK1=%HZ_HOSTER_BAK%"
+set "ZN_RPZ1=hagezi-hoster.rpz"
+set "ZN_DIFF=1"
+if exist "%HZ_HOSTER%"          call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
+if exist "%HZ_HOSTER%"          copy /y "%HZ_HOSTER%"          "%HZ_HOSTER_BAK%"    >nul 2>&1
+
+:: HaGeZi Badware Hoster (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
+if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
+set "HOSTERR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
+        set "SKIP_HOSTER=0"
+        if exist "%HZ_HOSTER%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
+            )
+        )
+        if "!SKIP_HOSTER!"=="0" (
+            move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH1=1"
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi Badware Hoster - RPZ aggiornato: !DT_HOSTER!!HOSTERR_TRYNOTE!"
+            set "ZN_ST1=OK"
+        ) else (
+            del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - RPZ gia' aggiornato: !DT_HOSTER!"
+            set "ZN_ST1=SKIP"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - file scaricato piccolo, uso esistente: !DT_HOSTER!"
+        set "ZN_ST1=SKIP"
+    )
+) else (
+    if exist "%HZ_HOSTER_BAK%" (
+        copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Badware Hoster non scaricato, ripristinato dal backup: !DT_HOSTER!"
+        set "ZN_ST1=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi Badware Hoster non scaricabile e nessun backup disponibile!"
+        set "ZN_ST1=ERR"
+    )
+)
+if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+
+goto :RZ_FINISH
+
+:RZ_DROP
+set "ZN_NAME1=Spamhaus DROP v4"
+set "ZN_EMOJI1=🚫"
+set "ZN_FILE1=%SH_DROP%"
+set "ZN_BAK1=%SH_DROP_BAK%"
+set "ZN_RPZ1=spamhaus-drop-v4.rpz"
+set "ZN_NAME2=Spamhaus DROP v6"
+set "ZN_EMOJI2=🚫"
+set "ZN_FILE2=%SH_DROP6%"
+set "ZN_BAK2=%SH_DROP6_BAK%"
+set "ZN_RPZ2=spamhaus-drop-v6.rpz"
+set "ZN_ST2=SKIP"
+set "ZN_DIFF=1"
+if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
+if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
+if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
+if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
+
+:: Spamhaus DROP (refresh biorario)
+:: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
+:: biorario (2h) rispetta ampiamente questo limite (no rischio firewall IP).
+call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" "" "%SH_DROP%.raw.lastgood"
+set "USED_LASTGOOD_DROP=0"
+if not exist "%SH_DROP%.raw.tmp" if exist "%SH_DROP%.raw.lastgood" (
+    copy /y "%SH_DROP%.raw.lastgood" "%SH_DROP%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP=1"
+)
+set "LG_WARN="
+if "!USED_LASTGOOD_DROP!"=="1" call :LASTGOOD_AGE_WARN "%SH_DROP%.raw.lastgood"
+set "DROPR_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROPR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%SH_DROP%.raw.tmp") do if %%~zI GEQ 512 (
+        copy /y "%SH_DROP%.raw.tmp" "%SH_DROP%.raw.lastgood" >nul 2>&1
+        call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
+        set "SKIP_DROP=0"
+        if exist "%SH_DROP%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
+            )
+        )
+        if "!SKIP_DROP!"=="0" (
+            move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH1=1"
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            if "!LG_WARN!"=="" (
+                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROP - RPZ-IP aggiornato: !DT_DROP!!DROPR_TRYNOTE!"
+                set "ZN_ST1=OK"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP da cache lastgood: !DT_DROP!!LG_WARN!"
+                set "ZN_ST1=WARN"
+            )
+        ) else (
+            del /f /q "%SH_DROP%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP%" DT_DROP
+            if "!LG_WARN!"=="" (
+                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - RPZ-IP gia' aggiornato: !DT_DROP!"
+                set "ZN_ST1=SKIP"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP!!LG_WARN!"
+                set "ZN_ST1=WARN"
+            )
+        )
+    ) else (
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROP - file scaricato piccolo, uso esistente: !DT_DROP!"
+        set "ZN_ST1=SKIP"
+    )
+) else (
+    if exist "%SH_DROP_BAK%" (
+        copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
+        set "ZN_ST1=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROP non scaricabile e nessun backup disponibile!"
+        set "ZN_ST1=ERR"
+    )
+)
+if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
+
+:: Spamhaus DROPv6 (refresh biorario)
+call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" "" "%SH_DROP6%.raw.lastgood"
+set "USED_LASTGOOD_DROP6=0"
+if not exist "%SH_DROP6%.raw.tmp" if exist "%SH_DROP6%.raw.lastgood" (
+    copy /y "%SH_DROP6%.raw.lastgood" "%SH_DROP6%.raw.tmp" >nul 2>&1
+    set "USED_LASTGOOD_DROP6=1"
+)
+set "LG_WARN6="
+if "!USED_LASTGOOD_DROP6!"=="1" (
+    call :LASTGOOD_AGE_WARN "%SH_DROP6%.raw.lastgood"
+    set "LG_WARN6=!LG_WARN!"
+)
+set "DROP6R_TRYNOTE="
+if !CURL_TRY_NUM! GTR 1 set "DROP6R_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
+if not errorlevel 1 (
+    for %%I in ("%SH_DROP6%.raw.tmp") do if %%~zI GEQ 64 (
+        copy /y "%SH_DROP6%.raw.tmp" "%SH_DROP6%.raw.lastgood" >nul 2>&1
+        call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
+        set "SKIP_DROP6=0"
+        if exist "%SH_DROP6%" (
+            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
+                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
+            )
+        )
+        if "!SKIP_DROP6!"=="0" (
+            move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH2=1"
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            if "!LG_WARN6!"=="" (
+                call :LOGSTEP "REFRESH" "[      OK      ] Spamhaus DROPv6 - RPZ-IP aggiornato: !DT_DROP6!!DROP6R_TRYNOTE!"
+                set "ZN_ST2=OK"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP da cache lastgood: !DT_DROP6!!LG_WARN6!"
+                set "ZN_ST2=WARN"
+            )
+        ) else (
+            del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+            call :FILE_DATE "%SH_DROP6%" DT_DROP6
+            if "!LG_WARN6!"=="" (
+                call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato: !DT_DROP6!"
+                set "ZN_ST2=SKIP"
+            ) else (
+                call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - RPZ-IP gia' aggiornato ma da cache lastgood: !DT_DROP6!!LG_WARN6!"
+                set "ZN_ST2=WARN"
+            )
+        )
+    ) else (
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        call :LOGSTEP "REFRESH" "[     SKIP     ] Spamhaus DROPv6 - file scaricato piccolo, uso esistente: !DT_DROP6!"
+        set "ZN_ST2=SKIP"
+    )
+) else (
+    if exist "%SH_DROP6_BAK%" (
+        copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 non scaricato, ripristinato dal backup: !DT_DROP6!"
+        set "ZN_ST2=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] Spamhaus DROPv6 non scaricabile e nessun backup disponibile!"
+        set "ZN_ST2=ERR"
+    )
+)
+if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
+if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+
+goto :RZ_FINISH
+
+:RZ_TIF
+set "ZN_NAME1=HaGeZi TIF"
+set "ZN_EMOJI1=🧬"
+set "ZN_FILE1=%HZ_TIF%"
+set "ZN_BAK1=%HZ_TIF_BAK%"
+set "ZN_RPZ1=hagezi-tif.rpz"
+:: TIF e molto grande: nella notifica solo il conteggio, senza il confronto aggiunti e rimossi
+set "ZN_DIFF=0"
+if exist "%HZ_TIF%"             call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
+if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
+
+:: HaGeZi TIF (refresh biorario)
+call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
+set "RES_JSDELIVR="
+if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
+
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+set "TIF_PARTS=0"
+set "TIF_TRYNOTE="
+set "TIF_DL_ERROR=0"
+
+:TIF_REFRESH_LOOP
+set /a TIF_PARTS+=1
+set "TIF_PART_URL=https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_URL_JS=https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-!TIF_PARTS!.txt"
+set "TIF_PART_TMP=%HZ_TIF%.part!TIF_PARTS!.tmp"
+set "TIF_PART_REF=%HZ_TIF%.part!TIF_PARTS!"
+
+call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_JSDELIVR!" "!TIF_PART_REF!"
+set "CURL_ERR=!errorlevel!"
+set "TIF_PART_NEW=0"
+if exist "!TIF_PART_TMP!" set "TIF_PART_NEW=1"
+
+if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
+
+if !CURL_ERR! NEQ 0 (
+    if "!DL_NOTFOUND!"=="1" if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_REFRESH_LOOP_END
+    )
+    set "TIF_DL_ERROR=1"
+    goto :TIF_REFRESH_LOOP_END
+)
+
+set "PART_SIZE=0"
+for %%I in ("!TIF_PART_TMP!") do set "PART_SIZE=%%~zI"
+if !PART_SIZE! LSS 1024 (
+    del /f /q "!TIF_PART_TMP!" >nul 2>&1
+    if !TIF_PARTS! GTR 1 (
+        set /a TIF_PARTS-=1
+        goto :TIF_REFRESH_LOOP_END
+    ) else (
+        set "TIF_DL_ERROR=1"
+        goto :TIF_REFRESH_LOOP_END
+    )
+)
+
+:: [FIX LINEE LENTE] Parte scaricata e verificata: la salvo SUBITO come .partN (l'ETag
+:: e' gia' registrato). Se una parte successiva fallisce il lavoro fatto non va perso:
+:: al ciclo dopo le parti invariate rispondono 304 e si riparte da quella che mancava.
+if "!TIF_PART_NEW!"=="1" copy /y "!TIF_PART_TMP!" "!TIF_PART_REF!" >nul 2>&1
+if !CURL_TRY_NUM! GTR 3 set "TIF_TRYNOTE=  [riuscito via jsdelivr (fallback)]"
+if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIF_TRYNOTE=  [riuscito con retry]"
+if !TIF_PARTS! LSS 20 goto :TIF_REFRESH_LOOP
+
+:TIF_REFRESH_LOOP_END
+
+if "!TIF_DL_ERROR!"=="1" (
+    del /f /q "%HZ_TIF%.part*.tmp" >nul 2>&1
+    if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF: download incompleto o fallito alla parte !TIF_PARTS!, mantengo la versione attuale: !DT_TIF! - le parti gia' scaricate restano, al prossimo ciclo riparto da li'"
+        set "ZN_ST1=WARN"
+    ) else if exist "%HZ_TIF_BAK%" (
+        copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF non scaricato, ripristinato dal backup: !DT_TIF!"
+        set "ZN_ST1=WARN"
+    ) else (
+        call :LOGSTEP "REFRESH" "[ERR ] HaGeZi TIF non scaricabile e nessun backup disponibile!"
+        set "ZN_ST1=ERR"
+    )
+) else (
+    if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+    for /L %%N in (1,1,!TIF_PARTS!) do (
+        type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
+        echo.>> "%HZ_TIF%.tmp"
+        move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
+    )
+
+    rem Verifica anti-troncamento come in F10B: record CNAME almeno pari alle voci dichiarate, altrimenti scarta.
+    call :RPZ_ENTRIES_CHECK "%HZ_TIF%.tmp"
+    if errorlevel 1 type nul > "%HZ_TIF%.tmp"
+
+    for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
+        set "SKIP_TIF=0"
+        if exist "%HZ_TIF%" (
+            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
+                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
+            )
+        )
+        if "!SKIP_TIF!"=="0" (
+            move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            set "CHANGED=1"
+            set "ZN_CH1=1"
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[      OK      ] HaGeZi TIF (!TIF_PARTS! files) - RPZ aggiornato: !DT_TIF!!TIF_TRYNOTE!"
+            set "ZN_ST1=OK"
+        ) else (
+            del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+            call :FILE_DATE "%HZ_TIF%" DT_TIF
+            call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF (!TIF_PARTS! files) - RPZ gia' aggiornato: !DT_TIF!"
+            set "ZN_ST1=SKIP"
+        )
+    ) else (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete), mantengo la versione attuale: !DT_TIF!"
+        set "ZN_ST1=WARN"
+    )
+)
+if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
+
+goto :RZ_FINISH
+
+:RZ_FINISH
+if not "!ZN_CH1!"=="1" if not "!ZN_CH2!"=="1" goto :RZ_NOCHANGE
+set "ZN_RELOAD_FAIL=0"
+if "!ZN_CH1!"=="1" (
+    call :RPZ_HOT_RELOAD "!ZN_RPZ1!"
+    if errorlevel 1 (
+        set "ZN_RELOAD_FAIL=1"
+        set "ZN_RELOAD_DET=!RPZ_RELOAD_DET!"
+    ) else (
+        set "ZN_RELOAD_ZONES=!ZN_NAME1!"
+    )
+)
+if "!ZN_RELOAD_FAIL!"=="0" if "!ZN_CH2!"=="1" (
+    call :RPZ_HOT_RELOAD "!ZN_RPZ2!"
+    if errorlevel 1 (
+        set "ZN_RELOAD_FAIL=1"
+        set "ZN_RELOAD_DET=!RPZ_RELOAD_DET!"
+    ) else (
+        if defined ZN_RELOAD_ZONES (
+            set "ZN_RELOAD_ZONES=!ZN_RELOAD_ZONES! e !ZN_NAME2!"
+        ) else (
+            set "ZN_RELOAD_ZONES=!ZN_NAME2!"
+        )
+    )
+)
+if "!ZN_RELOAD_FAIL!"=="0" (
+    set "ZN_RELOAD_ST=HOT"
+    goto :RZ_NOTIFY
+)
+set "ZN_RELOAD_ST=FALLBACK"
+call :CACHE_DUMP
+net stop unbound >nul 2>&1
+taskkill /f /im unbound.exe >nul 2>&1
+call :DNS_FALLBACK_ON
+net start unbound >nul 2>&1
+call :WAIT_UNBOUND_READY 180
+call :DNS_FALLBACK_OFF
+call :CACHE_LOAD
+powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+goto :RZ_NOTIFY
+
+:RZ_NOCHANGE
+call :DNS_FALLBACK_OFF
+
+:RZ_NOTIFY
+call :ZONE_NOTIFY
+cmd /c exit 0
+exit 0
+
+
+:: ==================================================================
+:: NOTIFICA TELEGRAM DI UNA ZONA RPZ - stesso formato di :ABUSECH_NOTIFY.
+:: Chiamata a fine :REFRESH_ZONE_ONLY. Per ogni lista stato, numero di elementi,
+:: valore precedente e differenza. Non invia nulla se tutte le liste sono
+:: invariate, salvo ZN_NOTIFY_ALWAYS=1. Un avviso di fallimento identico al
+:: precedente non viene ripetuto: stato in zone_notify_state_CHIAVE.txt.
+:: ==================================================================
+:ZONE_NOTIFY
+set "ZN_QUIET=0"
+if "!ZN_ST1!"=="SKIP" if "!ZN_ST2!"=="NONE" set "ZN_QUIET=1"
+if "!ZN_ST1!"=="SKIP" if "!ZN_ST2!"=="SKIP" set "ZN_QUIET=1"
+if "!ZN_NOTIFY_ALWAYS!"=="1" set "ZN_QUIET=0"
+if "!ZN_QUIET!"=="1" (
+    if exist "%UB_DIR%\zone_notify_state_!ZN_KEY!.txt" del /f /q "%UB_DIR%\zone_notify_state_!ZN_KEY!.txt" >nul 2>&1
+    exit /b 0
+)
+set "TG_LOG=%UB_DIR%\telegram_error.log"
+set "TG_DNS_RESET=0"
+powershell -NoProfile -Command "try { [System.Net.Dns]::GetHostEntry('script.google.com') | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    echo [%date% %time%] DNS locale non risolve script.google.com - fallback a 1.1.1.1 attivato per notifica zona RPZ >> "%TG_LOG%"
+    call :DNS_FALLBACK_ON
+    set "TG_DNS_RESET=1"
+)
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; $proxyUrl = 'https://script.google.com/macros/s/AKfycby_ZnbuxgVPyS9zAeaVcbFY183bePVZP-_sMqyVgFRYcO1Y2AORT99-N-8tUk5wtIkF/exec'; $secret = 'BunkerSegreto2026'; $ic = [System.Globalization.CultureInfo]::InvariantCulture; $st = '!ZN_ST1!/!ZN_ST2!'; $stF = '!UB_DIR!\zone_notify_state_!ZN_KEY!.txt'; $lastSt = ''; if (Test-Path -LiteralPath $stF) { try { $lastSt = (Get-Content -LiteralPath $stF -Raw).Trim() } catch {} }; $st | Out-File -LiteralPath $stF -Encoding ascii; if (('!ZN_NOTIFY_ALWAYS!' -ne '1') -and ($st -notmatch 'OK') -and ($st -eq $lastSt)) { exit 0 }; function Fmt { param($n) ([long]$n).ToString('N0', $ic).Replace(',', '.') }; function Get-Cnt { param($p) $n = 0; try { if (Test-Path -LiteralPath $p) { $n = [Linq.Enumerable]::Count([System.IO.File]::ReadLines($p)) } } catch {}; $n }; function Get-KeySet { param($p) $h = [System.Collections.Generic.HashSet[string]]::new(); try { if (Test-Path -LiteralPath $p) { foreach ($l in [System.IO.File]::ReadLines($p)) { $t = $l.Trim(); if ($t.Length -gt 0) { $f1 = $t.Substring(0, 1); if (($f1 -ne ';') -and ($f1 -ne '$') -and ($f1 -ne '@')) { [void]$h.Add($t) } } } } } catch {}; return ,$h }; function Get-Blk { param($name, $emoji, $file, $bak, $stt) $now = Get-Cnt $file; $s = $emoji + ' *' + $name + '*: '; if ($stt -eq 'OK') { $s += '✅ aggiornata' } elseif ($stt -eq 'WARN') { $s += '⚠️ download fallito, ripristinato dal backup' } elseif ($stt -eq 'ERR') { $s += '🔴 non scaricabile, nessun backup' } else { $s += '⏭️ invariata' }; $s += [char]10 + '   Elementi: `' + (Fmt $now) + '`'; if (Test-Path -LiteralPath $bak) { $before = Get-Cnt $bak; $d = $now - $before; if ($d -gt 0) { $dl = '▲ +' + (Fmt $d) } elseif ($d -lt 0) { $dl = '▼ -' + (Fmt ([math]::Abs($d))) } else { $dl = '= invariata' }; $s += ' (prima `' + (Fmt $before) + '`, ' + $dl + ')'; if (($stt -eq 'OK') -and ('!ZN_DIFF!' -eq '1')) { $a = Get-KeySet $file; $b = Get-KeySet $bak; $add = [System.Collections.Generic.HashSet[string]]::new($a); $add.ExceptWith($b); $rem = [System.Collections.Generic.HashSet[string]]::new($b); $rem.ExceptWith($a); $s += [char]10 + '   Aggiunti: `' + (Fmt $add.Count) + '` - Rimossi: `' + (Fmt $rem.Count) + '`' } }; $s }; $hostSafe = $env:COMPUTERNAME -replace '[_*`\[\]]', '-'; $rl = '!ZN_RELOAD_ST!'; $rz = '!ZN_RELOAD_ZONES!'; $rd = '!ZN_RELOAD_DET!'; $rline = ''; if ($rl -eq 'HOT') { $rline = [char]10 + '🔥 *Ricarico a caldo:* ✅ ' + $rz + ' ricaricata senza riavviare Unbound' } elseif ($rl -eq 'FALLBACK') { $rline = [char]10 + '⚠️ *Ricarico a caldo fallito* (' + $rd + '): eseguito riavvio completo di Unbound' }; $b2 = ''; if ('!ZN_ST2!' -ne 'NONE') { $b2 = [char]10 + (Get-Blk '!ZN_NAME2!' '!ZN_EMOJI2!' '!ZN_FILE2!' '!ZN_BAK2!' '!ZN_ST2!') }; $msg = '🔄 *UNBOUND BUNKER CERBERO - AGGIORNAMENTO ZONA RPZ*' + [char]10 + '=============================================' + [char]10 + '• 👨‍⚕️ *Nome PC:* `' + $hostSafe + '`' + [char]10 + '📅 Data: ' + (Get-Date).ToString('dd.MM.yyyy - HH:mm') + [char]10 + '=============================================' + [char]10 + (Get-Blk '!ZN_NAME1!' '!ZN_EMOJI1!' '!ZN_FILE1!' '!ZN_BAK1!' '!ZN_ST1!') + $b2 + $rline; $body = @{ secret = $secret; text = $msg } | ConvertTo-Json; $bytes = [System.Text.Encoding]::UTF8.GetBytes($body); $ok = $false; $lastErr = ''; for ($i = 1; $i -le 2; $i++) { try { [void](Invoke-RestMethod -Uri $proxyUrl -Method Post -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 45); $ok = $true; break } catch { $lastErr = $_.Exception.Message; Start-Sleep -Milliseconds 800 } }; if (-not $ok) { ('[' + (Get-Date) + '] Invio notifica zona RPZ fallito dopo 2 tentativi: ' + $lastErr) | Out-File '!TG_LOG!' -Append -Encoding utf8 }" >nul 2>>"!TG_LOG!"
+if "!TG_DNS_RESET!"=="1" call :DNS_FALLBACK_OFF
+exit /b 0
 
 :: ============================================================================
 :: REPORT STATISTICO BIORARIO: query totali, blocchi RPZ, cache hit.
@@ -3697,7 +3958,8 @@ call :SEND_TELEGRAM_TELEMETRY
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1/::1 prima di chiudere il boot,
 :: indipendentemente dall'esito del check DNS interno a SEND_TELEGRAM_TELEMETRY:
 :: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
-call :DNS_FALLBACK_OFF
+:: [v1126.1] Se il ripristino era stato rimandato, attende qui che Unbound risponda.
+call :DNS_RESTORE_DEFERRED
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -3739,6 +4001,19 @@ powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Obje
 :: una sola volta in Fase 5 e non si autoriparava mai se l'adattatore lo perdeva.
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1 / ::1"
+exit /b 0
+
+:: ==================================================================
+:: SUBROUTINE: ripristino DNS rimandato a fine boot [v1126.1]
+:: Se in FASE 13 Unbound non era ancora pronto, qui si attende (al massimo
+:: 180 secondi, di norma gia' quasi tutti trascorsi durante le fasi
+:: successive) e poi si rimette il DNS su 127.0.0.1 / ::1. Se non c'era
+:: nulla di rimandato, ripristina subito come prima.
+:: ==================================================================
+:DNS_RESTORE_DEFERRED
+if "!DNS_RESTORE_PENDING!"=="1" call :WAIT_UNBOUND_READY 180
+set "DNS_RESTORE_PENDING=0"
+call :DNS_FALLBACK_OFF
 exit /b 0
 
 :RESOLVE_HOST
@@ -4802,7 +5077,8 @@ call :SEND_TELEGRAM_TELEMETRY
 :: [FIX] Ripristina sempre il DNS su 127.0.0.1/::1 prima di chiudere il boot,
 :: indipendentemente dall'esito del check DNS interno a SEND_TELEGRAM_TELEMETRY:
 :: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
-call :DNS_FALLBACK_OFF
+:: [v1126.1] Se il ripristino era stato rimandato, attende qui che Unbound risponda.
+call :DNS_RESTORE_DEFERRED
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
