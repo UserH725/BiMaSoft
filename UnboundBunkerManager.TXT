@@ -40,6 +40,7 @@ if "%~1"=="--dailyreport" goto :FONT_OK
 if "%~1"=="--refreshabusech" goto :FONT_OK
 if "%~1"=="--refreshzone" goto :FONT_OK
 if "%~1"=="--fase" goto :FONT_OK
+if "%~1"=="--dnswatch" goto :FONT_OK
 set "FLAG_FILE=%TEMP%\unbound_relaunched.flag"
 if exist "%FLAG_FILE%" (
     del /f /q "%FLAG_FILE%" >nul 2>&1
@@ -59,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1126.1"
+set "LOCAL_VER=1126.2"
+:: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
 :: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
 :: [v1125.3] FIX exit 0xFF task abuse.ch e 2h: commenti :: con parentesi chiusa dentro i blocchi if chiudevano il blocco in anticipo, ". non atteso". Ripuliti tutti i commenti indentati con parentesi. Task abuse.ch spostato a xx:15 e xx:45 per non partire insieme al biorario xx:00.
@@ -149,6 +151,7 @@ if "%~1"=="--refreshabusech" goto :REFRESH_ABUSECH_ONLY
 if "%~1"=="--refreshzone" goto :REFRESH_ZONE_ONLY
 if "%~1"=="--dailyreport" goto :DAILY_REPORT_ONLY
 if "%~1"=="--fase" goto :FASE_SINGOLA
+if "%~1"=="--dnswatch" goto :DNS_WATCH_ONLY
 
 
 :: --- BLOCCA CHIUSURA, MINIMIZZA, INGRANDISCI E DOPPIO CLICK SULLA BARRA DEL TITOLO ---
@@ -2253,7 +2256,7 @@ if "!UNBOUND_READY!"=="1" call :DNS_FALLBACK_OFF
 if not "!UNBOUND_READY!"=="1" if defined ONLY_PH call :DNS_FALLBACK_OFF
 if not "!UNBOUND_READY!"=="1" if not defined ONLY_PH set "DNS_RESTORE_PENDING=1"
 set "F13_RES=[      OK      ] CONF >> Configurazione valida: servizio avviato con successo."
-if "!DNS_RESTORE_PENDING!"=="1" set "F13_RES=[      OK      ] CONF >> Servizio avviato: Unbound sta caricando le RPZ, DNS ripristinato in automatico a fine boot."
+if "!DNS_RESTORE_PENDING!"=="1" set "F13_RES=[      OK      ] CONF >> Servizio avviato: Unbound sta caricando le RPZ, DNS ripristinato in automatico appena pronto."
 if not "!UNBOUND_READY!"=="1" if defined ONLY_PH set "F13_RES=[     WARN     ] CONF >> Servizio avviato ma non ancora pronto dopo 180 secondi: DNS ripristinato comunque."
 if not defined ONLY_PH echo %TODAY% > "%LAST_UPD_FILE%"
 call :UPDATE_UI 100
@@ -4004,17 +4007,48 @@ call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1 / ::1"
 exit /b 0
 
 :: ==================================================================
-:: SUBROUTINE: ripristino DNS rimandato a fine boot [v1126.1]
-:: Se in FASE 13 Unbound non era ancora pronto, qui si attende (al massimo
-:: 180 secondi, di norma gia' quasi tutti trascorsi durante le fasi
-:: successive) e poi si rimette il DNS su 127.0.0.1 / ::1. Se non c'era
-:: nulla di rimandato, ripristina subito come prima.
+:: SUBROUTINE: ripristino DNS rimandato a fine boot [v1126.2]
+:: Se in FASE 13 Unbound non era ancora pronto: un ultimo controllo rapido
+:: e, se ancora non risponde, si lancia il watcher nascosto --dnswatch e il
+:: Manager puo chiudersi subito. Se non c'era nulla di rimandato oppure
+:: Unbound e gia pronto, ripristina il DNS subito. Se il watcher non parte,
+:: ripiega sull attesa bloccante di 180 secondi.
 :: ==================================================================
 :DNS_RESTORE_DEFERRED
-if "!DNS_RESTORE_PENDING!"=="1" call :WAIT_UNBOUND_READY 180
+if not "!DNS_RESTORE_PENDING!"=="1" goto :DRD_NOW
+set "DNS_RESTORE_PENDING=0"
+call :WAIT_UNBOUND_READY 3
+if "!UNBOUND_READY!"=="1" goto :DRD_NOW
+echo   [i] Unbound sta ancora caricando le RPZ: il DNS verra' ripristinato in automatico e comparira' un avviso a video.
+powershell -NoProfile -Command "Start-Process -FilePath cmd.exe -ArgumentList ('/c '+[char]34+[char]34+'!SELF_BAT!'+[char]34+' --dnswatch'+[char]34) -WindowStyle Hidden" >nul 2>&1
+if errorlevel 1 goto :DRD_BLOCK
+exit /b 0
+:DRD_BLOCK
+call :WAIT_UNBOUND_READY 180
+:DRD_NOW
 set "DNS_RESTORE_PENDING=0"
 call :DNS_FALLBACK_OFF
 exit /b 0
+
+:: ==================================================================
+:: WATCHER NASCOSTO --dnswatch [v1126.2]
+:: Aspetta fino a 600 secondi che Unbound risponda, rimette il DNS su
+:: 127.0.0.1 / ::1 e mostra un avviso a video. Esito positivo: solo OK.
+:: Unbound muto: il DNS viene comunque ripristinato e l avviso chiede se
+:: rilanciare il Manager (Si = rilancia, No = lascia stare).
+:: ==================================================================
+:DNS_WATCH_ONLY
+title UNBOUND BUNKER - ATTESA UNBOUND
+call :WAIT_UNBOUND_READY 600
+call :DNS_FALLBACK_OFF
+if "!UNBOUND_READY!"=="1" goto :DW_OK
+powershell -NoProfile -Command "$e=[char]232; $r=(New-Object -ComObject WScript.Shell).Popup('ATTENZIONE: Unbound non ha risposto entro 10 minuti dall''avvio. Il DNS del PC '+$e+' stato rimesso su 127.0.0.1 ma la protezione potrebbe non essere attiva.'+[char]13+[char]10+[char]13+[char]10+'Vuoi rilanciare ora Unbound Bunker Manager?', 0, 'Unbound Bunker - ATTENZIONE', 4116); exit [int]$r" >nul 2>&1
+set "DW_RC=!errorlevel!"
+if "!DW_RC!"=="6" start "" "!SELF_BAT!"
+exit
+:DW_OK
+powershell -NoProfile -Command "$e=[char]232; $null=(New-Object -ComObject WScript.Shell).Popup('Unbound Bunker: Unbound ora risponde e il DNS del PC '+$e+' stato ripristinato su 127.0.0.1. Tutto a posto, puoi lavorare normalmente.', 0, 'Unbound Bunker - OK', 4160)" >nul 2>&1
+exit
 
 :RESOLVE_HOST
 set "%~2="
