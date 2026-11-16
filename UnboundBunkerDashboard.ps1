@@ -145,9 +145,7 @@ $RpzListe = @(
     @{ Tag = "hagezi-tif-ips";    Nome = "HaGeZi TIF-IPS";         Emoji = [char]::ConvertFromUtf32(0x1F949) }
     @{ Tag = "spamhaus-drop-v4";  Nome = "Spamhaus DROP v4";       Emoji = [char]::ConvertFromUtf32(0x1F6E1) }
     @{ Tag = "spamhaus-drop-v6";  Nome = "Spamhaus DROP v6";       Emoji = [char]::ConvertFromUtf32(0x1F6E1) }
-    @{ Tag = "hagezi-dyndns";     Nome = "HaGeZi DynDNS";          Emoji = [char]::ConvertFromUtf32(0x1F310) }
     @{ Tag = "hagezi-hoster";     Nome = "HaGeZi Badware Hoster";  Emoji = [char]::ConvertFromUtf32(0x1F4E6) }
-    @{ Tag = "hagezi-spamtlds";   Nome = "HaGeZi Most Abused TLDs";Emoji = [char]::ConvertFromUtf32(0x1F6AB) }
     @{ Tag = "urlhaus";           Nome = "abuse.ch URLhaus";       Emoji = [char]::ConvertFromUtf32(0x1F9A0) }
     @{ Tag = "threatfox";         Nome = "abuse.ch ThreatFox";     Emoji = [char]::ConvertFromUtf32(0x1F578) }
 )
@@ -10738,7 +10736,7 @@ async function refresh(forceVersions) {
     else if (rpzStatePct < 100) { rpzStateStyle = 'net'; }
     bRpzState.className = 'badge ' + rpzStateStyle;
     bRpzState.innerHTML = '&#128737; STATO RPZ: <b>' + rpzStatePct + '%</b>';
-    bRpzState.title = 'Stato aggiornamento liste RPZ (soglie dinamiche):\n- Malware (URLhaus/ThreatFox/TIF): 12h\n- Spamhaus: 48h\n- Liste Generiche (Pro Plus/DynDNS): 96h\n' + (listaCritica ? '- Lista che incide sul punteggio: ' + listaCritica : '');
+    bRpzState.title = 'Stato aggiornamento liste RPZ (soglie dinamiche):\n- Malware (URLhaus/ThreatFox/TIF): 12h\n- Spamhaus: 48h\n- Liste Generiche (Pro Plus/Hoster): 96h\n' + (listaCritica ? '- Lista che incide sul punteggio: ' + listaCritica : '');
     badges.appendChild(bRpzState);
 
     const bBlocchi = document.createElement('span');
