@@ -60,8 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1130.0"
-:: [v1130.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
+set "LOCAL_VER=1131.0"
+:: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
 :: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
@@ -1516,7 +1516,7 @@ call :LOGSTEP "NET" "!F10_RES!"
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10B" goto :SKIP_F10B
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
-:: [v1130.0] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
+:: [v1131.0] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
 :: e piu recente di TIF_BOOT_MAX_AGE_H ore si salta il download, se ne occupa il task biorario
 :: della zona TIF con ricarico a caldo. Non vale per --fase F10B lanciata a mano e se il file manca.
 set "TIF_BOOT_MAX_AGE_H=24"
@@ -2381,6 +2381,9 @@ if not "!CLOUD_VER!"=="" if not "!CLOUD_VER!"=="N/A" (
 )
 
 set "CHANGED=0"
+set "CH_CONF=0"
+set "CH_RZ=0"
+set "CH_NC=0"
 :: --- SILENT UPDATE CONTROLLO (SERVICE.CONF) VIA REFRESH ---
 powershell -Command "try { $v = (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/UserH725/BiMaSoft/refs/heads/main/version_service.txt' -UseBasicParsing -TimeoutSec 5).Content.Trim(); [System.IO.File]::WriteAllText('%VER_TMP%', $v) } catch {}" >nul 2>&1
 if exist "%VER_TMP%" (
@@ -2444,7 +2447,7 @@ if not "!SVC_VER!"=="N/A" (
                     move /y "!SVC_TMP!" "!SERVICE_CONF!" >nul 2>&1
                     echo !SVC_VER!>"!LOCAL_SVC_VER_FILE!"
                     set "LOCAL_SVC_VER=!SVC_VER!"
-                    set "CHANGED=1"
+                    set "CH_CONF=1"
                     call :LOGSTEP "REFRESH" "Il file service.conf è stato aggiornato con successo alla  v!SVC_VER!"
                 )
             )
@@ -2493,7 +2496,7 @@ if !NC_NEEDS_DL! EQU 1 (
                 )
                 if "!SKIP_NCR!"=="0" (
                     move /y "%NC_TMP_R%" "%UB_DIR%\named.cache" >nul 2>&1
-                    set "CHANGED=1"
+                    set "CH_NC=1"
                     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
                     call :LOGSTEP "REFRESH" "named.cache scaricato: !DT_NC!!NCR_TRYNOTE!"
                 ) else (
@@ -2509,7 +2512,7 @@ if !NC_NEEDS_DL! EQU 1 (
     ) else (
         if exist "%NCACHE_BAK%" (
             copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
-            set "CHANGED=1"
+            set "CH_NC=1"
             call :LOGSTEP "REFRESH" "named.cache ripristinato dal backup"
         ) else (
             call :LOGSTEP "REFRESH" "named.cache non scaricabile e nessun backup"
@@ -2546,7 +2549,7 @@ if !RZ_NEEDS_DL! EQU 1 (
                 )
                 if "!SKIP_RZR!"=="0" (
                     move /y "%RZ_TMP_R%" "%UB_DIR%\root.zone" >nul 2>&1
-                    set "CHANGED=1"
+                    set "CH_RZ=1"
                     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
                     call :LOGSTEP "REFRESH" "root.zone scaricato: !DT_RZ!!RZR_TRYNOTE!"
                 ) else (
@@ -2562,7 +2565,7 @@ if !RZ_NEEDS_DL! EQU 1 (
     ) else (
         if exist "%RZONE_BAK%" (
             copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
-            set "CHANGED=1"
+            set "CH_RZ=1"
             call :LOGSTEP "REFRESH" "root.zone ripristinato dal backup"
         ) else (
             call :LOGSTEP "REFRESH" "root.zone non scaricabile e nessun backup"
@@ -2577,7 +2580,21 @@ if !RZ_NEEDS_DL! EQU 1 (
 :: RPZ ogni 5 minuti). Mantenerli anche qui avrebbe solo duplicato il lavoro.
 
 
-if "!CHANGED!"=="1" (
+:: [v1131.0] Riavvio completo solo se cambia service.conf. root.zone si ricarica a caldo con
+:: auth_zone_reload e ripiega sul riavvio se fallisce. named.cache viene caricato al prossimo riavvio.
+set "RF_RESTART=0"
+if "!CH_CONF!"=="1" set "RF_RESTART=1"
+if "!CH_RZ!"=="1" if not "!RF_RESTART!"=="1" (
+    call :RPZ_HOT_RELOAD "."
+    if errorlevel 1 (
+        set "RF_RESTART=1"
+        call :LOGSTEP "REFRESH" "Ricarico a caldo di root.zone fallito: !RPZ_RELOAD_DET!, procedo con il riavvio"
+    ) else (
+        call :LOGSTEP "REFRESH" "root.zone ricaricata a caldo, riavvio non necessario"
+    )
+)
+if "!CH_NC!"=="1" if not "!RF_RESTART!"=="1" call :LOGSTEP "REFRESH" "named.cache aggiornato, sara caricato al prossimo riavvio di Unbound"
+if "!RF_RESTART!"=="1" (
     call :CACHE_DUMP
     call :UB_STOP_IF_RUNNING
     :: DNS bootstrap attivo: Unbound è fermo, garantisco risoluzione esterna temporanea
@@ -2591,7 +2608,7 @@ if "!CHANGED!"=="1" (
     powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 ) else (
-    call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
+    if "!CH_RZ!!CH_NC!"=="00" call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
 )
 
 :: Salva timestamp del refresh
@@ -3780,7 +3797,7 @@ exit /b 0
 :: Aspetta fino a 600 secondi che Unbound risponda, rimette il DNS su
 :: 127.0.0.1 / ::1 e invia una notifica Telegram con l esito: Unbound risponde
 :: oppure non ha risposto entro 10 minuti (DNS ripristinato comunque).
-:: Nessun avviso a video in nessuno dei due casi [v1130.0].
+:: Nessun avviso a video in nessuno dei due casi [v1131.0].
 :: ==================================================================
 :DNS_WATCH_ONLY
 title UNBOUND BUNKER - ATTESA UNBOUND
@@ -5174,7 +5191,7 @@ if exist "!WUR_EXE!" (
     if errorlevel 1 goto :WUR_NEXT
 )
 set "WUR_N=0"
-:: [v1130.0] nslookup in UDP puo non ricevere risposta anche con Unbound sano: prima prova TCP (-vc),
+:: [v1131.0] nslookup in UDP puo non ricevere risposta anche con Unbound sano: prima prova TCP (-vc),
 :: poi una query UDP diretta a localhost. su 127.0.0.1:5300 con un socket, senza nslookup.
 for /f %%C in ('nslookup -vc -port=5300 -timeout=2 -retry=1 localhost. 127.0.0.1 2^>nul ^| find /c "127.0.0.1"') do set "WUR_N=%%C"
 if !WUR_N! GEQ 2 (
@@ -5259,10 +5276,13 @@ set "RHR_OUT=%TEMP%\ub_rhr_!RANDOM!!RANDOM!.txt"
 "!RHR_EXE!" auth_zone_reload !RHR_ZONE! >"!RHR_OUT!" 2>&1
 set "RHR_RC=!errorlevel!"
 set "RHR_LINE=nessuna risposta"
+set "RHR_OK=0"
 if exist "!RHR_OUT!" set /p RHR_LINE=<"!RHR_OUT!"
+:: [v1131.0] la risposta puo avere righe prima di ok, per esempio ZONEMD verification successful sulla radice
+if exist "!RHR_OUT!" findstr /b /i /c:"ok" "!RHR_OUT!" >nul 2>&1 && set "RHR_OK=1"
 if exist "!RHR_OUT!" del /f /q "!RHR_OUT!" >nul 2>&1
 if not "!RHR_RC!"=="0" goto :RHR_FAIL
-if /i not "!RHR_LINE:~0,2!"=="ok" goto :RHR_FAIL
+if not "!RHR_OK!"=="1" goto :RHR_FAIL
 call :LOGSTEP "REFRESH-ABUSECH" "Zona !RHR_ZONE! ricaricata a caldo"
 exit /b 0
 :RHR_FAIL
