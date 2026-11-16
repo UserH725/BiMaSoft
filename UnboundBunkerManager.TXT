@@ -61,7 +61,7 @@ title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
 set "LOCAL_VER=1131.0"
-:: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
+:: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 9) Meno scritture su SSD: nei task zone RPZ, abuse.ch e biorario la rotazione dei backup avviene solo quando il file cambia davvero e con rinomina :BAK_COMMIT invece di tre copie a ogni giro, niente copia file in .tmp quando il server risponde 304, TIF non riunisce le parti se nessuna e cambiata; il ripristino dal backup avviene solo se il file manca, altrimenti si mantiene il file attuale. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
 :: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
@@ -2455,11 +2455,7 @@ if not "!SVC_VER!"=="N/A" (
     )
 )
 
-:: Backup prima di sovrascrivere (con rotazione a 3 versioni)
-if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
-if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
-if exist "%UB_DIR%\root.zone"   call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
-if exist "%UB_DIR%\root.zone"   copy /y "%UB_DIR%\root.zone"   "%RZONE_BAK%"  >nul 2>&1
+:: [v1131.0] Il backup con rotazione si fa solo quando il file cambia davvero (:BAK_COMMIT)
 :: [NOTA v1126.0] Le zone HaGeZi Pro Plus, TIF, TIF-IPS, Hoster e Spamhaus DROP v4 e v6
 :: non vengono piu scaricate qui: hanno un task dedicato ciascuna, ogni 2 ore sfalsate
 :: di 5 minuti, con ricarico a caldo e notifica Telegram propria: vedi :REFRESH_ZONE_ONLY.
@@ -2495,7 +2491,9 @@ if !NC_NEEDS_DL! EQU 1 (
                     )
                 )
                 if "!SKIP_NCR!"=="0" (
+                    call :BAK_COMMIT "%UB_DIR%\named.cache" "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
                     move /y "%NC_TMP_R%" "%UB_DIR%\named.cache" >nul 2>&1
+                    if not exist "%UB_DIR%\named.cache" if exist "%NCACHE_BAK%" copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
                     set "CH_NC=1"
                     call :FILE_DATE "%UB_DIR%\named.cache" DT_NC
                     call :LOGSTEP "REFRESH" "named.cache scaricato: !DT_NC!!NCR_TRYNOTE!"
@@ -2510,7 +2508,9 @@ if !NC_NEEDS_DL! EQU 1 (
             )
         )
     ) else (
-        if exist "%NCACHE_BAK%" (
+        if exist "%UB_DIR%\named.cache" (
+            call :LOGSTEP "REFRESH" "named.cache non scaricabile, mantengo il file attuale"
+        ) else if exist "%NCACHE_BAK%" (
             copy /y "%NCACHE_BAK%" "%UB_DIR%\named.cache" >nul 2>&1
             set "CH_NC=1"
             call :LOGSTEP "REFRESH" "named.cache ripristinato dal backup"
@@ -2548,7 +2548,9 @@ if !RZ_NEEDS_DL! EQU 1 (
                     )
                 )
                 if "!SKIP_RZR!"=="0" (
+                    call :BAK_COMMIT "%UB_DIR%\root.zone" "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
                     move /y "%RZ_TMP_R%" "%UB_DIR%\root.zone" >nul 2>&1
+                    if not exist "%UB_DIR%\root.zone" if exist "%RZONE_BAK%" copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
                     set "CH_RZ=1"
                     call :FILE_DATE "%UB_DIR%\root.zone" DT_RZ
                     call :LOGSTEP "REFRESH" "root.zone scaricato: !DT_RZ!!RZR_TRYNOTE!"
@@ -2563,7 +2565,9 @@ if !RZ_NEEDS_DL! EQU 1 (
             )
         )
     ) else (
-        if exist "%RZONE_BAK%" (
+        if exist "%UB_DIR%\root.zone" (
+            call :LOGSTEP "REFRESH" "root.zone non scaricabile, mantengo il file attuale"
+        ) else if exist "%RZONE_BAK%" (
             copy /y "%RZONE_BAK%" "%UB_DIR%\root.zone" >nul 2>&1
             set "CH_RZ=1"
             call :LOGSTEP "REFRESH" "root.zone ripristinato dal backup"
@@ -2644,10 +2648,6 @@ set "ABU_RELOAD_ZONES="
 set "ABU_RELOAD_DET="
 
 :: Rotazione backup prima del download, stesso pattern del refresh biorario
-if exist "%URLHAUS%"            call :ROTATE_BAK "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
-if exist "%URLHAUS%"            copy /y "%URLHAUS%"            "%URLHAUS_BAK%"      >nul 2>&1
-if exist "%THREATFOX%"          call :ROTATE_BAK "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
-if exist "%THREATFOX%"          copy /y "%THREATFOX%"          "%THREATFOX_BAK%"    >nul 2>&1
 
 :: abuse.ch URLhaus - RPZ nativo, singola sorgente senza mirror CDN
 call :CURL_RETRY "!URLHAUS_URL!" "%URLHAUS%.tmp" ""
@@ -2662,7 +2662,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_URLHAUS!"=="0" (
+            call :BAK_COMMIT "%URLHAUS%" "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
             move /y "%URLHAUS%.tmp" "%URLHAUS%" >nul 2>&1
+            if not exist "%URLHAUS%" if exist "%URLHAUS_BAK%" copy /y "%URLHAUS_BAK%" "%URLHAUS%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%URLHAUS%" DT_URLHAUS
             set "ABU_UH_ST=OK"
@@ -2677,7 +2679,11 @@ if not errorlevel 1 (
         call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch URLhaus - file scaricato piccolo, uso esistente: !DT_URLHAUS!"
     )
 ) else (
-    if exist "%URLHAUS_BAK%" (
+    if exist "%URLHAUS%" (
+        call :FILE_DATE "%URLHAUS%" DT_URLHAUS
+        set "ABU_UH_ST=WARN"
+        call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch URLhaus non scaricato, mantengo il file attuale: !DT_URLHAUS!"
+    ) else if exist "%URLHAUS_BAK%" (
         copy /y "%URLHAUS_BAK%" "%URLHAUS%" >nul 2>&1
         call :FILE_DATE "%URLHAUS%" DT_URLHAUS
         set "ABU_UH_ST=WARN"
@@ -2702,7 +2708,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_THREATFOX!"=="0" (
+            call :BAK_COMMIT "%THREATFOX%" "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
             move /y "%THREATFOX%.tmp" "%THREATFOX%" >nul 2>&1
+            if not exist "%THREATFOX%" if exist "%THREATFOX_BAK%" copy /y "%THREATFOX_BAK%" "%THREATFOX%" >nul 2>&1
             set "CHANGED=1"
             call :FILE_DATE "%THREATFOX%" DT_THREATFOX
             set "ABU_TF_ST=OK"
@@ -2717,7 +2725,11 @@ if not errorlevel 1 (
         call :LOGSTEP "REFRESH-ABUSECH" "[     SKIP     ] abuse.ch ThreatFox - file scaricato piccolo, uso esistente: !DT_THREATFOX!"
     )
 ) else (
-    if exist "%THREATFOX_BAK%" (
+    if exist "%THREATFOX%" (
+        call :FILE_DATE "%THREATFOX%" DT_THREATFOX
+        set "ABU_TF_ST=WARN"
+        call :LOGSTEP "REFRESH-ABUSECH" "[     WARN     ] abuse.ch ThreatFox non scaricato, mantengo il file attuale: !DT_THREATFOX!"
+    ) else if exist "%THREATFOX_BAK%" (
         copy /y "%THREATFOX_BAK%" "%THREATFOX%" >nul 2>&1
         call :FILE_DATE "%THREATFOX%" DT_THREATFOX
         set "ABU_TF_ST=WARN"
@@ -2849,8 +2861,6 @@ set "ZN_FILE1=%HZ_PRO_PLUS%"
 set "ZN_BAK1=%HZ_PRO_PLUS_BAK%"
 set "ZN_RPZ1=hagezi-pro-plus.rpz"
 set "ZN_DIFF=1"
-if exist "%HZ_PRO_PLUS%"        call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
-if exist "%HZ_PRO_PLUS%"        copy /y "%HZ_PRO_PLUS%"        "%HZ_PRO_PLUS_BAK%"  >nul 2>&1
 
 :: HaGeZi Pro Plus (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -2858,7 +2868,12 @@ set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/pro.plus.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/pro.plus.txt" "%HZ_PRO_PLUS%.tmp" "!RES_JSDELIVR!" "%HZ_PRO_PLUS%"
-if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+if not errorlevel 1 if not exist "%HZ_PRO_PLUS%.tmp" if exist "%HZ_PRO_PLUS%" (
+    call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+    call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus- RPZ gia' aggiornato: !DT_HZ!"
+    set "ZN_ST1=SKIP"
+    goto :RZ_FINISH
+)
 set "HZR_TRYNOTE="
 if !CURL_TRY_NUM! GTR 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
 if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HZR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
@@ -2871,7 +2886,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_HZ!"=="0" (
+            call :BAK_COMMIT "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
             move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
+            if not exist "%HZ_PRO_PLUS%" if exist "%HZ_PRO_PLUS_BAK%" copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH1=1"
             call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
@@ -2889,7 +2906,11 @@ if not errorlevel 1 (
         set "ZN_ST1=SKIP"
     )
 ) else (
-    if exist "%HZ_PRO_PLUS_BAK%" (
+    if exist "%HZ_PRO_PLUS%" (
+        call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Pro Plus - download non riuscito, mantengo il file attuale: !DT_HZ!"
+        set "ZN_ST1=SKIP"
+    ) else if exist "%HZ_PRO_PLUS_BAK%" (
         copy /y "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS%" >nul 2>&1
         call :FILE_DATE "%HZ_PRO_PLUS%" DT_HZ
         call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Pro Plus non scaricato, ripristinato dal backup: !DT_HZ!"
@@ -2910,8 +2931,6 @@ set "ZN_FILE1=%HZ_TIF_IPS%"
 set "ZN_BAK1=%HZ_TIF_IPS_BAK%"
 set "ZN_RPZ1=hagezi-tif-ips.rpz"
 set "ZN_DIFF=1"
-if exist "%HZ_TIF_IPS%"         call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
-if exist "%HZ_TIF_IPS%"         copy /y "%HZ_TIF_IPS%"         "%HZ_TIF_IPS_BAK%"   >nul 2>&1
 
 :: HaGeZi TIF-IPS (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -2919,7 +2938,12 @@ set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/tif-ips.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/tif-ips.txt" "%HZ_TIF_IPS%.tmp" "!RES_JSDELIVR!" "%HZ_TIF_IPS%"
-if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS%.tmp" >nul 2>&1
+if not errorlevel 1 if not exist "%HZ_TIF_IPS%.tmp" if exist "%HZ_TIF_IPS%" (
+    call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+    call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - RPZ-IP gia' aggiornato: !DT_TIFIPS!"
+    set "ZN_ST1=SKIP"
+    goto :RZ_FINISH
+)
 set "TIFIPSR_TRYNOTE="
 if !CURL_TRY_NUM! GTR 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
 if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "TIFIPSR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
@@ -2932,7 +2956,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_TIFIPS!"=="0" (
+            call :BAK_COMMIT "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
             move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
+            if not exist "%HZ_TIF_IPS%" if exist "%HZ_TIF_IPS_BAK%" copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH1=1"
             call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
@@ -2950,7 +2976,11 @@ if not errorlevel 1 (
         set "ZN_ST1=SKIP"
     )
 ) else (
-    if exist "%HZ_TIF_IPS_BAK%" (
+    if exist "%HZ_TIF_IPS%" (
+        call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF-IPS - download non riuscito, mantengo il file attuale: !DT_TIFIPS!"
+        set "ZN_ST1=SKIP"
+    ) else if exist "%HZ_TIF_IPS_BAK%" (
         copy /y "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS%" >nul 2>&1
         call :FILE_DATE "%HZ_TIF_IPS%" DT_TIFIPS
         call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF-IPS non scaricato, ripristinato dal backup: !DT_TIFIPS!"
@@ -2971,8 +3001,6 @@ set "ZN_FILE1=%HZ_HOSTER%"
 set "ZN_BAK1=%HZ_HOSTER_BAK%"
 set "ZN_RPZ1=hagezi-hoster.rpz"
 set "ZN_DIFF=1"
-if exist "%HZ_HOSTER%"          call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
-if exist "%HZ_HOSTER%"          copy /y "%HZ_HOSTER%"          "%HZ_HOSTER_BAK%"    >nul 2>&1
 
 :: HaGeZi Badware Hoster (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -2980,7 +3008,12 @@ set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
 
 call :CURL_RETRY_Z2 "https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/rpz/hoster.txt" "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/rpz/hoster.txt" "%HZ_HOSTER%.tmp" "!RES_JSDELIVR!" "%HZ_HOSTER%"
-if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER%.tmp" >nul 2>&1
+if not errorlevel 1 if not exist "%HZ_HOSTER%.tmp" if exist "%HZ_HOSTER%" (
+    call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+    call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - RPZ gia' aggiornato: !DT_HOSTER!"
+    set "ZN_ST1=SKIP"
+    goto :RZ_FINISH
+)
 set "HOSTERR_TRYNOTE="
 if !CURL_TRY_NUM! GTR 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/6 via jsdelivr (fallback)]"
 if !CURL_TRY_NUM! GTR 1 if !CURL_TRY_NUM! LEQ 3 set "HOSTERR_TRYNOTE=  [riuscito al tentativo !CURL_TRY_NUM!/3]"
@@ -2993,7 +3026,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_HOSTER!"=="0" (
+            call :BAK_COMMIT "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
             move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
+            if not exist "%HZ_HOSTER%" if exist "%HZ_HOSTER_BAK%" copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH1=1"
             call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
@@ -3011,7 +3046,11 @@ if not errorlevel 1 (
         set "ZN_ST1=SKIP"
     )
 ) else (
-    if exist "%HZ_HOSTER_BAK%" (
+    if exist "%HZ_HOSTER%" (
+        call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi Badware Hoster - download non riuscito, mantengo il file attuale: !DT_HOSTER!"
+        set "ZN_ST1=SKIP"
+    ) else if exist "%HZ_HOSTER_BAK%" (
         copy /y "%HZ_HOSTER_BAK%" "%HZ_HOSTER%" >nul 2>&1
         call :FILE_DATE "%HZ_HOSTER%" DT_HOSTER
         call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi Badware Hoster non scaricato, ripristinato dal backup: !DT_HOSTER!"
@@ -3038,10 +3077,6 @@ set "ZN_BAK2=%SH_DROP6_BAK%"
 set "ZN_RPZ2=spamhaus-drop-v6.rpz"
 set "ZN_ST2=SKIP"
 set "ZN_DIFF=1"
-if exist "%SH_DROP%"            call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
-if exist "%SH_DROP%"            copy /y "%SH_DROP%"            "%SH_DROP_BAK%"      >nul 2>&1
-if exist "%SH_DROP6%"           call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
-if exist "%SH_DROP6%"           copy /y "%SH_DROP6%"           "%SH_DROP6_BAK%"     >nul 2>&1
 
 :: Spamhaus DROP (refresh biorario)
 :: NB: Spamhaus richiede min 1h tra download automatici; il ciclo
@@ -3067,7 +3102,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_DROP!"=="0" (
+            call :BAK_COMMIT "%SH_DROP%" "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
+            if not exist "%SH_DROP%" if exist "%SH_DROP_BAK%" copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH1=1"
             call :FILE_DATE "%SH_DROP%" DT_DROP
@@ -3095,7 +3132,11 @@ if not errorlevel 1 (
         set "ZN_ST1=SKIP"
     )
 ) else (
-    if exist "%SH_DROP_BAK%" (
+    if exist "%SH_DROP%" (
+        call :FILE_DATE "%SH_DROP%" DT_DROP
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP - download non riuscito, mantengo il file attuale: !DT_DROP!"
+        set "ZN_ST1=WARN"
+    ) else if exist "%SH_DROP_BAK%" (
         copy /y "%SH_DROP_BAK%" "%SH_DROP%" >nul 2>&1
         call :FILE_DATE "%SH_DROP%" DT_DROP
         call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROP non scaricato, ripristinato dal backup: !DT_DROP!"
@@ -3133,7 +3174,9 @@ if not errorlevel 1 (
             )
         )
         if "!SKIP_DROP6!"=="0" (
+            call :BAK_COMMIT "%SH_DROP6%" "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
+            if not exist "%SH_DROP6%" if exist "%SH_DROP6_BAK%" copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH2=1"
             call :FILE_DATE "%SH_DROP6%" DT_DROP6
@@ -3161,7 +3204,11 @@ if not errorlevel 1 (
         set "ZN_ST2=SKIP"
     )
 ) else (
-    if exist "%SH_DROP6_BAK%" (
+    if exist "%SH_DROP6%" (
+        call :FILE_DATE "%SH_DROP6%" DT_DROP6
+        call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 - download non riuscito, mantengo il file attuale: !DT_DROP6!"
+        set "ZN_ST2=WARN"
+    ) else if exist "%SH_DROP6_BAK%" (
         copy /y "%SH_DROP6_BAK%" "%SH_DROP6%" >nul 2>&1
         call :FILE_DATE "%SH_DROP6%" DT_DROP6
         call :LOGSTEP "REFRESH" "[     WARN     ] Spamhaus DROPv6 non scaricato, ripristinato dal backup: !DT_DROP6!"
@@ -3184,8 +3231,6 @@ set "ZN_BAK1=%HZ_TIF_BAK%"
 set "ZN_RPZ1=hagezi-tif.rpz"
 :: TIF e molto grande: nella notifica solo il conteggio, senza il confronto aggiunti e rimossi
 set "ZN_DIFF=0"
-if exist "%HZ_TIF%"             call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
-if exist "%HZ_TIF%"             copy /y "%HZ_TIF%"             "%HZ_TIF_BAK%"       >nul 2>&1
 
 :: HaGeZi TIF (refresh biorario)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -3196,6 +3241,7 @@ if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 set "TIF_PARTS=0"
 set "TIF_TRYNOTE="
 set "TIF_DL_ERROR=0"
+set "TIF_ANY_NEW=0"
 
 :TIF_REFRESH_LOOP
 set /a TIF_PARTS+=1
@@ -3208,8 +3254,10 @@ call :CURL_RETRY_Z2 "!TIF_PART_URL!" "!TIF_PART_URL_JS!" "!TIF_PART_TMP!" "!RES_
 set "CURL_ERR=!errorlevel!"
 set "TIF_PART_NEW=0"
 if exist "!TIF_PART_TMP!" set "TIF_PART_NEW=1"
-
-if not exist "!TIF_PART_TMP!" if exist "!TIF_PART_REF!" copy /y "!TIF_PART_REF!" "!TIF_PART_TMP!" >nul 2>&1
+if "!TIF_PART_NEW!"=="1" set "TIF_ANY_NEW=1"
+:: [v1131.0] parte invariata (304): si usa .partN esistente, senza copiarla in .tmp
+set "TIF_PART_FILE=!TIF_PART_TMP!"
+if not exist "!TIF_PART_TMP!" set "TIF_PART_FILE=!TIF_PART_REF!"
 
 if !CURL_ERR! NEQ 0 (
     if "!DL_NOTFOUND!"=="1" if !TIF_PARTS! GTR 1 (
@@ -3221,7 +3269,7 @@ if !CURL_ERR! NEQ 0 (
 )
 
 set "PART_SIZE=0"
-for %%I in ("!TIF_PART_TMP!") do set "PART_SIZE=%%~zI"
+if exist "!TIF_PART_FILE!" for %%I in ("!TIF_PART_FILE!") do set "PART_SIZE=%%~zI"
 if !PART_SIZE! LSS 1024 (
     del /f /q "!TIF_PART_TMP!" >nul 2>&1
     if !TIF_PARTS! GTR 1 (
@@ -3259,11 +3307,22 @@ if "!TIF_DL_ERROR!"=="1" (
         set "ZN_ST1=ERR"
     )
 ) else (
+    if not "!TIF_ANY_NEW!"=="1" if exist "%HZ_TIF%" (
+        call :FILE_DATE "%HZ_TIF%" DT_TIF
+        call :LOGSTEP "REFRESH" "[     SKIP     ] HaGeZi TIF (!TIF_PARTS! files) - nessuna parte cambiata: !DT_TIF!"
+        set "ZN_ST1=SKIP"
+        goto :RZ_TIF_END
+    )
     if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
     for /L %%N in (1,1,!TIF_PARTS!) do (
-        type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
-        echo.>> "%HZ_TIF%.tmp"
-        move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
+        if exist "%HZ_TIF%.part%%N.tmp" (
+            type "%HZ_TIF%.part%%N.tmp" >> "%HZ_TIF%.tmp" 2>nul
+            echo.>> "%HZ_TIF%.tmp"
+            move /y "%HZ_TIF%.part%%N.tmp" "%HZ_TIF%.part%%N" >nul 2>&1
+        ) else (
+            type "%HZ_TIF%.part%%N" >> "%HZ_TIF%.tmp" 2>nul
+            echo.>> "%HZ_TIF%.tmp"
+        )
     )
 
     rem Verifica anti-troncamento come in F10B: record CNAME almeno pari alle voci dichiarate, altrimenti scarta.
@@ -3278,7 +3337,9 @@ if "!TIF_DL_ERROR!"=="1" (
             )
         )
         if "!SKIP_TIF!"=="0" (
+            call :BAK_COMMIT "%HZ_TIF%" "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
+            if not exist "%HZ_TIF%" if exist "%HZ_TIF_BAK%" copy /y "%HZ_TIF_BAK%" "%HZ_TIF%" >nul 2>&1
             set "CHANGED=1"
             set "ZN_CH1=1"
             call :FILE_DATE "%HZ_TIF%" DT_TIF
@@ -3291,11 +3352,15 @@ if "!TIF_DL_ERROR!"=="1" (
             set "ZN_ST1=SKIP"
         )
     ) else (
+        :: [v1131.0] versione scartata: azzero gli ETag delle parti, cosi al prossimo ciclo si riscaricano
+        :: e il file unificato viene ricostruito, altrimenti le parti risponderebbero 304 e resterebbe quello vecchio
+        del /f /q "%HZ_TIF%.part*.etag" >nul 2>&1
         call :FILE_DATE "%HZ_TIF%" DT_TIF
         call :LOGSTEP "REFRESH" "[     WARN     ] HaGeZi TIF - file unificato scartato (troppo piccolo o voci incomplete), mantengo la versione attuale: !DT_TIF!"
         set "ZN_ST1=WARN"
     )
 )
+:RZ_TIF_END
 if exist "%HZ_TIF%.tmp" del /f /q "%HZ_TIF%.tmp" >nul 2>&1
 
 goto :RZ_FINISH
@@ -3995,6 +4060,15 @@ exit /b
 if exist "%~2" copy /y "%~2" "%~3" >nul 2>&1
 if exist "%~1" copy /y "%~1" "%~2" >nul 2>&1
 exit /b
+
+:: [v1131.0] Rotazione dei backup a rinomina, SOLO quando il file sta per essere sostituito
+:: da una versione diversa: nessuna riscrittura di dati sull SSD, e bak1 resta sempre la
+:: versione precedente. Uso: call :BAK_COMMIT "<file>" "<bak1>" "<bak2>" "<bak3>"
+:BAK_COMMIT
+if exist "%~3" move /y "%~3" "%~4" >nul 2>&1
+if exist "%~2" move /y "%~2" "%~3" >nul 2>&1
+if exist "%~1" move /y "%~1" "%~2" >nul 2>&1
+exit /b 0
 
 :: ==================================================================
 :: SUBROUTINE: mantiene solo i 3 file .BKP piu' recenti (per data di
