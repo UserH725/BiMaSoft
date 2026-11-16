@@ -60,8 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1126.5"
-:: [v1126.5] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
+set "LOCAL_VER=1127.0"
+:: [v1127.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
 :: [v1126.0] Task dedicato per ogni zona RPZ HaGeZi e Spamhaus: ogni 2 ore, sfalsati di 5 minuti, con ricarico a caldo, ripiego con riavvio e notifica Telegram. Vedi :REFRESH_ZONE_ONLY.
@@ -1544,7 +1544,7 @@ call :LOGSTEP "NET" "!F10_RES!"
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10B" goto :SKIP_F10B
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
-:: [v1126.5] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
+:: [v1127.0] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
 :: e piu recente di TIF_BOOT_MAX_AGE_H ore si salta il download, se ne occupa il task biorario
 :: della zona TIF con ricarico a caldo. Non vale per --fase F10B lanciata a mano e se il file manca.
 set "TIF_BOOT_MAX_AGE_H=24"
@@ -4044,7 +4044,7 @@ exit /b 0
 :: Aspetta fino a 600 secondi che Unbound risponda, rimette il DNS su
 :: 127.0.0.1 / ::1 e invia una notifica Telegram con l esito: Unbound risponde
 :: oppure non ha risposto entro 10 minuti (DNS ripristinato comunque).
-:: Nessun avviso a video in nessuno dei due casi [v1126.5].
+:: Nessun avviso a video in nessuno dei due casi [v1127.0].
 :: ==================================================================
 :DNS_WATCH_ONLY
 title UNBOUND BUNKER - ATTESA UNBOUND
@@ -5446,7 +5446,7 @@ if exist "!WUR_EXE!" (
     if errorlevel 1 goto :WUR_NEXT
 )
 set "WUR_N=0"
-:: [v1126.5] nslookup in UDP puo non ricevere risposta anche con Unbound sano: prima prova TCP (-vc),
+:: [v1127.0] nslookup in UDP puo non ricevere risposta anche con Unbound sano: prima prova TCP (-vc),
 :: poi una query UDP diretta a localhost. su 127.0.0.1:5300 con un socket, senza nslookup.
 for /f %%C in ('nslookup -vc -port=5300 -timeout=2 -retry=1 localhost. 127.0.0.1 2^>nul ^| find /c "127.0.0.1"') do set "WUR_N=%%C"
 if !WUR_N! GEQ 2 (
@@ -5477,11 +5477,19 @@ exit /b 0
 :: esempio un altro task lo sta gia riavviando) non si fa net stop e kill,
 :: per non interrompere il caricamento in corso: il chiamante fa net start
 :: e attende la prontezza. Un processo rimasto appeso con servizio STOPPED
-:: viene comunque terminato.
+:: viene comunque terminato. Se il servizio e RUNNING ma unbound-control non
+:: risponde ancora, si attende fino a 120 secondi prima di fermarlo.
 :: ==================================================================
 :UB_STOP_IF_RUNNING
 sc query unbound | find "RUNNING" >nul 2>&1
 if errorlevel 1 goto :USIR_NOTRUN
+:: Servizio RUNNING ma unbound-control non risponde: Unbound sta ancora caricando le RPZ
+:: (o un altro task lo ha appena riavviato). Si attende fino a 120 secondi invece di
+:: interromperlo con net stop e kill; se resta muto oltre l attesa e appeso e viene fermato.
+set "USIR_EXE=!UB_DIR!\unbound-control.exe"
+if "!UB_DIR!"=="" set "USIR_EXE=C:\Program Files\Unbound\unbound-control.exe"
+"!USIR_EXE!" status >nul 2>&1
+if errorlevel 1 call :WAIT_UNBOUND_READY 120
 net stop unbound >nul 2>&1
 taskkill /f /im unbound.exe >nul 2>&1
 exit /b 0
@@ -5513,10 +5521,10 @@ if errorlevel 1 goto :RHR_WAIT
 if errorlevel 1 goto :RHR_WAIT
 goto :RHR_GO
 :RHR_WAIT
-call :LOGSTEP "REFRESH-RPZ" "Unbound non ancora pronto, attendo fino a 45 secondi prima del ricarico a caldo di !RHR_ZONE!"
-call :WAIT_UNBOUND_READY 45
+call :LOGSTEP "REFRESH-RPZ" "Unbound non ancora pronto, attendo fino a 180 secondi prima del ricarico a caldo di !RHR_ZONE!"
+call :WAIT_UNBOUND_READY 180
 if "!UNBOUND_READY!"=="1" goto :RHR_GO
-set "RPZ_RELOAD_DET=servizio Unbound non in esecuzione"
+set "RPZ_RELOAD_DET=Unbound non pronto dopo 180 secondi: in avvio o fermo"
 exit /b 1
 :RHR_GO
 set "RHR_OUT=%TEMP%\ub_rhr_!RANDOM!!RANDOM!.txt"
