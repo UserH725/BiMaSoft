@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1131.1"
+set "LOCAL_VER=1131.2"
+:: [v1131.2] 1) Priorita CPU di unbound.exe da High (3) ad AboveNormal (6), sia nel registro IFEO sia dopo ogni avvio del servizio: il ricarico a caldo delle RPZ (parsing di liste molto grandi) non deve piu togliere CPU al resto del PC. 2) :DNS_FALLBACK_OFF scrive il DNS di sistema solo sulle schede che non sono gia su 127.0.0.1 / ::1, invece di riscriverlo su tutte a ogni task.
 :: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 9) Meno scritture su SSD: nei task zone RPZ, abuse.ch e biorario la rotazione dei backup avviene solo quando il file cambia davvero e con rinomina :BAK_COMMIT invece di tre copie a ogni giro, niente copia file in .tmp quando il server risponde 304, TIF non riunisce le parti se nessuna e cambiata; il ripristino dal backup avviene solo se il file manca, altrimenti si mantiene il file attuale. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
 :: [v1126.1] FIX attesa lunga in FASE 13 e nel riavvio rapido: il boot non si ferma piu fino a 180 secondi ad aspettare le RPZ. Controllo rapido di 6 secondi, poi si prosegue con le fasi successive mentre Unbound finisce di caricare; il DNS di sistema resta sul resolver temporaneo e viene ripristinato su 127.0.0.1 a fine boot, solo quando Unbound risponde. Vedi :DNS_RESTORE_DEFERRED.
@@ -1126,10 +1127,10 @@ call :LOGSTEP "FS" "Directory Unbound trovata"
 :: FASE 3 - Azione
 :SKIP_F2
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F3" goto :SKIP_F3
-set "F3_ACT=[...in corso...] REG  >> Imposto priorità alta a unbound.exe e disattivo i dump locali."
+set "F3_ACT=[...in corso...] REG  >> Imposto priorità sopra la norma a unbound.exe e disattivo i dump locali."
 call :UPDATE_UI 20
 set "HKLM_IFEO=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\unbound.exe\PerfOptions"
-reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f >nul 2>&1
+reg add "%HKLM_IFEO%" /v "CpuPriorityClass" /t REG_DWORD /d 6 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\unbound.exe" /v "DumpType" /t REG_DWORD /d 0 /f >nul 2>&1
 
 :: --- AUTO-RESTART SU CRASH (mitiga il sintomo: SCM riavvia il servizio da solo, non risolve la causa del crash) ---
@@ -1285,7 +1286,7 @@ if "%SKIP_MAINTENANCE%"=="1" (
     net stop unbound >nul 2>&1
     taskkill /f /im unbound.exe >nul 2>&1
     net start unbound >nul 2>&1
-    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }"
     :: [FIX BLACKOUT DNS v1121.0] Aspetto che Unbound abbia finito di caricare le RPZ e risponda,
     :: PRIMA di rimettere il DNS di sistema su 127.0.0.1.
     :: [v1126.1] Controllo rapido: se Unbound sta ancora caricando il ripristino DNS slitta a fine boot.
@@ -2089,8 +2090,8 @@ net start unbound >nul 2>&1
 timeout /t 2 >nul
 sc query unbound | find "RUNNING" >nul 2>&1
 if %errorLevel% neq 0 goto :START_ERROR
-:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
-powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }" >nul 2>&1
+:: Impostazione priorità sopra la norma, AboveNormal (eseguito dopo l'avvio del servizio)
+powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }" >nul 2>&1
 set "F13_ACT=[...in corso...] CONF >> Attendo che Unbound abbia caricato le RPZ prima di ripristinare il DNS."
 call :UPDATE_UI 99
 :: [v1126.1] Nel boot con UI non si blocca: controllo rapido, poi il ripristino DNS viene rimandato a fine boot. Con ONLY_PH resta l'attesa completa.
@@ -2609,7 +2610,7 @@ if "!RF_RESTART!"=="1" (
     :: [CHIRURGICO] Ripristino il DNS locale su 127.0.0.1 solo ORA che Unbound è attivo
     call :DNS_FALLBACK_OFF
     call :CACHE_LOAD
-    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+    powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }"
     call :LOGSTEP "REFRESH" "Servizio riavviato dopo refresh biorario"
 ) else (
     if "!CH_RZ!!CH_NC!"=="00" call :LOGSTEP "REFRESH" "Nessun file cambiato, riavvio saltato"
@@ -2782,7 +2783,7 @@ if "!CHANGED!"=="1" (
         call :WAIT_UNBOUND_READY 180
         call :DNS_FALLBACK_OFF
         call :CACHE_LOAD
-        powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+        powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }"
         call :LOGSTEP "REFRESH-ABUSECH" "Ricarico a caldo fallito: servizio riavviato"
     )
 ) else (
@@ -3402,7 +3403,7 @@ net start unbound >nul 2>&1
 call :WAIT_UNBOUND_READY 180
 call :DNS_FALLBACK_OFF
 call :CACHE_LOAD
-powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }"
 goto :RZ_NOTIFY
 
 :RZ_NOCHANGE
@@ -3751,8 +3752,8 @@ if defined CE_SVC_RESTORED (
 )
 echo [i] Tentativo di riavvio di emergenza con l'ultimo backup funzionante...
 net start unbound
-:: Impostazione priorità alta (eseguito dopo l'avvio del servizio)
-powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'High' }"
+:: Impostazione priorità sopra la norma, AboveNormal (eseguito dopo l'avvio del servizio)
+powershell -Command "Get-Process unbound -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'AboveNormal' }"
 :: [FIX BLACKOUT DNS v1121.0] Attendo che Unbound risponda prima di ripristinare il DNS.
 call :WAIT_UNBOUND_READY 180
 :: [FIX] Ripristina il DNS su 127.0.0.1 anche in caso di errore di configurazione:
@@ -3826,10 +3827,12 @@ exit /b 0
 :: Uso: call :DNS_FALLBACK_OFF
 :: ==================================================================
 :DNS_FALLBACK_OFF
-powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '127.0.0.1'" >nul 2>&1
+:: [v1131.2] Scrive il DNS solo sulle schede che NON sono gia' su 127.0.0.1 / ::1: prima ogni task
+:: (anche senza modifiche) lo riscriveva su tutte le schede, con evento di cambio rete e flush cache DNS client.
+powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*' -and (@($_.ServerAddresses).Count -ne 1 -or $_.ServerAddresses[0] -ne '127.0.0.1')} | Set-DnsClientServerAddress -ServerAddresses '127.0.0.1'" >nul 2>&1
 :: [FIX] Riafferma anche l'IPv6 su ::1 ad ogni ripristino: prima veniva impostato
 :: una sola volta in Fase 5 e non si autoriparava mai se l'adattatore lo perdeva.
-powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
+powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*' -and (@($_.ServerAddresses).Count -ne 1 -or $_.ServerAddresses[0] -ne '::1')} | Set-DnsClientServerAddress -ServerAddresses '::1'" >nul 2>&1
 call :LOGSTEP "DNS_BOOTSTRAP" "DNS ripristinato su 127.0.0.1 / ::1"
 exit /b 0
 
