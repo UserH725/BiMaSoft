@@ -1524,7 +1524,7 @@ set "TIF_BOOT_MAX_AGE_H=24"
 set "TIF_AGE_H=9999"
 if not defined ONLY_PH if exist "%HZ_TIF%" for /f %%H in ('powershell -NoProfile -Command "[int][math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%HZ_TIF%').LastWriteTime).TotalHours)" 2^>nul') do set "TIF_AGE_H=%%H"
 if !TIF_AGE_H! LSS !TIF_BOOT_MAX_AGE_H! (
-    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: file aggiornato !TIF_AGE_H! ore fa, salto il download all avvio e lo lascia al task biorario della zona"
+    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: file aggiornato !TIF_AGE_H! ore fa, viene aggiornato dal task biorario"
     goto :TIF_BOOT_DONE
 )
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
