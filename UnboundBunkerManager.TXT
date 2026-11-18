@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1140.0"
+set "LOCAL_VER=1141.0"
+:: [v1141.0] LOCK TRA ISTANZE: i task pianificati (giornaliero, biorario, abuse.ch, 5 zone RPZ) e l'avvio al logon non girano piu in parallelo. Ogni istanza prende un lock (cartella ub_manager.lock in UB_DIR con il PID di cmd.exe) e le altre attendono il proprio turno. Il lock si libera da solo: se il proprietario termina o muore, o dopo 120 minuti, viene considerato scaduto. Task --refresh, --refreshzone, --refreshabusech, --dailyreport: se il turno non arriva entro 30, 30, 10, 10 minuti saltano il giro. Avvio e --scheduled: attendono fino a 20 minuti, poi procedono comunque. Dopo il lock i task in background attendono fino a circa 2 minuti che torni la rete (risveglio dalla sospensione). Task XML: StartWhenAvailable spento sui task ripetuti, ExecutionTimeLimit da 72 ore a 2 ore (3 per il giornaliero). Esclusi dal lock --dnswatch e --fase.
 :: [v1131.2] 1) Priorita CPU di unbound.exe da High (3) ad AboveNormal (6), sia nel registro IFEO sia dopo ogni avvio del servizio: il ricarico a caldo delle RPZ (parsing di liste molto grandi) non deve piu togliere CPU al resto del PC. 2) :DNS_FALLBACK_OFF scrive il DNS di sistema solo sulle schede che non sono gia su 127.0.0.1 / ::1, invece di riscriverlo su tutte a ogni task.
 :: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 9) Meno scritture su SSD: nei task zone RPZ, abuse.ch e biorario la rotazione dei backup avviene solo quando il file cambia davvero e con rinomina :BAK_COMMIT invece di tre copie a ogni giro, niente copia file in .tmp quando il server risponde 304, TIF non riunisce le parti se nessuna e cambiata; il ripristino dal backup avviene solo se il file manca, altrimenti si mantiene il file attuale. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
 :: [v1126.2] Attesa Unbound spostata in un watcher nascosto: se a fine boot Unbound sta ancora caricando le RPZ il Manager si chiude subito e il flag --dnswatch aspetta fino a 10 minuti, rimette il DNS su 127.0.0.1 e mostra un avviso a video con OK; se Unbound non risponde, l avviso chiede se rilanciare il Manager. Vedi :DNS_RESTORE_DEFERRED e :DNS_WATCH_ONLY.
@@ -136,6 +137,42 @@ set "THREATFOX_BAK3=%THREATFOX%.bak3"
 :: Auth-Key nell'URL (nuovi host *-api.abuse.ch). Nel rpz_download.log la chiave viene mascherata.
 set "URLHAUS_URL=https://urlhaus-api.abuse.ch/v2/files/exports/990d6b135b1c0ae7dbb7b6660d2caade1d7d05d0f7ff560f/rpz.txt"
 set "THREATFOX_URL=https://threatfox-api.abuse.ch/v2/files/exports/990d6b135b1c0ae7dbb7b6660d2caade1d7d05d0f7ff560f/threatfox.rpz"
+
+:: ==================================================================
+:: [v1141.0] LOCK TRA ISTANZE (vedi nota di versione in cima)
+:: Il proprietario e' il cmd.exe che esegue questo BAT: il PowerShell qui sotto
+:: legge il PID del proprio padre. Nessun rilascio esplicito nei molti punti di
+:: uscita: se il proprietario non esiste piu il lock e' scaduto. Codici di uscita:
+:: 0 = lock preso, 7 = tempo di attesa esaurito, altro = errore (si procede).
+:: ==================================================================
+set "LK_TAG=%~1"
+if not defined LK_TAG set "LK_TAG=avvio"
+set "LK_WAIT=1200"
+set "LK_SKIP=0"
+if "%~1"=="--dnswatch" goto :LOCK_DONE
+if "%~1"=="--fase" goto :LOCK_DONE
+if "%~1"=="--refresh" set "LK_WAIT=1800"
+if "%~1"=="--refresh" set "LK_SKIP=1"
+if "%~1"=="--refreshzone" set "LK_WAIT=1800"
+if "%~1"=="--refreshzone" set "LK_SKIP=1"
+if "%~1"=="--refreshzone" set "LK_TAG=--refreshzone %~2"
+if "%~1"=="--refreshabusech" set "LK_WAIT=600"
+if "%~1"=="--refreshabusech" set "LK_SKIP=1"
+if "%~1"=="--dailyreport" set "LK_WAIT=600"
+if "%~1"=="--dailyreport" set "LK_SKIP=1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; $o=$d+'\owner.txt'; $w=[int]$env:LK_WAIT; $tag=$env:LK_TAG; if (-not (Test-Path -LiteralPath 'C:\Program Files\Unbound')) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; $end=(Get-Date).AddSeconds($w); $said=$false; while ($true) { $ok=$false; try { New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; $ok=$true } catch {}; if ($ok) { try { Set-Content -LiteralPath $o -Value ([string]$me+'|'+$tag+'|'+(Get-Date).ToString('s')) } catch {}; exit 0 }; $ct=$null; try { $ct=(Get-Item -LiteralPath $d -ErrorAction Stop).CreationTime } catch { continue }; $age=((Get-Date)-$ct).TotalMinutes; $alive=$true; $own=$null; try { $own=(Get-Content -LiteralPath $o -ErrorAction Stop -TotalCount 1).Split('|') } catch { $alive=($age -lt 0.5) }; if ($own) { $p=Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $ct.AddSeconds(5)) { $alive=$false } } catch {} } }; if ($age -gt 120) { $alive=$false }; if (-not $alive) { try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch {}; continue }; if (-not $said) { $who=''; if ($own) { $who=' ('+$own[1]+', PID '+$own[0]+')' }; Write-Host ('  [..] Un altro task Unbound Bunker e in corso'+$who+': attendo il mio turno...'); $said=$true }; if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Seconds (4+(Get-Random -Maximum 4)) }"
+set "LK_RC=!errorlevel!"
+if "!LK_RC!"=="7" goto :LOCK_TIMEOUT
+if "!LK_SKIP!"=="1" call :LOCK_NETWAIT
+goto :LOCK_DONE
+:LOCK_TIMEOUT
+if not "!LK_SKIP!"=="1" goto :LOCK_PROCEED
+:: Task in background: il turno non e' arrivato, si salta questo giro (il prossimo e' gia' in programma)
+cmd /c exit 0
+exit 0
+:LOCK_PROCEED
+echo   [ATTENZIONE] Lock Unbound Bunker non ottenuto entro il tempo massimo: proseguo comunque.
+:LOCK_DONE
 
 :: --- SALTI AI TASK IN BACKGROUND ---
 if "%~1"=="--refresh" goto :REFRESH_FILES_ONLY
@@ -5077,6 +5114,11 @@ set "XML_TASKNAME=%~1"
 set "XML_ARGFLAG=%~2"
 set "XML_MODE=%~3"
 set "XML_START=%~4"
+:: [v1141.0] StartWhenAvailable solo per il giornaliero (i ripetuti non devono ripartire tutti insieme al risveglio), limite di esecuzione 2 ore (3 per il giornaliero) al posto di 72
+set "XML_SWA=false"
+set "XML_ETL=PT2H"
+if /i "%~3"=="DAILY" set "XML_SWA=true"
+if /i "%~3"=="DAILY" set "XML_ETL=PT3H"
 set "XML_PATH=!UB_DIR!\%~1.xml"
 set "TASK_ERR_XML=!UB_DIR!\schtasks_error_%~1.log"
 if exist "!XML_PATH!" del /f /q "!XML_PATH!" >nul 2>&1
@@ -5129,7 +5171,7 @@ echo     ^<MultipleInstancesPolicy^>IgnoreNew^</MultipleInstancesPolicy^>
 echo     ^<DisallowStartIfOnBatteries^>false^</DisallowStartIfOnBatteries^>
 echo     ^<StopIfGoingOnBatteries^>false^</StopIfGoingOnBatteries^>
 echo     ^<AllowHardTerminate^>true^</AllowHardTerminate^>
-echo     ^<StartWhenAvailable^>true^</StartWhenAvailable^>
+echo     ^<StartWhenAvailable^>!XML_SWA!^</StartWhenAvailable^>
 echo     ^<RunOnlyIfNetworkAvailable^>false^</RunOnlyIfNetworkAvailable^>
 echo     ^<IdleSettings^>
 echo       ^<StopOnIdleEnd^>false^</StopOnIdleEnd^>
@@ -5140,7 +5182,7 @@ echo     ^<Enabled^>true^</Enabled^>
 echo     ^<Hidden^>false^</Hidden^>
 echo     ^<RunOnlyIfIdle^>false^</RunOnlyIfIdle^>
 echo     ^<WakeToRun^>false^</WakeToRun^>
-echo     ^<ExecutionTimeLimit^>PT72H^</ExecutionTimeLimit^>
+echo     ^<ExecutionTimeLimit^>!XML_ETL!^</ExecutionTimeLimit^>
 echo     ^<Priority^>7^</Priority^>
 echo   ^</Settings^>
 echo   ^<Actions Context="Author"^>
@@ -5369,3 +5411,20 @@ if defined UB_DIR (
     >>"!UB_DIR!\abusech_reload_error.log" echo %date% %time% zona=!RHR_ZONE! rc=!RHR_RC! risposta=!RHR_LINE!
 )
 exit /b 1
+
+:: ==================================================================
+:: [v1141.0] SUBROUTINE: attesa rete per i task in background dopo aver preso il lock
+:: Al risveglio dalla sospensione la rete puo' tornare dopo qualche secondo: invece di
+:: saltare il giro al primo ping fallito si attende fino a circa 2 minuti.
+:: ==================================================================
+:LOCK_NETWAIT
+set "LKN=0"
+:LKN_LOOP
+ping -n 1 -w 2000 1.1.1.1 2>nul | find "TTL=" >nul
+if not errorlevel 1 exit /b 0
+ping -n 1 -w 2000 8.8.8.8 2>nul | find "TTL=" >nul
+if not errorlevel 1 exit /b 0
+set /a LKN+=1 >nul
+if !LKN! GEQ 24 exit /b 0
+ping -n 4 127.0.0.1 >nul
+goto :LKN_LOOP
