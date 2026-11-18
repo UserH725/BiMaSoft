@@ -60,7 +60,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1141.0"
+set "LOCAL_VER=1145.0"
 :: [v1141.0] LOCK TRA ISTANZE: i task pianificati (giornaliero, biorario, abuse.ch, 5 zone RPZ) e l'avvio al logon non girano piu in parallelo. Ogni istanza prende un lock (cartella ub_manager.lock in UB_DIR con il PID di cmd.exe) e le altre attendono il proprio turno. Il lock si libera da solo: se il proprietario termina o muore, o dopo 120 minuti, viene considerato scaduto. Task --refresh, --refreshzone, --refreshabusech, --dailyreport: se il turno non arriva entro 30, 30, 10, 10 minuti saltano il giro. Avvio e --scheduled: attendono fino a 20 minuti, poi procedono comunque. Dopo il lock i task in background attendono fino a circa 2 minuti che torni la rete (risveglio dalla sospensione). Task XML: StartWhenAvailable spento sui task ripetuti, ExecutionTimeLimit da 72 ore a 2 ore (3 per il giornaliero). Esclusi dal lock --dnswatch e --fase.
 :: [v1131.2] 1) Priorita CPU di unbound.exe da High (3) ad AboveNormal (6), sia nel registro IFEO sia dopo ogni avvio del servizio: il ricarico a caldo delle RPZ (parsing di liste molto grandi) non deve piu togliere CPU al resto del PC. 2) :DNS_FALLBACK_OFF scrive il DNS di sistema solo sulle schede che non sono gia su 127.0.0.1 / ::1, invece di riscriverlo su tutte a ogni task.
 :: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 9) Meno scritture su SSD: nei task zone RPZ, abuse.ch e biorario la rotazione dei backup avviene solo quando il file cambia davvero e con rinomina :BAK_COMMIT invece di tre copie a ogni giro, niente copia file in .tmp quando il server risponde 304, TIF non riunisce le parti se nessuna e cambiata; il ripristino dal backup avviene solo se il file manca, altrimenti si mantiene il file attuale. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
@@ -3856,7 +3856,9 @@ exit
 :: ==================================================================
 :DNS_FALLBACK_ON
 powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '1.1.1.1','9.9.9.9'" >nul 2>&1
-call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 9.9.9.9"
+:: Fallback anche per IPv6: senza, durante lo stop di Unbound l'IPv6 resterebbe su ::1 (spento)
+powershell -Command "Get-DnsClientServerAddress -AddressFamily IPv6 | Where-Object {$_.InterfaceAlias -notlike '*Loopback*' -and $_.InterfaceAlias -notlike '*WireGuard*' -and $_.InterfaceAlias -notlike '*WARP*'} | Set-DnsClientServerAddress -ServerAddresses '2620:fe::10','2606:4700:4700::1111'" >nul 2>&1
+call :LOGSTEP "DNS_BOOTSTRAP" "DNS temporaneo impostato su 1.1.1.1 / 9.9.9.9 e IPv6 2620:fe::10 / 2606:4700:4700::1111"
 exit /b 0
 
 :: ==================================================================
@@ -5428,3 +5430,4 @@ set /a LKN+=1 >nul
 if !LKN! GEQ 24 exit /b 0
 ping -n 4 127.0.0.1 >nul
 goto :LKN_LOOP
+
