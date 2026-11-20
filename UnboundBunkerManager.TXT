@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1146.0"
+set "LOCAL_VER=1147.0"
+:: [v1147.0] PAUSA DEI TASK PIANIFICATI DURANTE L AVVIO: insieme alla sospensione di Windows Update, :WU_STOP scrive il flag ub_pause.flag (PID di cmd.exe, etichetta e orario) in C:\Program Files\Unbound. I task in background (--refresh, --refreshzone, --refreshabusech, --dailyreport) lo controllano subito, PRIMA di mettersi in coda per il lock: se il proprietario e ancora vivo e il flag ha meno di 45 minuti saltano il giro e escono (il giro successivo e gia pianificato), cosi non restano cmd e PowerShell in attesa che poi ripartono tutti insieme a fine boot. :WU_START cancella il flag a fine avvio (solo se e il proprio). Nessuno stato persistente: se il BAT muore il flag scade da solo (PID non piu esistente, PID riusato o piu di 45 minuti), come il lock. Non cambia lo stato dei task (restano abilitati). Avvio e --scheduled non controllano il flag: continuano a usare il lock e attendono il proprio turno come prima. --dnswatch e --fase esclusi.
 :: [v1146.0] WINDOWS UPDATE SOSPESO DURANTE L AVVIO: all inizio della sequenza operativa (avvio e --scheduled) :WU_STOP ferma UsoSvc, wuauserv, bits e DoSvc, cosi un PC rimasto spento per giorni non scarica gli aggiornamenti di Windows 11 mentre il Manager scarica le RPZ. :WU_STOP viene richiamato anche prima di ogni fase di download (F9 - F10J) perche Windows puo rilanciare i servizi da solo. :WU_START li riavvia in FINALIZZAZIONE e FINALIZZAZIONE_RAPIDA, subito prima della chiusura. Non toccati i task --refresh, --refreshzone, --refreshabusech, --dailyreport, --fase e --dnswatch.
 :: [v1141.0] LOCK TRA ISTANZE: i task pianificati (giornaliero, biorario, abuse.ch, 5 zone RPZ) e l'avvio al logon non girano piu in parallelo. Ogni istanza prende un lock (cartella ub_manager.lock in UB_DIR con il PID di cmd.exe) e le altre attendono il proprio turno. Il lock si libera da solo: se il proprietario termina o muore, o dopo 120 minuti, viene considerato scaduto. Task --refresh, --refreshzone, --refreshabusech, --dailyreport: se il turno non arriva entro 30, 30, 10, 10 minuti saltano il giro. Avvio e --scheduled: attendono fino a 20 minuti, poi procedono comunque. Dopo il lock i task in background attendono fino a circa 2 minuti che torni la rete (risveglio dalla sospensione). Task XML: StartWhenAvailable spento sui task ripetuti, ExecutionTimeLimit da 72 ore a 2 ore (3 per il giornaliero). Esclusi dal lock --dnswatch e --fase.
 :: [v1131.2] 1) Priorita CPU di unbound.exe da High (3) ad AboveNormal (6), sia nel registro IFEO sia dopo ogni avvio del servizio: il ricarico a caldo delle RPZ (parsing di liste molto grandi) non deve piu togliere CPU al resto del PC. 2) :DNS_FALLBACK_OFF scrive il DNS di sistema solo sulle schede che non sono gia su 127.0.0.1 / ::1, invece di riscriverlo su tutte a ogni task.
@@ -161,6 +162,11 @@ if "%~1"=="--refreshabusech" set "LK_WAIT=600"
 if "%~1"=="--refreshabusech" set "LK_SKIP=1"
 if "%~1"=="--dailyreport" set "LK_WAIT=600"
 if "%~1"=="--dailyreport" set "LK_SKIP=1"
+:: [v1147.0] Pausa task: se l avvio o il task giornaliero e in corso (ub_pause.flag valido) il task in background salta il giro senza mettersi in coda. Exit 8 = pausa attiva.
+set "PZ_RC=0"
+if "!LK_SKIP!"=="1" powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='C:\Program Files\Unbound\ub_pause.flag'; if (-not (Test-Path -LiteralPath $f)) { exit 0 }; $l=$null; try { $l=(Get-Content -LiteralPath $f -ErrorAction Stop -TotalCount 1).Split('|') } catch { exit 0 }; if ($l.Count -lt 3) { exit 0 }; $alive=$true; $age=999; try { $t=[datetime]::Parse($l[2]); $age=((Get-Date)-$t).TotalMinutes; $p=Get-Process -Id ([int]$l[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $t.AddSeconds(5)) { $alive=$false } } catch {} } } catch { $alive=$false }; if ($alive -and $age -lt 45) { exit 8 }; try { Remove-Item -LiteralPath $f -Force -ErrorAction Stop } catch {}; exit 0" >nul 2>&1
+if "!LK_SKIP!"=="1" set "PZ_RC=!errorlevel!"
+if "!PZ_RC!"=="8" exit 0
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; $o=$d+'\owner.txt'; $w=[int]$env:LK_WAIT; $tag=$env:LK_TAG; if (-not (Test-Path -LiteralPath 'C:\Program Files\Unbound')) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; $end=(Get-Date).AddSeconds($w); $said=$false; while ($true) { $ok=$false; try { New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; $ok=$true } catch {}; if ($ok) { try { Set-Content -LiteralPath $o -Value ([string]$me+'|'+$tag+'|'+(Get-Date).ToString('s')) } catch {}; exit 0 }; $ct=$null; try { $ct=(Get-Item -LiteralPath $d -ErrorAction Stop).CreationTime } catch { continue }; $age=((Get-Date)-$ct).TotalMinutes; $alive=$true; $own=$null; try { $own=(Get-Content -LiteralPath $o -ErrorAction Stop -TotalCount 1).Split('|') } catch { $alive=($age -lt 0.5) }; if ($own) { $p=Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $ct.AddSeconds(5)) { $alive=$false } } catch {} } }; if ($age -gt 120) { $alive=$false }; if (-not $alive) { try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch {}; continue }; if (-not $said) { $who=''; if ($own) { $who=' ('+$own[1]+', PID '+$own[0]+')' }; Write-Host ('  [..] Un altro task Unbound Bunker e in corso'+$who+': attendo il mio turno...'); $said=$true }; if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Seconds (4+(Get-Random -Maximum 4)) }"
 set "LK_RC=!errorlevel!"
 if "!LK_RC!"=="7" goto :LOCK_TIMEOUT
@@ -5466,6 +5472,7 @@ for %%S in (UsoSvc wuauserv bits DoSvc) do (
         set /a WU_N+=1 >nul
     )
 )
+if not "!WU_PAUSED!"=="1" call :PAUSE_BEGIN
 if not "!WU_PAUSED!"=="1" echo   [OK] Windows Update sospeso fino a fine scarico RPZ: servizi fermati !WU_N!.
 set "WU_PAUSED=1"
 exit /b 0
@@ -5479,6 +5486,21 @@ exit /b 0
 :WU_START
 if not "!WU_PAUSED!"=="1" exit /b 0
 set "WU_PAUSED=0"
+call :PAUSE_END
 for %%S in (bits DoSvc wuauserv UsoSvc) do net start %%S >nul 2>&1
 echo   [OK] Windows Update riattivato: puo riprendere i download.
+exit /b 0
+
+:: ==================================================================
+:: [v1147.0] SUBROUTINE: PAUSA TASK PIANIFICATI (flag ub_pause.flag)
+:: :PAUSE_BEGIN scrive PID di cmd.exe|etichetta|orario. :PAUSE_END lo cancella
+:: solo se il PID e il proprio. Ogni errore e non bloccante. Il flag scade da
+:: solo (vedi controllo prima del lock).
+:: ==================================================================
+:PAUSE_BEGIN
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound'; if (-not (Test-Path -LiteralPath $d)) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; try { Set-Content -LiteralPath ($d+'\ub_pause.flag') -Value ([string]$me+'|'+$env:LK_TAG+'|'+(Get-Date).ToString('s')) } catch {}" >nul 2>&1
+exit /b 0
+
+:PAUSE_END
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='C:\Program Files\Unbound\ub_pause.flag'; if (-not (Test-Path -LiteralPath $f)) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; try { $l=(Get-Content -LiteralPath $f -ErrorAction Stop -TotalCount 1).Split('|'); if ([string]$l[0] -eq [string]$me) { Remove-Item -LiteralPath $f -Force -ErrorAction Stop } } catch {}" >nul 2>&1
 exit /b 0
