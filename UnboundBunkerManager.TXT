@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1148.0"
+set "LOCAL_VER=1149.0"
+:: [v1149.0] 1) RPZ AL BOOT DA DISCO ANCHE SUL PROFILO ULTRA: :BOOT_RPZ_SKIP vale ora per MICRO, LIGHT, STANDARD e ULTRA; con --fase manuale si scarica sempre come prima. 2) Fase 7: backup con rotazione solo se il file e diverso da .bak1 (:BAK_IF_CHANGED, confronto per dimensione e poi fc /b), cosi bak1, bak2 e bak3 non diventano copie identiche dopo piu avvii senza aggiornamenti e si evitano scritture inutili su SSD. 3) :FILE_DATE e :FILE_AGE_HOURS usano file temporanei con nome univoco (RANDOM) per evitare collisioni tra fasi lanciate insieme dalla Dashboard. 4) Rimossa la variabile CURL_CA, mai usata (il motore download usa DL_FLAGS).
 :: [v1148.0] RPZ AL BOOT DA DISCO SU MICRO, LIGHT E STANDARD: nell avvio e nel task giornaliero --scheduled le fasi di download F10, F10B, F10C, F10D, F10E, F10G, F10I e F10J non scaricano piu le liste RPZ se il file attivo esiste su disco ed e sopra la dimensione minima (stessa soglia usata per scartare i download troppo piccoli): usano la lista presente e lasciano l aggiornamento ai task pianificati (biorario, 5 zone RPZ, abuse.ch 30 minuti) che hanno download verificato, backup e ricarico a caldo. Se il file manca o e troppo piccolo (prima installazione, file troncato) si scarica come prima. Il profilo ULTRA e le fasi lanciate a mano con --fase non cambiano. Esito SKIP con data del file nelle fasi. Helper :BOOT_RPZ_SKIP.
 :: [v1147.0] PAUSA DEI TASK PIANIFICATI DURANTE L AVVIO: insieme alla sospensione di Windows Update, :WU_STOP scrive il flag ub_pause.flag (PID di cmd.exe, etichetta e orario) in C:\Program Files\Unbound. I task in background (--refresh, --refreshzone, --refreshabusech, --dailyreport) lo controllano subito, PRIMA di mettersi in coda per il lock: se il proprietario e ancora vivo e il flag ha meno di 45 minuti saltano il giro e escono (il giro successivo e gia pianificato), cosi non restano cmd e PowerShell in attesa che poi ripartono tutti insieme a fine boot. :WU_START cancella il flag a fine avvio (solo se e il proprio). Nessuno stato persistente: se il BAT muore il flag scade da solo (PID non piu esistente, PID riusato o piu di 45 minuti), come il lock. Non cambia lo stato dei task (restano abilitati). Avvio e --scheduled non controllano il flag: continuano a usare il lock e attendono il proprio turno come prima. --dnswatch e --fase esclusi.
 :: [v1146.0] WINDOWS UPDATE SOSPESO DURANTE L AVVIO: all inizio della sequenza operativa (avvio e --scheduled) :WU_STOP ferma UsoSvc, wuauserv, bits e DoSvc, cosi un PC rimasto spento per giorni non scarica gli aggiornamenti di Windows 11 mentre il Manager scarica le RPZ. :WU_STOP viene richiamato anche prima di ogni fase di download (F9 - F10J) perche Windows puo rilanciare i servizi da solo. :WU_START li riavvia in FINALIZZAZIONE e FINALIZZAZIONE_RAPIDA, subito prima della chiusura. Non toccati i task --refresh, --refreshzone, --refreshabusech, --dailyreport, --fase e --dnswatch.
@@ -768,7 +769,6 @@ set "ROOTKEY_BAK=%UB_DIR%\root.key.bak1"
 set "ROOTKEY_BAK2=%UB_DIR%\root.key.bak2"
 set "ROOTKEY_BAK3=%UB_DIR%\root.key.bak3"
 
-set "CURL_CA=--ipv4 --location --max-time 60"
 title UNBOUND BUNKER - by Mauro Bigoni (c) %DATE% All right reserved. - Versione BAT: v!LOCAL_VER! - Versione CONF: v!LOCAL_SVC_VER!
 
 :: Inizializza tutte le variabili delle fasi come vuote
@@ -1300,28 +1300,17 @@ call :LOGSTEP "TIME" "w32time %NTP_STATO% - ora: %NOW_TIME%"
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F7" goto :SKIP_F7
 set "F7_ACT=[...in corso...] FS   >> Faccio i backup dei file critici e ruoto il log se è troppo grande."
 call :UPDATE_UI 60
-if exist "%UB_DIR%\named.cache" call :ROTATE_BAK "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
-if exist "%UB_DIR%\named.cache" copy /y "%UB_DIR%\named.cache" "%NCACHE_BAK%" >nul 2>&1
-if exist "%UB_DIR%\root.zone" call :ROTATE_BAK "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
-if exist "%UB_DIR%\root.zone" copy /y "%UB_DIR%\root.zone" "%RZONE_BAK%" >nul 2>&1
-if exist "%UB_DIR%\root.key" call :ROTATE_BAK "%ROOTKEY_BAK%" "%ROOTKEY_BAK2%" "%ROOTKEY_BAK3%"
-if exist "%UB_DIR%\root.key" copy /y "%UB_DIR%\root.key" "%ROOTKEY_BAK%" >nul 2>&1
-if exist "%HZ_PRO_PLUS%" call :ROTATE_BAK "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
-if exist "%HZ_PRO_PLUS%" copy /y "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" >nul 2>&1
-if exist "%HZ_TIF%" call :ROTATE_BAK "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
-if exist "%HZ_TIF%" copy /y "%HZ_TIF%" "%HZ_TIF_BAK%" >nul 2>&1
-if exist "%HZ_TIF_IPS%" call :ROTATE_BAK "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
-if exist "%HZ_TIF_IPS%" copy /y "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" >nul 2>&1
-if exist "%SH_DROP%" call :ROTATE_BAK "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
-if exist "%SH_DROP%" copy /y "%SH_DROP%" "%SH_DROP_BAK%" >nul 2>&1
-if exist "%SH_DROP6%" call :ROTATE_BAK "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
-if exist "%SH_DROP6%" copy /y "%SH_DROP6%" "%SH_DROP6_BAK%" >nul 2>&1
-if exist "%HZ_HOSTER%" call :ROTATE_BAK "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
-if exist "%HZ_HOSTER%" copy /y "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" >nul 2>&1
-if exist "%URLHAUS%" call :ROTATE_BAK "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
-if exist "%URLHAUS%" copy /y "%URLHAUS%" "%URLHAUS_BAK%" >nul 2>&1
-if exist "%THREATFOX%" call :ROTATE_BAK "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
-if exist "%THREATFOX%" copy /y "%THREATFOX%" "%THREATFOX_BAK%" >nul 2>&1
+call :BAK_IF_CHANGED "%UB_DIR%\named.cache" "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
+call :BAK_IF_CHANGED "%UB_DIR%\root.zone" "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
+call :BAK_IF_CHANGED "%UB_DIR%\root.key" "%ROOTKEY_BAK%" "%ROOTKEY_BAK2%" "%ROOTKEY_BAK3%"
+call :BAK_IF_CHANGED "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
+call :BAK_IF_CHANGED "%HZ_TIF%" "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
+call :BAK_IF_CHANGED "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
+call :BAK_IF_CHANGED "%SH_DROP%" "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
+call :BAK_IF_CHANGED "%SH_DROP6%" "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
+call :BAK_IF_CHANGED "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
+call :BAK_IF_CHANGED "%URLHAUS%" "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
+call :BAK_IF_CHANGED "%THREATFOX%" "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
 
 set "F7_RES=[      OK      ] FS   >> Snapshot di sicurezza creati prima degli aggiornamenti."
 call :LOGSTEP "FS" "Backup snapshot creati"
@@ -2344,7 +2333,6 @@ set "PH_MARK=R:\bunker_phase_!ONLY_PH!.run"
 echo %date% %time% > "!PH_MARK!" 2>nul
 title UNBOUND BUNKER - FASE SINGOLA !ONLY_PH!
 set "CONSOLE_COLOR=0A"
-set "CURL_CA=--ipv4 --location --max-time 60"
 set "LAST_UPD_FILE=%UB_DIR%\last_update_bunker.txt"
 set "ROOTKEY_BAK=%UB_DIR%\root.key.bak1"
 set "ROOTKEY_BAK2=%UB_DIR%\root.key.bak2"
@@ -4172,6 +4160,25 @@ if exist "%~2" copy /y "%~2" "%~3" >nul 2>&1
 if exist "%~1" copy /y "%~1" "%~2" >nul 2>&1
 exit /b
 
+:: [v1149.0] Backup di Fase 7 solo se il file e diverso da bak1: prima si confronta la
+:: dimensione, poi il contenuto con fc /b. Se e identico non si ruota nulla.
+:: Uso: call :BAK_IF_CHANGED "<file>" "<bak1>" "<bak2>" "<bak3>"
+:BAK_IF_CHANGED
+if not exist "%~1" exit /b 0
+if exist "%~2" (
+    set "BC_S1="
+    set "BC_S2="
+    for %%I in ("%~1") do set "BC_S1=%%~zI"
+    for %%J in ("%~2") do set "BC_S2=%%~zJ"
+    if "!BC_S1!"=="!BC_S2!" (
+        fc /b "%~1" "%~2" >nul 2>&1
+        if not errorlevel 1 exit /b 0
+    )
+)
+call :ROTATE_BAK "%~2" "%~3" "%~4"
+copy /y "%~1" "%~2" >nul 2>&1
+exit /b 0
+
 :: [v1131.0] Rotazione dei backup a rinomina, SOLO quando il file sta per essere sostituito
 :: da una versione diversa: nessuna riscrittura di dati sull SSD, e bak1 resta sempre la
 :: versione precedente. Uso: call :BAK_COMMIT "<file>" "<bak1>" "<bak2>" "<bak3>"
@@ -4558,7 +4565,7 @@ exit /b 0
 :: ============================================================================
 :: [v1148.0] :BOOT_RPZ_SKIP file minByte varOut
 :: Imposta varOut=1 se in questo avvio si puo usare la lista RPZ gia su disco
-:: senza scaricarla: profilo MICRO/LIGHT/STANDARD, nessuna --fase manuale, file
+:: senza scaricarla: profilo MICRO/LIGHT/STANDARD/ULTRA, nessuna --fase manuale, file
 :: presente e di almeno minByte byte. Altrimenti varOut resta vuota e la fase
 :: scarica come prima. Imposta anche BOOT_SKIP_DT con la data del file.
 :: ============================================================================
@@ -4570,6 +4577,7 @@ set "BS_OK=0"
 if /i "!PROFILE_NAME!"=="MICRO" set "BS_OK=1"
 if /i "!PROFILE_NAME!"=="LIGHT" set "BS_OK=1"
 if /i "!PROFILE_NAME!"=="STANDARD" set "BS_OK=1"
+if /i "!PROFILE_NAME!"=="ULTRA" set "BS_OK=1"
 if "!BS_OK!"=="0" exit /b 0
 if not exist "%~1" exit /b 0
 set "BS_SIZE=0"
@@ -4583,7 +4591,7 @@ exit /b 0
 
 :FILE_DATE
 set "%~2=N/A"
-set "FD_TMP=%TEMP%\ub_filedate.txt"
+set "FD_TMP=%TEMP%\ub_filedate_%RANDOM%%RANDOM%.txt"
 set "FD_PATH=%~1"
 powershell -Command "if (Test-Path -LiteralPath '%FD_PATH%') { (Get-Item -LiteralPath '%FD_PATH%').LastWriteTime.ToString('dd.MM.yyyy HH:mm:ss') | Out-File -FilePath '%FD_TMP%' -Encoding ascii -NoNewline }" >nul 2>&1
 if exist "%FD_TMP%" (
@@ -4600,7 +4608,7 @@ exit /b
 :: ==================================================================
 :FILE_AGE_HOURS
 set "%~2=999999"
-set "FA_TMP=%TEMP%\ub_fileage.txt"
+set "FA_TMP=%TEMP%\ub_fileage_%RANDOM%%RANDOM%.txt"
 set "FA_PATH=%~1"
 if not exist "%FA_PATH%" exit /b
 powershell -Command "[math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%FA_PATH%').LastWriteTime).TotalHours) | Out-File -FilePath '%FA_TMP%' -Encoding ascii -NoNewline" >nul 2>&1
