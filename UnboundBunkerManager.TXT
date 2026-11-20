@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1145.0"
+set "LOCAL_VER=1146.0"
+:: [v1146.0] WINDOWS UPDATE SOSPESO DURANTE L AVVIO: all inizio della sequenza operativa (avvio e --scheduled) :WU_STOP ferma UsoSvc, wuauserv, bits e DoSvc, cosi un PC rimasto spento per giorni non scarica gli aggiornamenti di Windows 11 mentre il Manager scarica le RPZ. :WU_STOP viene richiamato anche prima di ogni fase di download (F9 - F10J) perche Windows puo rilanciare i servizi da solo. :WU_START li riavvia in FINALIZZAZIONE e FINALIZZAZIONE_RAPIDA, subito prima della chiusura. Non toccati i task --refresh, --refreshzone, --refreshabusech, --dailyreport, --fase e --dnswatch.
 :: [v1141.0] LOCK TRA ISTANZE: i task pianificati (giornaliero, biorario, abuse.ch, 5 zone RPZ) e l'avvio al logon non girano piu in parallelo. Ogni istanza prende un lock (cartella ub_manager.lock in UB_DIR con il PID di cmd.exe) e le altre attendono il proprio turno. Il lock si libera da solo: se il proprietario termina o muore, o dopo 120 minuti, viene considerato scaduto. Task --refresh, --refreshzone, --refreshabusech, --dailyreport: se il turno non arriva entro 30, 30, 10, 10 minuti saltano il giro. Avvio e --scheduled: attendono fino a 20 minuti, poi procedono comunque. Dopo il lock i task in background attendono fino a circa 2 minuti che torni la rete (risveglio dalla sospensione). Task XML: StartWhenAvailable spento sui task ripetuti, ExecutionTimeLimit da 72 ore a 2 ore (3 per il giornaliero). Esclusi dal lock --dnswatch e --fase.
 :: [v1131.2] 1) Priorita CPU di unbound.exe da High (3) ad AboveNormal (6), sia nel registro IFEO sia dopo ogni avvio del servizio: il ricarico a caldo delle RPZ (parsing di liste molto grandi) non deve piu togliere CPU al resto del PC. 2) :DNS_FALLBACK_OFF scrive il DNS di sistema solo sulle schede che non sono gia su 127.0.0.1 / ::1, invece di riscriverlo su tutte a ogni task.
 :: [v1131.0] 1) :RPZ_HOT_RELOAD: se Unbound non e RUNNING oppure unbound-control non risponde (avvio o caricamento RPZ in corso, es. task partito al risveglio del PC) attende fino a 45 secondi con :WAIT_UNBOUND_READY e riprova il ricarico a caldo invece di passare subito al riavvio. 2) Nel ripiego con riavvio (abuse.ch, zone RPZ e task biorario --refresh) lo stop e il kill di Unbound avvengono solo se il servizio e RUNNING: se e fermo o in avvio si fa solo net start, senza interrompere un riavvio in corso di un altro task. Vedi :UB_STOP_IF_RUNNING. 9) Meno scritture su SSD: nei task zone RPZ, abuse.ch e biorario la rotazione dei backup avviene solo quando il file cambia davvero e con rinomina :BAK_COMMIT invece di tre copie a ogni giro, niente copia file in .tmp quando il server risponde 304, TIF non riunisce le parti se nessuna e cambiata; il ripristino dal backup avviene solo se il file manca, altrimenti si mantiene il file attuale. 8) Refresh biorario: root.zone ricaricata a caldo con auth_zone_reload e ripiego sul riavvio, named.cache caricato al prossimo riavvio, riavvio completo solo se cambia service.conf; :RPZ_HOT_RELOAD accetta risposte con righe prima di ok. 7) Rimosse definitivamente le zone RPZ HaGeZi DynDNS e Most Abused TLDs (disattivate da tempo): variabili, fasi F10F e F10H, backup, icacls, refresh biorario, report e telemetria Telegram. 6) Ricarico a caldo: attesa fino a 180 secondi (non 45) e testo del motivo piu chiaro; :UB_STOP_IF_RUNNING attende fino a 120 secondi se Unbound e RUNNING ma ancora in caricamento invece di fermarlo subito. 5) :WAIT_UNBOUND_READY: la prova di prontezza usa nslookup -vc (TCP) e poi una query UDP diretta, perche nslookup in UDP andava in timeout con Unbound sano e dava falsi negativi. 4) Watcher --dnswatch: niente piu avvisi a video, ne con la richiesta di rilancio ne con OK: esito (Unbound risponde oppure non risponde dopo 10 minuti) solo via Telegram. 3) FASE F10B: se hagezi-tif.conf e piu recente di 24 ore (TIF_BOOT_MAX_AGE_H) il download di TIF all avvio viene saltato e lo fa il task biorario della zona TIF; non vale con --fase F10B o se il file manca.
@@ -190,6 +191,8 @@ powershell -Command "$hwnd = (Get-Process cmd | Where-Object {$_.MainWindowTitle
 :: INIZIO SEQUENZA OPERATIVA DEL BUNKER
 :: ==================================================================
 :: Esegue l'Auto-Tuning Hardware prima di ogni altra operazione o controllo
+:: [v1146.0] Sospende Windows Update fino a fine scarico RPZ (si riattiva in :WU_START)
+call :WU_STOP
 call :AUTO_TUNING_HARDWARE
 
 :: ==================================================================
@@ -1153,6 +1156,7 @@ if not exist "%UB_DIR%" (
     call :UPDATE_UI 10
     call :LOGFAIL "FS" "Directory Unbound non trovata"
     if defined ONLY_PH goto :FASE_SINGOLA_END
+    call :WU_START
     pause
     exit /b
 )
@@ -1354,6 +1358,7 @@ call :DNS_FALLBACK_ON
 :: -------------------------------------------------------
 :SKIP_F8
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F9" goto :SKIP_F9
+call :WU_STOP
 set "F9_ACT=[...in corso...] NET  >> Scarico file NAMED.CACHE da www.internic.net..."
 call :UPDATE_UI 80
 
@@ -1422,6 +1427,7 @@ call :LOGSTEP "NET" "!F9_RES!"
 :: -------------------------------------------------------
 :SKIP_F9
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F9B" goto :SKIP_F9B
+call :WU_STOP
 set "F9B_ACT=[...in corso...] NET  >> Scarico ROOT.ZONE da www.internic.net..."
 call :UPDATE_UI 82
 
@@ -1490,6 +1496,7 @@ call :LOGSTEP "NET" "!F9B_RES!"
 :: ================================================================
 :SKIP_F9B
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10" goto :SKIP_F10
+call :WU_STOP
 set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1552,6 +1559,7 @@ call :LOGSTEP "NET" "!F10_RES!"
 :: ================================================================
 :SKIP_F10
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10B" goto :SKIP_F10B
+call :WU_STOP
 set "F10B_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF (multi-part) e la preparo come RPZ attiva."
 call :UPDATE_UI 87
 :: [v1131.0] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
@@ -1696,6 +1704,7 @@ call :LOGSTEP "NET" "!F10B_RES!"
 :: ================================================================
 :SKIP_F10B
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10C" goto :SKIP_F10C
+call :WU_STOP
 set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
 call :UPDATE_UI 88
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1756,6 +1765,7 @@ call :LOGSTEP "NET" "!F10C_RES!"
 :: ================================================================
 :SKIP_F10C
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10D" goto :SKIP_F10D
+call :WU_STOP
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
@@ -1829,6 +1839,7 @@ call :LOGSTEP "NET" "!F10D_RES!"
 :: ================================================================
 :SKIP_F10D
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10E" goto :SKIP_F10E
+call :WU_STOP
 set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
 call :UPDATE_UI 89
 
@@ -1906,6 +1917,7 @@ call :LOGSTEP "NET" "!F10E_RES!"
 :: ================================================================
 :SKIP_F10E
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10G" goto :SKIP_F10G
+call :WU_STOP
 set "F10G_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Badware Hoster e la preparo come RPZ attiva."
 call :UPDATE_UI 89
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1969,6 +1981,7 @@ call :LOGSTEP "NET" "!F10G_RES!"
 :: ================================================================
 :SKIP_F10G
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10I" goto :SKIP_F10I
+call :WU_STOP
 set "F10I_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch URLhaus (malware attivo) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
 
@@ -2027,6 +2040,7 @@ call :LOGSTEP "NET" "!F10I_RES!"
 :: ================================================================
 :SKIP_F10I
 if defined ONLY_PH if /i not "!ONLY_PH!"=="F10J" goto :SKIP_F10J
+call :WU_STOP
 set "F10J_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch ThreatFox (IOC botnet C2) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
 
@@ -3828,6 +3842,7 @@ call :SEND_TELEGRAM_TELEMETRY
 :: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
 :: [v1126.1] Se il ripristino era stato rimandato, attende qui che Unbound risponda.
 call :DNS_RESTORE_DEFERRED
+call :WU_START
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -4989,6 +5004,7 @@ call :SEND_TELEGRAM_TELEMETRY
 :: stessa rete di sicurezza gia' presente in REFRESH_FILES_ONLY.
 :: [v1126.1] Se il ripristino era stato rimandato, attende qui che Unbound risponda.
 call :DNS_RESTORE_DEFERRED
+call :WU_START
 
 set "END_TIME=%time%"
 set "START_TIME=%START_TIME: =0%"
@@ -5431,3 +5447,38 @@ if !LKN! GEQ 24 exit /b 0
 ping -n 4 127.0.0.1 >nul
 goto :LKN_LOOP
 
+:: ==================================================================
+:: [v1146.0] SUBROUTINE: SOSPENDE WINDOWS UPDATE DURANTE L AVVIO
+:: Ferma i servizi che scaricano gli aggiornamenti di Windows (UsoSvc, wuauserv,
+:: bits, DoSvc) solo se sono RUNNING. Si puo richiamare piu volte: la prima volta
+:: scrive una riga a video, le successive sono silenziose e rifermano i servizi
+:: eventualmente rilanciati da Windows (trigger, Update Orchestrator, Medic).
+:: Non fa nulla in modalita --fase (ONLY_PH). Non modifica il tipo di avvio dei
+:: servizi: se lo script viene interrotto basta un riavvio e tornano normali.
+:: ==================================================================
+:WU_STOP
+if defined ONLY_PH exit /b 0
+set "WU_N=0"
+for %%S in (UsoSvc wuauserv bits DoSvc) do (
+    sc query %%S 2>nul | find "RUNNING" >nul 2>&1
+    if not errorlevel 1 (
+        net stop %%S /y >nul 2>&1
+        set /a WU_N+=1 >nul
+    )
+)
+if not "!WU_PAUSED!"=="1" echo   [OK] Windows Update sospeso fino a fine scarico RPZ: servizi fermati !WU_N!.
+set "WU_PAUSED=1"
+exit /b 0
+
+:: ==================================================================
+:: [v1146.0] SUBROUTINE: RIATTIVA WINDOWS UPDATE A FINE AVVIO
+:: Riavvia i servizi fermati da :WU_STOP. Se :WU_STOP non e stato eseguito
+:: (task in background, --fase) non fa nulla. Un servizio disabilitato dal
+:: sistemista fallisce in silenzio senza bloccare lo script.
+:: ==================================================================
+:WU_START
+if not "!WU_PAUSED!"=="1" exit /b 0
+set "WU_PAUSED=0"
+for %%S in (bits DoSvc wuauserv UsoSvc) do net start %%S >nul 2>&1
+echo   [OK] Windows Update riattivato: puo riprendere i download.
+exit /b 0
