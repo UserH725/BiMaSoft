@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1147.0"
+set "LOCAL_VER=1148.0"
+:: [v1148.0] RPZ AL BOOT DA DISCO SU MICRO, LIGHT E STANDARD: nell avvio e nel task giornaliero --scheduled le fasi di download F10, F10B, F10C, F10D, F10E, F10G, F10I e F10J non scaricano piu le liste RPZ se il file attivo esiste su disco ed e sopra la dimensione minima (stessa soglia usata per scartare i download troppo piccoli): usano la lista presente e lasciano l aggiornamento ai task pianificati (biorario, 5 zone RPZ, abuse.ch 30 minuti) che hanno download verificato, backup e ricarico a caldo. Se il file manca o e troppo piccolo (prima installazione, file troncato) si scarica come prima. Il profilo ULTRA e le fasi lanciate a mano con --fase non cambiano. Esito SKIP con data del file nelle fasi. Helper :BOOT_RPZ_SKIP.
 :: [v1147.0] PAUSA DEI TASK PIANIFICATI DURANTE L AVVIO: insieme alla sospensione di Windows Update, :WU_STOP scrive il flag ub_pause.flag (PID di cmd.exe, etichetta e orario) in C:\Program Files\Unbound. I task in background (--refresh, --refreshzone, --refreshabusech, --dailyreport) lo controllano subito, PRIMA di mettersi in coda per il lock: se il proprietario e ancora vivo e il flag ha meno di 45 minuti saltano il giro e escono (il giro successivo e gia pianificato), cosi non restano cmd e PowerShell in attesa che poi ripartono tutti insieme a fine boot. :WU_START cancella il flag a fine avvio (solo se e il proprio). Nessuno stato persistente: se il BAT muore il flag scade da solo (PID non piu esistente, PID riusato o piu di 45 minuti), come il lock. Non cambia lo stato dei task (restano abilitati). Avvio e --scheduled non controllano il flag: continuano a usare il lock e attendono il proprio turno come prima. --dnswatch e --fase esclusi.
 :: [v1146.0] WINDOWS UPDATE SOSPESO DURANTE L AVVIO: all inizio della sequenza operativa (avvio e --scheduled) :WU_STOP ferma UsoSvc, wuauserv, bits e DoSvc, cosi un PC rimasto spento per giorni non scarica gli aggiornamenti di Windows 11 mentre il Manager scarica le RPZ. :WU_STOP viene richiamato anche prima di ogni fase di download (F9 - F10J) perche Windows puo rilanciare i servizi da solo. :WU_START li riavvia in FINALIZZAZIONE e FINALIZZAZIONE_RAPIDA, subito prima della chiusura. Non toccati i task --refresh, --refreshzone, --refreshabusech, --dailyreport, --fase e --dnswatch.
 :: [v1141.0] LOCK TRA ISTANZE: i task pianificati (giornaliero, biorario, abuse.ch, 5 zone RPZ) e l'avvio al logon non girano piu in parallelo. Ogni istanza prende un lock (cartella ub_manager.lock in UB_DIR con il PID di cmd.exe) e le altre attendono il proprio turno. Il lock si libera da solo: se il proprietario termina o muore, o dopo 120 minuti, viene considerato scaduto. Task --refresh, --refreshzone, --refreshabusech, --dailyreport: se il turno non arriva entro 30, 30, 10, 10 minuti saltano il giro. Avvio e --scheduled: attendono fino a 20 minuti, poi procedono comunque. Dopo il lock i task in background attendono fino a circa 2 minuti che torni la rete (risveglio dalla sospensione). Task XML: StartWhenAvailable spento sui task ripetuti, ExecutionTimeLimit da 72 ore a 2 ore (3 per il giornaliero). Esclusi dal lock --dnswatch e --fase.
@@ -1505,6 +1506,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10" goto :SKIP_F10
 call :WU_STOP
 set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la preparo come RPZ attiva."
 call :UPDATE_UI 85
+call :BOOT_RPZ_SKIP "%HZ_PRO_PLUS%" 10240 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10_RES=[     SKIP     ] NET  >> HaGeZi Pro Plus: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :F10_BOOT_DONE
+)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -1553,6 +1559,7 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_PRO_PLUS%.tmp" del /f /q "%HZ_PRO_PLUS%.tmp" >nul 2>&1
+:F10_BOOT_DONE
 if exist "%HZ_PRO_PLUS%" (
     call :GET_RPZ_LINES "%HZ_PRO_PLUS%" RPZ_L_CNT
     set "F10_RES=!F10_RES! [!RPZ_L_CNT! elementi]"
@@ -1571,6 +1578,11 @@ call :UPDATE_UI 87
 :: [v1131.0] TIF e molto grossa e all avvio la rete puo non essere stabile: se il file esistente
 :: e piu recente di TIF_BOOT_MAX_AGE_H ore si salta il download, se ne occupa il task biorario
 :: della zona TIF con ricarico a caldo. Non vale per --fase F10B lanciata a mano e se il file manca.
+call :BOOT_RPZ_SKIP "%HZ_TIF%" 10240 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :TIF_BOOT_DONE
+)
 set "TIF_BOOT_MAX_AGE_H=24"
 set "TIF_AGE_H=9999"
 if not defined ONLY_PH if exist "%HZ_TIF%" for /f %%H in ('powershell -NoProfile -Command "[int][math]::Floor(((Get-Date) - (Get-Item -LiteralPath '%HZ_TIF%').LastWriteTime).TotalHours)" 2^>nul') do set "TIF_AGE_H=%%H"
@@ -1713,6 +1725,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10C" goto :SKIP_F10C
 call :WU_STOP
 set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la preparo come RPZ-IP attiva."
 call :UPDATE_UI 88
+call :BOOT_RPZ_SKIP "%HZ_TIF_IPS%" 1024 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10C_RES=[     SKIP     ] NET  >> HaGeZi TIF-IPS: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :F10C_BOOT_DONE
+)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -1760,6 +1777,7 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_TIF_IPS%.tmp" del /f /q "%HZ_TIF_IPS%.tmp" >nul 2>&1
+:F10C_BOOT_DONE
 if exist "%HZ_TIF_IPS%" (
     call :GET_RPZ_LINES "%HZ_TIF_IPS%" RPZ_L_CNT
     set "F10C_RES=!F10C_RES! [!RPZ_L_CNT! elementi]"
@@ -1774,6 +1792,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10D" goto :SKIP_F10D
 call :WU_STOP
 set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la converto in RPZ-IP."
 call :UPDATE_UI 89
+call :BOOT_RPZ_SKIP "%SH_DROP%" 512 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :F10D_BOOT_DONE
+)
 
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v4.json" "%SH_DROP%.raw.tmp" "" "%SH_DROP%.raw.lastgood"
 set "USED_LASTGOOD_DROP=0"
@@ -1834,6 +1857,7 @@ if errorlevel 1 (
 )
 if exist "%SH_DROP%.raw.tmp" del /f /q "%SH_DROP%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP%.tmp" del /f /q "%SH_DROP%.tmp" >nul 2>&1
+:F10D_BOOT_DONE
 if exist "%SH_DROP%" (
     call :GET_RPZ_LINES "%SH_DROP%" RPZ_L_CNT
     set "F10D_RES=!F10D_RES! [!RPZ_L_CNT! elementi]"
@@ -1848,6 +1872,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10E" goto :SKIP_F10E
 call :WU_STOP
 set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la converto in RPZ-IP."
 call :UPDATE_UI 89
+call :BOOT_RPZ_SKIP "%SH_DROP6%" 64 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :F10E_BOOT_DONE
+)
 
 call :CURL_RETRY_Z "https://www.spamhaus.org/drop/drop_v6.json" "%SH_DROP6%.raw.tmp" "" "%SH_DROP6%.raw.lastgood"
 set "USED_LASTGOOD_DROP6=0"
@@ -1911,6 +1940,7 @@ if errorlevel 1 (
 )
 if exist "%SH_DROP6%.raw.tmp" del /f /q "%SH_DROP6%.raw.tmp" >nul 2>&1
 if exist "%SH_DROP6%.tmp" del /f /q "%SH_DROP6%.tmp" >nul 2>&1
+:F10E_BOOT_DONE
 if exist "%SH_DROP6%" (
     call :GET_RPZ_LINES "%SH_DROP6%" RPZ_L_CNT
     set "F10E_RES=!F10E_RES! [!RPZ_L_CNT! elementi]"
@@ -1926,6 +1956,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10G" goto :SKIP_F10G
 call :WU_STOP
 set "F10G_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Badware Hoster e la preparo come RPZ attiva."
 call :UPDATE_UI 89
+call :BOOT_RPZ_SKIP "%HZ_HOSTER%" 512 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10G_RES=[     SKIP     ] NET  >> HaGeZi Badware Hoster: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    goto :F10G_BOOT_DONE
+)
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
 set "RES_JSDELIVR="
 if not "!IP_JSDELIVR!"=="" set "RES_JSDELIVR=--resolve cdn.jsdelivr.net:443:!IP_JSDELIVR! --resolve cdn.jsdelivr.net:80:!IP_JSDELIVR!"
@@ -1973,6 +2008,7 @@ if errorlevel 1 (
     )
 )
 if exist "%HZ_HOSTER%.tmp" del /f /q "%HZ_HOSTER%.tmp" >nul 2>&1
+:F10G_BOOT_DONE
 if exist "%HZ_HOSTER%" (
     call :GET_RPZ_LINES "%HZ_HOSTER%" RPZ_L_CNT
     set "F10G_RES=!F10G_RES! [!RPZ_L_CNT! elementi]"
@@ -1990,6 +2026,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10I" goto :SKIP_F10I
 call :WU_STOP
 set "F10I_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch URLhaus (malware attivo) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
+call :BOOT_RPZ_SKIP "%URLHAUS%" 512 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10I_RES=[     SKIP     ] NET  >> abuse.ch URLhaus: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task abuse.ch a 30 minuti"
+    goto :F10I_BOOT_DONE
+)
 
 call :CURL_RETRY "!URLHAUS_URL!" "%URLHAUS%.tmp" ""
 set "URLHAUS_TRYNOTE="
@@ -2032,6 +2073,7 @@ if errorlevel 1 (
     )
 )
 if exist "%URLHAUS%.tmp" del /f /q "%URLHAUS%.tmp" >nul 2>&1
+:F10I_BOOT_DONE
 if exist "%URLHAUS%" (
     call :GET_RPZ_LINES "%URLHAUS%" RPZ_L_CNT
     set "F10I_RES=!F10I_RES! [!RPZ_L_CNT! elementi]"
@@ -2049,6 +2091,11 @@ if defined ONLY_PH if /i not "!ONLY_PH!"=="F10J" goto :SKIP_F10J
 call :WU_STOP
 set "F10J_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch ThreatFox (IOC botnet C2) e la preparo come RPZ attiva."
 call :UPDATE_UI 90
+call :BOOT_RPZ_SKIP "%THREATFOX%" 512 BOOT_SKIP_OK
+if "!BOOT_SKIP_OK!"=="1" (
+    set "F10J_RES=[     SKIP     ] NET  >> abuse.ch ThreatFox: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task abuse.ch a 30 minuti"
+    goto :F10J_BOOT_DONE
+)
 
 call :CURL_RETRY "!THREATFOX_URL!" "%THREATFOX%.tmp" ""
 set "THREATFOX_TRYNOTE="
@@ -2091,6 +2138,7 @@ if errorlevel 1 (
     )
 )
 if exist "%THREATFOX%.tmp" del /f /q "%THREATFOX%.tmp" >nul 2>&1
+:F10J_BOOT_DONE
 if exist "%THREATFOX%" (
     call :GET_RPZ_LINES "%THREATFOX%" RPZ_L_CNT
     set "F10J_RES=!F10J_RES! [!RPZ_L_CNT! elementi]"
@@ -4505,6 +4553,32 @@ if "!LG_AGE_DAYS!"=="" exit /b 0
 if !LG_AGE_DAYS! GEQ %LASTGOOD_MAX_AGE_DAYS% (
     set "LG_WARN=  [ATTENZIONE: cache .lastgood vecchia di !LG_AGE_DAYS! giorni - Spamhaus irraggiungibile da tempo, verificare la connettivita']"
 )
+exit /b 0
+
+:: ============================================================================
+:: [v1148.0] :BOOT_RPZ_SKIP file minByte varOut
+:: Imposta varOut=1 se in questo avvio si puo usare la lista RPZ gia su disco
+:: senza scaricarla: profilo MICRO/LIGHT/STANDARD, nessuna --fase manuale, file
+:: presente e di almeno minByte byte. Altrimenti varOut resta vuota e la fase
+:: scarica come prima. Imposta anche BOOT_SKIP_DT con la data del file.
+:: ============================================================================
+:BOOT_RPZ_SKIP
+set "%~3="
+set "BOOT_SKIP_DT="
+if defined ONLY_PH exit /b 0
+set "BS_OK=0"
+if /i "!PROFILE_NAME!"=="MICRO" set "BS_OK=1"
+if /i "!PROFILE_NAME!"=="LIGHT" set "BS_OK=1"
+if /i "!PROFILE_NAME!"=="STANDARD" set "BS_OK=1"
+if "!BS_OK!"=="0" exit /b 0
+if not exist "%~1" exit /b 0
+set "BS_SIZE=0"
+for %%I in ("%~1") do (
+    set "BS_SIZE=%%~zI"
+    set "BOOT_SKIP_DT=%%~tI"
+)
+if !BS_SIZE! LSS %~2 exit /b 0
+set "%~3=1"
 exit /b 0
 
 :FILE_DATE
