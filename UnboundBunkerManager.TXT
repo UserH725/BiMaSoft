@@ -60,7 +60,7 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1149.0"
+set "LOCAL_VER=1150.0"
 :: [v1149.0] 1) RPZ AL BOOT DA DISCO ANCHE SUL PROFILO ULTRA: :BOOT_RPZ_SKIP vale ora per MICRO, LIGHT, STANDARD e ULTRA; con --fase manuale si scarica sempre come prima. 2) Fase 7: backup con rotazione solo se il file e diverso da .bak1 (:BAK_IF_CHANGED, confronto per dimensione e poi fc /b), cosi bak1, bak2 e bak3 non diventano copie identiche dopo piu avvii senza aggiornamenti e si evitano scritture inutili su SSD. 3) :FILE_DATE e :FILE_AGE_HOURS usano file temporanei con nome univoco (RANDOM) per evitare collisioni tra fasi lanciate insieme dalla Dashboard. 4) Rimossa la variabile CURL_CA, mai usata (il motore download usa DL_FLAGS).
 :: [v1148.0] RPZ AL BOOT DA DISCO SU MICRO, LIGHT E STANDARD: nell avvio e nel task giornaliero --scheduled le fasi di download F10, F10B, F10C, F10D, F10E, F10G, F10I e F10J non scaricano piu le liste RPZ se il file attivo esiste su disco ed e sopra la dimensione minima (stessa soglia usata per scartare i download troppo piccoli): usano la lista presente e lasciano l aggiornamento ai task pianificati (biorario, 5 zone RPZ, abuse.ch 30 minuti) che hanno download verificato, backup e ricarico a caldo. Se il file manca o e troppo piccolo (prima installazione, file troncato) si scarica come prima. Il profilo ULTRA e le fasi lanciate a mano con --fase non cambiano. Esito SKIP con data del file nelle fasi. Helper :BOOT_RPZ_SKIP.
 :: [v1147.0] PAUSA DEI TASK PIANIFICATI DURANTE L AVVIO: insieme alla sospensione di Windows Update, :WU_STOP scrive il flag ub_pause.flag (PID di cmd.exe, etichetta e orario) in C:\Program Files\Unbound. I task in background (--refresh, --refreshzone, --refreshabusech, --dailyreport) lo controllano subito, PRIMA di mettersi in coda per il lock: se il proprietario e ancora vivo e il flag ha meno di 45 minuti saltano il giro e escono (il giro successivo e gia pianificato), cosi non restano cmd e PowerShell in attesa che poi ripartono tutti insieme a fine boot. :WU_START cancella il flag a fine avvio (solo se e il proprio). Nessuno stato persistente: se il BAT muore il flag scade da solo (PID non piu esistente, PID riusato o piu di 45 minuti), come il lock. Non cambia lo stato dei task (restano abilitati). Avvio e --scheduled non controllano il flag: continuano a usare il lock e attendono il proprio turno come prima. --dnswatch e --fase esclusi.
@@ -89,7 +89,11 @@ set "LASTGOOD_MAX_AGE_DAYS=14"
 :: dispatch, quindi nel task biorario "echo %TODAY%-%time..% > %LAST_REFRESH_FILE%"
 :: (fine ciclo refresh) diventava "echo -HHMM > """ -> "Impossibile trovare il
 :: percorso specificato." (timestamp dell'ultimo refresh mai salvato).
+:: [FIX] TODAY indipendente dal locale: prima il vecchio slicing di %date% (valido solo per
+:: GG/MM/AAAA) come riserva, poi Get-Date -Format yyyyMMdd che da sempre AAAAMMGG anche
+:: sotto SYSTEM o con locale diverso. (wmic non si usa: rimosso da Windows 11 24H2)
 set "TODAY=%date:~6,4%%date:~3,2%%date:~0,2%"
+for /f %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd" 2^>nul') do set "TODAY=%%D"
 set "LAST_REFRESH_FILE=%UB_DIR%\last_refresh_bunker.txt"
 set "SERVICE_CONF=%UB_DIR%\service.conf"
 set "LOCAL_SVC_VER_FILE=%UB_DIR%\versione_service_conf.txt"
@@ -1399,9 +1403,7 @@ if errorlevel 1 (
     )
     set "SKIP_NC=0"
     if exist "%UB_DIR%\named.cache" (
-        for /f %%A in ('powershell -NoProfile -Command "(Get-FileHash '%NC_TMP%' -Algorithm MD5).Hash + ',' + (Get-FileHash '%UB_DIR%\named.cache' -Algorithm MD5).Hash"') do (
-            for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_NC=1"
-        )
+        call :SAME_FILE "%NC_TMP%" "%UB_DIR%\named.cache" && set "SKIP_NC=1"
     )
     if "!SKIP_NC!"=="0" (
         move /y "%NC_TMP%" "%UB_DIR%\named.cache" >nul 2>&1
@@ -1468,9 +1470,7 @@ if errorlevel 1 (
     )
     set "SKIP_RZ=0"
     if exist "%UB_DIR%\root.zone" (
-        for /f %%A in ('powershell -NoProfile -Command "(Get-FileHash '%RZ_TMP%' -Algorithm MD5).Hash + ',' + (Get-FileHash '%UB_DIR%\root.zone' -Algorithm MD5).Hash"') do (
-            for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_RZ=1"
-        )
+        call :SAME_FILE "%RZ_TMP%" "%UB_DIR%\root.zone" && set "SKIP_RZ=1"
     )
     if "!SKIP_RZ!"=="0" (
         move /y "%RZ_TMP%" "%UB_DIR%\root.zone" >nul 2>&1
@@ -1525,9 +1525,7 @@ if errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
         if exist "%HZ_PRO_PLUS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
-            )
+            call :SAME_FILE "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" && set "SKIP_HZ=1"
         )
         if "!SKIP_HZ!"=="0" (
             move /y "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" >nul 2>&1
@@ -1675,9 +1673,7 @@ if "!TIF_DL_ERROR!"=="1" (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
-            )
+            call :SAME_FILE "%HZ_TIF%.tmp" "%HZ_TIF%" && set "SKIP_TIF=1"
         )
         if "!SKIP_TIF!"=="0" (
             move /y "%HZ_TIF%.tmp" "%HZ_TIF%" >nul 2>&1
@@ -1743,9 +1739,7 @@ if errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
         if exist "%HZ_TIF_IPS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
-            )
+            call :SAME_FILE "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" && set "SKIP_TIFIPS=1"
         )
         if "!SKIP_TIFIPS!"=="0" (
             move /y "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" >nul 2>&1
@@ -1814,9 +1808,7 @@ if errorlevel 1 (
         call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
         set "SKIP_DROP=0"
         if exist "%SH_DROP%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
-            )
+            call :SAME_FILE "%SH_DROP%.tmp" "%SH_DROP%" && set "SKIP_DROP=1"
         )
         if "!SKIP_DROP!"=="0" (
             move /y "%SH_DROP%.tmp" "%SH_DROP%" >nul 2>&1
@@ -1897,9 +1889,7 @@ if errorlevel 1 (
         call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
         set "SKIP_DROP6=0"
         if exist "%SH_DROP6%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
-            )
+            call :SAME_FILE "%SH_DROP6%.tmp" "%SH_DROP6%" && set "SKIP_DROP6=1"
         )
         if "!SKIP_DROP6!"=="0" (
             move /y "%SH_DROP6%.tmp" "%SH_DROP6%" >nul 2>&1
@@ -1974,9 +1964,7 @@ if errorlevel 1 (
     for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_HOSTER=0"
         if exist "%HZ_HOSTER%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
-            )
+            call :SAME_FILE "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" && set "SKIP_HOSTER=1"
         )
         if "!SKIP_HOSTER!"=="0" (
             move /y "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" >nul 2>&1
@@ -2039,9 +2027,7 @@ if errorlevel 1 (
     for %%I in ("%URLHAUS%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_URLHAUS=0"
         if exist "%URLHAUS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%URLHAUS%') { (Get-FileHash '%URLHAUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%URLHAUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_URLHAUS=1"
-            )
+            call :SAME_FILE "%URLHAUS%.tmp" "%URLHAUS%" && set "SKIP_URLHAUS=1"
         )
         if "!SKIP_URLHAUS!"=="0" (
             move /y "%URLHAUS%.tmp" "%URLHAUS%" >nul 2>&1
@@ -2104,9 +2090,7 @@ if errorlevel 1 (
     for %%I in ("%THREATFOX%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_THREATFOX=0"
         if exist "%THREATFOX%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%THREATFOX%') { (Get-FileHash '%THREATFOX%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%THREATFOX%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_THREATFOX=1"
-            )
+            call :SAME_FILE "%THREATFOX%.tmp" "%THREATFOX%" && set "SKIP_THREATFOX=1"
         )
         if "!SKIP_THREATFOX!"=="0" (
             move /y "%THREATFOX%.tmp" "%THREATFOX%" >nul 2>&1
@@ -2580,9 +2564,7 @@ if !NC_NEEDS_DL! EQU 1 (
             if !NC_SZ! GEQ 1024 (
                 set "SKIP_NCR=0"
                 if exist "%UB_DIR%\named.cache" (
-                    for /f %%A in ('powershell -NoProfile -Command "(Get-FileHash '%NC_TMP_R%' -Algorithm MD5).Hash + ',' + (Get-FileHash '%UB_DIR%\named.cache' -Algorithm MD5).Hash"') do (
-                        for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_NCR=1"
-                    )
+                    call :SAME_FILE "%NC_TMP_R%" "%UB_DIR%\named.cache" && set "SKIP_NCR=1"
                 )
                 if "!SKIP_NCR!"=="0" (
                     call :BAK_COMMIT "%UB_DIR%\named.cache" "%NCACHE_BAK%" "%NCACHE_BAK2%" "%NCACHE_BAK3%"
@@ -2637,9 +2619,7 @@ if !RZ_NEEDS_DL! EQU 1 (
             if !RZ_SZ! GEQ 102400 (
                 set "SKIP_RZR=0"
                 if exist "%UB_DIR%\root.zone" (
-                    for /f %%A in ('powershell -NoProfile -Command "(Get-FileHash '%RZ_TMP_R%' -Algorithm MD5).Hash + ',' + (Get-FileHash '%UB_DIR%\root.zone' -Algorithm MD5).Hash"') do (
-                        for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_RZR=1"
-                    )
+                    call :SAME_FILE "%RZ_TMP_R%" "%UB_DIR%\root.zone" && set "SKIP_RZR=1"
                 )
                 if "!SKIP_RZR!"=="0" (
                     call :BAK_COMMIT "%UB_DIR%\root.zone" "%RZONE_BAK%" "%RZONE_BAK2%" "%RZONE_BAK3%"
@@ -2751,9 +2731,7 @@ if not errorlevel 1 (
     for %%I in ("%URLHAUS%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_URLHAUS=0"
         if exist "%URLHAUS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%URLHAUS%') { (Get-FileHash '%URLHAUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%URLHAUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_URLHAUS=1"
-            )
+            call :SAME_FILE "%URLHAUS%.tmp" "%URLHAUS%" && set "SKIP_URLHAUS=1"
         )
         if "!SKIP_URLHAUS!"=="0" (
             call :BAK_COMMIT "%URLHAUS%" "%URLHAUS_BAK%" "%URLHAUS_BAK2%" "%URLHAUS_BAK3%"
@@ -2797,9 +2775,7 @@ if not errorlevel 1 (
     for %%I in ("%THREATFOX%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_THREATFOX=0"
         if exist "%THREATFOX%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%THREATFOX%') { (Get-FileHash '%THREATFOX%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%THREATFOX%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_THREATFOX=1"
-            )
+            call :SAME_FILE "%THREATFOX%.tmp" "%THREATFOX%" && set "SKIP_THREATFOX=1"
         )
         if "!SKIP_THREATFOX!"=="0" (
             call :BAK_COMMIT "%THREATFOX%" "%THREATFOX_BAK%" "%THREATFOX_BAK2%" "%THREATFOX_BAK3%"
@@ -2975,9 +2951,7 @@ if not errorlevel 1 (
     for %%I in ("%HZ_PRO_PLUS%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_HZ=0"
         if exist "%HZ_PRO_PLUS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_PRO_PLUS%') { (Get-FileHash '%HZ_PRO_PLUS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_PRO_PLUS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HZ=1"
-            )
+            call :SAME_FILE "%HZ_PRO_PLUS%.tmp" "%HZ_PRO_PLUS%" && set "SKIP_HZ=1"
         )
         if "!SKIP_HZ!"=="0" (
             call :BAK_COMMIT "%HZ_PRO_PLUS%" "%HZ_PRO_PLUS_BAK%" "%HZ_PRO_PLUS_BAK2%" "%HZ_PRO_PLUS_BAK3%"
@@ -3045,9 +3019,7 @@ if not errorlevel 1 (
     for %%I in ("%HZ_TIF_IPS%.tmp") do if %%~zI GEQ 1024 (
         set "SKIP_TIFIPS=0"
         if exist "%HZ_TIF_IPS%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF_IPS%') { (Get-FileHash '%HZ_TIF_IPS%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF_IPS%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIFIPS=1"
-            )
+            call :SAME_FILE "%HZ_TIF_IPS%.tmp" "%HZ_TIF_IPS%" && set "SKIP_TIFIPS=1"
         )
         if "!SKIP_TIFIPS!"=="0" (
             call :BAK_COMMIT "%HZ_TIF_IPS%" "%HZ_TIF_IPS_BAK%" "%HZ_TIF_IPS_BAK2%" "%HZ_TIF_IPS_BAK3%"
@@ -3115,9 +3087,7 @@ if not errorlevel 1 (
     for %%I in ("%HZ_HOSTER%.tmp") do if %%~zI GEQ 512 (
         set "SKIP_HOSTER=0"
         if exist "%HZ_HOSTER%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_HOSTER%') { (Get-FileHash '%HZ_HOSTER%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_HOSTER%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_HOSTER=1"
-            )
+            call :SAME_FILE "%HZ_HOSTER%.tmp" "%HZ_HOSTER%" && set "SKIP_HOSTER=1"
         )
         if "!SKIP_HOSTER!"=="0" (
             call :BAK_COMMIT "%HZ_HOSTER%" "%HZ_HOSTER_BAK%" "%HZ_HOSTER_BAK2%" "%HZ_HOSTER_BAK3%"
@@ -3191,9 +3161,7 @@ if not errorlevel 1 (
         call :DROP_TO_RPZ "%SH_DROP%.raw.tmp" "%SH_DROP%.tmp"
         set "SKIP_DROP=0"
         if exist "%SH_DROP%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP=1"
-            )
+            call :SAME_FILE "%SH_DROP%.tmp" "%SH_DROP%" && set "SKIP_DROP=1"
         )
         if "!SKIP_DROP!"=="0" (
             call :BAK_COMMIT "%SH_DROP%" "%SH_DROP_BAK%" "%SH_DROP_BAK2%" "%SH_DROP_BAK3%"
@@ -3263,9 +3231,7 @@ if not errorlevel 1 (
         call :DROP_TO_RPZ_V6 "%SH_DROP6%.raw.tmp" "%SH_DROP6%.tmp"
         set "SKIP_DROP6=0"
         if exist "%SH_DROP6%" (
-            for /f %%H in ('powershell -Command "(Get-FileHash \"%SH_DROP6%.tmp\" -Algorithm MD5).Hash + ',' + (Get-FileHash \"%SH_DROP6%\" -Algorithm MD5).Hash"') do (
-                for /f "tokens=1,2 delims=," %%A in ("%%H") do if "%%A"=="%%B" set "SKIP_DROP6=1"
-            )
+            call :SAME_FILE "%SH_DROP6%.tmp" "%SH_DROP6%" && set "SKIP_DROP6=1"
         )
         if "!SKIP_DROP6!"=="0" (
             call :BAK_COMMIT "%SH_DROP6%" "%SH_DROP6_BAK%" "%SH_DROP6_BAK2%" "%SH_DROP6_BAK3%"
@@ -3426,9 +3392,7 @@ if "!TIF_DL_ERROR!"=="1" (
     for %%I in ("%HZ_TIF%.tmp") do if %%~zI GEQ 10240 (
         set "SKIP_TIF=0"
         if exist "%HZ_TIF%" (
-            for /f %%A in ('powershell -NoProfile -Command "if (Test-Path '%HZ_TIF%') { (Get-FileHash '%HZ_TIF%.tmp' -Algorithm MD5).Hash + ',' + (Get-FileHash '%HZ_TIF%' -Algorithm MD5).Hash } else { 'NEW' }"') do (
-                for /f "tokens=1,2 delims=," %%X in ("%%A") do if "%%X"=="%%Y" set "SKIP_TIF=1"
-            )
+            call :SAME_FILE "%HZ_TIF%.tmp" "%HZ_TIF%" && set "SKIP_TIF=1"
         )
         if "!SKIP_TIF!"=="0" (
             call :BAK_COMMIT "%HZ_TIF%" "%HZ_TIF_BAK%" "%HZ_TIF_BAK2%" "%HZ_TIF_BAK3%"
@@ -4177,6 +4141,18 @@ if exist "%~2" (
 )
 call :ROTATE_BAK "%~2" "%~3" "%~4"
 copy /y "%~1" "%~2" >nul 2>&1
+exit /b 0
+
+:: Confronto binario di due file (sostituisce il vecchio confronto MD5 via PowerShell
+:: Get-FileHash: niente avvio della CLR .NET per ogni lista, e fc /b si ferma al primo
+:: byte diverso). Se la dimensione e diversa il confronto fallisce subito.
+:: Uso: call :SAME_FILE "<nuovo>" "<esistente>"  -> exit /b 0 se IDENTICI, 1 altrimenti
+:: (file mancante o errore di fc = considerati diversi, quindi si installa il nuovo)
+:SAME_FILE
+if not exist "%~1" exit /b 1
+if not exist "%~2" exit /b 1
+fc /b "%~1" "%~2" >nul 2>&1
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :: [v1131.0] Rotazione dei backup a rinomina, SOLO quando il file sta per essere sostituito
