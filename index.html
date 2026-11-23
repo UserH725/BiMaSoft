@@ -798,6 +798,7 @@ window.hdrGeo = function () {
   var INIT_BUFFER_TARGET = 10;   /* secondi di buffer da accumulare prima di partire (copre i buchi di connessione) */
   var BUFFER_REFILL_TARGET = 3;  /* dopo uno svuotamento, secondi da ricostruire prima di ripartire (stream non HLS) */
   var PROG_BUFFER_TARGET = 3;    /* stream progressivi (Icecast/Shoutcast): dopo il burst iniziale arrivano in tempo reale, non si puo' accumulare di piu' */
+  var PROG_BUFFER_FULL = 2.4;    /* solo per la barra: i secondi di buffer che una radio progressiva raggiunge davvero (~78-80% di 3 s) = 100% */
   var BUFFER_STALL_MS = 1500;    /* se il buffer non cresce piu' per questo tempo (e c'e' gia' >= 1 s) si parte subito */
   var BUFFER_MAX_WAIT = 8000;   /* attesa massima per riempire il buffer: poi parte comunque */
 
@@ -2495,7 +2496,7 @@ window.hdrGeo = function () {
     function upd() {
       if (!(wantPlay && cur >= 0)) { bf.style.clipPath = 'inset(0 100% 0 0)'; bt.textContent = ''; box.title = ''; lastBufferedSec = 0; return; }
       var r = au.buffered, t = au.currentTime, s = 0, k, lv, kbps, kb, p, f, sz;
-      T = hls ? INIT_BUFFER_TARGET : PROG_BUFFER_TARGET;
+      T = hls ? INIT_BUFFER_TARGET : PROG_BUFFER_FULL;
       for (k = 0; k < r.length; k++) { if (t >= r.start(k) - 0.3 && t <= r.end(k) + 0.3) { s = Math.max(0, r.end(k) - t); break; } }
       
       if (!hls && s > lastBufferedSec) {
@@ -2510,7 +2511,7 @@ window.hdrGeo = function () {
       sz = '~' + (kb >= 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' KB');
       bf.style.clipPath = 'inset(0 ' + ((1 - f) * 100).toFixed(1) + '% 0 0)';
       bt.textContent = (bufHold ? 'Caricamento buffer ' : 'Buffer ') + p + '% \u00B7 ' + sz + ' \u00B7 ' + Math.round(s) + ' s';
-      box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + T + ' s target \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
+      box.title = 'Buffer: ' + s.toFixed(1).replace('.', ',') + ' s in coda su ' + String(T).replace('.', ',') + ' s target \u00B7 dimensione stimata a ' + Math.round(kbps) + ' kbps';
     }
     au.addEventListener('playing', upd); au.addEventListener('waiting', upd); au.addEventListener('progress', upd);
     setInterval(upd, 500);
