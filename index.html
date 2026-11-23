@@ -4566,21 +4566,28 @@ window.hdrGeo = function () {
       .then(function () { roadBusy = false; showDist(); });
   }
   /* tempo di arrivo a casa = distanza / velocita' di viaggio (media mobile), con conto alla rovescia live ogni secondo */
-  var spd = 0, baseD = null, baseT = 0, lastDispD = null, txtN = null, etaSp = null;
+  var spd = 0, lastSpd = 0, DEFSPD = 40 / 3.6, frozen = null, baseD = null, baseT = 0, lastDispD = null, txtN = null, etaSp = null;
   function etaFmt(s) {
     s = Math.max(0, Math.round(s));
     var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
     return h + 'h ' + (m < 10 ? '0' : '') + m + 'm ' + (x < 10 ? '0' : '') + x + 's';
   }
+  function etaNow() {
+    if (baseD === null) return null;
+    var rem = Math.max(0, baseD - spd * (Date.now() - baseT) / 1000);
+    return rem < 15 ? 0 : rem / spd;
+  }
   function etaTick() {
     if (!etaSp || etaSp.parentNode !== el3) return;
     var t = '';
     if (baseD !== null) {
-      if (spd <= 0) t = '\u23f1 \u2014';
-      else {
-        var rem = Math.max(0, baseD - spd * (Date.now() - baseT) / 1000);
-        t = '\u23f1 ' + (rem < 15 ? 'arrivato' : etaFmt(rem / spd));
+      var sec, tilde = '';
+      if (spd > 0) sec = etaNow();                              /* in marcia: conto alla rovescia live */
+      else if (frozen !== null) sec = frozen;                   /* da fermo: resta fisso al tempo che avevi quando ti sei fermato */
+      else {                                                    /* mai mosso dall'apertura: stima con 40 km/h, si aggiorna finche' non parti */
+        sec = baseD < 15 ? 0 : baseD / DEFSPD; tilde = '~';
       }
+      t = '\u23f1 ' + (sec <= 0 ? 'arrivato' : tilde + etaFmt(sec));
     }
     if (etaSp.textContent !== t) etaSp.textContent = t;
   }
@@ -4696,7 +4703,12 @@ window.hdrGeo = function () {
       }
       if (d >= 5 || dt >= 10) prevFix = { pt: pt, t: t };
     } else prevFix = { pt: pt, t: t };
-    if (v !== null) { if (v * 3.6 < 2) spd = 0; else spd = spd > 0 ? spd * 0.6 + v * 0.4 : v; etaTick(); }
+    if (v !== null) {
+      if (v * 3.6 < 2) {
+        if (spd > 0) { frozen = etaNow(); spd = 0; }            /* appena fermo: congelo il tempo */
+      } else { spd = spd > 0 ? spd * 0.6 + v * 0.4 : v; lastSpd = spd; frozen = null; }
+      etaTick();
+    }
     var parts = [];
     if (v !== null) {
       var kmh = v * 3.6;
