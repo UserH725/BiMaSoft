@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1153.0"
+set "LOCAL_VER=1154.0"
+:: [v1154.0] CHIAVE ABUSE.CH FUORI DAL BAT: la chiave che stava nei due URL di URLhaus e ThreatFox ora si legge dallo stesso file unbound_telegram_secret.key del secret Telegram, che diventa un file a righe NOME=valore: TELEGRAM=password e ABUSECH=chiave. Un file con la sola password su una riga, come nella 1153.0, funziona ancora per Telegram. Gli URL si costruiscono con la variabile UB_ABUSECH_KEY. Se la riga ABUSECH manca o non e valida, avviso a video e riga in abusech_key_error.log, e gli URL contengono CHIAVE-MANCANTE: il download fallisce in modo pulito e si usa il backup come sempre. Il log si cancella da solo appena la chiave e valida. Il mascheramento della chiave in rpz_download.log non cambia. Vedi :AB_KEY_MISSING.
 :: [v1153.0] SECRET TELEGRAM FUORI DAL BAT: UB_TG_SECRET non e piu scritto nel file ma letto da unbound_telegram_secret.key nella cartella Unbound, subito dopo UB_TG_URL, prima del dispatch dei task in background. Il file contiene una sola riga con la password, solo lettere e cifre, da 8 a 128 caratteri. La lettura con PowerShell accetta UTF-8 con o senza BOM, UTF-16, spazi e a capo finali. Se il file manca o il contenuto non e valido le notifiche Telegram non partono: avviso a video e riga in telegram_key_error.log nella cartella Unbound, che si cancella da solo appena il file e valido. A ogni avvio i permessi del file vengono ristretti a SYSTEM e Administrators. Il file va creato una volta su ogni PC, e il self-update del BAT non lo tocca. Vedi :TG_KEY_MISSING.
 :: [v1152.0] AVVIO SENZA ATTESE LUNGHE SUL LOCK: l avvio e il task --scheduled scrivono subito il flag di pausa ub_pause.flag, cosi i task in background che partono dopo saltano il giro. Se il lock e occupato per piu di LK_GRACE secondi, 90 di default, l avvio ferma con schtasks /end i task pianificati in background in esecuzione: biorario --refresh, le 5 zone RPZ, abuse.ch e dailyreport. E lo stesso Termina manuale di Utilita di pianificazione, che chiude l intero albero di processi del task, e il task resta abilitato e riparte al giro successivo. Subito dopo il lock si libera da solo, perche il proprietario non esiste piu, e l avvio prosegue. Boot e Daily non vengono mai fermati: se il lock e di un altra istanza di avvio o di un processo lanciato a mano si attende come prima, fino a 20 minuti. Vedi :LOCK_TRY e :STOP_BG_TASKS.
 :: [v1151.0] TELEGRAM: URL del proxy Google Apps Script e secret condivisi non sono piu scritti in ogni invio ma in due sole variabili in cima al file (UB_TG_URL, UB_TG_SECRET, subito dopo UB_DIR), usate dai 6 invii Telegram (avviso dashboard, zona RPZ, report biorario, esito attesa Unbound, telemetria di avvio, evento abuse.ch). Nuovo deployment Apps Script. Il secret resta nel BAT, nessun file esterno.
@@ -82,18 +83,26 @@ set "LOCAL_VER=1153.0"
 set "UB_DIR=C:\Program Files\Unbound"
 :: --- TELEGRAM: PROXY GOOGLE APPS SCRIPT ---
 :: UB_TG_URL = URL "applicazione web" del deployment, termina con /exec. Modificare SOLO questa riga.
-:: UB_TG_SECRET = password condivisa con lo script Google. NON e scritta nel BAT: si legge dal file
-:: unbound_telegram_secret.key nella cartella Unbound, una sola riga, solo lettere e cifre da 8 a 128
-:: caratteri, niente caratteri speciali perche il valore passa da cmd e PowerShell. Il file va creato
-:: una volta su ogni PC. Definite prima del dispatch --refresh/--refreshzone/--refreshabusech/--dnswatch,
-:: cosi i task in background le vedono.
+:: File unbound_telegram_secret.key nella cartella Unbound, a righe NOME=valore, creato una volta su ogni PC:
+::   TELEGRAM=password condivisa con lo script Google, solo lettere e cifre da 8 a 128 caratteri
+::   ABUSECH=chiave abuse.ch usata negli URL di URLhaus e ThreatFox, solo lettere e cifre da 16 a 128
+:: Niente caratteri speciali, perche i valori passano da cmd e PowerShell. Un file con la sola password
+:: su una riga vale come TELEGRAM. Nessuno dei due valori e scritto nel BAT.
+:: Definite prima del dispatch --refresh/--refreshzone/--refreshabusech/--dnswatch, cosi i task in background le vedono.
 set "UB_TG_URL=https://script.google.com/macros/s/AKfycbwVdynEqDSzphBN0uVYx2B1wrQATUkU4hRAkl0Czk7zOTQIzKHM4d3_ZkRTNoE1seE5/exec"
 set "UB_TG_KEY_FILE=%UB_DIR%\unbound_telegram_secret.key"
 set "UB_TG_SECRET="
-if exist "%UB_TG_KEY_FILE%" for /f "usebackq delims=" %%K in (`powershell -NoProfile -Command "try { $s = [IO.File]::ReadAllText($env:UB_TG_KEY_FILE).Trim().Trim([char]0xFEFF); if ($s -match '^[A-Za-z0-9]{8,128}$') { $s } } catch {}"`) do set "UB_TG_SECRET=%%K"
+set "UB_ABUSECH_KEY="
+if exist "%UB_TG_KEY_FILE%" for /f "usebackq tokens=1,* delims==" %%A in (`powershell -NoProfile -Command "try { $t = [IO.File]::ReadAllText($env:UB_TG_KEY_FILE).Trim([char]0xFEFF); $tg = ''; $ab = ''; foreach ($l in ($t -split '\r?\n')) { $l = $l.Trim(); if ($l -eq '') { continue }; if ($l -match '^([A-Za-z]+)\s*=\s*(.+)$') { $k = $matches[1].ToUpper(); $v = $matches[2].Trim(); if ($k -eq 'TELEGRAM') { $tg = $v } elseif ($k -eq 'ABUSECH') { $ab = $v } } elseif ($tg -eq '') { $tg = $l } }; if ($tg -match '^[A-Za-z0-9]{8,128}$') { 'TG=' + $tg }; if ($ab -match '^[A-Za-z0-9]{16,128}$') { 'AB=' + $ab } } catch {}"`) do (
+    if "%%A"=="TG" set "UB_TG_SECRET=%%B"
+    if "%%A"=="AB" set "UB_ABUSECH_KEY=%%B"
+)
 if defined UB_TG_SECRET if exist "%UB_DIR%\telegram_key_error.log" del /f /q "%UB_DIR%\telegram_key_error.log" >nul 2>&1
-if defined UB_TG_SECRET icacls "%UB_TG_KEY_FILE%" /inheritance:r /grant:r *S-1-5-18:(F) /grant:r *S-1-5-32-544:(F) >nul 2>&1
+if exist "%UB_TG_KEY_FILE%" icacls "%UB_TG_KEY_FILE%" /inheritance:r /grant:r *S-1-5-18:(F) /grant:r *S-1-5-32-544:(F) >nul 2>&1
 if not defined UB_TG_SECRET call :TG_KEY_MISSING
+if defined UB_ABUSECH_KEY if exist "%UB_DIR%\abusech_key_error.log" del /f /q "%UB_DIR%\abusech_key_error.log" >nul 2>&1
+if not defined UB_ABUSECH_KEY call :AB_KEY_MISSING
+if not defined UB_ABUSECH_KEY set "UB_ABUSECH_KEY=CHIAVE-MANCANTE"
 :: --- VARIABILI GLOBALI ESSENZIALI PER I TASK IN BACKGROUND ---
 :: [FIX] Spostata qui da dopo il dispatch --refresh/--refreshabusech/--dailyreport:
 :: stava dopo "goto :REFRESH_FILES_ONLY" quindi il task biorario non la vedeva mai,
@@ -160,8 +169,9 @@ set "THREATFOX_BAK2=%THREATFOX%.bak2"
 set "THREATFOX_BAK3=%THREATFOX%.bak3"
 :: [ABUSE.CH] Dal 2026 i vecchi endpoint pubblici RPZ rispondono HTTP 410: ora serve la
 :: Auth-Key nell'URL (nuovi host *-api.abuse.ch). Nel rpz_download.log la chiave viene mascherata.
-set "URLHAUS_URL=https://urlhaus-api.abuse.ch/v2/files/exports/990d6b135b1c0ae7dbb7b6660d2caade1d7d05d0f7ff560f/rpz.txt"
-set "THREATFOX_URL=https://threatfox-api.abuse.ch/v2/files/exports/990d6b135b1c0ae7dbb7b6660d2caade1d7d05d0f7ff560f/threatfox.rpz"
+:: [v1154.0] La chiave non e piu scritta qui: arriva da UB_ABUSECH_KEY, letta dal file chiavi in cima al file.
+set "URLHAUS_URL=https://urlhaus-api.abuse.ch/v2/files/exports/%UB_ABUSECH_KEY%/rpz.txt"
+set "THREATFOX_URL=https://threatfox-api.abuse.ch/v2/files/exports/%UB_ABUSECH_KEY%/threatfox.rpz"
 
 :: ==================================================================
 :: [v1141.0] LOCK TRA ISTANZE (vedi nota di versione in cima)
@@ -1531,7 +1541,7 @@ set "F10_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Pro Plus e la prep
 call :UPDATE_UI 85
 call :BOOT_RPZ_SKIP "%HZ_PRO_PLUS%" 10240 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10_RES=[     SKIP     ] NET  >> HaGeZi Pro Plus: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10_RES=[     SKIP     ] NET  >> HaGeZi Pro Plus: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :F10_BOOT_DONE
 )
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1601,7 +1611,7 @@ call :UPDATE_UI 87
 :: della zona TIF con ricarico a caldo. Non vale per --fase F10B lanciata a mano e se il file manca.
 call :BOOT_RPZ_SKIP "%HZ_TIF%" 10240 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10B_RES=[     SKIP     ] NET  >> HaGeZi TIF: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :TIF_BOOT_DONE
 )
 set "TIF_BOOT_MAX_AGE_H=24"
@@ -1746,7 +1756,7 @@ set "F10C_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi TIF-IPS e la prep
 call :UPDATE_UI 88
 call :BOOT_RPZ_SKIP "%HZ_TIF_IPS%" 1024 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10C_RES=[     SKIP     ] NET  >> HaGeZi TIF-IPS: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10C_RES=[     SKIP     ] NET  >> HaGeZi TIF-IPS: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :F10C_BOOT_DONE
 )
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -1811,7 +1821,7 @@ set "F10D_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROP e la conve
 call :UPDATE_UI 89
 call :BOOT_RPZ_SKIP "%SH_DROP%" 512 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10D_RES=[     SKIP     ] NET  >> Spamhaus DROP: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :F10D_BOOT_DONE
 )
 
@@ -1889,7 +1899,7 @@ set "F10E_ACT=[...in corso...] NET  >> Scarico la lista Spamhaus DROPv6 e la con
 call :UPDATE_UI 89
 call :BOOT_RPZ_SKIP "%SH_DROP6%" 64 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10E_RES=[     SKIP     ] NET  >> Spamhaus DROPv6: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :F10E_BOOT_DONE
 )
 
@@ -1971,7 +1981,7 @@ set "F10G_ACT=[...in corso...] NET  >> Scarico la lista HaGeZi Badware Hoster e 
 call :UPDATE_UI 89
 call :BOOT_RPZ_SKIP "%HZ_HOSTER%" 512 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10G_RES=[     SKIP     ] NET  >> HaGeZi Badware Hoster: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task pianificato"
+    set "F10G_RES=[     SKIP     ] NET  >> HaGeZi Badware Hoster: * aggiornata il !BOOT_SKIP_DT!, * task pianificato"
     goto :F10G_BOOT_DONE
 )
 call :RESOLVE_HOST cdn.jsdelivr.net IP_JSDELIVR
@@ -2039,7 +2049,7 @@ set "F10I_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch URLhaus (malwar
 call :UPDATE_UI 90
 call :BOOT_RPZ_SKIP "%URLHAUS%" 512 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10I_RES=[     SKIP     ] NET  >> abuse.ch URLhaus: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task abuse.ch a 30 minuti"
+    set "F10I_RES=[     SKIP     ] NET  >> abuse.ch URLhaus: * aggiornata il !BOOT_SKIP_DT!, * task abuse.ch a 30 minuti"
     goto :F10I_BOOT_DONE
 )
 
@@ -2102,7 +2112,7 @@ set "F10J_ACT=[...in corso...] NET  >> Scarico la lista abuse.ch ThreatFox (IOC 
 call :UPDATE_UI 90
 call :BOOT_RPZ_SKIP "%THREATFOX%" 512 BOOT_SKIP_OK
 if "!BOOT_SKIP_OK!"=="1" (
-    set "F10J_RES=[     SKIP     ] NET  >> abuse.ch ThreatFox: uso la lista su disco, aggiornata il !BOOT_SKIP_DT!, la aggiorna il task abuse.ch a 30 minuti"
+    set "F10J_RES=[     SKIP     ] NET  >> abuse.ch ThreatFox: * aggiornata il !BOOT_SKIP_DT!, * task abuse.ch a 30 minuti"
     goto :F10J_BOOT_DONE
 )
 
@@ -5574,6 +5584,16 @@ exit /b 0
 :TG_KEY_MISSING
 echo   [ATTENZIONE] Secret Telegram non caricato: file mancante o non valido, notifiche Telegram disattivate.
 if exist "%UB_DIR%\" >"%UB_DIR%\telegram_key_error.log" echo %date% %time% secret Telegram non caricato: file mancante o non valido: %UB_TG_KEY_FILE%
+exit /b 0
+
+:: ==================================================================
+:: [v1154.0] SUBROUTINE: CHIAVE ABUSE.CH NON CARICATA
+:: Chiamata all inizio se la riga ABUSECH manca o non e valida nel file chiavi. Avvisa a video
+:: e scrive una riga in abusech_key_error.log, cosi anche i task nascosti lasciano traccia.
+:: ==================================================================
+:AB_KEY_MISSING
+echo   [ATTENZIONE] Chiave abuse.ch non caricata: riga ABUSECH mancante o non valida, URLhaus e ThreatFox non si scaricano.
+if exist "%UB_DIR%\" >"%UB_DIR%\abusech_key_error.log" echo %date% %time% chiave abuse.ch non caricata: riga ABUSECH mancante o non valida in %UB_TG_KEY_FILE%
 exit /b 0
 
 :: ==================================================================
