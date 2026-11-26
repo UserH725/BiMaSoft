@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1151.0"
+set "LOCAL_VER=1152.0"
+:: [v1152.0] AVVIO SENZA ATTESE LUNGHE SUL LOCK: l avvio e il task --scheduled scrivono subito il flag di pausa ub_pause.flag, cosi i task in background che partono dopo saltano il giro. Se il lock e occupato per piu di LK_GRACE secondi, 90 di default, l avvio ferma con schtasks /end i task pianificati in background in esecuzione: biorario --refresh, le 5 zone RPZ, abuse.ch e dailyreport. E lo stesso Termina manuale di Utilita di pianificazione, che chiude l intero albero di processi del task, e il task resta abilitato e riparte al giro successivo. Subito dopo il lock si libera da solo, perche il proprietario non esiste piu, e l avvio prosegue. Boot e Daily non vengono mai fermati: se il lock e di un altra istanza di avvio o di un processo lanciato a mano si attende come prima, fino a 20 minuti. Vedi :LOCK_TRY e :STOP_BG_TASKS.
 :: [v1151.0] TELEGRAM: URL del proxy Google Apps Script e secret condivisi non sono piu scritti in ogni invio ma in due sole variabili in cima al file (UB_TG_URL, UB_TG_SECRET, subito dopo UB_DIR), usate dai 6 invii Telegram (avviso dashboard, zona RPZ, report biorario, esito attesa Unbound, telemetria di avvio, evento abuse.ch). Nuovo deployment Apps Script. Il secret resta nel BAT, nessun file esterno.
 :: [v1149.0] 1) RPZ AL BOOT DA DISCO ANCHE SUL PROFILO ULTRA: :BOOT_RPZ_SKIP vale ora per MICRO, LIGHT, STANDARD e ULTRA; con --fase manuale si scarica sempre come prima. 2) Fase 7: backup con rotazione solo se il file e diverso da .bak1 (:BAK_IF_CHANGED, confronto per dimensione e poi fc /b), cosi bak1, bak2 e bak3 non diventano copie identiche dopo piu avvii senza aggiornamenti e si evitano scritture inutili su SSD. 3) :FILE_DATE e :FILE_AGE_HOURS usano file temporanei con nome univoco (RANDOM) per evitare collisioni tra fasi lanciate insieme dalla Dashboard. 4) Rimossa la variabile CURL_CA, mai usata (il motore download usa DL_FLAGS).
 :: [v1148.0] RPZ AL BOOT DA DISCO SU MICRO, LIGHT E STANDARD: nell avvio e nel task giornaliero --scheduled le fasi di download F10, F10B, F10C, F10D, F10E, F10G, F10I e F10J non scaricano piu le liste RPZ se il file attivo esiste su disco ed e sopra la dimensione minima (stessa soglia usata per scartare i download troppo piccoli): usano la lista presente e lasciano l aggiornamento ai task pianificati (biorario, 5 zone RPZ, abuse.ch 30 minuti) che hanno download verificato, backup e ricarico a caldo. Se il file manca o e troppo piccolo (prima installazione, file troncato) si scarica come prima. Il profilo ULTRA e le fasi lanciate a mano con --fase non cambiano. Esito SKIP con data del file nelle fasi. Helper :BOOT_RPZ_SKIP.
@@ -176,16 +177,33 @@ if "%~1"=="--refreshabusech" set "LK_WAIT=600"
 if "%~1"=="--refreshabusech" set "LK_SKIP=1"
 if "%~1"=="--dailyreport" set "LK_WAIT=600"
 if "%~1"=="--dailyreport" set "LK_SKIP=1"
+:: [v1152.0] Avvio e --scheduled: se il lock resta occupato oltre LK_GRACE secondi si fermano i task in background con schtasks /end
+set "LK_GRACE=90"
+set "LK_BOOT=0"
+if "!LK_SKIP!"=="0" set "LK_BOOT=1"
 :: [v1147.0] Pausa task: se l avvio o il task giornaliero e in corso (ub_pause.flag valido) il task in background salta il giro senza mettersi in coda. Exit 8 = pausa attiva.
 set "PZ_RC=0"
 if "!LK_SKIP!"=="1" powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='C:\Program Files\Unbound\ub_pause.flag'; if (-not (Test-Path -LiteralPath $f)) { exit 0 }; $l=$null; try { $l=(Get-Content -LiteralPath $f -ErrorAction Stop -TotalCount 1).Split('|') } catch { exit 0 }; if ($l.Count -lt 3) { exit 0 }; $alive=$true; $age=999; try { $t=[datetime]::Parse($l[2]); $age=((Get-Date)-$t).TotalMinutes; $p=Get-Process -Id ([int]$l[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $t.AddSeconds(5)) { $alive=$false } } catch {} } } catch { $alive=$false }; if ($alive -and $age -lt 45) { exit 8 }; try { Remove-Item -LiteralPath $f -Force -ErrorAction Stop } catch {}; exit 0" >nul 2>&1
 if "!LK_SKIP!"=="1" set "PZ_RC=!errorlevel!"
 if "!PZ_RC!"=="8" exit 0
+:: [v1152.0] Flag di pausa subito, prima di mettersi in coda: i task in background che partono da ora saltano il giro
+set "LK_PHASE=0"
+if "!LK_BOOT!"=="1" call :PAUSE_BEGIN
+if "!LK_BOOT!"=="1" set "LK_WAIT=!LK_GRACE!"
+if "!LK_BOOT!"=="1" set "LK_PHASE=1"
+:LOCK_TRY
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; $o=$d+'\owner.txt'; $w=[int]$env:LK_WAIT; $tag=$env:LK_TAG; if (-not (Test-Path -LiteralPath 'C:\Program Files\Unbound')) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; $end=(Get-Date).AddSeconds($w); $said=$false; while ($true) { $ok=$false; try { New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; $ok=$true } catch {}; if ($ok) { try { Set-Content -LiteralPath $o -Value ([string]$me+'|'+$tag+'|'+(Get-Date).ToString('s')) } catch {}; exit 0 }; $ct=$null; try { $ct=(Get-Item -LiteralPath $d -ErrorAction Stop).CreationTime } catch { continue }; $age=((Get-Date)-$ct).TotalMinutes; $alive=$true; $own=$null; try { $own=(Get-Content -LiteralPath $o -ErrorAction Stop -TotalCount 1).Split('|') } catch { $alive=($age -lt 0.5) }; if ($own) { $p=Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $ct.AddSeconds(5)) { $alive=$false } } catch {} } }; if ($age -gt 120) { $alive=$false }; if (-not $alive) { try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch {}; continue }; if (-not $said) { $who=''; if ($own) { $who=' ('+$own[1]+', PID '+$own[0]+')' }; Write-Host ('  [..] Un altro task Unbound Bunker e in corso'+$who+': attendo il mio turno...'); $said=$true }; if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Seconds (4+(Get-Random -Maximum 4)) }"
 set "LK_RC=!errorlevel!"
+if "!LK_RC!"=="7" if "!LK_PHASE!"=="1" goto :LOCK_STOP_TASKS
 if "!LK_RC!"=="7" goto :LOCK_TIMEOUT
 if "!LK_SKIP!"=="1" call :LOCK_NETWAIT
 goto :LOCK_DONE
+:: [v1152.0] Attesa di LK_GRACE secondi esaurita: si fermano i task in background e si riprova il lock, con l attesa piena di prima
+:LOCK_STOP_TASKS
+call :STOP_BG_TASKS
+set "LK_PHASE=2"
+set "LK_WAIT=1200"
+goto :LOCK_TRY
 :LOCK_TIMEOUT
 if not "!LK_SKIP!"=="1" goto :LOCK_PROCEED
 :: Task in background: il turno non e' arrivato, si salta questo giro (il prossimo e' gia' in programma)
@@ -5518,6 +5536,27 @@ set /a LKN+=1 >nul
 if !LKN! GEQ 24 exit /b 0
 ping -n 4 127.0.0.1 >nul
 goto :LKN_LOOP
+
+:: ==================================================================
+:: [v1152.0] SUBROUTINE: FERMA I TASK PIANIFICATI IN BACKGROUND
+:: Equivale al Termina manuale in Utilita di pianificazione: schtasks /end chiude
+:: l intero albero di processi del task, curl, powershell e unbound-control inclusi.
+:: Se il task non e in esecuzione schtasks /end da errore, che si ignora in silenzio.
+:: Boot e Daily non sono nell elenco: sono istanze di avvio e non si fermano.
+:: Il task fermato resta abilitato e riparte al prossimo giro pianificato.
+:: ==================================================================
+:STOP_BG_TASKS
+set "SBT_N=0"
+echo   [..] Lock occupato da oltre !LK_GRACE! secondi: fermo i task pianificati in background e proseguo.
+for %%T in (Unbound_Bunker_2h Unbound_Bunker_AbuseCh30m Unbound_Bunker_Zone_ProPlus Unbound_Bunker_Zone_TifIps Unbound_Bunker_Zone_Hoster Unbound_Bunker_Zone_Drop Unbound_Bunker_Zone_Tif Unbound_Bunker_DailyReport) do (
+    schtasks /end /tn "%%T" >nul 2>&1
+    if not errorlevel 1 (
+        echo   [OK] Task fermato: %%T
+        set /a SBT_N+=1 >nul
+    )
+)
+if "!SBT_N!"=="0" echo   [..] Nessun task pianificato in esecuzione: il lock e di un altro processo, resto in attesa.
+exit /b 0
 
 :: ==================================================================
 :: [v1146.0] SUBROUTINE: SOSPENDE WINDOWS UPDATE DURANTE L AVVIO
