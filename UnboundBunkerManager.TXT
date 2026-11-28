@@ -60,7 +60,8 @@ exit
 title UNBOUND BUNKER CERBERO - (C) 2026 by Mauro Bigoni
 
 :: --- VERSION CHECK CLOUD ---
-set "LOCAL_VER=1156.0"
+set "LOCAL_VER=1157.0"
+:: [v1157.0] AVVIO CHE NON RESTA PIU FERMO SUL LOCK: se all avvio (o nel task --scheduled) esiste il lock ub_manager.lock, il BAT ferma SUBITO, senza aspettare, tutti i task pianificati in background (schtasks /end sui task biorario, 5 zone RPZ, abuse.ch, dailyreport; sull avvio interattivo anche il Daily) e poi termina con taskkill /T /F tutti i cmd.exe lanciati con --refresh, --refreshzone, --refreshabusech, --dailyreport (e --scheduled solo se parte l avvio), anche se il task non e piu elencato o il processo e rimasto orfano. I task restano abilitati e ripartono da soli al giro successivo. Se dopo LK_GRACE (30 secondi) il lock risulta ancora occupato, :LOCK_FORCE lo rimuove con forza, tranne quando il proprietario e un altro avvio vivo (tag avvio o --scheduled): in quel caso si attende come prima, fino a 20 minuti. Corretto anche il ciclo di attesa del lock: se la rimozione di un lock scaduto falliva il ciclo girava senza fine e senza controllare il tempo massimo; ora prova una seconda rimozione e rispetta sempre il timeout. Vedi :LOCK_PREEMPT, :KILL_BG_PROCS, :LOCK_FORCE.
 :: [v1153.0] SECRET TELEGRAM FUORI DAL BAT: UB_TG_SECRET non e piu scritto nel file ma letto da unbound_telegram_secret.key nella cartella Unbound, subito dopo UB_TG_URL, prima del dispatch dei task in background. Il file contiene una sola riga con la password, solo lettere e cifre, da 8 a 128 caratteri. La lettura con PowerShell accetta UTF-8 con o senza BOM, UTF-16, spazi e a capo finali. Se il file manca o il contenuto non e valido le notifiche Telegram non partono: avviso a video e riga in telegram_key_error.log nella cartella Unbound, che si cancella da solo appena il file e valido. A ogni avvio i permessi del file vengono ristretti a SYSTEM e Administrators. Il file va creato una volta su ogni PC, e il self-update del BAT non lo tocca. Vedi :TG_KEY_MISSING.
 :: [v1152.0] AVVIO SENZA ATTESE LUNGHE SUL LOCK: l avvio e il task --scheduled scrivono subito il flag di pausa ub_pause.flag, cosi i task in background che partono dopo saltano il giro. Se il lock e occupato per piu di LK_GRACE secondi, 90 di default, l avvio ferma con schtasks /end i task pianificati in background in esecuzione: biorario --refresh, le 5 zone RPZ, abuse.ch e dailyreport. E lo stesso Termina manuale di Utilita di pianificazione, che chiude l intero albero di processi del task, e il task resta abilitato e riparte al giro successivo. Subito dopo il lock si libera da solo, perche il proprietario non esiste piu, e l avvio prosegue. Boot e Daily non vengono mai fermati: se il lock e di un altra istanza di avvio o di un processo lanciato a mano si attende come prima, fino a 20 minuti. Vedi :LOCK_TRY e :STOP_BG_TASKS.
 :: [v1151.0] TELEGRAM: URL del proxy Google Apps Script e secret condivisi non sono piu scritti in ogni invio ma in due sole variabili in cima al file (UB_TG_URL, UB_TG_SECRET, subito dopo UB_DIR), usate dai 6 invii Telegram (avviso dashboard, zona RPZ, report biorario, esito attesa Unbound, telemetria di avvio, evento abuse.ch). Nuovo deployment Apps Script. Il secret resta nel BAT, nessun file esterno.
@@ -186,7 +187,7 @@ if "%~1"=="--refreshabusech" set "LK_SKIP=1"
 if "%~1"=="--dailyreport" set "LK_WAIT=600"
 if "%~1"=="--dailyreport" set "LK_SKIP=1"
 :: [v1152.0] Avvio e --scheduled: se il lock resta occupato oltre LK_GRACE secondi si fermano i task in background con schtasks /end
-set "LK_GRACE=90"
+set "LK_GRACE=30"
 set "LK_BOOT=0"
 if "!LK_SKIP!"=="0" set "LK_BOOT=1"
 :: [v1147.0] Pausa task: se l avvio o il task giornaliero e in corso (ub_pause.flag valido) il task in background salta il giro senza mettersi in coda. Exit 8 = pausa attiva.
@@ -197,10 +198,13 @@ if "!PZ_RC!"=="8" exit 0
 :: [v1152.0] Flag di pausa subito, prima di mettersi in coda: i task in background che partono da ora saltano il giro
 set "LK_PHASE=0"
 if "!LK_BOOT!"=="1" call :PAUSE_BEGIN
+:: [v1157.0] Se il lock esiste si fermano subito i task in background (niente attesa di 90 secondi)
+set "KBP_NAME=%~n0"
+if "!LK_BOOT!"=="1" call :LOCK_PREEMPT
 if "!LK_BOOT!"=="1" set "LK_WAIT=!LK_GRACE!"
 if "!LK_BOOT!"=="1" set "LK_PHASE=1"
 :LOCK_TRY
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; $o=$d+'\owner.txt'; $w=[int]$env:LK_WAIT; $tag=$env:LK_TAG; if (-not (Test-Path -LiteralPath 'C:\Program Files\Unbound')) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; $end=(Get-Date).AddSeconds($w); $said=$false; while ($true) { $ok=$false; try { New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; $ok=$true } catch {}; if ($ok) { try { Set-Content -LiteralPath $o -Value ([string]$me+'|'+$tag+'|'+(Get-Date).ToString('s')) } catch {}; exit 0 }; $ct=$null; try { $ct=(Get-Item -LiteralPath $d -ErrorAction Stop).CreationTime } catch { continue }; $age=((Get-Date)-$ct).TotalMinutes; $alive=$true; $own=$null; try { $own=(Get-Content -LiteralPath $o -ErrorAction Stop -TotalCount 1).Split('|') } catch { $alive=($age -lt 0.5) }; if ($own) { $p=Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $ct.AddSeconds(5)) { $alive=$false } } catch {} } }; if ($age -gt 120) { $alive=$false }; if (-not $alive) { try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch {}; continue }; if (-not $said) { $who=''; if ($own) { $who=' ('+$own[1]+', PID '+$own[0]+')' }; Write-Host ('  [..] Un altro task Unbound Bunker e in corso'+$who+': attendo il mio turno...'); $said=$true }; if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Seconds (4+(Get-Random -Maximum 4)) }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; $o=$d+'\owner.txt'; $w=[int]$env:LK_WAIT; $tag=$env:LK_TAG; if (-not (Test-Path -LiteralPath 'C:\Program Files\Unbound')) { exit 0 }; $me=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$PID)).ParentProcessId; $end=(Get-Date).AddSeconds($w); $said=$false; while ($true) { $ok=$false; try { New-Item -ItemType Directory -Path $d -ErrorAction Stop | Out-Null; $ok=$true } catch {}; if ($ok) { try { Set-Content -LiteralPath $o -Value ([string]$me+'|'+$tag+'|'+(Get-Date).ToString('s')) } catch {}; exit 0 }; $ct=$null; try { $ct=(Get-Item -LiteralPath $d -ErrorAction Stop).CreationTime } catch { if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Milliseconds 300; continue }; $age=((Get-Date)-$ct).TotalMinutes; $alive=$true; $own=$null; try { $own=(Get-Content -LiteralPath $o -ErrorAction Stop -TotalCount 1).Split('|') } catch { $alive=($age -lt 0.5) }; if ($own) { $p=Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue; if (-not $p) { $alive=$false } else { try { if ($p.StartTime -gt $ct.AddSeconds(5)) { $alive=$false } } catch {} } }; if ($age -gt 120) { $alive=$false }; if (-not $alive) { try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch { try { [System.IO.Directory]::Delete($d,$true) } catch {} }; if (Test-Path -LiteralPath $d) { if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Milliseconds 500 }; continue }; if (-not $said) { $who=''; if ($own) { $who=' ('+$own[1]+', PID '+$own[0]+')' }; Write-Host ('  [..] Un altro task Unbound Bunker e in corso'+$who+': attendo il mio turno...'); $said=$true }; if ((Get-Date) -ge $end) { exit 7 }; Start-Sleep -Seconds (4+(Get-Random -Maximum 4)) }"
 set "LK_RC=!errorlevel!"
 if "!LK_RC!"=="7" if "!LK_PHASE!"=="1" goto :LOCK_STOP_TASKS
 if "!LK_RC!"=="7" goto :LOCK_TIMEOUT
@@ -208,7 +212,8 @@ if "!LK_SKIP!"=="1" call :LOCK_NETWAIT
 goto :LOCK_DONE
 :: [v1152.0] Attesa di LK_GRACE secondi esaurita: si fermano i task in background e si riprova il lock, con l attesa piena di prima
 :LOCK_STOP_TASKS
-call :STOP_BG_TASKS
+call :LOCK_PREEMPT
+call :LOCK_FORCE
 set "LK_PHASE=2"
 set "LK_WAIT=1200"
 goto :LOCK_TRY
@@ -5559,24 +5564,57 @@ ping -n 4 127.0.0.1 >nul
 goto :LKN_LOOP
 
 :: ==================================================================
+:: [v1157.0] SUBROUTINE: FERMA SUBITO I TASK IN BACKGROUND SE IL LOCK ESISTE
+:: Usata dall avvio e dal task --scheduled. Con l avvio interattivo ferma anche il Daily.
+:: I task restano abilitati e ripartono al giro successivo.
+:: ==================================================================
+:LOCK_PREEMPT
+if not exist "C:\Program Files\Unbound\ub_manager.lock" exit /b 0
+set "SBT_EXTRA="
+set "KBP_EXTRA="
+if "!LK_TAG!"=="avvio" set "SBT_EXTRA=Unbound_Bunker_Daily"
+if "!LK_TAG!"=="avvio" set "KBP_EXTRA=|scheduled"
+call :STOP_BG_TASKS
+call :KILL_BG_PROCS
+exit /b 0
+
+:: ==================================================================
+:: [v1157.0] SUBROUTINE: TERMINA I CMD.EXE DEI TASK IN BACKGROUND ANCHE SE ORFANI
+:: Cerca i cmd.exe con riga di comando contenente il nome del BAT e --refresh (vale anche
+:: per --refreshzone e --refreshabusech) o --dailyreport (+ --scheduled se KBP_EXTRA). Esclude
+:: se stesso e i propri genitori. taskkill /T chiude anche PowerShell e curl figli.
+:: ==================================================================
+:KILL_BG_PROCS
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$x=@{}; $c=$PID; for ($i=0; $i -lt 8 -and $c; $i++) { $x[[int]$c]=1; $c=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$c) -ErrorAction SilentlyContinue).ParentProcessId }; $pat=[regex]::Escape($env:KBP_NAME)+'.*--(refresh|dailyreport'+$env:KBP_EXTRA+')'; $n=0; foreach ($p in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'cmd.exe' -and $_.CommandLine -match $pat })) { if ($x.ContainsKey([int]$p.ProcessId)) { continue }; & taskkill.exe /PID $p.ProcessId /T /F *>$null; $n++ }; if ($n -gt 0) { Write-Host ('  [OK] Processi di task in background terminati: '+$n) }" 2>nul
+exit /b 0
+
+:: ==================================================================
+:: [v1157.0] SUBROUTINE: RIMUOVE CON FORZA UN LOCK CHE NON SI LIBERA
+:: Non tocca il lock se il proprietario e un altro avvio vivo (tag avvio o --scheduled).
+:: ==================================================================
+:LOCK_FORCE
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d='C:\Program Files\Unbound\ub_manager.lock'; if (-not (Test-Path -LiteralPath $d)) { exit 0 }; $own=$null; try { $own=(Get-Content -LiteralPath ($d+'\owner.txt') -ErrorAction Stop -TotalCount 1).Split('|') } catch {}; if ($own -and $own.Count -ge 2 -and ($own[1] -eq 'avvio' -or $own[1] -eq '--scheduled') -and (Get-Process -Id ([int]$own[0]) -ErrorAction SilentlyContinue)) { exit 3 }; $w=''; if ($own -and $own.Count -ge 2) { $w=' ('+$own[1]+', PID '+$own[0]+')' }; try { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop } catch { try { [System.IO.Directory]::Delete($d,$true) } catch {} }; if (Test-Path -LiteralPath $d) { exit 4 }; Write-Host ('  [OK] Lock bloccato'+$w+' rimosso: proseguo con l avvio.'); exit 0" 2>nul
+exit /b 0
+
+:: ==================================================================
 :: [v1152.0] SUBROUTINE: FERMA I TASK PIANIFICATI IN BACKGROUND
 :: Equivale al Termina manuale in Utilita di pianificazione: schtasks /end chiude
 :: l intero albero di processi del task, curl, powershell e unbound-control inclusi.
 :: Se il task non e in esecuzione schtasks /end da errore, che si ignora in silenzio.
-:: Boot e Daily non sono nell elenco: sono istanze di avvio e non si fermano.
+:: Boot non e nell elenco; il Daily si aggiunge solo con l avvio interattivo (SBT_EXTRA).
 :: Il task fermato resta abilitato e riparte al prossimo giro pianificato.
 :: ==================================================================
 :STOP_BG_TASKS
 set "SBT_N=0"
-echo   [..] Lock occupato da oltre !LK_GRACE! secondi: fermo i task pianificati in background e proseguo.
-for %%T in (Unbound_Bunker_2h Unbound_Bunker_AbuseCh30m Unbound_Bunker_Zone_ProPlus Unbound_Bunker_Zone_TifIps Unbound_Bunker_Zone_Hoster Unbound_Bunker_Zone_Drop Unbound_Bunker_Zone_Tif Unbound_Bunker_DailyReport) do (
+echo   [..] Lock occupato da un altro task: fermo subito i task pianificati in background e proseguo.
+for %%T in (Unbound_Bunker_2h Unbound_Bunker_AbuseCh30m Unbound_Bunker_Zone_ProPlus Unbound_Bunker_Zone_TifIps Unbound_Bunker_Zone_Hoster Unbound_Bunker_Zone_Drop Unbound_Bunker_Zone_Tif Unbound_Bunker_DailyReport %SBT_EXTRA%) do (
     schtasks /end /tn "%%T" >nul 2>&1
     if not errorlevel 1 (
         echo   [OK] Task fermato: %%T
         set /a SBT_N+=1 >nul
     )
 )
-if "!SBT_N!"=="0" echo   [..] Nessun task pianificato in esecuzione: il lock e di un altro processo, resto in attesa.
+if "!SBT_N!"=="0" echo   [..] Nessun task pianificato risulta in esecuzione.
 exit /b 0
 
 :: ==================================================================
